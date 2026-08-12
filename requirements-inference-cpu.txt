@@ -1,0 +1,3 @@
+# Official pre-built CPU wheels published by llama-cpp-python.
+--extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cpu
+llama-cpp-python>=0.2.80

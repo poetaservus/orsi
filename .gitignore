@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+.testdeps/
+runtime/
+build/
+dist/
+*.gguf
+state/**
+!state/.gitkeep
+workspace/*
+!workspace/.gitkeep

@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "orsi-portable-chat"
+version = "0.1.0"
+description = "Portable local-first conversational AI"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "pydantic>=2.7,<3",
+]
+
+[project.optional-dependencies]
+windows = ["PySide6>=6.7"]
+inference = ["llama-cpp-python>=0.2.80"]
+test = ["pytest>=8", "pytest-mock>=3.14"]
+
+[project.scripts]
+orsi = "app.main:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+
+[tool.setuptools.packages.find]
+include = ["app*"]

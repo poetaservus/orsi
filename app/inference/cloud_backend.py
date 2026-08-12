@@ -1,0 +1,130 @@
+from __future__ import annotations
+
+import json
+import os
+from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
+
+from app.inference.cloud_config import CloudConfig
+from app.inference.engine import InferenceEngine, InferenceUnavailable
+
+
+class CloudInferenceError(InferenceUnavailable):
+    def __init__(self, message: str, *, allow_local_fallback: bool = False):
+        super().__init__(message)
+        self.allow_local_fallback = allow_local_fallback
+
+
+def _response_text(message: dict) -> str | None:
+    content = message.get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, dict) and item.get("type") in {"text", "output_text"}:
+                text = item.get("text")
+                if isinstance(text, str):
+                    parts.append(text)
+        return "".join(parts) or None
+    return None
+
+
+def _api_error_message(raw: bytes, fallback: str) -> str:
+    try:
+        payload = json.loads(raw.decode("utf-8", errors="replace"))
+        error = payload.get("error") if isinstance(payload, dict) else None
+        if isinstance(error, dict) and isinstance(error.get("message"), str):
+            return error["message"][:500]
+        if isinstance(error, str):
+            return error[:500]
+    except (json.JSONDecodeError, UnicodeError):
+        pass
+    return fallback
+
+
+class OpenAICompatibleInferenceEngine(InferenceEngine):
+    """OpenAI-compatible chat-completions backend with an in-memory API key."""
+
+    def __init__(self, config: CloudConfig, api_key: str | None = None):
+        self.config = config
+        self.context_length = config.context_length
+        self._api_key = (api_key or os.environ.get(config.api_key_environment, "")).strip()
+
+    @property
+    def has_api_key(self) -> bool:
+        return bool(self._api_key)
+
+    def set_api_key(self, api_key: str) -> None:
+        self._api_key = str(api_key).strip()
+
+    def respond(self, messages: list[dict[str, str]]) -> str:
+        if not messages:
+            raise CloudInferenceError("Cloud inference received an empty conversation.")
+        message = self._request_message({
+            "model": self.config.model,
+            "messages": messages,
+            "temperature": self.config.temperature,
+            "max_tokens": self.config.max_tokens,
+        })
+        content = _response_text(message)
+        if not content or not content.strip():
+            raise CloudInferenceError(
+                "The cloud model returned an empty response. Try again or switch to Local.",
+                allow_local_fallback=True,
+            )
+        return content
+
+    def _request_message(self, body: dict[str, Any]) -> dict[str, Any]:
+        if not self._api_key:
+            raise CloudInferenceError(
+                f"Cloud mode needs a {self.config.provider_name} API key for this session."
+            )
+        request = Request(
+            self.config.chat_completions_url,
+            data=json.dumps(body, separators=(",", ":")).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {self._api_key}",
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "X-Title": "O.R.S.I Chat",
+            },
+            method="POST",
+        )
+        try:
+            with urlopen(request, timeout=self.config.timeout_seconds) as response:
+                raw = response.read()
+        except HTTPError as exc:
+            raw = exc.read(4096)
+            message = _api_error_message(raw, exc.reason or "The cloud service rejected the request.")
+            if self._api_key:
+                message = message.replace(self._api_key, "[REDACTED]")
+            if exc.code in {401, 403}:
+                explanation = "The cloud API key was rejected. Enter a valid key and try again."
+                fallback = False
+            elif exc.code == 429:
+                explanation = "The free cloud-model rate limit has been reached. Try later or switch to Local."
+                fallback = True
+            else:
+                explanation = f"Cloud inference failed with HTTP {exc.code}: {message}"
+                fallback = exc.code >= 500
+            raise CloudInferenceError(explanation, allow_local_fallback=fallback) from exc
+        except (URLError, TimeoutError, OSError) as exc:
+            raise CloudInferenceError(
+                "Cloud inference could not connect. Check the internet connection or switch to Local.",
+                allow_local_fallback=True,
+            ) from exc
+
+        try:
+            payload = json.loads(raw.decode("utf-8"))
+            choices = payload.get("choices") if isinstance(payload, dict) else None
+            message = choices[0].get("message") if isinstance(choices, list) and choices else None
+            if not isinstance(message, dict):
+                raise TypeError("missing response message")
+        except (json.JSONDecodeError, UnicodeError, AttributeError, IndexError, TypeError) as exc:
+            raise CloudInferenceError(
+                "The cloud service returned an unreadable response. Try again or switch to Local.",
+                allow_local_fallback=True,
+            ) from exc
+        return message
