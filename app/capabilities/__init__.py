@@ -5,11 +5,18 @@ from app.capabilities.contracts import (
     CapabilityArgumentError,
     CapabilityContext,
     CapabilityErrorCode,
+    CapabilityExecutionError,
     CapabilityFailure,
     CapabilityResult,
+    ExecutionIsolation,
     PermissionClass,
 )
 from app.capabilities.filesystem_stat import FilesystemStatCapability
+from app.capabilities.executor import (
+    CapabilityExecutor,
+    ExecutorLimits,
+    ExecutorSnapshot,
+)
 from app.capabilities.permissions import (
     ApprovalManager,
     ApprovalNotFoundError,
@@ -39,13 +46,18 @@ __all__ = [
     "CapabilityArgumentError",
     "CapabilityContext",
     "CapabilityErrorCode",
+    "CapabilityExecutionError",
     "CapabilityFailure",
     "CapabilityResult",
+    "CapabilityExecutor",
     "ApprovalManager",
     "ApprovalNotFoundError",
     "ApprovalRecord",
     "ApprovalStatus",
     "AuthorizationCode",
+    "ExecutionIsolation",
+    "ExecutorLimits",
+    "ExecutorSnapshot",
     "CapabilityLookupError",
     "CapabilityRegistration",
     "CapabilityRegistry",

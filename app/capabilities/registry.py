@@ -14,6 +14,7 @@ from app.capabilities.contracts import (
     Capability,
     CapabilityErrorCode,
     CapabilityFailure,
+    ExecutionIsolation,
     PermissionClass,
 )
 
@@ -206,6 +207,15 @@ class CapabilityRegistry:
             raise CapabilityRegistryConfigurationError(
                 RegistryConfigurationCode.INVALID_DEFINITION,
                 f"Capability {name} must declare a timeout between 0 and 3600 seconds.",
+            )
+
+        if not isinstance(
+            getattr(capability, "execution_isolation", None),
+            ExecutionIsolation,
+        ):
+            raise CapabilityRegistryConfigurationError(
+                RegistryConfigurationCode.INVALID_DEFINITION,
+                f"Capability {name} must declare a valid execution isolation mode.",
             )
 
         if registration.model_visible and not registration.enabled:

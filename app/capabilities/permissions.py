@@ -160,6 +160,21 @@ class PreparedCapabilityCall:
 
     capability: Capability
     request: PermissionRequest
+    context: CapabilityContext
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.capability, Capability):
+            raise TypeError("Prepared calls require a Capability implementation.")
+        if not isinstance(self.request, PermissionRequest):
+            raise TypeError("Prepared calls require a canonical PermissionRequest.")
+        if not isinstance(self.context, CapabilityContext):
+            raise TypeError("Prepared calls require their original CapabilityContext.")
+        if self.capability.name != self.request.capability:
+            raise ValueError("The prepared capability does not match the request identity.")
+        if self.capability.permission != self.request.permission:
+            raise ValueError("The prepared permission class does not match the request identity.")
+        if self.context.call_id != self.request.call_id:
+            raise ValueError("The prepared context does not match the request call ID.")
 
     def validated_arguments(self) -> BaseModel:
         return self.capability.arguments_model.model_validate_json(
@@ -212,6 +227,34 @@ class PermissionAuthorization(BaseModel):
     matched_rule_id: str | None = None
     approval_id: str | None = None
     approval_status: ApprovalStatus | None = None
+    request_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    binding_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def validate_authorization(self):
+        expected_binding = _digest_json(
+            {
+                "decision": self.decision.value,
+                "matched_rule_id": self.matched_rule_id,
+                "request_sha256": self.request_sha256,
+            }
+        )
+        if expected_binding != self.binding_sha256:
+            raise ValueError("The authorization binding does not match its permission decision.")
+        if self.allowed != (self.code == AuthorizationCode.ALLOWED):
+            raise ValueError("Only an allowed authorization may use the allowed code.")
+        if self.allowed and self.decision == PermissionDecision.DENY:
+            raise ValueError("A DENY decision cannot authorize execution.")
+        if self.allowed and self.matched_rule_id is None:
+            raise ValueError("Authorized execution must be bound to an explicit rule.")
+        if self.decision == PermissionDecision.ALLOW and (
+            self.approval_id is not None or self.approval_status is not None
+        ):
+            raise ValueError("An ALLOW rule does not use an approval record.")
+        if self.allowed and self.decision == PermissionDecision.ASK:
+            if self.approval_id is None or self.approval_status != ApprovalStatus.CONSUMED:
+                raise ValueError("An approved ASK decision must consume an exact approval.")
+        return self
 
 
 class ApprovalRecord(BaseModel):
@@ -475,6 +518,8 @@ class ApprovalManager:
             matched_rule_id=evaluation.matched_rule_id,
             approval_id=record.approval_id if record is not None else None,
             approval_status=record.status if record is not None else None,
+            request_sha256=evaluation.request.request_sha256,
+            binding_sha256=evaluation.binding_sha256,
         )
 
 
@@ -501,7 +546,11 @@ def prepare_capability_call(
         arguments_json=arguments_json,
         resource=str(resource) if resource is not None else None,
     )
-    return PreparedCapabilityCall(capability=capability, request=request)
+    return PreparedCapabilityCall(
+        capability=capability,
+        request=request,
+        context=context,
+    )
 
 
 def _valid_capability_pattern(pattern: object) -> bool:

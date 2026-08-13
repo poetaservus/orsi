@@ -13,6 +13,7 @@ from app.capabilities import (
     CapabilityRegistration,
     CapabilityRegistry,
     CapabilityRegistryConfigurationError,
+    ExecutionIsolation,
     FilesystemStatCapability,
     PermissionClass,
     RegistryConfigurationCode,
@@ -29,6 +30,7 @@ class AlphaCapability(Capability[NoArguments]):
     arguments_model = NoArguments
     permission = PermissionClass.READ
     timeout_seconds = 1.0
+    execution_isolation = ExecutionIsolation.IN_PROCESS_COOPERATIVE
 
     def execute(self, arguments, context):
         return {"value": "alpha"}
@@ -87,6 +89,7 @@ def test_duplicate_names_fail_deterministically():
         ("permission", "read"),
         ("timeout_seconds", 0),
         ("timeout_seconds", float("inf")),
+        ("execution_isolation", "in_process_cooperative"),
     ],
 )
 def test_invalid_capability_definitions_are_rejected(attribute, value):

@@ -23,6 +23,11 @@ class PermissionClass(StrEnum):
     SYSTEM = "system"
 
 
+class ExecutionIsolation(StrEnum):
+    IN_PROCESS_COOPERATIVE = "in_process_cooperative"
+    SUBPROCESS_REQUIRED = "subprocess_required"
+
+
 class CapabilityErrorCode(StrEnum):
     INVALID_ARGUMENTS = "invalid_arguments"
     UNKNOWN_CAPABILITY = "unknown_capability"
@@ -32,6 +37,12 @@ class CapabilityErrorCode(StrEnum):
     INACCESSIBLE = "inaccessible"
     CANCELLED = "cancelled"
     TIMED_OUT = "timed_out"
+    OUTPUT_LIMITED = "output_limited"
+    INVALID_OUTPUT = "invalid_output"
+    EXECUTOR_BUSY = "executor_busy"
+    CALL_REPLAYED = "call_replayed"
+    EXECUTOR_UNAVAILABLE = "executor_unavailable"
+    ISOLATION_REQUIRED = "isolation_required"
     INTERNAL_ERROR = "internal_error"
 
 
@@ -96,6 +107,7 @@ class Capability(ABC, Generic[ArgumentsT]):
     arguments_model: ClassVar[type[BaseModel]]
     permission: ClassVar[PermissionClass]
     timeout_seconds: ClassVar[float]
+    execution_isolation: ClassVar[ExecutionIsolation]
 
     def validate_arguments(self, raw_arguments: Any) -> ArgumentsT:
         """Validate untrusted arguments without executing capability code."""

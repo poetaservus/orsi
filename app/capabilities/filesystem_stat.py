@@ -12,6 +12,7 @@ from app.capabilities.contracts import (
     CapabilityContext,
     CapabilityErrorCode,
     CapabilityExecutionError,
+    ExecutionIsolation,
     PermissionClass,
 )
 from app.capabilities.path_policy import resolve_candidate_path, resolve_read_path
@@ -29,6 +30,7 @@ class FilesystemStatCapability(Capability[FilesystemStatArguments]):
     arguments_model = FilesystemStatArguments
     permission = PermissionClass.READ
     timeout_seconds = 2.0
+    execution_isolation = ExecutionIsolation.IN_PROCESS_COOPERATIVE
 
     def permission_resource(
         self,

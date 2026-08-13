@@ -15,6 +15,7 @@ from app.capabilities import (
     CapabilityArgumentError,
     CapabilityContext,
     FilesystemStatCapability,
+    ExecutionIsolation,
     PermissionClass,
     PermissionDecision,
     PermissionGate,
@@ -36,6 +37,7 @@ class InertCapability(Capability[EchoArguments]):
     arguments_model = EchoArguments
     permission = PermissionClass.READ
     timeout_seconds = 1.0
+    execution_isolation = ExecutionIsolation.IN_PROCESS_COOPERATIVE
 
     def __init__(self):
         self.execution_count = 0
