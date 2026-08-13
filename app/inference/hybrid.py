@@ -14,12 +14,14 @@ log = logging.getLogger(__name__)
 class LazyInferenceEngine(InferenceEngine):
     """Loads a heavyweight backend only when that mode is actually used."""
 
-    def __init__(self, factory: Callable[[], InferenceEngine], *, context_length: int):
+    def __init__(self, factory: Callable[[], InferenceEngine], *, context_length: int,
+                 max_response_tokens: int = 512):
         self._factory = factory
         self._engine = None
         self._initialization_error = None
         self._lock = Lock()
         self.context_length = int(context_length)
+        self.max_response_tokens = int(max_response_tokens)
 
     @property
     def is_loaded(self) -> bool:
@@ -50,11 +52,19 @@ class LazyInferenceEngine(InferenceEngine):
             try:
                 self._engine = self._factory()
                 self.context_length = int(getattr(self._engine, "context_length", self.context_length))
+                self.max_response_tokens = int(
+                    getattr(self._engine, "max_response_tokens", self.max_response_tokens)
+                )
                 return self._engine
             except Exception as exc:
                 error = exc if isinstance(exc, InferenceUnavailable) else InferenceUnavailable(str(exc))
                 self._initialization_error = error
                 raise error
+
+    def count_message_tokens(self, messages: list[dict[str, str]]) -> int:
+        engine = self._get_engine()
+        counter = getattr(engine, "count_message_tokens", None)
+        return counter(messages) if callable(counter) else super().count_message_tokens(messages)
 
 
 class HybridInferenceEngine(InferenceEngine):
@@ -76,6 +86,7 @@ class HybridInferenceEngine(InferenceEngine):
         self._mode = default_mode if default_mode in modes else modes[0]
         active = self._engine_for(self._mode)
         self.context_length = int(getattr(active, "context_length", 8192))
+        self.max_response_tokens = int(getattr(active, "max_response_tokens", 512))
 
     @property
     def available_modes(self) -> tuple[str, ...]:
@@ -104,6 +115,9 @@ class HybridInferenceEngine(InferenceEngine):
         with self._lock:
             self._mode = normalized
             self.context_length = int(getattr(self._engine_for(normalized), "context_length", 8192))
+            self.max_response_tokens = int(
+                getattr(self._engine_for(normalized), "max_response_tokens", 512)
+            )
 
     @property
     def cloud_has_api_key(self) -> bool:
@@ -130,6 +144,9 @@ class HybridInferenceEngine(InferenceEngine):
             result = engine.respond(messages)
             with self._lock:
                 self.context_length = int(getattr(engine, "context_length", self.context_length))
+                self.max_response_tokens = int(
+                    getattr(engine, "max_response_tokens", self.max_response_tokens)
+                )
             return result
         try:
             return engine.respond(messages)
@@ -145,8 +162,22 @@ class HybridInferenceEngine(InferenceEngine):
             with self._lock:
                 self._mode = "local"
                 self.context_length = int(getattr(self.local, "context_length", 8192))
+                self.max_response_tokens = int(
+                    getattr(self.local, "max_response_tokens", 512)
+                )
                 self._notice = "Cloud was unavailable, so O.R.S.I safely switched to the local model."
             return result
+
+    def count_message_tokens(self, messages: list[dict[str, str]]) -> int:
+        engine = self._engine_for(self.mode)
+        counter = getattr(engine, "count_message_tokens", None)
+        count = counter(messages) if callable(counter) else super().count_message_tokens(messages)
+        with self._lock:
+            self.context_length = int(getattr(engine, "context_length", self.context_length))
+            self.max_response_tokens = int(
+                getattr(engine, "max_response_tokens", self.max_response_tokens)
+            )
+        return count
 
     def _engine_for(self, mode: str) -> InferenceEngine:
         engine = self.local if mode == "local" else self.cloud

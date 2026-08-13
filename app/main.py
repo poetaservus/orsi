@@ -45,6 +45,7 @@ def build_application():
         local_engine = LazyInferenceEngine(
             lambda: LlamaCppInferenceEngine(model_config),
             context_length=context_hint.length,
+            max_response_tokens=model_config.max_tokens,
         )
     except Exception as exc:
         local_error = (
@@ -80,7 +81,13 @@ def build_application():
     service = None
     if inference is not None:
         conversation_state = PATHS.state / "conversation_v1"
-        store = ConversationStore(conversation_state / "conversation.json")
+        # Every application launch is a new private session. Overwrite the
+        # single active state file so a previous window can never feed hidden
+        # context into the newly opened one.
+        store = ConversationStore(
+            conversation_state / "conversation.json",
+            start_fresh=True,
+        )
         service = ConversationService(inference, store)
 
     host = {"hostname": socket.gethostname() or "Windows PC"}

@@ -35,16 +35,19 @@ class Conversation(BaseModel):
 class ConversationStore:
     """One atomic text conversation. No action, tool, or audit event types exist here."""
 
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, *, start_fresh: bool = False):
         self.path = Path(path)
         self._store = JsonStore(self.path)
         self._lock = RLock()
         with self._lock:
-            value = self._store.load()
-            try:
-                self._conversation = Conversation.model_validate(value) if value else Conversation()
-            except (TypeError, ValueError):
+            if start_fresh:
                 self._conversation = Conversation()
+            else:
+                value = self._store.load()
+                try:
+                    self._conversation = Conversation.model_validate(value) if value else Conversation()
+                except (TypeError, ValueError):
+                    self._conversation = Conversation()
             self._save()
 
     def append(self, role: Literal["user", "assistant"], content: str) -> None:
@@ -62,6 +65,12 @@ class ConversationStore:
                 {"role": message.role, "content": message.content}
                 for message in self._conversation.messages
             ]
+
+    def new_session(self) -> None:
+        """Replace the only stored conversation; no session archive is retained."""
+        with self._lock:
+            self._conversation = Conversation()
+            self._save()
 
     def _save(self) -> None:
         self._store.save(self._conversation.model_dump(mode="json"))

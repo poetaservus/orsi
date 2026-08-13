@@ -74,6 +74,7 @@ class LlamaCppInferenceEngine(InferenceEngine):
                 "O.R.S.I's Python 3.12 virtual environment."
             ) from exc
         self.config = config
+        self.max_response_tokens = config.max_tokens
         supports_gpu = getattr(llama_cpp, "llama_supports_gpu_offload", None)
         gpu_offload_available = bool(supports_gpu()) if callable(supports_gpu) else None
         native_context = _probe_native_context(llama_cpp, path)
@@ -97,6 +98,45 @@ class LlamaCppInferenceEngine(InferenceEngine):
                 "The local model could not be initialized on this computer. "
                 "Try the CPU portable build or select Cloud mode."
             ) from exc
+
+    def count_message_tokens(self, messages: list[dict[str, str]]) -> int:
+        """Use the GGUF tokenizer and its embedded chat template."""
+        template = (
+            self.model.metadata.get("tokenizer.chat_template")
+            or self.model.metadata.get("tokenizer.chat_template.default")
+        )
+        if template:
+            try:
+                from llama_cpp.llama_chat_format import Jinja2ChatFormatter
+
+                eos_id = self.model.token_eos()
+                bos_id = self.model.token_bos()
+                formatter = Jinja2ChatFormatter(
+                    template=template,
+                    eos_token=self.model._model.token_get_text(eos_id) if eos_id != -1 else "",
+                    bos_token=self.model._model.token_get_text(bos_id) if bos_id != -1 else "",
+                    stop_token_ids=[eos_id] if eos_id != -1 else None,
+                )
+                formatted = formatter(messages=messages)
+                return len(self.model.tokenize(
+                    formatted.prompt.encode("utf-8"),
+                    add_bos=not formatted.added_special,
+                    special=True,
+                ))
+            except Exception as exc:
+                log.warning("Could not count the formatted prompt with the GGUF template: %s", exc)
+
+        # A model without a usable embedded template still gets its real
+        # tokenizer, with a small allowance for role separators.
+        tokens = sum(
+            len(self.model.tokenize(
+                str(message.get("content", "")).encode("utf-8"),
+                add_bos=False,
+                special=False,
+            ))
+            for message in messages
+        )
+        return tokens + 4 * len(messages) + 3
 
     def respond(self, messages: list[dict[str, str]]) -> str:
         response = self.model.create_chat_completion(**{

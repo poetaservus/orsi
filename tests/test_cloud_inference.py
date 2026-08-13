@@ -149,3 +149,25 @@ def test_local_backend_is_lazy_and_released_for_cloud():
     engine.respond([{"role": "user", "content": "hello"}])
     engine.set_mode("cloud")
     assert not local.is_loaded and created[0].closed
+
+
+def test_token_count_refreshes_a_lazy_local_context_hint():
+    class CountingEngine(StubEngine):
+        context_length = 4096
+        max_response_tokens = 128
+
+        @staticmethod
+        def count_message_tokens(messages):
+            return len(messages) * 10
+
+    local = LazyInferenceEngine(
+        lambda: CountingEngine("local"),
+        context_length=32768,
+        max_response_tokens=1536,
+    )
+    engine = HybridInferenceEngine(local=local, cloud=None)
+
+    assert engine.context_length == 32768
+    assert engine.count_message_tokens([{"role": "user", "content": "hello"}]) == 10
+    assert engine.context_length == 4096
+    assert engine.max_response_tokens == 128

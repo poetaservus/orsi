@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from PySide6.QtCore import QObject, QThread, Signal, Slot
+from pathlib import Path
+
+from PySide6.QtCore import QObject, QSize, Qt, QThread, Signal, Slot
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -9,13 +12,30 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
 from app.inference.engine import InferenceUnavailable
 from app.ui.chat import ChatView
+from app.ui.context_window import ContextWindowBar
 from app.ui.status import ConversationStatus
+
+
+_ICON_DIRECTORY = Path(__file__).with_name("assets")
+
+
+class MessageInput(QTextEdit):
+    submit_requested = Signal()
+
+    def keyPressEvent(self, event) -> None:  # noqa: N802 - Qt API name
+        is_return = event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
+        if is_return and not (event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
+            self.submit_requested.emit()
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
 
 class Worker(QObject):
@@ -55,9 +75,58 @@ class MainWindow(QMainWindow):
 
         root = QWidget()
         root.setObjectName("root")
-        layout = QVBoxLayout(root)
+        root_layout = QHBoxLayout(root)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.setSpacing(0)
+
+        sidebar = QWidget()
+        sidebar.setObjectName("sidebar")
+        sidebar.setFixedWidth(52)
+        sidebar_layout = QVBoxLayout(sidebar)
+        sidebar_layout.setContentsMargins(7, 11, 7, 11)
+        sidebar_layout.setSpacing(5)
+
+        self.new_session_button = QPushButton()
+        self.new_session_button.setObjectName("sidebarButton")
+        self.new_session_button.setFixedSize(38, 38)
+        self.new_session_button.setIcon(QIcon(str(_ICON_DIRECTORY / "new_session.svg")))
+        self.new_session_button.setIconSize(QSize(21, 21))
+        self.new_session_button.setToolTip("New session — permanently clears this conversation")
+        self.new_session_button.setAccessibleName("New session")
+        self.new_session_button.setEnabled(service is not None)
+
+        self.settings_button = QPushButton()
+        self.settings_button.setObjectName("sidebarButton")
+        self.settings_button.setFixedSize(38, 38)
+        self.settings_button.setIcon(QIcon(str(_ICON_DIRECTORY / "settings.svg")))
+        self.settings_button.setIconSize(QSize(20, 20))
+        self.settings_button.setToolTip("Settings — coming later")
+        self.settings_button.setAccessibleName("Settings")
+        self.settings_button.setEnabled(False)
+
+        sidebar_layout.addWidget(self.new_session_button)
+        sidebar_layout.addWidget(self.settings_button)
+        sidebar_layout.addStretch(1)
+        root_layout.addWidget(sidebar)
+
+        content = QWidget()
+        content.setObjectName("mainContent")
+        layout = QVBoxLayout(content)
         layout.setContentsMargins(0, 0, 0, 14)
         layout.setSpacing(0)
+        root_layout.addWidget(content, 1)
+
+        context_header = QWidget()
+        context_header.setObjectName("contextHeader")
+        context_header_layout = QHBoxLayout(context_header)
+        context_header_layout.setContentsMargins(12, 12, 16, 6)
+        context_header_layout.setSpacing(0)
+        context_header_layout.addStretch(1)
+        self.context_window = ContextWindowBar(
+            int(getattr(inference, "context_length", 0))
+        )
+        context_header_layout.addWidget(self.context_window)
+        layout.addWidget(context_header)
 
         self.chat = ChatView()
         layout.addWidget(self.chat, 1)
@@ -72,10 +141,11 @@ class MainWindow(QMainWindow):
         composer_layout.setContentsMargins(14, 8, 14, 0)
         composer_layout.setSpacing(8)
 
-        self.input = QLineEdit()
+        self.input = MessageInput()
         self.input.setObjectName("messageInput")
         self.input.setPlaceholderText("Ask O.R.S.I")
-        self.input.setMinimumHeight(42)
+        self.input.setAcceptRichText(False)
+        self.input.setFixedHeight(42)
 
         self.model_selector = QComboBox()
         self.model_selector.setObjectName("modelSelector")
@@ -107,12 +177,14 @@ class MainWindow(QMainWindow):
         self.setStyleSheet(_STYLE)
         self.send.clicked.connect(self.submit)
         self.stop.clicked.connect(self.cancel_current_task)
-        self.input.returnPressed.connect(self.submit)
+        self.new_session_button.clicked.connect(self.create_new_session)
+        self.input.submit_requested.connect(self.submit)
+        self._update_context_window()
         if startup_error:
             self.chat.add_message("Agent", startup_error, True)
 
     def submit(self) -> None:
-        message = self.input.text().strip()
+        message = self.input.toPlainText().strip()
         if not message or self.thread is not None:
             return
         if self.startup_error:
@@ -150,6 +222,7 @@ class MainWindow(QMainWindow):
             if notice:
                 text = f"{text}\n\n{notice}"
             self._sync_inference_selector()
+        self._update_context_window()
         self._set_busy(False)
         self.chat.add_message("Agent", text, error)
 
@@ -164,6 +237,7 @@ class MainWindow(QMainWindow):
         self.stop.setEnabled(busy and self.service is not None)
         self.input.setEnabled(not busy)
         self.model_selector.setEnabled(not busy and self.inference is not None)
+        self.new_session_button.setEnabled(not busy and self.service is not None)
         self.chat.set_thinking(busy)
         self.activity.set_activity("" if busy else self._ready_status())
 
@@ -173,6 +247,23 @@ class MainWindow(QMainWindow):
             cancel()
             self.stop.setEnabled(False)
             self.activity.set_activity("Stopping...")
+
+    def create_new_session(self) -> None:
+        if self.thread is not None:
+            return
+        reset = getattr(self.service, "new_session", None)
+        if not callable(reset):
+            return
+        try:
+            reset()
+        except Exception as exc:
+            self.chat.add_message("Agent", str(exc), True)
+            return
+        self.chat.clear_messages()
+        self.input.clear()
+        self._update_context_window()
+        self.activity.set_activity(self._ready_status())
+        self.input.setFocus()
 
     def _ready_status(self) -> str:
         if self.inference is None:
@@ -200,6 +291,7 @@ class MainWindow(QMainWindow):
             self.chat.add_message("Agent", str(exc), True)
             self.inference.set_mode(previous)
         self._sync_inference_selector()
+        self._update_context_window()
         self.activity.set_activity(self._ready_status())
 
     def _ensure_cloud_ready(self) -> bool:
@@ -239,11 +331,47 @@ class MainWindow(QMainWindow):
             self.model_selector.setCurrentIndex(index)
             self.model_selector.blockSignals(False)
 
+    def _update_context_window(self) -> None:
+        length = int(getattr(self.inference, "context_length", 0))
+        self.context_window.set_context_length(length)
+        estimate = getattr(self.service, "estimated_context_tokens", None)
+        used = estimate() if callable(estimate) else 0
+        self.context_window.set_used_tokens(used)
+
 
 _STYLE = """
-QMainWindow#mainWindow, QWidget#root, QWidget#chatContent {
+QMainWindow#mainWindow, QWidget#root, QWidget#mainContent, QWidget#chatContent,
+QWidget#contextHeader, QWidget#sidebar {
     background: #171717;
     color: #ececec;
+}
+QWidget#sidebar {
+    border-right: 1px solid #353535;
+}
+QPushButton#sidebarButton {
+    background: transparent;
+    border: none;
+    border-radius: 9px;
+    padding: 0;
+}
+QPushButton#sidebarButton:hover { background: #292929; }
+QPushButton#sidebarButton:pressed { background: #222222; }
+QPushButton#sidebarButton:disabled { background: transparent; }
+QWidget#contextWindow { background: transparent; }
+QLabel#contextWindowTitle, QLabel#contextWindowSize {
+    color: #a8a8a8;
+    background: transparent;
+    font-size: 11px;
+}
+QLabel#contextWindowSize { color: #dedede; }
+QProgressBar#contextWindowBar {
+    background: #303030;
+    border: none;
+    border-radius: 2px;
+}
+QProgressBar#contextWindowBar::chunk {
+    background: #d4d4d4;
+    border-radius: 2px;
 }
 QScrollArea#chatView { background: #171717; border: none; }
 QFrame#userMessage {
@@ -254,6 +382,40 @@ QFrame#userMessage {
 QFrame#orsiMessage, QFrame#errorMessage { background: transparent; border: none; }
 QFrame#userMessage QLabel, QFrame#orsiMessage QLabel { color: #eeeeee; font-size: 14px; }
 QFrame#errorMessage QLabel { color: #ff8d86; font-size: 14px; }
+QFrame#codeBlock {
+    background: #202020;
+    border: 1px solid #3b3b3b;
+    border-radius: 9px;
+}
+QWidget#codeHeader {
+    background: #292929;
+    border: none;
+    border-bottom: 1px solid #3b3b3b;
+}
+QLabel#codeLanguage {
+    color: #a9a9a9;
+    background: transparent;
+    border: none;
+    font-size: 11px;
+}
+QPushButton#copyCodeButton {
+    color: #d8d8d8;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    padding: 0 7px;
+    font-size: 11px;
+}
+QPushButton#copyCodeButton:hover { background: #383838; }
+QPushButton#copyCodeButton:pressed { background: #222222; }
+QPlainTextEdit#codeEditor {
+    color: #e8e8e8;
+    background: #202020;
+    border: none;
+    padding: 9px;
+    selection-color: #ffffff;
+    selection-background-color: #505050;
+}
 QLabel#conversationStatus {
     color: #929292;
     background: transparent;
@@ -262,16 +424,16 @@ QLabel#conversationStatus {
     font-size: 11px;
 }
 QWidget#composer { background: #171717; }
-QLineEdit#messageInput {
+QTextEdit#messageInput {
     color: #f1f1f1;
     background: #262626;
     border: 1px solid #3c3c3c;
     border-radius: 14px;
-    padding: 0 14px;
+    padding: 8px 12px;
     selection-background-color: #10a37f;
 }
-QLineEdit#messageInput:focus { border-color: #666666; }
-QLineEdit#messageInput:disabled { color: #888888; background: #202020; }
+QTextEdit#messageInput:focus { border-color: #666666; }
+QTextEdit#messageInput:disabled { color: #888888; background: #202020; }
 QPushButton {
     color: #ededed;
     background: #303030;

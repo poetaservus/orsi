@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import re
+
 from PySide6.QtCore import QTimer, Qt
+from PySide6.QtGui import QFontDatabase
 from PySide6.QtWidgets import (
+    QApplication,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QPlainTextEdit,
+    QPushButton,
     QScrollArea,
     QSizePolicy,
     QVBoxLayout,
@@ -12,6 +18,86 @@ from PySide6.QtWidgets import (
 )
 
 from app.ui.status import ThinkingDots
+
+
+_FENCED_CODE = re.compile(
+    r"^[ \t]*```([^\r\n`]*)[ \t]*\r?\n(.*?)^[ \t]*```[ \t]*(?:\r?\n|$)",
+    re.MULTILINE | re.DOTALL,
+)
+
+
+def _split_fenced_code(content: str) -> list[tuple[str, str, str]]:
+    parts: list[tuple[str, str, str]] = []
+    position = 0
+    for match in _FENCED_CODE.finditer(content):
+        before = content[position:match.start()].rstrip("\r\n")
+        if before:
+            parts.append(("text", "", before))
+        language = match.group(1).strip() or "Code"
+        code = match.group(2).rstrip("\r\n")
+        parts.append(("code", language, code))
+        position = match.end()
+    after = content[position:].lstrip("\r\n")
+    if after:
+        parts.append(("text", "", after))
+    return parts or [("text", "", content)]
+
+
+class _CodeBlock(QFrame):
+    def __init__(self, language: str, code: str):
+        super().__init__()
+        self.code = code
+        self.setObjectName("codeBlock")
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        header = QWidget()
+        header.setObjectName("codeHeader")
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(10, 4, 6, 4)
+        header_layout.setSpacing(8)
+
+        self.language = QLabel(language)
+        self.language.setObjectName("codeLanguage")
+        self.copy_button = QPushButton("Copy")
+        self.copy_button.setObjectName("copyCodeButton")
+        self.copy_button.setToolTip("Copy code")
+        self.copy_button.setAccessibleName("Copy code")
+        self.copy_button.setFixedHeight(24)
+
+        header_layout.addWidget(self.language)
+        header_layout.addStretch(1)
+        header_layout.addWidget(self.copy_button)
+        layout.addWidget(header)
+
+        self.editor = QPlainTextEdit()
+        self.editor.setObjectName("codeEditor")
+        self.editor.setReadOnly(True)
+        self.editor.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        self.editor.setPlainText(code)
+        fixed_font = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
+        self.editor.setFont(fixed_font)
+        self.editor.setTabStopDistance(self.editor.fontMetrics().horizontalAdvance(" ") * 4)
+        line_count = max(2, min(14, code.count("\n") + 1))
+        editor_height = self.editor.fontMetrics().lineSpacing() * line_count + 18
+        self.editor.setFixedHeight(max(60, min(300, editor_height)))
+        layout.addWidget(self.editor)
+
+        self._copy_timer = QTimer(self)
+        self._copy_timer.setSingleShot(True)
+        self._copy_timer.timeout.connect(self._restore_copy_label)
+        self.copy_button.clicked.connect(self.copy_code)
+
+    def copy_code(self) -> None:
+        QApplication.clipboard().setText(self.code)
+        self.copy_button.setText("Copied")
+        self._copy_timer.start(1400)
+
+    def _restore_copy_label(self) -> None:
+        self.copy_button.setText("Copy")
 
 
 class _Message(QFrame):
@@ -29,16 +115,35 @@ class _Message(QFrame):
         self.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Minimum)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(14 if from_user else 0, 9, 14 if from_user else 0, 9)
-        self.label = QLabel(content)
-        self.label.setObjectName("messageText")
-        self.label.setTextFormat(Qt.TextFormat.PlainText)
-        self.label.setWordWrap(True)
-        self.label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self.label.setAlignment(
-            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+        layout.setSpacing(8)
+        self._text_labels: list[QLabel] = []
+        self._code_blocks: list[_CodeBlock] = []
+        self.label = None
+
+        parts = (
+            [("text", "", content)]
+            if from_user or error
+            else _split_fenced_code(content)
         )
-        self.label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
-        layout.addWidget(self.label)
+        for kind, language, value in parts:
+            if kind == "code":
+                block = _CodeBlock(language, value)
+                self._code_blocks.append(block)
+                layout.addWidget(block)
+            else:
+                label = QLabel(value)
+                label.setObjectName("messageText")
+                label.setTextFormat(Qt.TextFormat.PlainText)
+                label.setWordWrap(True)
+                label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+                label.setAlignment(
+                    Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter
+                )
+                label.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
+                self._text_labels.append(label)
+                if self.label is None:
+                    self.label = label
+                layout.addWidget(label)
 
     def set_available_width(self, width: int) -> None:
         ratio = 0.72 if self.from_user else 0.80
@@ -49,15 +154,31 @@ class _Message(QFrame):
         # QLabel's word-wrapped size hint often prefers a nearly square, very
         # narrow column. Size from the longest logical line instead, then wrap
         # only when that natural width reaches the conversation width limit.
-        logical_lines = self._content.splitlines() or [self._content]
         natural_text_width = max(
-            (self.label.fontMetrics().horizontalAdvance(line.expandtabs(4)) for line in logical_lines),
+            (
+                label.fontMetrics().horizontalAdvance(line.expandtabs(4))
+                for label in self._text_labels
+                for line in (label.text().splitlines() or [label.text()])
+            ),
             default=0,
         )
-        target = min(maximum, max(36, natural_text_width + horizontal_padding + 4))
-        label_width = max(24, target - horizontal_padding)
+        natural_code_width = max(
+            (
+                block.editor.fontMetrics().horizontalAdvance(line.expandtabs(4)) + 28
+                for block in self._code_blocks
+                for line in (block.code.splitlines() or [block.code])
+            ),
+            default=0,
+        )
+        natural_width = max(natural_text_width, natural_code_width)
+        minimum = min(360, maximum) if self._code_blocks else 36
+        target = min(maximum, max(minimum, natural_width + horizontal_padding + 4))
+        content_width = max(24, target - horizontal_padding)
         self.setFixedWidth(target)
-        self.label.setFixedWidth(label_width)
+        for label in self._text_labels:
+            label.setFixedWidth(content_width)
+        for block in self._code_blocks:
+            block.setFixedWidth(content_width)
         self.updateGeometry()
 
 
@@ -79,6 +200,7 @@ class ChatView(QScrollArea):
         self._layout.setContentsMargins(12, 18, 12, 18)
         self._layout.setSpacing(14)
         self._messages: list[_Message] = []
+        self._message_rows: list[QWidget] = []
 
         self._thinking_row = QWidget()
         thinking_layout = QHBoxLayout(self._thinking_row)
@@ -120,8 +242,19 @@ class ChatView(QScrollArea):
         # Keep the thinking indicator at the end of the conversation.
         self._layout.insertWidget(self._layout.indexOf(self._thinking_row), row)
         self._messages.append(message)
+        self._message_rows.append(row)
         if self._follow_tail:
             QTimer.singleShot(0, self._scroll_to_bottom)
+
+    def clear_messages(self) -> None:
+        self.set_thinking(False)
+        for row in self._message_rows:
+            self._layout.removeWidget(row)
+            row.deleteLater()
+        self._message_rows.clear()
+        self._messages.clear()
+        self._follow_tail = True
+        QTimer.singleShot(0, self._scroll_to_bottom)
 
     def set_thinking(self, thinking: bool) -> None:
         self._thinking_row.setVisible(thinking)

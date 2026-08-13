@@ -50,6 +50,7 @@ class OpenAICompatibleInferenceEngine(InferenceEngine):
     def __init__(self, config: CloudConfig, api_key: str | None = None):
         self.config = config
         self.context_length = config.context_length
+        self.max_response_tokens = config.max_tokens
         self._api_key = (api_key or os.environ.get(config.api_key_environment, "")).strip()
 
     @property
