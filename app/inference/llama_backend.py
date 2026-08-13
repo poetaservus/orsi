@@ -5,9 +5,17 @@ import os
 import sys
 import ctypes
 from pathlib import Path
+from typing import Iterable
 
 from app.inference.engine import InferenceEngine, InferenceUnavailable
 from app.inference.model_config import ModelConfig
+from app.inference.protocol import (
+    ModelCapabilityDefinition,
+    ModelResponse,
+    model_capability_definitions,
+    native_function_tools,
+    normalize_native_chat_completion,
+)
 
 
 log = logging.getLogger(__name__)
@@ -149,6 +157,26 @@ class LlamaCppInferenceEngine(InferenceEngine):
         if not isinstance(content, str) or not content.strip():
             raise InferenceUnavailable("The local model returned an empty response.")
         return content.strip()
+
+    def respond_with_capabilities(
+        self,
+        messages: list[dict[str, str]],
+        capabilities: Iterable[ModelCapabilityDefinition],
+    ) -> ModelResponse:
+        if not messages:
+            raise InferenceUnavailable("Local inference received an empty conversation.")
+        definitions = model_capability_definitions(
+            capabilities,
+            require_nonempty=True,
+        )
+        response = self.model.create_chat_completion(
+            messages=messages,
+            temperature=self.config.temperature,
+            max_tokens=self.config.max_tokens,
+            tools=native_function_tools(definitions),
+            tool_choice="auto",
+        )
+        return normalize_native_chat_completion(response, definitions)
 
     def close(self) -> None:
         self.model.close()

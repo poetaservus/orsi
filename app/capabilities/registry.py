@@ -8,7 +8,7 @@ from enum import StrEnum
 from types import MappingProxyType
 from typing import Any, Iterable, Mapping
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel
 
 from app.capabilities.contracts import (
     Capability,
@@ -17,6 +17,7 @@ from app.capabilities.contracts import (
     ExecutionIsolation,
     PermissionClass,
 )
+from app.model_contracts import ModelCapabilityDefinition
 
 
 _CAPABILITY_NAME = re.compile(
@@ -51,14 +52,6 @@ class CapabilityRegistration:
     capability: Capability
     enabled: bool = False
     model_visible: bool = False
-
-
-class ModelCapabilityDefinition(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
-
-    name: str = Field(min_length=3, max_length=128)
-    description: str = Field(min_length=1, max_length=2_000)
-    input_schema: dict[str, Any]
 
 
 class CapabilityRegistry:

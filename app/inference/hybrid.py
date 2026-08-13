@@ -2,10 +2,15 @@ from __future__ import annotations
 
 import logging
 from threading import Lock
-from typing import Callable
+from typing import Callable, Iterable
 
 from app.inference.cloud_backend import CloudInferenceError, OpenAICompatibleInferenceEngine
 from app.inference.engine import InferenceEngine, InferenceUnavailable
+from app.inference.protocol import (
+    ModelCapabilityDefinition,
+    ModelResponse,
+    model_capability_definitions,
+)
 
 
 log = logging.getLogger(__name__)
@@ -30,6 +35,17 @@ class LazyInferenceEngine(InferenceEngine):
 
     def respond(self, messages: list[dict[str, str]]) -> str:
         return self._get_engine().respond(messages)
+
+    def respond_with_capabilities(
+        self,
+        messages: list[dict[str, str]],
+        capabilities: Iterable[ModelCapabilityDefinition],
+    ) -> ModelResponse:
+        definitions = model_capability_definitions(
+            capabilities,
+            require_nonempty=True,
+        )
+        return self._get_engine().respond_with_capabilities(messages, definitions)
 
     def unload(self) -> None:
         with self._lock:
@@ -142,16 +158,18 @@ class HybridInferenceEngine(InferenceEngine):
         engine = self._engine_for(mode)
         if mode != "cloud":
             result = engine.respond(messages)
-            with self._lock:
-                self.context_length = int(getattr(engine, "context_length", self.context_length))
-                self.max_response_tokens = int(
-                    getattr(engine, "max_response_tokens", self.max_response_tokens)
-                )
+            self._refresh_limits(engine)
             return result
         try:
-            return engine.respond(messages)
+            result = engine.respond(messages)
+            self._refresh_limits(engine)
+            return result
         except CloudInferenceError as exc:
-            if not (self.fallback_to_local and exc.allow_local_fallback and self.local is not None):
+            if not (
+                self.fallback_to_local
+                and exc.allow_local_fallback
+                and self.local is not None
+            ):
                 raise
             try:
                 result = self.local.respond(messages)
@@ -159,13 +177,45 @@ class HybridInferenceEngine(InferenceEngine):
                 raise CloudInferenceError(
                     f"{exc} Local fallback was also unavailable: {local_exc}"
                 ) from local_exc
-            with self._lock:
-                self._mode = "local"
-                self.context_length = int(getattr(self.local, "context_length", 8192))
-                self.max_response_tokens = int(
-                    getattr(self.local, "max_response_tokens", 512)
+            self._activate_local_fallback()
+            return result
+
+    def respond_with_capabilities(
+        self,
+        messages: list[dict[str, str]],
+        capabilities: Iterable[ModelCapabilityDefinition],
+    ) -> ModelResponse:
+        definitions = model_capability_definitions(
+            capabilities,
+            require_nonempty=True,
+        )
+        mode = self.mode
+        engine = self._engine_for(mode)
+        if mode != "cloud":
+            result = engine.respond_with_capabilities(messages, definitions)
+            self._refresh_limits(engine)
+            return result
+        try:
+            result = engine.respond_with_capabilities(messages, definitions)
+            self._refresh_limits(engine)
+            return result
+        except CloudInferenceError as exc:
+            if not (
+                self.fallback_to_local
+                and exc.allow_local_fallback
+                and self.local is not None
+            ):
+                raise
+            try:
+                result = self.local.respond_with_capabilities(
+                    messages,
+                    definitions,
                 )
-                self._notice = "Cloud was unavailable, so O.R.S.I safely switched to the local model."
+            except Exception as local_exc:
+                raise CloudInferenceError(
+                    f"{exc} Local fallback was also unavailable: {local_exc}"
+                ) from local_exc
+            self._activate_local_fallback()
             return result
 
     def count_message_tokens(self, messages: list[dict[str, str]]) -> int:
@@ -178,6 +228,28 @@ class HybridInferenceEngine(InferenceEngine):
                 getattr(engine, "max_response_tokens", self.max_response_tokens)
             )
         return count
+
+    def _refresh_limits(self, engine: InferenceEngine) -> None:
+        with self._lock:
+            self.context_length = int(
+                getattr(engine, "context_length", self.context_length)
+            )
+            self.max_response_tokens = int(
+                getattr(engine, "max_response_tokens", self.max_response_tokens)
+            )
+
+    def _activate_local_fallback(self) -> None:
+        if self.local is None:
+            raise InferenceUnavailable("Local fallback is unavailable.")
+        with self._lock:
+            self._mode = "local"
+            self.context_length = int(getattr(self.local, "context_length", 8192))
+            self.max_response_tokens = int(
+                getattr(self.local, "max_response_tokens", 512)
+            )
+            self._notice = (
+                "Cloud was unavailable, so O.R.S.I safely switched to the local model."
+            )
 
     def _engine_for(self, mode: str) -> InferenceEngine:
         engine = self.local if mode == "local" else self.cloud

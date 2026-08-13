@@ -2,12 +2,19 @@ from __future__ import annotations
 
 import json
 import os
-from typing import Any
+from typing import Any, Iterable
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from app.inference.cloud_config import CloudConfig
 from app.inference.engine import InferenceEngine, InferenceUnavailable
+from app.inference.protocol import (
+    ModelCapabilityDefinition,
+    ModelResponse,
+    model_capability_definitions,
+    native_function_tools,
+    normalize_native_chat_completion,
+)
 
 
 class CloudInferenceError(InferenceUnavailable):
@@ -77,7 +84,44 @@ class OpenAICompatibleInferenceEngine(InferenceEngine):
             )
         return content
 
+    def respond_with_capabilities(
+        self,
+        messages: list[dict[str, str]],
+        capabilities: Iterable[ModelCapabilityDefinition],
+    ) -> ModelResponse:
+        if not messages:
+            raise CloudInferenceError("Cloud inference received an empty conversation.")
+        definitions = model_capability_definitions(
+            capabilities,
+            require_nonempty=True,
+        )
+        completion = self._request_completion(
+            {
+                "model": self.config.model,
+                "messages": messages,
+                "temperature": self.config.temperature,
+                "max_tokens": self.config.max_tokens,
+                "tools": native_function_tools(definitions),
+                "tool_choice": "auto",
+            }
+        )
+        return normalize_native_chat_completion(completion, definitions)
+
     def _request_message(self, body: dict[str, Any]) -> dict[str, Any]:
+        payload = self._request_completion(body)
+        try:
+            choices = payload.get("choices")
+            message = choices[0].get("message") if isinstance(choices, list) and choices else None
+            if not isinstance(message, dict):
+                raise TypeError("missing response message")
+        except (AttributeError, IndexError, TypeError) as exc:
+            raise CloudInferenceError(
+                "The cloud service returned an unreadable response. Try again or switch to Local.",
+                allow_local_fallback=True,
+            ) from exc
+        return message
+
+    def _request_completion(self, body: dict[str, Any]) -> dict[str, Any]:
         if not self._api_key:
             raise CloudInferenceError(
                 f"Cloud mode needs a {self.config.provider_name} API key for this session."
@@ -119,13 +163,11 @@ class OpenAICompatibleInferenceEngine(InferenceEngine):
 
         try:
             payload = json.loads(raw.decode("utf-8"))
-            choices = payload.get("choices") if isinstance(payload, dict) else None
-            message = choices[0].get("message") if isinstance(choices, list) and choices else None
-            if not isinstance(message, dict):
-                raise TypeError("missing response message")
-        except (json.JSONDecodeError, UnicodeError, AttributeError, IndexError, TypeError) as exc:
+            if not isinstance(payload, dict):
+                raise TypeError("response is not an object")
+        except (json.JSONDecodeError, UnicodeError, TypeError) as exc:
             raise CloudInferenceError(
                 "The cloud service returned an unreadable response. Try again or switch to Local.",
                 allow_local_fallback=True,
             ) from exc
-        return message
+        return payload

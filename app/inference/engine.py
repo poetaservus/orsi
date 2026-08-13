@@ -2,6 +2,13 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from math import ceil
+from typing import Iterable
+
+from app.inference.protocol import (
+    ModelCapabilityDefinition,
+    ModelProtocolFailureCode,
+    ModelResponse,
+)
 
 
 class InferenceUnavailable(RuntimeError):
@@ -23,3 +30,14 @@ class InferenceEngine(ABC):
         characters = sum(len(str(message.get("content", ""))) for message in messages)
         formatting_allowance = 4 * len(messages) + 3
         return max(1, ceil(characters / 4) + formatting_allowance)
+
+    def respond_with_capabilities(
+        self,
+        messages: list[dict[str, str]],
+        capabilities: Iterable[ModelCapabilityDefinition],
+    ) -> ModelResponse:
+        del messages, capabilities
+        return ModelResponse.failure(
+            ModelProtocolFailureCode.UNSUPPORTED_CAPABILITY_CALLS,
+            "This model adapter does not support native capability calls.",
+        )

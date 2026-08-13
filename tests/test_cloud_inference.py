@@ -10,6 +10,13 @@ from app.inference.cloud_backend import CloudInferenceError, OpenAICompatibleInf
 from app.inference.cloud_config import CloudConfig
 from app.inference.hybrid import HybridInferenceEngine, LazyInferenceEngine
 from app.inference.llama_backend import LlamaCppInferenceEngine
+from app.inference.protocol import (
+    ModelCapabilityDefinition,
+    ModelProtocolFailureCode,
+    ModelResponse,
+    ModelResponseKind,
+    native_function_tools,
+)
 
 
 def cloud_config(**overrides):
@@ -22,6 +29,23 @@ def cloud_config(**overrides):
     }
     values.update(overrides)
     return CloudConfig(**values)
+
+
+def capability_definition():
+    return ModelCapabilityDefinition(
+        name="filesystem.stat",
+        description="Return bounded metadata for one allowed path.",
+        input_schema={
+            "type": "object",
+            "properties": {"path": {"type": "string"}},
+            "required": ["path"],
+            "additionalProperties": False,
+        },
+    )
+
+
+def provider_capability_name():
+    return native_function_tools((capability_definition(),))[0]["function"]["name"]
 
 
 def test_cloud_config_rejects_insecure_api_urls():
@@ -79,6 +103,211 @@ def test_local_backend_sends_plain_chat_without_action_fields():
     assert captured == {"messages": messages, "temperature": 0.2, "max_tokens": 128}
 
 
+def test_cloud_backend_sends_native_strict_tools_and_preserves_call_identity(
+    monkeypatch,
+):
+    monkeypatch.delenv("ORSI_TEST_CLOUD_KEY", raising=False)
+    engine = OpenAICompatibleInferenceEngine(
+        cloud_config(), api_key="session-secret"
+    )
+    response = MagicMock()
+    response.__enter__.return_value.read.return_value = json.dumps(
+        {
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "provider_call_1",
+                                "type": "function",
+                                "function": {
+                                    "name": provider_capability_name(),
+                                    "arguments": '{"path":"sample.txt"}',
+                                },
+                            }
+                        ],
+                    }
+                }
+            ]
+        }
+    ).encode("utf-8")
+    definition = capability_definition()
+
+    with patch("app.inference.cloud_backend.urlopen", return_value=response) as mocked:
+        result = engine.respond_with_capabilities(
+            [{"role": "user", "content": "Inspect sample.txt"}],
+            (definition,),
+        )
+
+    request = mocked.call_args.args[0]
+    payload = json.loads(request.data.decode("utf-8"))
+    assert set(payload) == {
+        "model",
+        "messages",
+        "temperature",
+        "max_tokens",
+        "tools",
+        "tool_choice",
+    }
+    assert payload["tool_choice"] == "auto"
+    assert payload["tools"] == [
+        {
+            "type": "function",
+            "function": {
+                "name": provider_capability_name(),
+                "description": definition.description,
+                "parameters": definition.input_schema,
+                "strict": True,
+            },
+        }
+    ]
+    assert "session-secret" not in request.data.decode("utf-8")
+    assert result.kind == ModelResponseKind.CAPABILITY_CALLS
+    assert result.capability_calls[0].provider_call_id == "provider_call_1"
+    assert result.capability_calls[0].capability == "filesystem.stat"
+    assert result.capability_calls[0].arguments == {"path": "sample.txt"}
+
+
+def test_cloud_backend_returns_malformed_native_call_as_protocol_result(monkeypatch):
+    monkeypatch.delenv("ORSI_TEST_CLOUD_KEY", raising=False)
+    engine = OpenAICompatibleInferenceEngine(
+        cloud_config(), api_key="session-secret"
+    )
+    response = MagicMock()
+    response.__enter__.return_value.read.return_value = json.dumps(
+        {
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "provider_call_1",
+                                "type": "function",
+                                "function": {
+                                    "name": provider_capability_name(),
+                                    "arguments": "private malformed arguments",
+                                },
+                            }
+                        ],
+                    }
+                }
+            ]
+        }
+    ).encode("utf-8")
+
+    with patch("app.inference.cloud_backend.urlopen", return_value=response):
+        result = engine.respond_with_capabilities(
+            [{"role": "user", "content": "Inspect"}],
+            (capability_definition(),),
+        )
+
+    assert result.protocol_failure.code == ModelProtocolFailureCode.MALFORMED_ARGUMENTS
+    assert "private malformed arguments" not in result.model_dump_json()
+
+
+def test_cloud_backend_normalizes_malformed_completion_envelope(monkeypatch):
+    monkeypatch.delenv("ORSI_TEST_CLOUD_KEY", raising=False)
+    engine = OpenAICompatibleInferenceEngine(
+        cloud_config(), api_key="session-secret"
+    )
+    response = MagicMock()
+    response.__enter__.return_value.read.return_value = b'{"choices":[]}'
+
+    with patch("app.inference.cloud_backend.urlopen", return_value=response):
+        result = engine.respond_with_capabilities(
+            [{"role": "user", "content": "Inspect"}],
+            (capability_definition(),),
+        )
+
+    assert result.protocol_failure.code == ModelProtocolFailureCode.MALFORMED_RESPONSE
+
+
+def test_structured_adapters_reject_empty_catalog_before_provider_request(monkeypatch):
+    monkeypatch.delenv("ORSI_TEST_CLOUD_KEY", raising=False)
+    cloud = OpenAICompatibleInferenceEngine(
+        cloud_config(), api_key="session-secret"
+    )
+    with patch("app.inference.cloud_backend.urlopen") as request:
+        with pytest.raises(ValueError, match="at least one"):
+            cloud.respond_with_capabilities(
+                [{"role": "user", "content": "Inspect"}],
+                (),
+            )
+    assert not request.called
+
+    class Model:
+        calls = 0
+
+        def create_chat_completion(self, **kwargs):
+            self.calls += 1
+            raise AssertionError("The model must not be called.")
+
+    local = object.__new__(LlamaCppInferenceEngine)
+    local.model = Model()
+    local.config = SimpleNamespace(temperature=0.2, max_tokens=128)
+    with pytest.raises(ValueError, match="at least one"):
+        local.respond_with_capabilities(
+            [{"role": "user", "content": "Inspect"}],
+            (),
+        )
+    assert local.model.calls == 0
+
+
+def test_local_backend_sends_native_tools_and_normalizes_structured_response():
+    captured = {}
+
+    class Model:
+        @staticmethod
+        def create_chat_completion(**kwargs):
+            captured.update(kwargs)
+            return {
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": "local_call_1",
+                                    "type": "function",
+                                    "function": {
+                                        "name": provider_capability_name(),
+                                        "arguments": '{"path":"sample.txt"}',
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ]
+            }
+
+    engine = object.__new__(LlamaCppInferenceEngine)
+    engine.model = Model()
+    engine.config = SimpleNamespace(temperature=0.2, max_tokens=128)
+    messages = [{"role": "user", "content": "Inspect sample.txt"}]
+
+    result = engine.respond_with_capabilities(
+        messages,
+        (capability_definition(),),
+    )
+
+    assert set(captured) == {
+        "messages",
+        "temperature",
+        "max_tokens",
+        "tools",
+        "tool_choice",
+    }
+    assert captured["messages"] == messages
+    assert captured["tool_choice"] == "auto"
+    assert captured["tools"][0]["function"]["strict"] is True
+    assert result.capability_calls[0].provider_call_id == "local_call_1"
+
+
 class StubEngine:
     context_length = 8192
 
@@ -95,6 +324,31 @@ class StubEngine:
 
 
 class StubCloud(StubEngine):
+    context_length = 32768
+
+    def __init__(self, result=None, error=None):
+        super().__init__(result, error)
+        self.config = cloud_config()
+        self.has_api_key = True
+
+    def set_api_key(self, key):
+        self.has_api_key = bool(key)
+
+
+class StructuredStub(StubEngine):
+    def __init__(self, result=None, error=None):
+        super().__init__(result, error)
+        self.capability_calls = []
+
+    def respond_with_capabilities(self, messages, capabilities):
+        self.calls += 1
+        self.capability_calls.append((messages, capabilities))
+        if self.error:
+            raise self.error
+        return self.result
+
+
+class StructuredCloud(StructuredStub):
     context_length = 32768
 
     def __init__(self, result=None, error=None):
@@ -171,3 +425,64 @@ def test_token_count_refreshes_a_lazy_local_context_hint():
     assert engine.count_message_tokens([{"role": "user", "content": "hello"}]) == 10
     assert engine.context_length == 4096
     assert engine.max_response_tokens == 128
+
+
+def test_lazy_engine_delegates_structured_requests_without_consuming_definitions():
+    response = ModelResponse.text("No capability needed.")
+    created = []
+
+    def factory():
+        engine = StructuredStub(response)
+        created.append(engine)
+        return engine
+
+    lazy = LazyInferenceEngine(factory, context_length=8192)
+    definitions = (item for item in (capability_definition(),))
+
+    result = lazy.respond_with_capabilities(
+        [{"role": "user", "content": "Hello"}],
+        definitions,
+    )
+
+    assert result == response
+    assert len(created) == 1
+    assert created[0].capability_calls[0][1] == (capability_definition(),)
+
+
+def test_hybrid_structured_request_uses_selected_provider():
+    local = StructuredStub(ModelResponse.text("local"))
+    cloud = StructuredCloud(ModelResponse.text("cloud"))
+    engine = HybridInferenceEngine(local=local, cloud=cloud)
+    engine.set_mode("cloud")
+
+    result = engine.respond_with_capabilities(
+        [{"role": "user", "content": "Hello"}],
+        (capability_definition(),),
+    )
+
+    assert result.assistant_text == "cloud"
+    assert cloud.calls == 1 and local.calls == 0
+
+
+def test_hybrid_structured_request_falls_back_to_native_local_adapter():
+    local = StructuredStub(ModelResponse.text("local structured fallback"))
+    cloud = StructuredCloud(
+        error=CloudInferenceError("offline", allow_local_fallback=True)
+    )
+    engine = HybridInferenceEngine(
+        local=local,
+        cloud=cloud,
+        default_mode="cloud",
+        fallback_to_local=True,
+    )
+
+    result = engine.respond_with_capabilities(
+        [{"role": "user", "content": "Hello"}],
+        (capability_definition(),),
+    )
+
+    assert result.assistant_text == "local structured fallback"
+    assert engine.mode == "local"
+    assert engine.consume_notice() == (
+        "Cloud was unavailable, so O.R.S.I safely switched to the local model."
+    )
