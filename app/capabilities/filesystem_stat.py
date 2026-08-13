@@ -14,7 +14,7 @@ from app.capabilities.contracts import (
     CapabilityExecutionError,
     PermissionClass,
 )
-from app.capabilities.path_policy import resolve_read_path
+from app.capabilities.path_policy import resolve_candidate_path, resolve_read_path
 
 
 class FilesystemStatArguments(BaseModel):
@@ -29,6 +29,16 @@ class FilesystemStatCapability(Capability[FilesystemStatArguments]):
     arguments_model = FilesystemStatArguments
     permission = PermissionClass.READ
     timeout_seconds = 2.0
+
+    def permission_resource(
+        self,
+        arguments: FilesystemStatArguments,
+        context: CapabilityContext,
+    ):
+        return resolve_candidate_path(
+            arguments.path,
+            portable_root=context.portable_root,
+        ).resolved
 
     def execute(
         self,

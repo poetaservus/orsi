@@ -79,6 +79,14 @@ class CapabilityExecutionError(RuntimeError):
         self.code = code
 
 
+class CapabilityArgumentError(ValueError):
+    """Structured validation failure raised before any capability can execute."""
+
+    def __init__(self, failure: CapabilityFailure):
+        super().__init__(failure.message)
+        self.failure = failure
+
+
 ArgumentsT = TypeVar("ArgumentsT", bound=BaseModel)
 
 
@@ -89,10 +97,10 @@ class Capability(ABC, Generic[ArgumentsT]):
     permission: ClassVar[PermissionClass]
     timeout_seconds: ClassVar[float]
 
-    def invoke(self, raw_arguments: Any, context: CapabilityContext) -> CapabilityResult:
-        started = perf_counter()
+    def validate_arguments(self, raw_arguments: Any) -> ArgumentsT:
+        """Validate untrusted arguments without executing capability code."""
         try:
-            arguments = self.arguments_model.model_validate(raw_arguments)
+            return self.arguments_model.model_validate(raw_arguments)
         except ValidationError as exc:
             details = [
                 {
@@ -102,12 +110,34 @@ class Capability(ABC, Generic[ArgumentsT]):
                 }
                 for error in exc.errors(include_url=False, include_input=False)[:32]
             ]
+            raise CapabilityArgumentError(
+                CapabilityFailure(
+                    code=CapabilityErrorCode.INVALID_ARGUMENTS,
+                    message="The capability arguments did not match the required schema.",
+                    details=details,
+                )
+            ) from exc
+
+    def permission_resource(
+        self,
+        arguments: ArgumentsT,
+        context: CapabilityContext,
+    ) -> Path | None:
+        """Return the canonical resource used for permission matching, if any."""
+        del arguments, context
+        return None
+
+    def invoke(self, raw_arguments: Any, context: CapabilityContext) -> CapabilityResult:
+        started = perf_counter()
+        try:
+            arguments = self.validate_arguments(raw_arguments)
+        except CapabilityArgumentError as exc:
             return self._failure(
                 context,
                 started,
-                CapabilityErrorCode.INVALID_ARGUMENTS,
-                "The capability arguments did not match the required schema.",
-                details=details,
+                exc.failure.code,
+                exc.failure.message,
+                details=exc.failure.details,
             )
 
         try:

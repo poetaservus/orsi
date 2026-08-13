@@ -2,6 +2,7 @@
 
 from app.capabilities.contracts import (
     Capability,
+    CapabilityArgumentError,
     CapabilityContext,
     CapabilityErrorCode,
     CapabilityFailure,
@@ -9,6 +10,21 @@ from app.capabilities.contracts import (
     PermissionClass,
 )
 from app.capabilities.filesystem_stat import FilesystemStatCapability
+from app.capabilities.permissions import (
+    ApprovalManager,
+    ApprovalNotFoundError,
+    ApprovalRecord,
+    ApprovalStatus,
+    AuthorizationCode,
+    PermissionAuthorization,
+    PermissionDecision,
+    PermissionEvaluation,
+    PermissionGate,
+    PermissionRequest,
+    PermissionRule,
+    PreparedCapabilityCall,
+    prepare_capability_call,
+)
 from app.capabilities.registry import (
     CapabilityLookupError,
     CapabilityRegistration,
@@ -20,16 +36,30 @@ from app.capabilities.registry import (
 
 __all__ = [
     "Capability",
+    "CapabilityArgumentError",
     "CapabilityContext",
     "CapabilityErrorCode",
     "CapabilityFailure",
     "CapabilityResult",
+    "ApprovalManager",
+    "ApprovalNotFoundError",
+    "ApprovalRecord",
+    "ApprovalStatus",
+    "AuthorizationCode",
     "CapabilityLookupError",
     "CapabilityRegistration",
     "CapabilityRegistry",
     "CapabilityRegistryConfigurationError",
     "FilesystemStatCapability",
     "ModelCapabilityDefinition",
+    "PermissionAuthorization",
     "PermissionClass",
+    "PermissionDecision",
+    "PermissionEvaluation",
+    "PermissionGate",
+    "PermissionRequest",
+    "PermissionRule",
+    "PreparedCapabilityCall",
     "RegistryConfigurationCode",
+    "prepare_capability_call",
 ]
