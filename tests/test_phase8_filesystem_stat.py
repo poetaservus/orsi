@@ -291,6 +291,9 @@ def test_application_bootstrap_wires_agent_only_when_enabled(monkeypatch, tmp_pa
     import app.main as main
 
     model = ScriptedStatModel([ModelResponse.text("ready")])
+    server = tmp_path / "runtime" / "llama-server" / "llama-server.exe"
+    server.parent.mkdir(parents=True)
+    server.touch()
     paths = SimpleNamespace(
         root=tmp_path,
         config=tmp_path / "config",
@@ -329,6 +332,9 @@ def test_application_bootstrap_fails_closed_to_chat_when_agent_start_fails(
     import app.main as main
 
     model = ScriptedStatModel([ModelResponse.text("ready")])
+    server = tmp_path / "runtime" / "llama-server" / "llama-server.exe"
+    server.parent.mkdir(parents=True)
+    server.touch()
     paths = SimpleNamespace(
         root=tmp_path,
         config=tmp_path / "config",
@@ -363,3 +369,119 @@ def test_application_bootstrap_fails_closed_to_chat_when_agent_start_fails(
     assert service.agent_error == (
         "Agent mode could not start safely. Chat-only mode remains available."
     )
+
+
+def test_application_uses_native_server_factory_for_enabled_local_agent(
+    monkeypatch,
+    tmp_path: Path,
+):
+    import app.main as main
+    from app.inference.model_config import ModelConfig
+
+    model_path = tmp_path / "model.gguf"
+    model_path.touch()
+    server = tmp_path / "runtime" / "llama-server" / "llama-server.exe"
+    server.parent.mkdir(parents=True)
+    server.touch()
+    paths = SimpleNamespace(
+        root=tmp_path,
+        config=tmp_path / "config",
+        models=tmp_path / "models",
+        state=tmp_path / "state",
+    )
+    created = []
+    native_model = ScriptedStatModel([ModelResponse.text("ready")])
+
+    monkeypatch.setattr(main, "PATHS", paths)
+    monkeypatch.setattr(
+        main,
+        "load_model_config",
+        lambda: ModelConfig(model_path=str(model_path), context_length=4096),
+    )
+    monkeypatch.setattr(main, "detect_nvidia_memory_mib", lambda: None)
+    monkeypatch.setattr(
+        main,
+        "load_agent_feature_config",
+        lambda: AgentFeatureConfig(filesystem_stat_enabled=True),
+    )
+    monkeypatch.setattr(
+        main,
+        "LlamaServerInferenceEngine",
+        lambda config: created.append(config) or native_model,
+    )
+    monkeypatch.setattr(
+        main,
+        "LlamaCppInferenceEngine",
+        lambda _config: (_ for _ in ()).throw(
+            AssertionError("Enabled agent mode must not use the generic GGUF handler.")
+        ),
+    )
+    monkeypatch.setattr(
+        main,
+        "load_cloud_config",
+        lambda: (_ for _ in ()).throw(ValueError("cloud disabled for test")),
+    )
+
+    service, _host, error, inference = main.build_application()
+    try:
+        assert error is None
+        assert service.agent_enabled
+        assert inference.local._get_engine() is native_model
+        assert len(created) == 1
+    finally:
+        service.shutdown()
+
+
+def test_application_falls_back_to_chat_when_native_server_is_missing(
+    monkeypatch,
+    tmp_path: Path,
+):
+    import app.main as main
+    from app.inference.model_config import ModelConfig
+
+    model_path = tmp_path / "model.gguf"
+    model_path.touch()
+    paths = SimpleNamespace(
+        root=tmp_path,
+        config=tmp_path / "config",
+        models=tmp_path / "models",
+        state=tmp_path / "state",
+    )
+    chat_model = ScriptedStatModel([ModelResponse.text("ready")])
+
+    monkeypatch.setattr(main, "PATHS", paths)
+    monkeypatch.setattr(
+        main,
+        "load_model_config",
+        lambda: ModelConfig(model_path=str(model_path), context_length=4096),
+    )
+    monkeypatch.setattr(main, "detect_nvidia_memory_mib", lambda: None)
+    monkeypatch.setattr(
+        main,
+        "load_agent_feature_config",
+        lambda: AgentFeatureConfig(filesystem_stat_enabled=True),
+    )
+    monkeypatch.setattr(main, "LlamaCppInferenceEngine", lambda _config: chat_model)
+    monkeypatch.setattr(
+        main,
+        "LlamaServerInferenceEngine",
+        lambda _config: (_ for _ in ()).throw(
+            AssertionError("A missing server must not be selected.")
+        ),
+    )
+    monkeypatch.setattr(
+        main,
+        "load_cloud_config",
+        lambda: (_ for _ in ()).throw(ValueError("cloud disabled for test")),
+    )
+
+    service, _host, error, inference = main.build_application()
+    try:
+        assert error is None
+        assert not service.agent_enabled
+        assert service.agent_error == (
+            "Agent mode could not start safely. Chat-only mode remains available."
+        )
+        assert inference.local._get_engine() is chat_model
+    finally:
+        service.shutdown()

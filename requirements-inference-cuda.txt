@@ -2,6 +2,6 @@
 # Suitable for this machine's RTX 3080 Ti and NVIDIA 610.88 driver (CUDA UMD 13.3).
 --only-binary=:all:
 --extra-index-url https://abetlen.github.io/llama-cpp-python/whl/cu132
-llama-cpp-python>=0.3.16
+llama-cpp-python==0.3.34
 nvidia-cuda-runtime==13.2.86
 nvidia-cublas==13.2.2.2

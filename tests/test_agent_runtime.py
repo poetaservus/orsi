@@ -113,6 +113,7 @@ class BlockingModel(InferenceEngine):
     def __init__(self):
         self.started = Event()
         self.release = Event()
+        self.cancelled = Event()
 
     def respond(self, messages):
         raise AssertionError("AgentRuntime must use the structured model boundary.")
@@ -121,6 +122,9 @@ class BlockingModel(InferenceEngine):
         self.started.set()
         self.release.wait(2.0)
         return ModelResponse.text("late model response")
+
+    def cancel_current_request(self):
+        self.cancelled.set()
 
 
 def capability_call(index: int, value: str = "hello", *, arguments=None):
@@ -500,6 +504,7 @@ def test_overall_timeout_stops_a_blocked_model_generation(tmp_path: Path):
     model.release.set()
 
     assert result.status == AgentRunStatus.TIMED_OUT
+    assert model.cancelled.is_set()
     assert journal.records == ()
 
 
@@ -546,6 +551,7 @@ def test_cancellation_stops_blocked_generation_and_capability_execution(
     generation_timer.cancel()
 
     assert generation_result.status == AgentRunStatus.CANCELLED
+    assert model.cancelled.is_set()
 
     capability_cancel = CancellationSource()
     blocking = BlockingCapability()

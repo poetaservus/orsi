@@ -20,6 +20,7 @@ from app.inference import (
     InferenceUnavailable,
     LazyInferenceEngine,
     LlamaCppInferenceEngine,
+    LlamaServerInferenceEngine,
     OpenAICompatibleInferenceEngine,
     load_cloud_config,
 )
@@ -32,6 +33,27 @@ log = logging.getLogger(__name__)
 
 def build_application():
     """Build chat plus the optional gated file-metadata runtime."""
+    agent_config = None
+    agent_config_error = None
+    try:
+        agent_config = load_agent_feature_config()
+    except Exception:
+        log.exception("The gated filesystem metadata configuration is invalid.")
+        agent_config_error = (
+            "Agent mode could not start safely. Chat-only mode remains available."
+        )
+    if agent_config is not None and agent_config.filesystem_stat_enabled:
+        server_executable = (
+            PATHS.root / "runtime" / "llama-server" / "llama-server.exe"
+        )
+        if not server_executable.is_file():
+            agent_config = agent_config.model_copy(
+                update={"filesystem_stat_enabled": False}
+            )
+            agent_config_error = (
+                "Agent mode could not start safely. Chat-only mode remains available."
+            )
+
     local_engine = None
     local_error = None
     try:
@@ -47,8 +69,13 @@ def build_application():
             gpu_memory_mib=gpu_memory,
             model_size_bytes=model_config.resolved_model_path.stat().st_size,
         )
+        local_factory = (
+            (lambda: LlamaServerInferenceEngine(model_config))
+            if agent_config is not None and agent_config.filesystem_stat_enabled
+            else (lambda: LlamaCppInferenceEngine(model_config))
+        )
         local_engine = LazyInferenceEngine(
-            lambda: LlamaCppInferenceEngine(model_config),
+            local_factory,
             context_length=context_hint.length,
             max_response_tokens=model_config.max_tokens,
         )
@@ -94,10 +121,9 @@ def build_application():
             start_fresh=True,
         )
         agent_runtime = None
-        agent_error = None
+        agent_error = agent_config_error
         try:
-            agent_config = load_agent_feature_config()
-            if agent_config.filesystem_stat_enabled:
+            if agent_config is not None and agent_config.filesystem_stat_enabled:
                 agent_runtime = build_filesystem_stat_runtime(
                     inference,
                     config=agent_config,

@@ -59,6 +59,13 @@ class LazyInferenceEngine(InferenceEngine):
             except Exception as exc:
                 log.warning("Could not fully release the local inference backend: %s", exc)
 
+    def cancel_current_request(self) -> None:
+        with self._lock:
+            engine = self._engine
+        cancel = getattr(engine, "cancel_current_request", None)
+        if callable(cancel):
+            cancel()
+
     def _get_engine(self) -> InferenceEngine:
         with self._lock:
             if self._engine is not None:
@@ -152,6 +159,24 @@ class HybridInferenceEngine(InferenceEngine):
         with self._lock:
             notice, self._notice = self._notice, None
         return notice
+
+    def cancel_current_request(self) -> None:
+        engine = self._engine_for(self.mode)
+        cancel = getattr(engine, "cancel_current_request", None)
+        if callable(cancel):
+            cancel()
+
+    def close(self) -> None:
+        unload = getattr(self.local, "unload", None)
+        if callable(unload):
+            unload()
+        else:
+            close_local = getattr(self.local, "close", None)
+            if callable(close_local):
+                close_local()
+        close = getattr(self.cloud, "close", None)
+        if callable(close):
+            close()
 
     def respond(self, messages: list[dict[str, str]]) -> str:
         mode = self.mode

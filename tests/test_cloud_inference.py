@@ -463,6 +463,23 @@ def test_local_backend_is_lazy_and_released_for_cloud():
     assert not local.is_loaded and created[0].closed
 
 
+def test_hybrid_close_releases_a_direct_local_engine():
+    class ClosableEngine(StubEngine):
+        def __init__(self):
+            super().__init__("local")
+            self.closed = False
+
+        def close(self):
+            self.closed = True
+
+    local = ClosableEngine()
+    engine = HybridInferenceEngine(local=local, cloud=None)
+
+    engine.close()
+
+    assert local.closed
+
+
 def test_token_count_refreshes_a_lazy_local_context_hint():
     class CountingEngine(StubEngine):
         context_length = 4096

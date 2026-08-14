@@ -38,10 +38,13 @@ The permission boundary is always the portable O.R.S.I root; configuration canno
 In Cloud mode, the conversation and any metadata results are sent to the selected provider. File
 content is never read by this capability.
 
-The bundled-model live smoke currently detects a compatibility gap: this GGUF emits tool-call
-markup as assistant text instead of returning a native structured call. O.R.S.I intentionally
-does not execute tool-like prose. The feature therefore remains disabled by default while model
-function-calling compatibility is refined.
+When this gate is enabled, local capability requests use the bundled loopback-only
+`llama-server.exe`. The server is pinned to llama.cpp build `b9976` (`e3546c794`), matching the
+llama.cpp revision in `llama-cpp-python 0.3.34`, and reuses the same portable CUDA 13 runtime. It
+runs hidden with bounded startup and shutdown. The server only decodes Qwen's native tool envelope;
+every returned call still passes O.R.S.I's strict allowlisted normalizer, permission gate, executor,
+and crash journal before anything can run. The feature remains disabled by default; enabling it is
+still an explicit local release choice rather than an automatic consequence of passing Phase 8.
 
 ## Run
 
@@ -74,4 +77,6 @@ powershell -ExecutionPolicy Bypass -File .\packaging\build-portable-runtime.ps1 
 ```
 
 Use `-Backend cpu` for a broadly compatible CPU-only copy. The portable application requires
-Python 3.12 because the bundled llama.cpp wheels target that runtime.
+Python 3.12 because the bundled llama.cpp wheels target that runtime. The builder also downloads
+the matching pinned llama-server archive, verifies its SHA-256 digest, packages only the server and
+required llama.cpp libraries, and checks the executable's build identity before completing.

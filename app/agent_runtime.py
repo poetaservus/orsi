@@ -700,6 +700,13 @@ class AgentRuntime:
         while True:
             stop = self._stop_status(started, user_cancellation, deadline_cancellation)
             if stop is not None:
+                if not future.done():
+                    cancel = getattr(self.model, "cancel_current_request", None)
+                    if callable(cancel):
+                        try:
+                            cancel()
+                        except Exception:
+                            pass
                 return None, stop
             remaining = self._remaining(started)
             try:

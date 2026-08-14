@@ -58,6 +58,10 @@ $inferenceRequirements = if ($Backend -eq "cuda") {
 & $portablePython -m pip install --disable-pip-version-check --upgrade --force-reinstall --no-cache-dir -r $inferenceRequirements
 if ($LASTEXITCODE -ne 0) { throw "Inference dependency installation failed with exit code $LASTEXITCODE." }
 
+Write-Host "Packaging the pinned native tool-call server..."
+& (Join-Path $PSScriptRoot "build-llama-server.ps1") -Backend $Backend
+if ($LASTEXITCODE -ne 0) { throw "llama-server packaging failed with exit code $LASTEXITCODE." }
+
 Write-Host "Verifying the portable runtime..."
 if ($Backend -eq "cuda") {
     $cudaBin = Join-Path $pythonRoot "Lib\site-packages\nvidia\cu13\bin\x86_64"
@@ -70,6 +74,7 @@ Set-Content -LiteralPath (Join-Path $runtimeRoot "READY.txt") -Encoding UTF8 -Va
 O.R.S.I portable runtime
 Python: 3.12.10 x64
 Inference backend: $Backend
+Native tool-call server: llama.cpp b9976 (e3546c794)
 Created: $([DateTimeOffset]::Now.ToString("O"))
 "@
 

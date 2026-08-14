@@ -120,6 +120,9 @@ class ConversationService:
         self.cancel_current_task()
         if self.agent_runtime is not None:
             self.agent_runtime.shutdown()
+        close = getattr(self.inference, "close", None)
+        if callable(close):
+            close()
 
     def estimated_context_tokens(self) -> int:
         if not self.store.messages():
