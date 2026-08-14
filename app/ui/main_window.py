@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.host_access import HostReadScope
 from app.inference.engine import InferenceUnavailable
 from app.ui.chat import ChatView
 from app.ui.context_window import ContextWindowBar
@@ -273,13 +274,18 @@ class MainWindow(QMainWindow):
         if self.inference is None:
             return "Ready · Chat only"
         if self._agent_enabled():
+            read_status = (
+                "Full local read · Metadata only"
+                if self._host_read_scope() == HostReadScope.FULL_LOCAL
+                else "Portable-root read · Metadata only"
+            )
             if self.inference.mode == "cloud":
                 return (
-                    "Cloud key needed · Agent · File metadata"
+                    f"Cloud key needed · Agent · {read_status}"
                     if not self.inference.cloud_has_api_key
-                    else "Ready · Cloud · Agent · File metadata"
+                    else f"Ready · Cloud · Agent · {read_status}"
                 )
-            return "Ready · Local · Agent · File metadata"
+            return f"Ready · Local · Agent · {read_status}"
         if self.inference.mode == "cloud":
             return (
                 "Cloud key needed · Chat only"
@@ -339,13 +345,25 @@ class MainWindow(QMainWindow):
         value = getattr(self.service, "agent_error", None)
         return str(value) if value else None
 
+    def _host_read_scope(self) -> HostReadScope | None:
+        value = getattr(self.service, "host_read_scope", None)
+        try:
+            return HostReadScope(value) if value is not None else None
+        except ValueError:
+            return None
+
     def _cloud_privacy_message(self) -> str:
         provider = self.inference.cloud_provider_name
         if self._agent_enabled():
+            scope = (
+                "across enabled local filesystem drives that the current Windows account can access"
+                if self._host_read_scope() == HostReadScope.FULL_LOCAL
+                else "inside O.R.S.I's portable root"
+            )
             return (
                 f"Cloud mode sends this conversation and any filesystem.stat metadata results "
-                f"to {provider}. Agent mode can inspect metadata for one file or directory "
-                "inside O.R.S.I's portable root, but cannot read file content or perform other "
+                f"to {provider}. Agent mode can inspect metadata for one requested file or "
+                f"directory {scope}, but cannot read file content or perform other "
                 "computer actions.\n\nDo not use Cloud mode for confidential information.\n\nContinue?"
             )
         return (

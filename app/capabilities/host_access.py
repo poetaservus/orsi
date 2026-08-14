@@ -11,9 +11,10 @@ from app.capabilities.path_policy import ResolvedPath, resolve_read_path
 
 
 FULL_LOCAL_READ_WARNING = (
-    "Full local read access lets O.R.S.I read requested files and directories across local drives "
-    "that the current Windows account can access. It does not grant write, delete, execute, "
-    "administrator, network, device, or background-indexing authority."
+    "Full local read access lets O.R.S.I's enabled read-only capabilities use requested files and "
+    "directories across local drives that the current Windows account can access. This build "
+    "exposes metadata only. It does not grant write, delete, execute, administrator, network, "
+    "device, or background-indexing authority."
 )
 
 CLOUD_FILE_CONTENT_WARNING = (
@@ -48,12 +49,13 @@ _ALLOWED_LOCAL_READ_DRIVE_TYPES = frozenset(
 
 @dataclass(frozen=True)
 class HostAccessPolicy:
-    """Disconnected Phase 9 authority contract for resolving requested read paths."""
+    """Immutable Phase 9 authority contract for resolving requested read paths."""
 
     read_scope: HostReadScope
     application_root: Path
     user_home: Path
     full_local_read_acknowledged: bool = False
+    local_read_roots: tuple[Path, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.read_scope, HostReadScope):
@@ -78,10 +80,40 @@ class HostAccessPolicy:
                 raise ValueError(
                     "Full local read access is available only on the Windows host adapter."
                 )
+            configured_roots = self.local_read_roots or _windows_local_drive_roots()
+            if not configured_roots:
+                raise ValueError("No enabled local filesystem drives are available.")
+            if not all(isinstance(root, Path) for root in configured_roots):
+                raise TypeError("Local read permission roots must be pathlib.Path values.")
+            roots: list[Path] = []
+            for configured_root in configured_roots:
+                try:
+                    root = configured_root.resolve(strict=True)
+                except (OSError, RuntimeError, ValueError) as exc:
+                    raise ValueError(
+                        "Local read permission roots must resolve safely."
+                    ) from exc
+                if (
+                    not root.is_dir()
+                    or root.parent != root
+                    or _windows_drive_type(root) not in _ALLOWED_LOCAL_READ_DRIVE_TYPES
+                ):
+                    raise ValueError(
+                        "Local read permission roots must be enabled local drive roots."
+                    )
+                if root not in roots:
+                    roots.append(root)
+            object.__setattr__(
+                self,
+                "local_read_roots",
+                tuple(sorted(roots, key=lambda item: str(item).casefold())),
+            )
         elif self.full_local_read_acknowledged:
             raise ValueError(
                 "Full local read acknowledgement is valid only for full-local scope."
             )
+        elif self.local_read_roots:
+            raise ValueError("Portable-root access cannot contain local-drive permission roots.")
         object.__setattr__(self, "application_root", application_root)
         object.__setattr__(self, "user_home", user_home)
 
@@ -117,6 +149,12 @@ class HostAccessPolicy:
             )
         return _resolve_full_local_read_path(raw_path, user_home=self.user_home)
 
+    def permission_roots(self) -> tuple[Path, ...]:
+        """Return the immutable startup roots used by the permission gate."""
+        if self.read_scope == HostReadScope.PORTABLE_ROOT:
+            return (self.application_root,)
+        return self.local_read_roots
+
 
 def _resolve_full_local_read_path(raw_path: str, *, user_home: Path) -> ResolvedPath:
     if not isinstance(raw_path, str):
@@ -134,6 +172,11 @@ def _resolve_full_local_read_path(raw_path: str, *, user_home: Path) -> Resolved
     _reject_special_windows_path(raw_path)
 
     requested = Path(raw_path)
+    if requested.root and not requested.drive:
+        raise CapabilityExecutionError(
+            CapabilityErrorCode.INVALID_ARGUMENTS,
+            "Root-relative paths without a drive are ambiguous and are not accepted.",
+        )
     if requested.drive and not requested.is_absolute():
         raise CapabilityExecutionError(
             CapabilityErrorCode.INVALID_ARGUMENTS,
@@ -193,3 +236,29 @@ def _windows_drive_type(root: Path) -> WindowsDriveType:
         return WindowsDriveType(int(value))
     except (AttributeError, OSError, TypeError, ValueError):
         return WindowsDriveType.UNKNOWN
+
+
+def _windows_local_drive_roots() -> tuple[Path, ...]:
+    if os.name != "nt":
+        return ()
+    try:
+        mask = int(ctypes.windll.kernel32.GetLogicalDrives())
+    except (AttributeError, OSError, TypeError, ValueError):
+        return ()
+    if mask <= 0:
+        return ()
+
+    roots: list[Path] = []
+    for index in range(26):
+        if not mask & (1 << index):
+            continue
+        root = Path(f"{chr(ord('A') + index)}:\\")
+        if _windows_drive_type(root) not in _ALLOWED_LOCAL_READ_DRIVE_TYPES:
+            continue
+        try:
+            canonical = root.resolve(strict=True)
+        except (OSError, RuntimeError, ValueError):
+            continue
+        if canonical.is_dir():
+            roots.append(canonical)
+    return tuple(sorted(roots, key=lambda item: str(item).casefold()))

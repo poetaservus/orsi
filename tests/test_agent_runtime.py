@@ -584,7 +584,10 @@ def test_agent_runtime_is_connected_only_through_the_phase8_feature_gate():
         encoding="utf-8"
     )
 
-    assert config == {"filesystem_stat_enabled": False}
+    assert config == {
+        "filesystem_stat_enabled": False,
+        "full_local_read_enabled": False,
+    }
     assert "load_agent_feature_config" in main
     assert "agent_config.filesystem_stat_enabled" in main
     assert "agent_runtime: AgentRuntime | None = None" in service

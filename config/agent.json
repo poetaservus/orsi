@@ -1,3 +1,4 @@
 {
-  "filesystem_stat_enabled": false
+  "filesystem_stat_enabled": false,
+  "full_local_read_enabled": false
 }

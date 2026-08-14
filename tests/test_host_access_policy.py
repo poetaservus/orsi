@@ -134,6 +134,10 @@ def test_full_local_policy_rejects_ambiguous_drive_relative_path(tmp_path: Path)
         policy.resolve_read(r"C:Windows\system.ini")
     assert raised.value.code == CapabilityErrorCode.INVALID_ARGUMENTS
 
+    with pytest.raises(CapabilityExecutionError) as root_relative:
+        policy.resolve_read(r"\Windows\system.ini")
+    assert root_relative.value.code == CapabilityErrorCode.INVALID_ARGUMENTS
+
 
 @pytest.mark.skipif(os.name != "nt", reason="Full local reads are Windows-specific.")
 def test_full_local_policy_rejects_remote_and_missing_drives(
@@ -169,7 +173,7 @@ def test_full_local_policy_rejects_remote_and_missing_drives(
     assert missing.value.code == CapabilityErrorCode.INACCESSIBLE
 
 
-def test_phase9_policy_is_not_connected_to_production_startup():
+def test_phase9_policy_is_connected_without_expanding_the_capability_catalog():
     root = Path(__file__).resolve().parents[1]
     production = "\n".join(
         (root / path).read_text(encoding="utf-8")
@@ -181,8 +185,8 @@ def test_phase9_policy_is_not_connected_to_production_startup():
         )
     )
 
-    assert "HostAccessPolicy" not in production
-    assert "full_local" not in production
+    assert "HostAccessPolicy" in production
+    assert "full_local_read_enabled" in production
     assert "filesystem.list" not in production
     assert "filesystem.read_text" not in production
     assert "filesystem.search" not in production

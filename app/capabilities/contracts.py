@@ -6,11 +6,14 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from time import perf_counter
-from typing import Any, ClassVar, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from app.runtime.cancellation import CancellationToken, TaskCancelled
+
+if TYPE_CHECKING:
+    from app.capabilities.host_access import HostAccessPolicy
 
 
 log = logging.getLogger(__name__)
@@ -82,6 +85,7 @@ class CapabilityContext:
     portable_root: Path
     allowed_read_roots: tuple[Path, ...]
     cancellation: CancellationToken
+    host_access_policy: HostAccessPolicy | None = None
 
 
 class CapabilityExecutionError(RuntimeError):

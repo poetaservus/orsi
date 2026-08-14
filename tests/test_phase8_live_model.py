@@ -9,6 +9,7 @@ import pytest
 from app.agent_bootstrap import build_filesystem_stat_runtime
 from app.agent_config import AgentFeatureConfig
 from app.capabilities.crash_journal import CallLifecycleState
+from app.capabilities.host_access import HostAccessPolicy
 from app.conversation.service import ConversationService
 from app.conversation.store import ConversationStore
 from app.inference.llama_server_backend import LlamaServerInferenceEngine
@@ -250,6 +251,76 @@ def test_bundled_model_native_tool_call_acceptance_matrix(tmp_path: Path):
             worker.join(5.0)
             assert not worker.is_alive()
             assert result == ["The response was stopped."]
+            service.new_session()
+    finally:
+        service.shutdown()
+        model.close()
+
+
+@pytest.mark.skipif(
+    os.environ.get("ORSI_RUN_PHASE9_LIVE_MODEL") != "1",
+    reason="Set ORSI_RUN_PHASE9_LIVE_MODEL=1 for the Full local read model gate.",
+)
+def test_bundled_model_full_local_metadata_acceptance(tmp_path: Path):
+    """Real-model gate for absolute host paths outside the portable application root."""
+    portable_root = tmp_path / "portable"
+    user_home = tmp_path / "host-user"
+    host_project = tmp_path / "host-project"
+    portable_root.mkdir()
+    user_home.mkdir()
+    host_project.mkdir()
+    state = tmp_path / "state"
+    policy = HostAccessPolicy.full_local(
+        application_root=portable_root,
+        user_home=user_home,
+        acknowledged=True,
+    )
+    model = LlamaServerInferenceEngine(load_model_config())
+    runtime = build_filesystem_stat_runtime(
+        model,
+        config=AgentFeatureConfig(
+            filesystem_stat_enabled=True,
+            full_local_read_enabled=True,
+        ),
+        portable_root=portable_root,
+        state_directory=state,
+        host_access_policy=policy,
+    )
+    service = ConversationService(
+        model,
+        ConversationStore(state / "conversation.json"),
+        agent_runtime=runtime,
+        portable_root=portable_root,
+        allowed_read_roots=policy.permission_roots(),
+        host_access_policy=policy,
+    )
+    try:
+        prompts = (
+            "What's the metadata of {path}",
+            "Please inspect this exact host file and report its size: {path}",
+            'Use filesystem.stat once for "{path}" and report the byte size.',
+            "Get the file metadata of {path}",
+            "What metadata does {path} have?",
+        )
+        for index in range(25):
+            probe = host_project / f"phase9-host-{index}.txt"
+            expected_size = 310 + index
+            probe.write_bytes(bytes([65 + index % 26]) * expected_size)
+            answer = service.run(prompts[index % len(prompts)].format(path=probe))
+
+            records = runtime.executor.journal.records
+            assert len(records) == 1, (index, answer, records)
+            assert records[0].state == CallLifecycleState.COMPLETED
+            assert str(expected_size) in answer
+            service.new_session()
+
+        for index in range(25):
+            answer = service.run(
+                f"Ordinary Full local read conversation {index}. "
+                f"Reply exactly with phase9-chat-{index}; do not use a tool."
+            )
+            assert answer.strip()
+            assert runtime.executor.journal.records == ()
             service.new_session()
     finally:
         service.shutdown()
