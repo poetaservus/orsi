@@ -55,6 +55,55 @@ def test_bundled_model_completes_a_filesystem_stat_round_trip(tmp_path: Path):
 
 
 @pytest.mark.skipif(
+    os.environ.get("ORSI_RUN_LIVE_MODEL_PATH_FIDELITY") != "1",
+    reason="Set ORSI_RUN_LIVE_MODEL_PATH_FIDELITY=1 for the absolute-path gate.",
+)
+def test_bundled_model_preserves_absolute_in_root_paths(tmp_path: Path):
+    """Real-model regression for natural absolute paths containing the root name."""
+    portable_root = tmp_path / "orsi_test"
+    portable_root.mkdir()
+    state = tmp_path / "state"
+    model = LlamaServerInferenceEngine(load_model_config())
+    runtime = build_filesystem_stat_runtime(
+        model,
+        config=AgentFeatureConfig(filesystem_stat_enabled=True),
+        portable_root=portable_root,
+        state_directory=state,
+    )
+    service = ConversationService(
+        model,
+        ConversationStore(state / "conversation.json"),
+        agent_runtime=runtime,
+        portable_root=portable_root,
+        allowed_read_roots=(portable_root,),
+    )
+    try:
+        prompts = (
+            "What's the metadata of {path}",
+            "Please tell me the metadata for {path}.",
+            'Can you inspect the metadata for this exact file: "{path}"?',
+            "Get the file metadata of {path}",
+            "What metadata does {path} have?",
+        )
+        for index in range(25):
+            probe = portable_root / f"absolute-path-{index}.txt"
+            expected_size = 170 + index
+            probe.write_bytes(bytes([65 + index % 26]) * expected_size)
+            answer = service.run(
+                prompts[index % len(prompts)].format(path=probe)
+            )
+
+            records = runtime.executor.journal.records
+            assert len(records) == 1, (index, answer, records)
+            assert records[0].state == CallLifecycleState.COMPLETED
+            assert str(expected_size) in answer
+            service.new_session()
+    finally:
+        service.shutdown()
+        model.close()
+
+
+@pytest.mark.skipif(
     os.environ.get("ORSI_RUN_LIVE_MODEL_ACCEPTANCE") != "1",
     reason="Set ORSI_RUN_LIVE_MODEL_ACCEPTANCE=1 for the 25/25 model gate.",
 )

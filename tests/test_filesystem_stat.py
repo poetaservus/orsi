@@ -82,6 +82,10 @@ def test_stat_schema_forbids_unknown_fields():
     assert schema["type"] == "object"
     assert schema["required"] == ["path"]
     assert schema["additionalProperties"] is False
+    path_description = schema["properties"]["path"]["description"]
+    assert "absolute path exactly" in path_description
+    assert "never shorten or rewrite" in path_description
+    assert "do not prefix the root directory's name" in path_description
 
 
 def test_stat_returns_stable_not_found_error(tmp_path: Path):

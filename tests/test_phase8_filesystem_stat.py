@@ -283,6 +283,9 @@ def test_agent_prompt_describes_the_exact_metadata_boundary():
 
     assert "exactly one read-only capability: filesystem.stat" in prompt
     assert "cannot read file content" in prompt
+    assert "preserve a user-provided absolute path exactly" in prompt
+    assert "never prefix the portable root's directory name" in prompt
+    assert "let the capability decide" in prompt
     assert "sole evidence" in prompt
     assert "never claim success" in prompt
 
