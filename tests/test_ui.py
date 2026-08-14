@@ -256,6 +256,52 @@ class UiTests(unittest.TestCase):
         ):
             self.assertFalse(request_full_local_read_acknowledgement())
 
+    def test_listing_status_warning_and_cloud_disclosure_name_directory_data(self):
+        class FakeService:
+            agent_enabled = True
+            agent_error = None
+            host_read_scope = "full_local"
+            agent_capabilities = ("filesystem.list", "filesystem.stat")
+
+            @staticmethod
+            def estimated_context_tokens():
+                return 0
+
+        class FakeInference:
+            available_modes = ("local", "cloud")
+            mode = "local"
+            context_length = 8192
+            cloud_has_api_key = True
+            cloud_provider_name = "Test Cloud"
+
+            @staticmethod
+            def consume_notice():
+                return None
+
+        window = MainWindow(FakeService(), "TEST-HOST", inference=FakeInference())
+        self.assertEqual(
+            window.activity.text(),
+            "Ready · Local · Agent · Full local read · Metadata + listing",
+        )
+        disclosure = window._cloud_privacy_message()
+        self.assertIn("filesystem.list directory names and types", disclosure)
+        self.assertIn("Directory and file names may be confidential", disclosure)
+        self.assertIn("cannot read file content", disclosure)
+        window.close()
+
+        with patch(
+            "PySide6.QtWidgets.QMessageBox.question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ) as question:
+            self.assertTrue(
+                request_full_local_read_acknowledgement(
+                    filesystem_list_enabled=True
+                )
+            )
+        warning = question.call_args.args[2]
+        self.assertIn("bounded names and types", warning)
+        self.assertIn("cannot read file content", warning)
+
     def test_agent_start_failure_falls_back_visibly_to_chat_only(self):
         class FakeService:
             agent_enabled = False

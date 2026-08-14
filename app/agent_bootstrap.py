@@ -10,6 +10,7 @@ from app.capabilities.crash_journal import (
     JournaledCapabilityExecutor,
 )
 from app.capabilities.executor import CapabilityExecutor
+from app.capabilities.filesystem_list import FilesystemListCapability
 from app.capabilities.filesystem_stat import FilesystemStatCapability
 from app.capabilities.host_access import HostAccessPolicy, HostReadScope
 from app.capabilities.permissions import (
@@ -34,7 +35,7 @@ def build_filesystem_stat_runtime(
     state_directory: Path,
     host_access_policy: HostAccessPolicy | None = None,
 ) -> AgentRuntime | None:
-    """Build the sole metadata capability under an explicit host-read policy."""
+    """Build the enabled read-only filesystem capabilities under one host policy."""
     if not isinstance(config, AgentFeatureConfig):
         raise TypeError("Agent bootstrap requires an AgentFeatureConfig.")
     if not config.filesystem_stat_enabled:
@@ -72,18 +73,24 @@ def build_filesystem_stat_runtime(
             "The enabled host-read permission roots could not be resolved safely."
         ) from exc
 
-    capability = FilesystemStatCapability()
-    registry = CapabilityRegistry(
-        (
+    registrations = [
+        CapabilityRegistration(
+            FilesystemStatCapability(),
+            enabled=True,
+            model_visible=True,
+        )
+    ]
+    if config.filesystem_list_enabled:
+        registrations.append(
             CapabilityRegistration(
-                capability,
+                FilesystemListCapability(),
                 enabled=True,
                 model_visible=True,
-            ),
+            )
         )
-    )
+    registry = CapabilityRegistry(registrations)
     if policy.read_scope == HostReadScope.PORTABLE_ROOT:
-        permission_rules = (
+        permission_rules = [
             PermissionRule(
                 "phase8-portable-root-stat",
                 PermissionDecision.ALLOW,
@@ -91,18 +98,40 @@ def build_filesystem_stat_runtime(
                 capability_pattern="filesystem.stat",
                 resource_root=root,
             ),
-        )
-    else:
-        permission_rules = tuple(
-            PermissionRule(
-                f"phase9-local-{permission_root.drive[0].casefold()}-stat",
-                PermissionDecision.ALLOW,
-                permission=PermissionClass.READ,
-                capability_pattern="filesystem.stat",
-                resource_root=permission_root,
+        ]
+        if config.filesystem_list_enabled:
+            permission_rules.append(
+                PermissionRule(
+                    "phase9-portable-root-list",
+                    PermissionDecision.ALLOW,
+                    permission=PermissionClass.READ,
+                    capability_pattern="filesystem.list",
+                    resource_root=root,
+                )
             )
-            for permission_root in permission_roots
-        )
+    else:
+        permission_rules = []
+        for permission_root in permission_roots:
+            drive = permission_root.drive[0].casefold()
+            permission_rules.append(
+                PermissionRule(
+                    f"phase9-local-{drive}-stat",
+                    PermissionDecision.ALLOW,
+                    permission=PermissionClass.READ,
+                    capability_pattern="filesystem.stat",
+                    resource_root=permission_root,
+                )
+            )
+            if config.filesystem_list_enabled:
+                permission_rules.append(
+                    PermissionRule(
+                        f"phase9-local-{drive}-list",
+                        PermissionDecision.ALLOW,
+                        permission=PermissionClass.READ,
+                        capability_pattern="filesystem.list",
+                        resource_root=permission_root,
+                    )
+                )
     permission_gate = PermissionGate(permission_rules)
     journal = CapabilityCrashJournal(
         state_directory / "capability_journal_v1.json"

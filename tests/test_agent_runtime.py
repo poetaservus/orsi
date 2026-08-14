@@ -586,6 +586,7 @@ def test_agent_runtime_is_connected_only_through_the_phase8_feature_gate():
 
     assert config == {
         "filesystem_stat_enabled": False,
+        "filesystem_list_enabled": False,
         "full_local_read_enabled": False,
     }
     assert "load_agent_feature_config" in main

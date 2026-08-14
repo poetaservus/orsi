@@ -1,8 +1,8 @@
-# O.R.S.I — gated file-metadata agent
+# O.R.S.I — gated read-only filesystem agent
 
 O.R.S.I is a deliberately small desktop assistant. It starts in chat-only mode and can use either
-the bundled local GGUF model or an OpenAI-compatible cloud model. Phase 8 adds one optional,
-read-only capability for file metadata behind an explicit feature gate.
+the bundled local GGUF model or an OpenAI-compatible cloud model. The current Phase 9 checkpoint
+adds optional metadata and bounded directory-listing capabilities behind explicit feature gates.
 
 ## What this build does
 
@@ -10,33 +10,40 @@ read-only capability for file metadata behind an explicit feature gate.
 - Stores one text-only conversation under `state/conversation_v1/conversation.json`.
 - Supports Local and Cloud model selection.
 - Keeps a cloud API key in memory for the current application run only.
-- Clearly identifies itself as **Chat only** or **Agent · File metadata**.
-- When explicitly enabled, can return bounded metadata for one file or directory inside the
-  portable O.R.S.I root through `filesystem.stat`.
+- Continuously identifies the active model, agent state, host-read scope, and read capabilities.
+- When explicitly enabled, can return bounded metadata through `filesystem.stat` and deterministic,
+  paginated names and types from one requested directory through `filesystem.list`.
+- Can use acknowledged Full local read access across enabled local drives under the current Windows
+  account without elevation.
 
 ## What this build cannot do
 
-O.R.S.I cannot read file content, list or search directories, launch or close applications, run
-commands, use the clipboard, automate windows, write or delete files, or make any operating-system
-change. The optional metadata capability is the only model-visible computer capability.
+O.R.S.I cannot read file content, search directories, launch or close applications, run commands,
+use the clipboard, automate windows, write or delete files, or make any operating-system change.
+Directory listing is limited to one explicitly requested directory, 50 returned entries per call,
+and a 4,096-entry bounded snapshot.
 
 When asked to do anything outside that boundary, the model is instructed to state the limitation
 honestly. It can still discuss a task, review text pasted into the conversation, or explain steps
 a person can perform manually.
 
-## Enable the Phase 8 capability
+## Enable the read-only capabilities
 
-The checked-in default in `config/agent.json` is disabled. Enable it for a deliberate run by
-setting `filesystem_stat_enabled` to `true`, or for one process with:
+The checked-in defaults in `config/agent.json` are disabled. Enable the current Phase 9 checkpoint
+for one deliberate process with:
 
 ```powershell
 $env:ORSI_ENABLE_FILESYSTEM_STAT = "1"
+$env:ORSI_ENABLE_FILESYSTEM_LIST = "1"
+$env:ORSI_ENABLE_FULL_LOCAL_READ = "1"
 python -m app.main
 ```
 
-The permission boundary is always the portable O.R.S.I root; configuration cannot broaden it.
-In Cloud mode, the conversation and any metadata results are sent to the selected provider. File
-content is never read by this capability.
+Full local read is not constructed until the user accepts its warning for that application launch.
+Declining keeps the enabled capabilities confined to the portable O.R.S.I root. Network and device
+paths remain denied. In Cloud mode, the conversation, metadata, and returned directory names/types
+are sent to the selected provider after an additional disclosure. File content is never read by
+these capabilities.
 
 When this gate is enabled, local capability requests use the bundled loopback-only
 `llama-server.exe`. The server is pinned to llama.cpp build `b9976` (`e3546c794`), matching the
@@ -64,9 +71,9 @@ Cloud settings live in `config/cloud.json`; credentials are not accepted in that
 python -m pytest
 ```
 
-The regression suite verifies the disabled chat-only default, the sole advertised capability,
-path denials, journaled execution, structured model round trips, cancellation, and conversation
-privacy boundaries.
+The regression suite verifies the disabled chat-only default, exact advertised catalog, path
+denials, bounded cursor pagination, journaled execution, structured model round trips,
+cancellation, and conversation privacy boundaries.
 
 ## Portable runtime
 

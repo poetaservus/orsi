@@ -399,9 +399,10 @@ def _llama_server_function_tools(
 ) -> list[dict[str, Any]]:
     """Project strict schemas onto llama.cpp's bounded grammar subset.
 
-    llama.cpp b9976 rejects string-length annotations while building the
-    native tool grammar. Runtime Pydantic validation remains authoritative,
-    so removing those generation hints cannot authorize an invalid call.
+    llama.cpp b9976 rejects validation-only annotations and schema defaults
+    while building the native tool grammar. Runtime Pydantic validation
+    remains authoritative, so removing those generation hints cannot authorize
+    an invalid call or change O.R.S.I's applied defaults.
     """
     tools = native_function_tools(definitions)
     for tool in tools:
@@ -417,7 +418,17 @@ def _server_schema_node(value: Any, *, properties: bool = False) -> Any:
         return deepcopy(value)
     projected: dict[str, Any] = {}
     for key, item in value.items():
-        if not properties and key in {"title", "minLength", "maxLength"}:
+        if not properties and key in {
+            "title",
+            "minLength",
+            "maxLength",
+            "minimum",
+            "maximum",
+            "exclusiveMinimum",
+            "exclusiveMaximum",
+            "pattern",
+            "default",
+        }:
             continue
         if not properties and key not in {
             "type",

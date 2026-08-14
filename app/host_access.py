@@ -6,6 +6,7 @@ modules. The capability runtime remains the sole place that executes or authoriz
 
 from app.capabilities.host_access import (
     CLOUD_FILE_CONTENT_WARNING,
+    FULL_LOCAL_LIST_READ_WARNING,
     FULL_LOCAL_READ_WARNING,
     HostAccessPolicy,
     HostReadScope,
@@ -13,6 +14,7 @@ from app.capabilities.host_access import (
 
 __all__ = [
     "CLOUD_FILE_CONTENT_WARNING",
+    "FULL_LOCAL_LIST_READ_WARNING",
     "FULL_LOCAL_READ_WARNING",
     "HostAccessPolicy",
     "HostReadScope",

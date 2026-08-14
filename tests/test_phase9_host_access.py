@@ -103,6 +103,7 @@ def test_full_local_feature_gate_requires_metadata_agent_and_explicit_values(
         SimpleNamespace(config=config_directory),
     )
     monkeypatch.delenv("ORSI_ENABLE_FILESYSTEM_STAT", raising=False)
+    monkeypatch.delenv("ORSI_ENABLE_FILESYSTEM_LIST", raising=False)
     monkeypatch.delenv("ORSI_ENABLE_FULL_LOCAL_READ", raising=False)
 
     assert load_agent_feature_config() == AgentFeatureConfig()
@@ -110,12 +111,18 @@ def test_full_local_feature_gate_requires_metadata_agent_and_explicit_values(
     monkeypatch.setenv("ORSI_ENABLE_FULL_LOCAL_READ", "yes")
     enabled = load_agent_feature_config()
     assert enabled.filesystem_stat_enabled
+    assert not enabled.filesystem_list_enabled
     assert enabled.full_local_read_enabled
 
+    monkeypatch.setenv("ORSI_ENABLE_FILESYSTEM_LIST", "on")
+    enabled = load_agent_feature_config()
+    assert enabled.filesystem_list_enabled
+
     monkeypatch.setenv("ORSI_ENABLE_FILESYSTEM_STAT", "0")
-    with pytest.raises(ValueError, match="requires the filesystem metadata agent"):
+    with pytest.raises(ValueError, match="Directory listing requires"):
         load_agent_feature_config()
 
+    monkeypatch.setenv("ORSI_ENABLE_FILESYSTEM_STAT", "1")
     monkeypatch.setenv("ORSI_ENABLE_FULL_LOCAL_READ", "occasionally")
     with pytest.raises(ValueError, match="explicit true or false"):
         load_agent_feature_config()

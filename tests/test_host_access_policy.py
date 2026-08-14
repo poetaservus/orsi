@@ -173,7 +173,7 @@ def test_full_local_policy_rejects_remote_and_missing_drives(
     assert missing.value.code == CapabilityErrorCode.INACCESSIBLE
 
 
-def test_phase9_policy_is_connected_without_expanding_the_capability_catalog():
+def test_phase9_policy_exposes_listing_without_content_or_search_capabilities():
     root = Path(__file__).resolve().parents[1]
     production = "\n".join(
         (root / path).read_text(encoding="utf-8")
@@ -187,6 +187,6 @@ def test_phase9_policy_is_connected_without_expanding_the_capability_catalog():
 
     assert "HostAccessPolicy" in production
     assert "full_local_read_enabled" in production
-    assert "filesystem.list" not in production
+    assert "filesystem.list" in production
     assert "filesystem.read_text" not in production
     assert "filesystem.search" not in production

@@ -70,6 +70,12 @@ class ConversationService:
             return None
         return self.host_access_policy.read_scope
 
+    @property
+    def agent_capabilities(self) -> tuple[str, ...]:
+        if self.agent_runtime is None:
+            return ()
+        return self.agent_runtime.registry.model_visible_names
+
     def run(self, user_message: str, activity=None) -> str:
         text = str(user_message).strip()
         if not text:
@@ -154,7 +160,10 @@ class ConversationService:
 
     def _model_messages(self) -> list[dict[str, str]]:
         prompt = (
-            agent_system_prompt(self.host_read_scope or HostReadScope.PORTABLE_ROOT)
+            agent_system_prompt(
+                self.host_read_scope or HostReadScope.PORTABLE_ROOT,
+                self.agent_capabilities,
+            )
             if self.agent_enabled
             else SYSTEM_PROMPT
         )

@@ -325,3 +325,83 @@ def test_bundled_model_full_local_metadata_acceptance(tmp_path: Path):
     finally:
         service.shutdown()
         model.close()
+
+
+@pytest.mark.skipif(
+    os.environ.get("ORSI_RUN_PHASE9_LIST_LIVE_MODEL") != "1",
+    reason="Set ORSI_RUN_PHASE9_LIST_LIVE_MODEL=1 for the filesystem.list model gate.",
+)
+def test_bundled_model_full_local_directory_listing_acceptance(tmp_path: Path):
+    """Real-model gate for bounded host directory listing and ordinary no-call chat."""
+    portable_root = tmp_path / "portable"
+    user_home = tmp_path / "host-user"
+    host_directories = tmp_path / "host-directories"
+    portable_root.mkdir()
+    user_home.mkdir()
+    host_directories.mkdir()
+    state = tmp_path / "state"
+    policy = HostAccessPolicy.full_local(
+        application_root=portable_root,
+        user_home=user_home,
+        acknowledged=True,
+    )
+    model = LlamaServerInferenceEngine(load_model_config())
+    runtime = build_filesystem_stat_runtime(
+        model,
+        config=AgentFeatureConfig(
+            filesystem_stat_enabled=True,
+            filesystem_list_enabled=True,
+            full_local_read_enabled=True,
+        ),
+        portable_root=portable_root,
+        state_directory=state,
+        host_access_policy=policy,
+    )
+    service = ConversationService(
+        model,
+        ConversationStore(state / "conversation.json"),
+        agent_runtime=runtime,
+        portable_root=portable_root,
+        allowed_read_roots=policy.permission_roots(),
+        host_access_policy=policy,
+    )
+    try:
+        prompts = (
+            "What files and folders are in this exact directory: {path}",
+            "Use filesystem.list exactly once for {path} and report every returned name.",
+            'List the names inside this host directory: "{path}"',
+            "Show me what is in {path}",
+            "Which files are present in {path}?",
+        )
+        for index in range(25):
+            directory = host_directories / f"directory-{index}"
+            directory.mkdir()
+            expected_name = f"phase9-visible-{index}.txt"
+            (directory / expected_name).write_text(
+                "CONTENT-MUST-NOT-BE-READ",
+                encoding="utf-8",
+            )
+            (directory / "Subfolder").mkdir()
+            answer = service.run(
+                prompts[index % len(prompts)].format(path=directory.resolve())
+            )
+
+            records = runtime.executor.journal.records
+            assert len(records) == 1, (index, answer, records)
+            assert records[0].capability == "filesystem.list"
+            assert records[0].state == CallLifecycleState.COMPLETED
+            assert expected_name.casefold() in answer.casefold()
+            assert "CONTENT-MUST-NOT-BE-READ" not in answer
+            service.new_session()
+
+        for index in range(25):
+            answer = service.run(
+                f"Ordinary listing-enabled conversation {index}. "
+                f"Reply exactly with list-chat-{index}; do not use a tool."
+            )
+            assert answer.strip()
+            assert runtime.executor.journal.records == ()
+            service.new_session()
+    finally:
+        service.shutdown()
+        model.close()
