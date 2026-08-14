@@ -1,4 +1,4 @@
-"""Isolated capability implementations; none are model-visible yet."""
+"""Capability foundations; production visibility is owned by the explicit agent gate."""
 
 from app.capabilities.contracts import (
     Capability,

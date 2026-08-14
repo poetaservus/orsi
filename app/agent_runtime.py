@@ -157,7 +157,7 @@ class _DeadlineCancellationToken(CancellationToken):
 
 
 class AgentRuntime:
-    """Sequential, bounded capability loop kept disconnected until Phase 8."""
+    """Sequential, bounded capability loop used only behind an explicit gate."""
 
     def __init__(
         self,
@@ -195,6 +195,15 @@ class AgentRuntime:
         self._clock = clock
         self._call_id_factory = call_id_factory
         self._approval_requester = approval_requester
+
+    def purge_terminal_records(self) -> tuple[str, ...]:
+        """Apply the journal's explicit privacy retention policy."""
+        return self.executor.journal.purge()
+
+    def shutdown(self) -> None:
+        """Resolve pending approval waits and stop capability execution."""
+        self.approval_manager.shutdown()
+        self.executor.executor.shutdown()
 
     def run(
         self,

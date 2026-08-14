@@ -1,21 +1,53 @@
 from __future__ import annotations
 
+from pathlib import Path
 from threading import Lock
+from uuid import uuid4
 
-from app.conversation.prompt import SYSTEM_PROMPT
+from app.agent_runtime import AgentRunStatus, AgentRuntime
+from app.conversation.prompt import AGENT_SYSTEM_PROMPT, SYSTEM_PROMPT
 from app.conversation.store import ConversationStore
 from app.runtime.cancellation import CancellationSource, TaskCancelled
 
 
 class ConversationService:
-    """UI-facing chat loop: save text, ask the model, save text."""
+    """UI-facing private conversation with an optional bounded agent loop."""
 
-    def __init__(self, inference, store: ConversationStore):
+    def __init__(
+        self,
+        inference,
+        store: ConversationStore,
+        *,
+        agent_runtime: AgentRuntime | None = None,
+        portable_root: Path | None = None,
+        allowed_read_roots: tuple[Path, ...] = (),
+        agent_error: str | None = None,
+    ):
+        if agent_runtime is not None and not isinstance(agent_runtime, AgentRuntime):
+            raise TypeError("The conversation agent must be an AgentRuntime.")
+        if agent_runtime is not None and not isinstance(portable_root, Path):
+            raise TypeError("Agent conversations require a pathlib.Path portable root.")
+        if not all(isinstance(root, Path) for root in allowed_read_roots):
+            raise TypeError("Agent read roots must be pathlib.Path values.")
         self.inference = inference
         self.store = store
+        self.agent_runtime = agent_runtime
+        self.portable_root = portable_root
+        self.allowed_read_roots = (
+            allowed_read_roots
+            if allowed_read_roots
+            else ((portable_root,) if portable_root is not None else ())
+        )
+        self.agent_error = str(agent_error).strip() if agent_error else None
         self._run_lock = Lock()
         self._cancellation_lock = Lock()
         self._cancellation: CancellationSource | None = None
+        self._session_id = uuid4().hex
+        self._turn_number = 0
+
+    @property
+    def agent_enabled(self) -> bool:
+        return self.agent_runtime is not None
 
     def run(self, user_message: str, activity=None) -> str:
         text = str(user_message).strip()
@@ -29,13 +61,31 @@ class ConversationService:
         try:
             self.store.append("user", text)
             if activity:
-                activity("Thinking...")
+                activity("Working..." if self.agent_enabled else "Thinking...")
             source.token.raise_if_cancelled()
-            response = self.inference.respond(self._model_messages())
-            source.token.raise_if_cancelled()
-            if not isinstance(response, str) or not response.strip():
-                raise RuntimeError("The model returned an empty response.")
-            answer = response.strip()
+            if self.agent_runtime is None:
+                response = self.inference.respond(self._model_messages())
+                source.token.raise_if_cancelled()
+                if not isinstance(response, str) or not response.strip():
+                    raise RuntimeError("The model returned an empty response.")
+                answer = response.strip()
+            else:
+                self._turn_number += 1
+                result = self.agent_runtime.run(
+                    self._model_messages(),
+                    session_id=self._session_id,
+                    turn_id=f"turn-{self._turn_number}",
+                    portable_root=self.portable_root,
+                    allowed_read_roots=self.allowed_read_roots,
+                    cancellation=source.token,
+                )
+                if result.status == AgentRunStatus.CANCELLED:
+                    return "The response was stopped."
+                if result.status != AgentRunStatus.COMPLETED:
+                    raise RuntimeError(
+                        result.message or "The bounded agent run did not complete."
+                    )
+                answer = result.assistant_text.strip()
             self.store.append("assistant", answer)
             return answer
         except TaskCancelled:
@@ -58,9 +108,18 @@ class ConversationService:
         if not self._run_lock.acquire(blocking=False):
             raise RuntimeError("Wait for the current response to finish before starting a new session.")
         try:
+            if self.agent_runtime is not None:
+                self.agent_runtime.purge_terminal_records()
             self.store.new_session()
+            self._session_id = uuid4().hex
+            self._turn_number = 0
         finally:
             self._run_lock.release()
+
+    def shutdown(self) -> None:
+        self.cancel_current_task()
+        if self.agent_runtime is not None:
+            self.agent_runtime.shutdown()
 
     def estimated_context_tokens(self) -> int:
         if not self.store.messages():
@@ -69,7 +128,8 @@ class ConversationService:
         return min(self._context_length(), prompt_tokens + self._response_reserve())
 
     def _model_messages(self) -> list[dict[str, str]]:
-        system = {"role": "system", "content": SYSTEM_PROMPT}
+        prompt = AGENT_SYSTEM_PROMPT if self.agent_enabled else SYSTEM_PROMPT
+        system = {"role": "system", "content": prompt}
         # Token counting may lazily load the local model and replace the
         # startup context hint with the context it could actually allocate.
         self._count_tokens([system])

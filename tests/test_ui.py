@@ -164,6 +164,71 @@ class UiTests(unittest.TestCase):
         self.assertEqual(window.activity.text(), "Ready · Cloud · Chat only")
         window.close()
 
+    def test_agent_status_and_cloud_disclosure_name_the_metadata_boundary(self):
+        class FakeService:
+            agent_enabled = True
+            agent_error = None
+            shutdown_called = False
+
+            @staticmethod
+            def estimated_context_tokens():
+                return 0
+
+            def shutdown(self):
+                self.shutdown_called = True
+
+        class FakeInference:
+            available_modes = ("local", "cloud")
+            mode = "cloud"
+            context_length = 8192
+            cloud_has_api_key = True
+            cloud_provider_name = "Test Cloud"
+
+            @staticmethod
+            def consume_notice():
+                return None
+
+        service = FakeService()
+        window = MainWindow(service, "TEST-HOST", inference=FakeInference())
+
+        self.assertEqual(
+            window.activity.text(), "Ready · Cloud · Agent · File metadata"
+        )
+        disclosure = window._cloud_privacy_message()
+        self.assertIn("conversation and any filesystem.stat metadata results", disclosure)
+        self.assertIn("cannot read file content", disclosure)
+        self.assertIn("cannot", disclosure)
+
+        window.close()
+        self.assertTrue(service.shutdown_called)
+
+    def test_agent_start_failure_falls_back_visibly_to_chat_only(self):
+        class FakeService:
+            agent_enabled = False
+            agent_error = "Agent mode could not start safely. Chat-only mode remains available."
+
+            @staticmethod
+            def estimated_context_tokens():
+                return 0
+
+        class FakeInference:
+            available_modes = ("local",)
+            mode = "local"
+            context_length = 8192
+
+            @staticmethod
+            def consume_notice():
+                return None
+
+        window = MainWindow(FakeService(), "TEST-HOST", inference=FakeInference())
+
+        self.assertEqual(window.activity.text(), "Agent unavailable · Chat only")
+        self.assertEqual(
+            window.chat._messages[0].label.text(),
+            "Agent mode could not start safely. Chat-only mode remains available.",
+        )
+        window.close()
+
     def test_messages_have_no_name_tags_and_use_requested_sides(self):
         chat = ChatView()
         chat.add_message("User", "A user message")

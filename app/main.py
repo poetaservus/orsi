@@ -12,6 +12,8 @@ if __package__ in {None, ""}:
     if str(project_root) not in sys.path:
         sys.path.insert(0, str(project_root))
 
+from app.agent_bootstrap import build_filesystem_stat_runtime
+from app.agent_config import load_agent_feature_config
 from app.conversation import ConversationService, ConversationStore
 from app.inference import (
     HybridInferenceEngine,
@@ -25,8 +27,11 @@ from app.inference.model_config import detect_nvidia_memory_mib, load_model_conf
 from app.paths import PATHS
 
 
+log = logging.getLogger(__name__)
+
+
 def build_application():
-    """Build only the conversational runtime and its model backends."""
+    """Build chat plus the optional gated file-metadata runtime."""
     local_engine = None
     local_error = None
     try:
@@ -88,7 +93,30 @@ def build_application():
             conversation_state / "conversation.json",
             start_fresh=True,
         )
-        service = ConversationService(inference, store)
+        agent_runtime = None
+        agent_error = None
+        try:
+            agent_config = load_agent_feature_config()
+            if agent_config.filesystem_stat_enabled:
+                agent_runtime = build_filesystem_stat_runtime(
+                    inference,
+                    config=agent_config,
+                    portable_root=PATHS.root,
+                    state_directory=PATHS.state,
+                )
+        except Exception:
+            log.exception("The gated filesystem metadata agent could not start.")
+            agent_error = (
+                "Agent mode could not start safely. Chat-only mode remains available."
+            )
+        service = ConversationService(
+            inference,
+            store,
+            agent_runtime=agent_runtime,
+            portable_root=PATHS.root if agent_runtime is not None else None,
+            allowed_read_roots=(PATHS.root,) if agent_runtime is not None else (),
+            agent_error=agent_error,
+        )
 
     host = {"hostname": socket.gethostname() or "Windows PC"}
     return service, host, startup_error, inference

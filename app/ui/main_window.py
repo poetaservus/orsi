@@ -182,6 +182,8 @@ class MainWindow(QMainWindow):
         self._update_context_window()
         if startup_error:
             self.chat.add_message("Agent", startup_error, True)
+        elif self._agent_error():
+            self.chat.add_message("Agent", self._agent_error(), True)
 
     def submit(self) -> None:
         message = self.input.toPlainText().strip()
@@ -266,8 +268,18 @@ class MainWindow(QMainWindow):
         self.input.setFocus()
 
     def _ready_status(self) -> str:
+        if self._agent_error() and not self._agent_enabled():
+            return "Agent unavailable · Chat only"
         if self.inference is None:
             return "Ready · Chat only"
+        if self._agent_enabled():
+            if self.inference.mode == "cloud":
+                return (
+                    "Cloud key needed · Agent · File metadata"
+                    if not self.inference.cloud_has_api_key
+                    else "Ready · Cloud · Agent · File metadata"
+                )
+            return "Ready · Local · Agent · File metadata"
         if self.inference.mode == "cloud":
             return (
                 "Cloud key needed · Chat only"
@@ -301,9 +313,7 @@ class MainWindow(QMainWindow):
             answer = QMessageBox.question(
                 self,
                 "Use cloud model?",
-                "Cloud mode sends this conversation to "
-                f"{self.inference.cloud_provider_name}. O.R.S.I is chat-only and cannot access or "
-                "operate your computer.\n\nDo not use Cloud mode for confidential information.\n\nContinue?",
+                self._cloud_privacy_message(),
                 QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
                 QMessageBox.StandardButton.No,
             )
@@ -321,6 +331,34 @@ class MainWindow(QMainWindow):
                 return False
             self.inference.set_cloud_api_key(key)
         return True
+
+    def _agent_enabled(self) -> bool:
+        return bool(getattr(self.service, "agent_enabled", False))
+
+    def _agent_error(self) -> str | None:
+        value = getattr(self.service, "agent_error", None)
+        return str(value) if value else None
+
+    def _cloud_privacy_message(self) -> str:
+        provider = self.inference.cloud_provider_name
+        if self._agent_enabled():
+            return (
+                f"Cloud mode sends this conversation and any filesystem.stat metadata results "
+                f"to {provider}. Agent mode can inspect metadata for one file or directory "
+                "inside O.R.S.I's portable root, but cannot read file content or perform other "
+                "computer actions.\n\nDo not use Cloud mode for confidential information.\n\nContinue?"
+            )
+        return (
+            f"Cloud mode sends this conversation to {provider}. O.R.S.I is chat-only and cannot "
+            "access or operate your computer.\n\nDo not use Cloud mode for confidential "
+            "information.\n\nContinue?"
+        )
+
+    def closeEvent(self, event) -> None:  # noqa: N802 - Qt API name
+        shutdown = getattr(self.service, "shutdown", None)
+        if callable(shutdown):
+            shutdown()
+        super().closeEvent(event)
 
     def _sync_inference_selector(self) -> None:
         if self.inference is None:

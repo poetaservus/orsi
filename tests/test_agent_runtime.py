@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import json
 from itertools import count
 from pathlib import Path
 from threading import Event, Timer
@@ -569,16 +570,18 @@ def test_cancellation_stops_blocked_generation_and_capability_execution(
     assert journal.records[0].state == CallLifecycleState.CANCELLED
 
 
-def test_agent_runtime_remains_disconnected_from_production_entrypoints():
+def test_agent_runtime_is_connected_only_through_the_phase8_feature_gate():
     root = Path(__file__).resolve().parents[1]
-    for relative in (
-        "app/main.py",
-        "app/conversation/service.py",
-        "app/conversation/prompt.py",
-    ):
-        text = (root / relative).read_text(encoding="utf-8")
-        assert "AgentRuntime" not in text
-        assert "app.agent_runtime" not in text
+    config = json.loads((root / "config" / "agent.json").read_text(encoding="utf-8"))
+    main = (root / "app" / "main.py").read_text(encoding="utf-8")
+    service = (root / "app" / "conversation" / "service.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert config == {"filesystem_stat_enabled": False}
+    assert "load_agent_feature_config" in main
+    assert "agent_config.filesystem_stat_enabled" in main
+    assert "agent_runtime: AgentRuntime | None = None" in service
 
 
 def json_text(value) -> str:
