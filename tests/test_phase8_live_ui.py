@@ -72,7 +72,8 @@ def test_real_local_agent_ui_workflow(tmp_path: Path):
     app.processEvents()
     try:
         assert "Local" in window.activity.text()
-        assert "File metadata" in window.activity.text()
+        assert "Portable-root read" in window.activity.text()
+        assert "Metadata only" in window.activity.text()
 
         _submit(
             app,

@@ -13,8 +13,9 @@ if __package__ in {None, ""}:
         sys.path.insert(0, str(project_root))
 
 from app.agent_bootstrap import build_filesystem_stat_runtime
-from app.agent_config import load_agent_feature_config
+from app.agent_config import AgentFeatureConfig, load_agent_feature_config
 from app.conversation import ConversationService, ConversationStore
+from app.host_access import FULL_LOCAL_READ_WARNING, HostAccessPolicy
 from app.inference import (
     HybridInferenceEngine,
     InferenceUnavailable,
@@ -31,16 +32,35 @@ from app.paths import PATHS
 log = logging.getLogger(__name__)
 
 
-def build_application():
+def build_application(
+    *,
+    agent_config_override: AgentFeatureConfig | None = None,
+    full_local_read_acknowledged: bool = False,
+):
     """Build chat plus the optional gated file-metadata runtime."""
-    agent_config = None
+    if not isinstance(full_local_read_acknowledged, bool):
+        raise TypeError("Full local read acknowledgement must be a boolean.")
+    if agent_config_override is not None and not isinstance(
+        agent_config_override, AgentFeatureConfig
+    ):
+        raise TypeError("Agent configuration overrides must be AgentFeatureConfig values.")
+    agent_config = agent_config_override
     agent_config_error = None
-    try:
-        agent_config = load_agent_feature_config()
-    except Exception:
-        log.exception("The gated filesystem metadata configuration is invalid.")
-        agent_config_error = (
-            "Agent mode could not start safely. Chat-only mode remains available."
+    if agent_config is None:
+        try:
+            agent_config = load_agent_feature_config()
+        except Exception:
+            log.exception("The gated filesystem metadata configuration is invalid.")
+            agent_config_error = (
+                "Agent mode could not start safely. Chat-only mode remains available."
+            )
+    if (
+        agent_config is not None
+        and agent_config.full_local_read_enabled
+        and not full_local_read_acknowledged
+    ):
+        agent_config = agent_config.model_copy(
+            update={"full_local_read_enabled": False}
         )
     if agent_config is not None and agent_config.filesystem_stat_enabled:
         server_executable = (
@@ -48,7 +68,10 @@ def build_application():
         )
         if not server_executable.is_file():
             agent_config = agent_config.model_copy(
-                update={"filesystem_stat_enabled": False}
+                update={
+                    "filesystem_stat_enabled": False,
+                    "full_local_read_enabled": False,
+                }
             )
             agent_config_error = (
                 "Agent mode could not start safely. Chat-only mode remains available."
@@ -121,17 +144,29 @@ def build_application():
             start_fresh=True,
         )
         agent_runtime = None
+        host_access_policy = None
         agent_error = agent_config_error
         try:
             if agent_config is not None and agent_config.filesystem_stat_enabled:
+                host_access_policy = (
+                    HostAccessPolicy.full_local(
+                        application_root=PATHS.root,
+                        user_home=Path.home(),
+                        acknowledged=True,
+                    )
+                    if agent_config.full_local_read_enabled
+                    else HostAccessPolicy.portable_root(PATHS.root)
+                )
                 agent_runtime = build_filesystem_stat_runtime(
                     inference,
                     config=agent_config,
                     portable_root=PATHS.root,
                     state_directory=PATHS.state,
+                    host_access_policy=host_access_policy,
                 )
         except Exception:
             log.exception("The gated filesystem metadata agent could not start.")
+            host_access_policy = None
             agent_error = (
                 "Agent mode could not start safely. Chat-only mode remains available."
             )
@@ -140,7 +175,12 @@ def build_application():
             store,
             agent_runtime=agent_runtime,
             portable_root=PATHS.root if agent_runtime is not None else None,
-            allowed_read_roots=(PATHS.root,) if agent_runtime is not None else (),
+            allowed_read_roots=(
+                host_access_policy.permission_roots()
+                if host_access_policy is not None
+                else ()
+            ),
+            host_access_policy=host_access_policy,
             agent_error=agent_error,
         )
 
@@ -158,10 +198,34 @@ def main() -> int:
     from app.ui.main_window import MainWindow
 
     app = QApplication(sys.argv)
-    service, host, error, inference = build_application()
+    full_local_read_acknowledged = False
+    try:
+        startup_agent_config = load_agent_feature_config()
+    except Exception:
+        startup_agent_config = None
+    if startup_agent_config is not None and startup_agent_config.full_local_read_enabled:
+        full_local_read_acknowledged = request_full_local_read_acknowledgement()
+    service, host, error, inference = build_application(
+        agent_config_override=startup_agent_config,
+        full_local_read_acknowledged=full_local_read_acknowledged,
+    )
     window = MainWindow(service, host["hostname"], error, inference)
     window.show()
     return app.exec()
+
+
+def request_full_local_read_acknowledgement() -> bool:
+    """Ask once per launch before host-wide read authority can be constructed."""
+    from PySide6.QtWidgets import QMessageBox
+
+    answer = QMessageBox.question(
+        None,
+        "Enable Full local read access?",
+        f"{FULL_LOCAL_READ_WARNING}\n\nEnable this access for the current O.R.S.I session?",
+        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        QMessageBox.StandardButton.No,
+    )
+    return answer == QMessageBox.StandardButton.Yes
 
 
 if __name__ == "__main__":

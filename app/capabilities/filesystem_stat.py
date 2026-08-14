@@ -16,6 +16,7 @@ from app.capabilities.contracts import (
     PermissionClass,
 )
 from app.capabilities.path_policy import resolve_candidate_path, resolve_read_path
+from app.capabilities.host_access import HostReadScope
 
 
 class FilesystemStatArguments(BaseModel):
@@ -27,8 +28,9 @@ class FilesystemStatArguments(BaseModel):
         description=(
             "Copy a user-provided absolute path exactly, including its drive letter, directories, "
             "separators, spelling, and capitalization; never shorten or rewrite it. A relative "
-            "path is already relative to the portable root, so do not prefix the root directory's "
-            "name. Let the capability decide whether the path exists and is allowed."
+            "path is already relative to the active read scope's documented root, so do not prefix "
+            "the root directory's name or invent directories. Let the capability decide whether "
+            "the path exists and is allowed."
         ),
     )
 
@@ -46,6 +48,9 @@ class FilesystemStatCapability(Capability[FilesystemStatArguments]):
         arguments: FilesystemStatArguments,
         context: CapabilityContext,
     ):
+        policy = context.host_access_policy
+        if policy is not None and policy.read_scope == HostReadScope.FULL_LOCAL:
+            return policy.resolve_read(arguments.path).resolved
         return resolve_candidate_path(
             arguments.path,
             portable_root=context.portable_root,
@@ -56,11 +61,14 @@ class FilesystemStatCapability(Capability[FilesystemStatArguments]):
         arguments: FilesystemStatArguments,
         context: CapabilityContext,
     ) -> dict[str, Any]:
-        resolved = resolve_read_path(
-            arguments.path,
-            portable_root=context.portable_root,
-            allowed_roots=context.allowed_read_roots,
-        )
+        if context.host_access_policy is not None:
+            resolved = context.host_access_policy.resolve_read(arguments.path)
+        else:
+            resolved = resolve_read_path(
+                arguments.path,
+                portable_root=context.portable_root,
+                allowed_roots=context.allowed_read_roots,
+            )
         context.cancellation.raise_if_cancelled()
 
         try:

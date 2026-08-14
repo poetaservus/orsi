@@ -11,6 +11,7 @@ from app.capabilities.crash_journal import (
 )
 from app.capabilities.executor import CapabilityExecutor
 from app.capabilities.filesystem_stat import FilesystemStatCapability
+from app.capabilities.host_access import HostAccessPolicy, HostReadScope
 from app.capabilities.permissions import (
     ApprovalManager,
     PermissionDecision,
@@ -31,8 +32,9 @@ def build_filesystem_stat_runtime(
     config: AgentFeatureConfig,
     portable_root: Path,
     state_directory: Path,
+    host_access_policy: HostAccessPolicy | None = None,
 ) -> AgentRuntime | None:
-    """Build the sole Phase 8 capability runtime when its explicit gate is on."""
+    """Build the sole metadata capability under an explicit host-read policy."""
     if not isinstance(config, AgentFeatureConfig):
         raise TypeError("Agent bootstrap requires an AgentFeatureConfig.")
     if not config.filesystem_stat_enabled:
@@ -50,6 +52,26 @@ def build_filesystem_stat_runtime(
     if not root.is_dir():
         raise AgentBootstrapError("The portable root is not an accessible directory.")
 
+    policy = host_access_policy or HostAccessPolicy.portable_root(root)
+    if not isinstance(policy, HostAccessPolicy):
+        raise TypeError("Agent bootstrap requires a HostAccessPolicy.")
+    if policy.application_root != root:
+        raise AgentBootstrapError(
+            "The host-access policy does not match the portable application root."
+        )
+    expects_full_local = config.full_local_read_enabled
+    is_full_local = policy.read_scope == HostReadScope.FULL_LOCAL
+    if expects_full_local != is_full_local:
+        raise AgentBootstrapError(
+            "Full local read configuration and acknowledged authority do not match."
+        )
+    try:
+        permission_roots = policy.permission_roots()
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise AgentBootstrapError(
+            "The enabled host-read permission roots could not be resolved safely."
+        ) from exc
+
     capability = FilesystemStatCapability()
     registry = CapabilityRegistry(
         (
@@ -60,8 +82,8 @@ def build_filesystem_stat_runtime(
             ),
         )
     )
-    permission_gate = PermissionGate(
-        (
+    if policy.read_scope == HostReadScope.PORTABLE_ROOT:
+        permission_rules = (
             PermissionRule(
                 "phase8-portable-root-stat",
                 PermissionDecision.ALLOW,
@@ -70,7 +92,18 @@ def build_filesystem_stat_runtime(
                 resource_root=root,
             ),
         )
-    )
+    else:
+        permission_rules = tuple(
+            PermissionRule(
+                f"phase9-local-{permission_root.drive[0].casefold()}-stat",
+                PermissionDecision.ALLOW,
+                permission=PermissionClass.READ,
+                capability_pattern="filesystem.stat",
+                resource_root=permission_root,
+            )
+            for permission_root in permission_roots
+        )
+    permission_gate = PermissionGate(permission_rules)
     journal = CapabilityCrashJournal(
         state_directory / "capability_journal_v1.json"
     )

@@ -89,7 +89,8 @@ def test_checked_in_feature_gate_is_disabled_by_default(monkeypatch):
     monkeypatch.delenv("ORSI_ENABLE_FILESYSTEM_STAT", raising=False)
 
     assert load_agent_feature_config() == AgentFeatureConfig(
-        filesystem_stat_enabled=False
+        filesystem_stat_enabled=False,
+        full_local_read_enabled=False,
     )
 
 

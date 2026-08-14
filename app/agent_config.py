@@ -2,39 +2,56 @@ from __future__ import annotations
 
 import os
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 from app.config import load_json
 from app.paths import PATHS
 
 
-_ENVIRONMENT_GATE = "ORSI_ENABLE_FILESYSTEM_STAT"
+_FILESYSTEM_STAT_GATE = "ORSI_ENABLE_FILESYSTEM_STAT"
+_FULL_LOCAL_READ_GATE = "ORSI_ENABLE_FULL_LOCAL_READ"
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 _FALSE_VALUES = {"0", "false", "no", "off"}
 
 
 class AgentFeatureConfig(BaseModel):
-    """Fail-closed Phase 8 gate for the sole production capability."""
+    """Fail-closed gates for the current production capability and its read scope."""
 
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
 
     filesystem_stat_enabled: bool = False
+    full_local_read_enabled: bool = False
+
+    @model_validator(mode="after")
+    def validate_feature_dependencies(self):
+        if self.full_local_read_enabled and not self.filesystem_stat_enabled:
+            raise ValueError(
+                "Full local read access requires the filesystem metadata agent."
+            )
+        return self
 
 
 def load_agent_feature_config() -> AgentFeatureConfig:
-    config = AgentFeatureConfig.model_validate(
-        load_json(PATHS.config / "agent.json", default={})
-    )
-    override = os.environ.get(_ENVIRONMENT_GATE)
+    values = load_json(PATHS.config / "agent.json", default={})
+    if not isinstance(values, dict):
+        raise ValueError("Agent feature configuration must be a JSON object.")
+    values = dict(values)
+    for name, field in (
+        (_FILESYSTEM_STAT_GATE, "filesystem_stat_enabled"),
+        (_FULL_LOCAL_READ_GATE, "full_local_read_enabled"),
+    ):
+        override = os.environ.get(name)
+        if override is not None:
+            values[field] = _parse_environment_boolean(name, override)
+    return AgentFeatureConfig.model_validate(values)
+
+
+def _parse_environment_boolean(name: str, override: str) -> bool:
     if override is None:
-        return config
+        raise TypeError("Environment boolean overrides must be strings.")
     normalized = override.strip().casefold()
     if normalized in _TRUE_VALUES:
-        enabled = True
-    elif normalized in _FALSE_VALUES:
-        enabled = False
-    else:
-        raise ValueError(
-            f"{_ENVIRONMENT_GATE} must be an explicit true or false value."
-        )
-    return config.model_copy(update={"filesystem_stat_enabled": enabled})
+        return True
+    if normalized in _FALSE_VALUES:
+        return False
+    raise ValueError(f"{name} must be an explicit true or false value.")

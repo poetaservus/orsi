@@ -24,6 +24,7 @@ from app.capabilities.contracts import (
     CapabilityFailure,
     CapabilityResult,
 )
+from app.capabilities.host_access import HostAccessPolicy
 from app.capabilities.crash_journal import JournaledCapabilityExecutor
 from app.capabilities.permissions import (
     ApprovalManager,
@@ -213,6 +214,7 @@ class AgentRuntime:
         turn_id: str,
         portable_root: Path,
         allowed_read_roots: Iterable[Path],
+        host_access_policy: HostAccessPolicy | None = None,
         cancellation: CancellationToken | None = None,
     ) -> AgentRunResult:
         if not _safe_identifier(session_id) or not _safe_identifier(turn_id):
@@ -222,6 +224,10 @@ class AgentRuntime:
         roots = tuple(allowed_read_roots)
         if not all(isinstance(root, Path) for root in roots):
             raise TypeError("Allowed read roots must be pathlib.Path values.")
+        if host_access_policy is not None and not isinstance(
+            host_access_policy, HostAccessPolicy
+        ):
+            raise TypeError("Agent host access must be a HostAccessPolicy.")
         user_cancellation = cancellation or CancellationToken()
         if not isinstance(user_cancellation, CancellationToken):
             raise TypeError("Agent cancellation must be a CancellationToken.")
@@ -406,6 +412,7 @@ class AgentRuntime:
                 turn_id=turn_id,
                 portable_root=portable_root,
                 allowed_read_roots=roots,
+                host_access_policy=host_access_policy,
                 cancellation=linked,
                 started=started,
                 user_cancellation=user_cancellation,
@@ -455,6 +462,7 @@ class AgentRuntime:
         turn_id: str,
         portable_root: Path,
         allowed_read_roots: tuple[Path, ...],
+        host_access_policy: HostAccessPolicy | None,
         cancellation: CancellationToken,
         started: float,
         user_cancellation: CancellationToken,
@@ -490,6 +498,7 @@ class AgentRuntime:
             portable_root=portable_root,
             allowed_read_roots=allowed_read_roots,
             cancellation=cancellation,
+            host_access_policy=host_access_policy,
         )
         try:
             prepared = prepare_capability_call(capability, call.arguments, context)

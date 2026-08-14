@@ -13,6 +13,7 @@ try:
 
     from app.ui.chat import ChatView
     from app.ui.main_window import MainWindow
+    from app.main import request_full_local_read_acknowledgement
 except ImportError:
     QApplication = None
 
@@ -192,7 +193,8 @@ class UiTests(unittest.TestCase):
         window = MainWindow(service, "TEST-HOST", inference=FakeInference())
 
         self.assertEqual(
-            window.activity.text(), "Ready · Cloud · Agent · File metadata"
+            window.activity.text(),
+            "Ready · Cloud · Agent · Portable-root read · Metadata only",
         )
         disclosure = window._cloud_privacy_message()
         self.assertIn("conversation and any filesystem.stat metadata results", disclosure)
@@ -201,6 +203,58 @@ class UiTests(unittest.TestCase):
 
         window.close()
         self.assertTrue(service.shutdown_called)
+
+    def test_full_local_status_and_cloud_disclosure_are_continuously_visible(self):
+        class FakeService:
+            agent_enabled = True
+            agent_error = None
+            host_read_scope = "full_local"
+
+            @staticmethod
+            def estimated_context_tokens():
+                return 0
+
+        class FakeInference:
+            available_modes = ("local", "cloud")
+            mode = "local"
+            context_length = 8192
+            cloud_has_api_key = True
+            cloud_provider_name = "Test Cloud"
+
+            @staticmethod
+            def consume_notice():
+                return None
+
+        window = MainWindow(FakeService(), "TEST-HOST", inference=FakeInference())
+
+        self.assertEqual(
+            window.activity.text(),
+            "Ready · Local · Agent · Full local read · Metadata only",
+        )
+        disclosure = window._cloud_privacy_message()
+        self.assertIn("enabled local filesystem drives", disclosure)
+        self.assertIn("current Windows account", disclosure)
+        self.assertIn("cannot read file content", disclosure)
+        window.close()
+
+    def test_full_local_read_acknowledgement_is_explicit_and_defaults_to_no(self):
+        with patch(
+            "PySide6.QtWidgets.QMessageBox.question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ) as question:
+            self.assertTrue(request_full_local_read_acknowledgement())
+
+        args = question.call_args.args
+        self.assertEqual(args[1], "Enable Full local read access?")
+        self.assertIn("current Windows account", args[2])
+        self.assertIn("metadata only", args[2])
+        self.assertEqual(args[-1], QMessageBox.StandardButton.No)
+
+        with patch(
+            "PySide6.QtWidgets.QMessageBox.question",
+            return_value=QMessageBox.StandardButton.No,
+        ):
+            self.assertFalse(request_full_local_read_acknowledgement())
 
     def test_agent_start_failure_falls_back_visibly_to_chat_only(self):
         class FakeService:

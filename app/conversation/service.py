@@ -5,8 +5,9 @@ from threading import Lock
 from uuid import uuid4
 
 from app.agent_runtime import AgentRunStatus, AgentRuntime
-from app.conversation.prompt import AGENT_SYSTEM_PROMPT, SYSTEM_PROMPT
+from app.conversation.prompt import SYSTEM_PROMPT, agent_system_prompt
 from app.conversation.store import ConversationStore
+from app.host_access import HostAccessPolicy, HostReadScope
 from app.runtime.cancellation import CancellationSource, TaskCancelled
 
 
@@ -21,6 +22,7 @@ class ConversationService:
         agent_runtime: AgentRuntime | None = None,
         portable_root: Path | None = None,
         allowed_read_roots: tuple[Path, ...] = (),
+        host_access_policy: HostAccessPolicy | None = None,
         agent_error: str | None = None,
     ):
         if agent_runtime is not None and not isinstance(agent_runtime, AgentRuntime):
@@ -29,6 +31,10 @@ class ConversationService:
             raise TypeError("Agent conversations require a pathlib.Path portable root.")
         if not all(isinstance(root, Path) for root in allowed_read_roots):
             raise TypeError("Agent read roots must be pathlib.Path values.")
+        if host_access_policy is not None and not isinstance(
+            host_access_policy, HostAccessPolicy
+        ):
+            raise TypeError("Conversation host access must be a HostAccessPolicy.")
         self.inference = inference
         self.store = store
         self.agent_runtime = agent_runtime
@@ -37,6 +43,15 @@ class ConversationService:
             allowed_read_roots
             if allowed_read_roots
             else ((portable_root,) if portable_root is not None else ())
+        )
+        self.host_access_policy = (
+            host_access_policy
+            if host_access_policy is not None
+            else (
+                HostAccessPolicy.portable_root(portable_root)
+                if agent_runtime is not None
+                else None
+            )
         )
         self.agent_error = str(agent_error).strip() if agent_error else None
         self._run_lock = Lock()
@@ -48,6 +63,12 @@ class ConversationService:
     @property
     def agent_enabled(self) -> bool:
         return self.agent_runtime is not None
+
+    @property
+    def host_read_scope(self) -> HostReadScope | None:
+        if self.host_access_policy is None:
+            return None
+        return self.host_access_policy.read_scope
 
     def run(self, user_message: str, activity=None) -> str:
         text = str(user_message).strip()
@@ -77,6 +98,7 @@ class ConversationService:
                     turn_id=f"turn-{self._turn_number}",
                     portable_root=self.portable_root,
                     allowed_read_roots=self.allowed_read_roots,
+                    host_access_policy=self.host_access_policy,
                     cancellation=source.token,
                 )
                 if result.status == AgentRunStatus.CANCELLED:
@@ -131,7 +153,11 @@ class ConversationService:
         return min(self._context_length(), prompt_tokens + self._response_reserve())
 
     def _model_messages(self) -> list[dict[str, str]]:
-        prompt = AGENT_SYSTEM_PROMPT if self.agent_enabled else SYSTEM_PROMPT
+        prompt = (
+            agent_system_prompt(self.host_read_scope or HostReadScope.PORTABLE_ROOT)
+            if self.agent_enabled
+            else SYSTEM_PROMPT
+        )
         system = {"role": "system", "content": prompt}
         # Token counting may lazily load the local model and replace the
         # startup context hint with the context it could actually allocate.
