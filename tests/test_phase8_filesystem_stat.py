@@ -279,8 +279,15 @@ def test_chat_only_fallback_keeps_plain_prompt_and_boundary(tmp_path: Path):
 
 
 def test_agent_prompt_describes_the_exact_metadata_boundary():
-    prompt = AGENT_SYSTEM_PROMPT.casefold()
+    prompt = " ".join(AGENT_SYSTEM_PROMPT.casefold().split())
 
+    assert "capable general conversational assistant" in prompt
+    assert "including recipes" in prompt
+    assert "without using filesystem.stat" in prompt
+    assert "does not restrict or replace" in prompt
+    assert "filesystem.stat only from the latest user request" in prompt
+    assert "return assistant text without a capability call" in prompt
+    assert "never repeat, verify, or continue an earlier metadata call" in prompt
     assert "exactly one read-only capability: filesystem.stat" in prompt
     assert "cannot read file content" in prompt
     assert "preserve a user-provided absolute path exactly" in prompt
