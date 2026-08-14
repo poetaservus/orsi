@@ -104,6 +104,67 @@ def test_bundled_model_preserves_absolute_in_root_paths(tmp_path: Path):
 
 
 @pytest.mark.skipif(
+    os.environ.get("ORSI_RUN_LIVE_MODEL_CONVERSATION") != "1",
+    reason="Set ORSI_RUN_LIVE_MODEL_CONVERSATION=1 for the same-session chat gate.",
+)
+def test_bundled_model_keeps_general_conversation_after_metadata(tmp_path: Path):
+    """Real-model regression: a tool turn must not make later chat metadata-only."""
+    portable_root = tmp_path / "orsi_test"
+    portable_root.mkdir()
+    state = tmp_path / "state"
+    model = LlamaServerInferenceEngine(load_model_config())
+    runtime = build_filesystem_stat_runtime(
+        model,
+        config=AgentFeatureConfig(filesystem_stat_enabled=True),
+        portable_root=portable_root,
+        state_directory=state,
+    )
+    service = ConversationService(
+        model,
+        ConversationStore(state / "conversation.json"),
+        agent_runtime=runtime,
+        portable_root=portable_root,
+        allowed_read_roots=(portable_root,),
+    )
+    try:
+        recipe_prompts = (
+            "Can you give me a recipe for pancakes?",
+            "How do I make simple pancakes?",
+            "Please give me an easy pancake recipe.",
+        )
+        for index in range(10):
+            probe = portable_root / f"conversation-transition-{index}.txt"
+            expected_size = 230 + index
+            probe.write_bytes(bytes([65 + index % 26]) * expected_size)
+
+            metadata_answer = service.run(
+                f"What's the metadata of {probe}"
+            )
+            records = runtime.executor.journal.records
+            assert len(records) == 1, (index, metadata_answer, records)
+            assert records[0].state == CallLifecycleState.COMPLETED
+            assert str(expected_size) in metadata_answer
+
+            recipe_answer = service.run(
+                recipe_prompts[index % len(recipe_prompts)]
+            )
+            assert runtime.executor.journal.records == records, (
+                index,
+                recipe_answer,
+                runtime.executor.journal.records,
+            )
+            lowered = recipe_answer.casefold()
+            assert "flour" in lowered
+            assert sum(word in lowered for word in ("egg", "milk", "batter", "pan")) >= 2
+            assert "provide me with a path" not in lowered
+            assert "only provide information based on the metadata" not in lowered
+            service.new_session()
+    finally:
+        service.shutdown()
+        model.close()
+
+
+@pytest.mark.skipif(
     os.environ.get("ORSI_RUN_LIVE_MODEL_ACCEPTANCE") != "1",
     reason="Set ORSI_RUN_LIVE_MODEL_ACCEPTANCE=1 for the 25/25 model gate.",
 )
