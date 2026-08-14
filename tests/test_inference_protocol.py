@@ -14,6 +14,9 @@ from app.inference import (
 )
 from app.inference.protocol import (
     model_capability_definitions,
+    model_capability_calls_message,
+    model_capability_result_message,
+    native_chat_messages,
     native_function_tools,
     normalize_native_chat_completion,
     normalize_native_chat_message,
@@ -50,6 +53,14 @@ def native_call(
 
 def provider_name(name: str = "filesystem.stat") -> str:
     return native_function_tools((definition(name),))[0]["function"]["name"]
+
+
+def neutral_call(call_id: str = "call_native_1"):
+    return {
+        "provider_call_id": call_id,
+        "capability": "filesystem.stat",
+        "arguments": {"path": "sample.txt"},
+    }
 
 
 def message(*, content=None, tool_calls=None, **extra):
@@ -175,6 +186,73 @@ def test_native_calls_preserve_provider_ids_names_and_untrusted_arguments():
         "path": ".",
         "unexpected": True,
     }
+
+
+def test_provider_neutral_call_and_result_history_translates_to_native_messages():
+    call = normalize_native_chat_message(
+        message(tool_calls=[native_call()]),
+        (definition(),),
+    ).capability_calls[0]
+    result = {
+        "call_id": "internal-call-1",
+        "capability": "filesystem.stat",
+        "success": True,
+        "output": {"type": "file"},
+        "error": None,
+        "duration_ms": 1,
+        "metadata": {},
+    }
+
+    translated = native_chat_messages(
+        [
+            {"role": "user", "content": "Inspect sample.txt"},
+            model_capability_calls_message((call,)),
+            model_capability_result_message(call, result),
+        ],
+        (definition(),),
+    )
+
+    assert translated[1] == {
+        "role": "assistant",
+        "content": None,
+        "tool_calls": [
+            {
+                "id": "call_native_1",
+                "type": "function",
+                "function": {
+                    "name": provider_name(),
+                    "arguments": '{"path":"sample.txt"}',
+                },
+            }
+        ],
+    }
+    assert translated[2]["role"] == "tool"
+    assert translated[2]["tool_call_id"] == "call_native_1"
+    assert translated[2]["content"] == (
+        '{"call_id":"internal-call-1","capability":"filesystem.stat",'
+        '"duration_ms":1,"error":null,"metadata":{},'
+        '"output":{"type":"file"},"success":true}'
+    )
+
+
+@pytest.mark.parametrize(
+    "transcript",
+    [
+        [
+            {"role": "assistant", "capability_calls": [neutral_call()]},
+        ],
+        [
+            {"role": "capability", "provider_call_id": "call_native_1", "capability": "filesystem.stat", "result": {}},
+        ],
+        [
+            {"role": "assistant", "capability_calls": [neutral_call()]},
+            {"role": "capability", "provider_call_id": "call_native_1", "capability": "filesystem.list", "result": {}},
+        ],
+    ],
+)
+def test_native_transcript_translation_rejects_unpaired_or_mismatched_results(transcript):
+    with pytest.raises((ValidationError, ValueError)):
+        native_chat_messages(transcript, (definition(),))
 
 
 @pytest.mark.parametrize(

@@ -13,6 +13,7 @@ from app.inference.protocol import (
     ModelCapabilityDefinition,
     ModelResponse,
     model_capability_definitions,
+    native_chat_messages,
     native_function_tools,
     normalize_native_chat_completion,
 )
@@ -170,7 +171,7 @@ class LlamaCppInferenceEngine(InferenceEngine):
             require_nonempty=True,
         )
         response = self.model.create_chat_completion(
-            messages=messages,
+            messages=native_chat_messages(messages, definitions),
             temperature=self.config.temperature,
             max_tokens=self.config.max_tokens,
             tools=native_function_tools(definitions),

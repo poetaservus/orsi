@@ -29,6 +29,7 @@ _MAX_CAPABILITY_DEFINITIONS = 128
 _MAX_CAPABILITY_CALLS = 16
 _MAX_ARGUMENT_BYTES = 2 * 1024 * 1024
 _MAX_ASSISTANT_TEXT_CHARS = 1_000_000
+_MAX_RESULT_BYTES = 2 * 1024 * 1024
 
 
 class ModelCapabilityCall(BaseModel):
@@ -229,6 +230,160 @@ def native_function_tools(
     ]
 
 
+def model_capability_calls_message(
+    calls: tuple[ModelCapabilityCall, ...],
+) -> dict[str, Any]:
+    """Create one provider-neutral assistant capability-call transcript item."""
+    if (
+        not isinstance(calls, tuple)
+        or not calls
+        or len(calls) > _MAX_CAPABILITY_CALLS
+        or not all(isinstance(call, ModelCapabilityCall) for call in calls)
+    ):
+        raise ValueError("Capability-call transcript items require a bounded non-empty call set.")
+    return {
+        "role": "assistant",
+        "capability_calls": [
+            deepcopy(call.model_dump(mode="python"))
+            for call in calls
+        ],
+    }
+
+
+def model_capability_result_message(
+    call: ModelCapabilityCall,
+    result: dict[str, Any],
+) -> dict[str, Any]:
+    """Create one provider-neutral result tied to an exact provider call ID."""
+    if not isinstance(call, ModelCapabilityCall):
+        raise TypeError("Capability results require a ModelCapabilityCall identity.")
+    if not isinstance(result, dict) or _json_size(result) > _MAX_RESULT_BYTES:
+        raise ValueError("Capability results must contain a bounded JSON object.")
+    return {
+        "role": "capability",
+        "provider_call_id": call.provider_call_id,
+        "capability": call.capability,
+        "result": deepcopy(result),
+    }
+
+
+def native_chat_messages(
+    messages: Iterable[dict[str, Any]],
+    definitions: Iterable[ModelCapabilityDefinition],
+) -> list[dict[str, Any]]:
+    """Translate a provider-neutral transcript to native chat/tool messages."""
+    values = model_capability_definitions(definitions, require_nonempty=True)
+    provider_names = dict(
+        zip((item.name for item in values), _provider_function_names(values), strict=True)
+    )
+    translated: list[dict[str, Any]] = []
+    outstanding: dict[str, str] = {}
+    seen_provider_call_ids: set[str] = set()
+
+    for raw_message in tuple(messages):
+        if not isinstance(raw_message, dict):
+            raise TypeError("Model transcripts accept only message objects.")
+        role = raw_message.get("role")
+
+        if role in {"system", "user"}:
+            if outstanding or set(raw_message) != {"role", "content"}:
+                raise ValueError("Text messages cannot interrupt an unresolved capability call.")
+            translated.append(
+                {"role": role, "content": _bounded_message_text(raw_message.get("content"))}
+            )
+            continue
+
+        if role == "assistant" and "capability_calls" not in raw_message:
+            if outstanding or set(raw_message) != {"role", "content"}:
+                raise ValueError("Assistant text messages must contain only bounded text.")
+            translated.append(
+                {
+                    "role": "assistant",
+                    "content": _bounded_message_text(raw_message.get("content")),
+                }
+            )
+            continue
+
+        if role == "assistant":
+            if outstanding or set(raw_message) != {"role", "capability_calls"}:
+                raise ValueError("Capability-call messages have an invalid transcript shape.")
+            raw_calls = raw_message.get("capability_calls")
+            if not isinstance(raw_calls, (list, tuple)) or not raw_calls:
+                raise ValueError("Capability-call messages require at least one call.")
+            if len(raw_calls) > _MAX_CAPABILITY_CALLS:
+                raise ValueError("Capability-call messages exceed the call limit.")
+            native_calls: list[dict[str, Any]] = []
+            for raw_call in raw_calls:
+                call = (
+                    raw_call
+                    if isinstance(raw_call, ModelCapabilityCall)
+                    else ModelCapabilityCall.model_validate(raw_call)
+                )
+                provider_name = provider_names.get(call.capability)
+                if provider_name is None:
+                    raise ValueError("A transcript call references an unadvertised capability.")
+                if call.provider_call_id in seen_provider_call_ids:
+                    raise ValueError("A transcript contains a duplicate provider call ID.")
+                seen_provider_call_ids.add(call.provider_call_id)
+                outstanding[call.provider_call_id] = call.capability
+                native_calls.append(
+                    {
+                        "id": call.provider_call_id,
+                        "type": "function",
+                        "function": {
+                            "name": provider_name,
+                            "arguments": _canonical_json(call.arguments),
+                        },
+                    }
+                )
+            translated.append(
+                {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": native_calls,
+                }
+            )
+            continue
+
+        if role == "capability":
+            if set(raw_message) != {
+                "role",
+                "provider_call_id",
+                "capability",
+                "result",
+            }:
+                raise ValueError("Capability-result messages have an invalid transcript shape.")
+            provider_call_id = raw_message.get("provider_call_id")
+            capability = raw_message.get("capability")
+            if (
+                not isinstance(provider_call_id, str)
+                or _PROVIDER_CALL_ID.fullmatch(provider_call_id) is None
+                or not isinstance(capability, str)
+                or _CAPABILITY_NAME.fullmatch(capability) is None
+            ):
+                raise ValueError("Capability-result messages contain unsafe identifiers.")
+            expected = outstanding.pop(provider_call_id, None)
+            if expected is None or expected != capability:
+                raise ValueError("A capability result does not match an outstanding call.")
+            result = raw_message.get("result")
+            if not isinstance(result, dict) or _json_size(result) > _MAX_RESULT_BYTES:
+                raise ValueError("Capability-result messages require a bounded JSON object.")
+            translated.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": provider_call_id,
+                    "content": _canonical_json(result),
+                }
+            )
+            continue
+
+        raise ValueError("The model transcript contains an unsupported message role.")
+
+    if outstanding:
+        raise ValueError("Every assistant capability call requires a matching result.")
+    return translated
+
+
 def normalize_native_chat_completion(
     response: Any,
     definitions: Iterable[ModelCapabilityDefinition],
@@ -421,6 +576,31 @@ def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
             raise ValueError("duplicate JSON object key")
         value[key] = item
     return value
+
+
+def _bounded_message_text(value: Any) -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError("Model text messages require non-empty string content.")
+    try:
+        value.encode("utf-8")
+    except UnicodeError as exc:
+        raise ValueError("Model text messages require valid UTF-8 content.") from exc
+    if len(value) > _MAX_ASSISTANT_TEXT_CHARS:
+        raise ValueError("Model text messages exceed the transcript size limit.")
+    return value
+
+
+def _canonical_json(value: Any) -> str:
+    try:
+        return json.dumps(
+            value,
+            allow_nan=False,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        )
+    except (TypeError, ValueError, UnicodeError, RecursionError) as exc:
+        raise ValueError("Model transcript values must contain bounded JSON data.") from exc
 
 
 def _json_size(value: Any) -> int:

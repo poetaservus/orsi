@@ -11,10 +11,13 @@ from app.inference.cloud_config import CloudConfig
 from app.inference.hybrid import HybridInferenceEngine, LazyInferenceEngine
 from app.inference.llama_backend import LlamaCppInferenceEngine
 from app.inference.protocol import (
+    ModelCapabilityCall,
     ModelCapabilityDefinition,
     ModelProtocolFailureCode,
     ModelResponse,
     ModelResponseKind,
+    model_capability_calls_message,
+    model_capability_result_message,
     native_function_tools,
 )
 
@@ -207,6 +210,61 @@ def test_cloud_backend_returns_malformed_native_call_as_protocol_result(monkeypa
 
     assert result.protocol_failure.code == ModelProtocolFailureCode.MALFORMED_ARGUMENTS
     assert "private malformed arguments" not in result.model_dump_json()
+
+
+def test_cloud_backend_translates_structured_continuation_history(monkeypatch):
+    monkeypatch.delenv("ORSI_TEST_CLOUD_KEY", raising=False)
+    engine = OpenAICompatibleInferenceEngine(
+        cloud_config(), api_key="session-secret"
+    )
+    response = MagicMock()
+    response.__enter__.return_value.read.return_value = json.dumps(
+        {
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": "The file is available.",
+                    }
+                }
+            ]
+        }
+    ).encode("utf-8")
+    call = ModelCapabilityCall(
+        provider_call_id="provider_call_1",
+        capability="filesystem.stat",
+        arguments={"path": "sample.txt"},
+    )
+    normalized_result = {
+        "call_id": "internal-call-1",
+        "capability": "filesystem.stat",
+        "success": True,
+        "output": {"type": "file"},
+        "error": None,
+        "duration_ms": 1,
+        "metadata": {},
+    }
+    transcript = [
+        {"role": "user", "content": "Inspect sample.txt"},
+        model_capability_calls_message((call,)),
+        model_capability_result_message(call, normalized_result),
+    ]
+
+    with patch("app.inference.cloud_backend.urlopen", return_value=response) as mocked:
+        result = engine.respond_with_capabilities(
+            transcript,
+            (capability_definition(),),
+        )
+
+    payload = json.loads(mocked.call_args.args[0].data.decode("utf-8"))
+    assert payload["messages"][1]["tool_calls"][0]["id"] == "provider_call_1"
+    assert payload["messages"][1]["tool_calls"][0]["function"]["name"] == (
+        provider_capability_name()
+    )
+    assert payload["messages"][2]["role"] == "tool"
+    assert payload["messages"][2]["tool_call_id"] == "provider_call_1"
+    assert json.loads(payload["messages"][2]["content"]) == normalized_result
+    assert result.assistant_text == "The file is available."
 
 
 def test_cloud_backend_normalizes_malformed_completion_envelope(monkeypatch):
