@@ -64,6 +64,7 @@ class AgentRunStatus(StrEnum):
     CANCELLED = "cancelled"
     TIMED_OUT = "timed_out"
     STEP_LIMIT = "step_limit"
+    CAPABILITY_CALL_LIMIT = "capability_call_limit"
     REPEATED_CALL = "repeated_call"
     PROTOCOL_FAILURE_LIMIT = "protocol_failure_limit"
     APPROVAL_REQUIRED = "approval_required"
@@ -76,6 +77,7 @@ class AgentRuntimeLimits(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
 
     max_steps: int = Field(default=8, ge=1, le=32)
+    max_capability_calls: int = Field(default=16, ge=1, le=32)
     max_identical_calls: int = Field(default=2, ge=1, le=8)
     max_protocol_failures: int = Field(default=2, ge=1, le=8)
     overall_timeout_seconds: float = Field(default=120.0, gt=0, le=3_600)
@@ -344,12 +346,35 @@ class AgentRuntime:
                     return self._transcript_limited(steps, capability_calls, protocol_failures)
                 continue
 
-            if len(response.capability_calls) != 1:
+            calls = response.capability_calls
+            batch_allowed = True
+            if len(calls) > 1:
+                batch_names = {call.capability for call in calls}
+                if len(batch_names) != 1:
+                    batch_allowed = False
+                else:
+                    try:
+                        batch_capability = self.registry.resolve(calls[0].capability)
+                    except CapabilityLookupError:
+                        batch_allowed = False
+                    except Exception:
+                        return self._stopped(
+                            AgentRunStatus.INTERNAL_FAILURE,
+                            "The capability registry failed unexpectedly.",
+                            steps=steps,
+                            capability_calls=capability_calls,
+                            protocol_failures=protocol_failures,
+                        )
+                    else:
+                        batch_allowed = (
+                            len(calls) <= batch_capability.max_calls_per_batch
+                        )
+            if not batch_allowed:
                 protocol_failures += 1
                 if protocol_failures >= self.limits.max_protocol_failures:
                     return self._stopped(
                         AgentRunStatus.PROTOCOL_FAILURE_LIMIT,
-                        "The agent stopped after repeated multi-call model responses.",
+                        "The agent stopped after repeated unsupported call batches.",
                         steps=steps,
                         capability_calls=capability_calls,
                         protocol_failures=protocol_failures,
@@ -359,9 +384,21 @@ class AgentRuntime:
                     return self._transcript_limited(steps, capability_calls, protocol_failures)
                 continue
 
-            call = response.capability_calls[0]
-            capability_calls += 1
-            if call.provider_call_id in used_provider_call_ids:
+            if capability_calls + len(calls) > self.limits.max_capability_calls:
+                return self._stopped(
+                    AgentRunStatus.CAPABILITY_CALL_LIMIT,
+                    "The agent stopped before exceeding its capability-call limit.",
+                    steps=steps,
+                    capability_calls=capability_calls,
+                    protocol_failures=protocol_failures,
+                )
+
+            provider_call_ids = [call.provider_call_id for call in calls]
+            if len(set(provider_call_ids)) != len(provider_call_ids) or any(
+                provider_call_id in used_provider_call_ids
+                for provider_call_id in provider_call_ids
+            ):
+                capability_calls += len(calls)
                 protocol_failures += 1
                 if protocol_failures >= self.limits.max_protocol_failures:
                     return self._stopped(
@@ -383,66 +420,87 @@ class AgentRuntime:
                         protocol_failures,
                     )
                 continue
-            used_provider_call_ids.add(call.provider_call_id)
-            fingerprint = _call_fingerprint(call)
-            repeated[fingerprint] = repeated.get(fingerprint, 0) + 1
-            if repeated[fingerprint] > self.limits.max_identical_calls:
+
+            fingerprints = [_call_fingerprint(call) for call in calls]
+            if len(set(fingerprints)) != len(fingerprints):
                 return self._stopped(
                     AgentRunStatus.REPEATED_CALL,
-                    "The agent stopped after repeating an identical capability call.",
+                    "The agent stopped before executing duplicate calls in one batch.",
                     steps=steps,
-                    capability_calls=capability_calls,
+                    capability_calls=capability_calls + len(calls),
                     protocol_failures=protocol_failures,
                 )
+            staged_repeated = dict(repeated)
+            for fingerprint in fingerprints:
+                staged_repeated[fingerprint] = staged_repeated.get(fingerprint, 0) + 1
+                if staged_repeated[fingerprint] > self.limits.max_identical_calls:
+                    return self._stopped(
+                        AgentRunStatus.REPEATED_CALL,
+                        "The agent stopped after repeating an identical capability call.",
+                        steps=steps,
+                        capability_calls=capability_calls + len(calls),
+                        protocol_failures=protocol_failures,
+                    )
 
-            internal_call_id = self._new_call_id(used_call_ids)
-            if internal_call_id is None:
-                return self._stopped(
-                    AgentRunStatus.INTERNAL_FAILURE,
-                    "The agent could not allocate a safe capability-call ID.",
-                    steps=steps,
-                    capability_calls=capability_calls,
-                    protocol_failures=protocol_failures,
+            internal_call_ids: list[str] = []
+            for _call in calls:
+                internal_call_id = self._new_call_id(used_call_ids)
+                if internal_call_id is None:
+                    return self._stopped(
+                        AgentRunStatus.INTERNAL_FAILURE,
+                        "The agent could not allocate a safe capability-call ID.",
+                        steps=steps,
+                        capability_calls=capability_calls,
+                        protocol_failures=protocol_failures,
+                    )
+                internal_call_ids.append(internal_call_id)
+
+            capability_calls += len(calls)
+            used_provider_call_ids.update(provider_call_ids)
+            repeated = staged_repeated
+            results: list[CapabilityResult] = []
+            for call, internal_call_id in zip(calls, internal_call_ids, strict=True):
+                outcome = self._process_call(
+                    call,
+                    internal_call_id=internal_call_id,
+                    advertised_names=advertised_names,
+                    session_id=session_id,
+                    turn_id=turn_id,
+                    portable_root=portable_root,
+                    allowed_read_roots=roots,
+                    host_access_policy=host_access_policy,
+                    cancellation=linked,
+                    started=started,
+                    user_cancellation=user_cancellation,
+                    deadline_cancellation=deadline_cancellation,
                 )
-            outcome = self._process_call(
-                call,
-                internal_call_id=internal_call_id,
-                advertised_names=advertised_names,
-                session_id=session_id,
-                turn_id=turn_id,
-                portable_root=portable_root,
-                allowed_read_roots=roots,
-                host_access_policy=host_access_policy,
-                cancellation=linked,
-                started=started,
-                user_cancellation=user_cancellation,
-                deadline_cancellation=deadline_cancellation,
-            )
-            if outcome.stop_status is not None:
-                return self._stopped(
-                    outcome.stop_status,
-                    outcome.stop_message or "The agent stopped safely.",
-                    steps=steps,
-                    capability_calls=capability_calls,
-                    protocol_failures=protocol_failures,
-                )
-            if outcome.result is None:
-                return self._stopped(
-                    AgentRunStatus.INTERNAL_FAILURE,
-                    "The capability step completed without a normalized result.",
-                    steps=steps,
-                    capability_calls=capability_calls,
-                    protocol_failures=protocol_failures,
-                )
+                if outcome.stop_status is not None:
+                    return self._stopped(
+                        outcome.stop_status,
+                        outcome.stop_message or "The agent stopped safely.",
+                        steps=steps,
+                        capability_calls=capability_calls,
+                        protocol_failures=protocol_failures,
+                    )
+                if outcome.result is None:
+                    return self._stopped(
+                        AgentRunStatus.INTERNAL_FAILURE,
+                        "The capability step completed without a normalized result.",
+                        steps=steps,
+                        capability_calls=capability_calls,
+                        protocol_failures=protocol_failures,
+                    )
+                results.append(outcome.result)
 
             try:
-                transcript.append(model_capability_calls_message((call,)))
-                transcript.append(
-                    model_capability_result_message(
-                        call,
-                        outcome.result.model_dump(mode="json"),
+                transcript.append(model_capability_calls_message(calls))
+                for call, result in zip(calls, results, strict=True):
+                    transcript.append(
+                        model_capability_result_message(
+                            call,
+                            result.model_dump(mode="json"),
+                        )
                     )
-                )
             except (TypeError, ValueError):
                 return self._transcript_limited(
                     steps,
@@ -843,11 +901,19 @@ def _call_fingerprint(call: ModelCapabilityCall) -> str:
 
 
 def _protocol_feedback(code: str) -> dict[str, str]:
+    if code == ModelProtocolFailureCode.MIXED_RESPONSE.value:
+        instruction = (
+            "If the task still has an unprocessed item, return only one native capability call "
+            "for that next item with no assistant text. If the task is complete, return only final "
+            "assistant text with no capability call. Never combine text and a call."
+        )
+    else:
+        instruction = "Return either assistant text or exactly one valid native capability call."
     return {
         "role": "system",
         "content": (
             f"The prior structured response was rejected ({code}). "
-            "Return either assistant text or exactly one valid native capability call."
+            f"No call from it was executed. {instruction}"
         ),
     }
 
@@ -857,7 +923,9 @@ def _single_call_feedback() -> dict[str, str]:
         "role": "system",
         "content": (
             "The prior structured response requested multiple capability calls. "
-            "Return at most one native capability call in this step."
+            "No call was executed. Return exactly one native capability call for only the next "
+            "required item, wait for its result, and request any later item in a separate step. "
+            "Never return multiple calls together."
         ),
     }
 

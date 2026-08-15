@@ -405,3 +405,75 @@ def test_bundled_model_full_local_directory_listing_acceptance(tmp_path: Path):
     finally:
         service.shutdown()
         model.close()
+
+
+@pytest.mark.skipif(
+    os.environ.get("ORSI_RUN_PHASE9_LIST_LIVE_MODEL") != "1",
+    reason="Set ORSI_RUN_PHASE9_LIST_LIVE_MODEL=1 for the filesystem.list model gate.",
+)
+def test_bundled_model_uses_stat_after_a_directory_listing(tmp_path: Path):
+    """Real-model regression for list-to-metadata follow-up tool selection."""
+    portable_root = tmp_path / "portable"
+    user_home = tmp_path / "host-user"
+    host_directory = tmp_path / "lab"
+    portable_root.mkdir()
+    user_home.mkdir()
+    host_directory.mkdir()
+    expected_sizes: dict[str, int] = {}
+    for index, name in enumerate(
+        ("3.jpg", "4.jpg", "6.jpg", "fixed_v1.txt", "wokr.py", "work_css.txt"),
+        start=1,
+    ):
+        content = "x" * index
+        (host_directory / name).write_text(content, encoding="utf-8")
+        expected_sizes[name] = len(content)
+
+    state = tmp_path / "state"
+    policy = HostAccessPolicy.full_local(
+        application_root=portable_root,
+        user_home=user_home,
+        acknowledged=True,
+    )
+    model = LlamaServerInferenceEngine(load_model_config())
+    runtime = build_filesystem_stat_runtime(
+        model,
+        config=AgentFeatureConfig(
+            filesystem_stat_enabled=True,
+            filesystem_list_enabled=True,
+            full_local_read_enabled=True,
+        ),
+        portable_root=portable_root,
+        state_directory=state,
+        host_access_policy=policy,
+    )
+    service = ConversationService(
+        model,
+        ConversationStore(state / "conversation.json"),
+        agent_runtime=runtime,
+        portable_root=portable_root,
+        allowed_read_roots=policy.permission_roots(),
+        host_access_policy=policy,
+    )
+    try:
+        listing_answer = service.run(
+            f"What files do I have in this exact directory: {host_directory.resolve()}"
+        )
+        assert all(name.casefold() in listing_answer.casefold() for name in expected_sizes)
+        assert [record.capability for record in runtime.executor.journal.records] == [
+            "filesystem.list"
+        ]
+
+        metadata_answer = service.run("Can you tell me the metadata of each file?")
+
+        records = runtime.executor.journal.records
+        capabilities = [record.capability for record in records]
+        assert capabilities.count("filesystem.list") == 1, metadata_answer
+        assert capabilities.count("filesystem.stat") == len(expected_sizes), metadata_answer
+        assert len(capabilities) == len(expected_sizes) + 1, metadata_answer
+        assert all(record.state == CallLifecycleState.COMPLETED for record in records)
+        lowered = metadata_answer.casefold()
+        assert all(name.casefold() in lowered for name in expected_sizes)
+        assert all(f"{size} bytes" in lowered for size in expected_sizes.values())
+    finally:
+        service.shutdown()
+        model.close()

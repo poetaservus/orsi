@@ -211,6 +211,22 @@ class CapabilityRegistry:
                 f"Capability {name} must declare a valid execution isolation mode.",
             )
 
+        batch_limit = getattr(capability, "max_calls_per_batch", None)
+        if (
+            isinstance(batch_limit, bool)
+            or not isinstance(batch_limit, int)
+            or not 1 <= batch_limit <= 16
+        ):
+            raise CapabilityRegistryConfigurationError(
+                RegistryConfigurationCode.INVALID_DEFINITION,
+                f"Capability {name} must declare a batch-call limit between 1 and 16.",
+            )
+        if batch_limit > 1 and capability.permission != PermissionClass.READ:
+            raise CapabilityRegistryConfigurationError(
+                RegistryConfigurationCode.INVALID_DEFINITION,
+                f"Capability {name} may batch only read-only calls.",
+            )
+
         if registration.model_visible and not registration.enabled:
             raise CapabilityRegistryConfigurationError(
                 RegistryConfigurationCode.INVALID_VISIBILITY,

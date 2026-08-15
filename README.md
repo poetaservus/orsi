@@ -13,6 +13,8 @@ adds optional metadata and bounded directory-listing capabilities behind explici
 - Continuously identifies the active model, agent state, host-read scope, and read capabilities.
 - When explicitly enabled, can return bounded metadata through `filesystem.stat` and deterministic,
   paginated names and types from one requested directory through `filesystem.list`.
+- A follow-up may request metadata for up to seven files from the immediately preceding listing.
+  O.R.S.I validates, authorizes, executes, and journals those read-only stat calls one at a time.
 - Can use acknowledged Full local read access across enabled local drives under the current Windows
   account without elevation.
 
@@ -21,7 +23,8 @@ adds optional metadata and bounded directory-listing capabilities behind explici
 O.R.S.I cannot read file content, search directories, launch or close applications, run commands,
 use the clipboard, automate windows, write or delete files, or make any operating-system change.
 Directory listing is limited to one explicitly requested directory, 50 returned entries per call,
-and a 4,096-entry bounded snapshot.
+and a 4,096-entry bounded snapshot. Only `filesystem.stat` opts into same-response batching, with a
+seven-call limit; all other capabilities default to one call, and mixed capability batches fail.
 
 When asked to do anything outside that boundary, the model is instructed to state the limitation
 honestly. It can still discuss a task, review text pasted into the conversation, or explain steps
@@ -73,7 +76,8 @@ python -m pytest
 
 The regression suite verifies the disabled chat-only default, exact advertised catalog, path
 denials, bounded cursor pagination, journaled execution, structured model round trips,
-cancellation, and conversation privacy boundaries.
+cancellation, bounded sequential stat batches, list-to-metadata follow-ups, and conversation privacy
+boundaries.
 
 ## Portable runtime
 
