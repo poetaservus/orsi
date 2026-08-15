@@ -27,6 +27,8 @@ _FENCED_CODE = re.compile(
 
 _CONVERSATION_WIDTH = 968
 _COLUMN_RIGHT_COMPENSATION = 36
+_COMPACT_BREAKPOINT = 1500
+_SCROLLBAR_WIDTH = 22
 
 
 def _split_fenced_code(content: str) -> list[tuple[str, str, str]]:
@@ -258,7 +260,8 @@ class ChatView(QScrollArea):
         row = QWidget()
         row.setObjectName("userMessageRow" if from_user else "orsiMessageRow")
         row_layout = QHBoxLayout(row)
-        row_layout.setContentsMargins(0, 0, _COLUMN_RIGHT_COMPENSATION, 0)
+        left_margin, right_margin = self._column_margins()
+        row_layout.setContentsMargins(left_margin, 0, right_margin, 0)
         row_layout.setSpacing(0)
 
         band = QWidget()
@@ -312,17 +315,32 @@ class ChatView(QScrollArea):
 
     def resizeEvent(self, event) -> None:  # noqa: N802 - Qt API name
         super().resizeEvent(event)
+        left_margin, right_margin = self._column_margins()
         width = self._message_area_width()
-        for message, band in zip(self._messages, self._message_bands):
+        for message, band, row in zip(
+            self._messages,
+            self._message_bands,
+            self._message_rows,
+        ):
+            row.layout().setContentsMargins(left_margin, 0, right_margin, 0)
             band.setFixedWidth(width)
             message.set_available_width(width)
-        left = max(4, (self.viewport().width() - _COLUMN_RIGHT_COMPENSATION - width) // 2)
+        column_width = self.viewport().width() - left_margin - right_margin
+        left = max(4, left_margin + (column_width - width) // 2)
         right = max(0, self.viewport().width() - left - width)
         self._thinking_layout.setContentsMargins(left + 4, 0, right, 0)
 
     def _message_area_width(self) -> int:
-        available = self.viewport().width() - _COLUMN_RIGHT_COMPENSATION - 32
+        left_margin, right_margin = self._column_margins()
+        available = self.viewport().width() - left_margin - right_margin - 32
         return min(_CONVERSATION_WIDTH, max(280, available))
+
+    def _column_margins(self) -> tuple[int, int]:
+        if self.width() < _COMPACT_BREAKPOINT:
+            # Balance the always-visible scrollbar so the conversation column
+            # stays centered inside the compact middle panel.
+            return _SCROLLBAR_WIDTH, 0
+        return 0, _COLUMN_RIGHT_COMPENSATION
 
     def _scroll_to_bottom(self) -> None:
         try:

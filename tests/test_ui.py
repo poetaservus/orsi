@@ -7,7 +7,7 @@ from unittest.mock import patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 try:
-    from PySide6.QtCore import Qt
+    from PySide6.QtCore import QPoint, Qt
     from PySide6.QtTest import QTest
     from PySide6.QtWidgets import QApplication, QLabel, QMessageBox, QWidget
 
@@ -173,6 +173,10 @@ class UiTests(unittest.TestCase):
         self.assertLessEqual(abs(middle_panel.x() - panel_right_space), 1)
         composer_right_space = window._content.width() - window.composer.geometry().right() - 1
         self.assertLessEqual(abs(window.composer.x() - composer_right_space), 1)
+        window.chat.add_message("Agent", "A compact response")
+        QApplication.processEvents()
+        response_left = window.chat._messages[0].mapTo(window._content, QPoint(0, 0)).x()
+        self.assertGreaterEqual(response_left - middle_panel.x(), 24)
         window.close()
 
     def test_cloud_selector_warns_and_keeps_key_in_memory(self):
