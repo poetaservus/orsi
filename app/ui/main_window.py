@@ -636,7 +636,7 @@ QLabel#conversationStatus {
     font-size: 11px;
 }
 QFrame#composer {
-    background: #3a3a3b;
+    background: #343435;
     border: none;
     border-radius: 17px;
 }
