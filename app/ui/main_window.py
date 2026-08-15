@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QObject, QRect, QSize, Qt, QThread, Signal, Slot
-from PySide6.QtGui import QColor, QIcon, QLinearGradient, QPainter
+from PySide6.QtGui import QColor, QIcon, QLinearGradient, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
@@ -74,6 +74,7 @@ class ChatSurface(QWidget):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setObjectName("mainContent")
+        self._background = QPixmap(str(_ICON_DIRECTORY / "o.r.s.i_gui_bck.png"))
 
     def middle_panel_rect(self) -> QRect:
         available_width = max(0, self.width() - _COMPOSER_RIGHT_COMPENSATION)
@@ -84,12 +85,15 @@ class ChatSurface(QWidget):
     def paintEvent(self, event) -> None:  # noqa: N802 - Qt API name
         del event
         painter = QPainter(self)
-        gradient = QLinearGradient(0, 0, max(1, self.width()), 0)
-        gradient.setColorAt(0.0, QColor("#131517"))
-        gradient.setColorAt(0.55, QColor("#111315"))
-        gradient.setColorAt(1.0, QColor("#101214"))
-        painter.fillRect(self.rect(), gradient)
-        painter.fillRect(self.middle_panel_rect(), QColor("#121416"))
+        if self._background.isNull():
+            gradient = QLinearGradient(0, 0, max(1, self.width()), 0)
+            gradient.setColorAt(0.0, QColor("#131517"))
+            gradient.setColorAt(0.55, QColor("#111315"))
+            gradient.setColorAt(1.0, QColor("#101214"))
+            painter.fillRect(self.rect(), gradient)
+        else:
+            painter.drawPixmap(self.rect(), self._background)
+        painter.fillRect(self.middle_panel_rect(), QColor(18, 20, 22, 188))
 
 
 class MainWindow(QMainWindow):
@@ -272,7 +276,11 @@ class MainWindow(QMainWindow):
         desired_context_width = min(350, max(228, int(content.width() * 0.30)))
         context_width = min(desired_context_width, maximum_context_width)
         context_height = max(28, self.context_window.sizeHint().height())
-        context_x = max(context_margin, content.width() - context_width - context_margin)
+        context_x = (
+            max(0, (content.width() - context_width) // 2)
+            if compact_header
+            else max(context_margin, content.width() - context_width - context_margin)
+        )
         self.context_window.setFixedSize(context_width, context_height)
         self.context_window.move(context_x, 12 if compact_header else 22)
         self.context_window.raise_()

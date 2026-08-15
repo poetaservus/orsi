@@ -146,6 +146,7 @@ class UiTests(unittest.TestCase):
         self.assertEqual(window.composer.y(), window._content.height() - 130)
         self.assertEqual(window._content.width() - window.composer.geometry().right() - 1, 457)
         middle_panel = window._content.middle_panel_rect()
+        self.assertFalse(window._content._background.isNull())
         self.assertEqual(middle_panel.width(), 1020)
         self.assertEqual(middle_panel.x(), 371)
         self.assertEqual(
@@ -163,10 +164,9 @@ class UiTests(unittest.TestCase):
 
         self.assertEqual(window._content_layout.contentsMargins().top(), 54)
         self.assertLess(window.context_window.geometry().bottom(), window.chat.y())
-        self.assertEqual(
-            window._content.width() - window.context_window.geometry().right() - 1,
-            16,
-        )
+        left_space = window.context_window.x()
+        right_space = window._content.width() - window.context_window.geometry().right() - 1
+        self.assertLessEqual(abs(left_space - right_space), 1)
         self.assertLessEqual(window.context_window.width(), window._content.width() - 32)
         window.close()
 
