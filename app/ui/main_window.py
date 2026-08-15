@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QObject, QSize, Qt, QThread, Signal, Slot
-from PySide6.QtGui import QIcon
+from PySide6.QtCore import QEvent, QObject, QRect, QSize, Qt, QThread, Signal, Slot
+from PySide6.QtGui import QColor, QIcon, QLinearGradient, QPainter
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
@@ -32,6 +32,8 @@ _CONVERSATION_WIDTH = 968
 _COMPOSER_HEIGHT = 94
 _COMPOSER_BOTTOM_MARGIN = 36
 _COMPOSER_RIGHT_COMPENSATION = 60
+_MIDDLE_PANEL_WIDTH = 1020
+_CONTEXT_RIGHT_MARGIN = 44
 
 
 class MessageInput(QTextEdit):
@@ -64,6 +66,30 @@ class Worker(QObject):
             self.finished.emit(str(response))
         except Exception as exc:
             self.failed.emit(str(exc))
+
+
+class ChatSurface(QWidget):
+    """Paint the quiet gradient and centered conversation panel."""
+
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.setObjectName("mainContent")
+
+    def middle_panel_rect(self) -> QRect:
+        available_width = max(0, self.width() - _COMPOSER_RIGHT_COMPENSATION)
+        width = min(_MIDDLE_PANEL_WIDTH, available_width)
+        x = max(0, (available_width - width) // 2)
+        return QRect(x, 0, width, self.height())
+
+    def paintEvent(self, event) -> None:  # noqa: N802 - Qt API name
+        del event
+        painter = QPainter(self)
+        gradient = QLinearGradient(0, 0, max(1, self.width()), 0)
+        gradient.setColorAt(0.0, QColor("#131517"))
+        gradient.setColorAt(0.55, QColor("#111315"))
+        gradient.setColorAt(1.0, QColor("#101214"))
+        painter.fillRect(self.rect(), gradient)
+        painter.fillRect(self.middle_panel_rect(), QColor("#121416"))
 
 
 class MainWindow(QMainWindow):
@@ -117,8 +143,7 @@ class MainWindow(QMainWindow):
         sidebar_layout.addStretch(1)
         root_layout.addWidget(sidebar)
 
-        content = QWidget()
-        content.setObjectName("mainContent")
+        content = ChatSurface()
         self._content = content
         content.installEventFilter(self)
         content_layout = QVBoxLayout(content)
@@ -129,9 +154,14 @@ class MainWindow(QMainWindow):
         self.chat = ChatView()
         content_layout.addWidget(self.chat, 1)
 
+        self.context_window = ContextWindowBar(
+            int(getattr(inference, "context_length", 0)),
+            content,
+        )
+
         self.settings_panel = QFrame(root)
         self.settings_panel.setObjectName("settingsPanel")
-        self.settings_panel.setFixedSize(314, 218)
+        self.settings_panel.setFixedSize(314, 168)
         settings_layout = QVBoxLayout(self.settings_panel)
         settings_layout.setContentsMargins(18, 16, 18, 16)
         settings_layout.setSpacing(10)
@@ -156,11 +186,6 @@ class MainWindow(QMainWindow):
             self._sync_inference_selector()
             self.model_selector.currentIndexChanged.connect(self._select_inference_mode)
         settings_layout.addWidget(self.model_selector)
-
-        self.context_window = ContextWindowBar(
-            int(getattr(inference, "context_length", 0))
-        )
-        settings_layout.addWidget(self.context_window)
 
         self.activity = ConversationStatus(
             self._ready_status() if not startup_error else "Model unavailable"
@@ -236,6 +261,12 @@ class MainWindow(QMainWindow):
         y = max(16, content.height() - _COMPOSER_BOTTOM_MARGIN - _COMPOSER_HEIGHT)
         self.composer.setGeometry(x, y, width, _COMPOSER_HEIGHT)
         self.composer.raise_()
+        context_width = min(350, max(228, int(content.width() * 0.20)))
+        context_height = max(28, self.context_window.sizeHint().height())
+        context_x = max(16, content.width() - context_width - _CONTEXT_RIGHT_MARGIN)
+        self.context_window.setFixedSize(context_width, context_height)
+        self.context_window.move(context_x, 22)
+        self.context_window.raise_()
         self.settings_panel.move(_SIDEBAR_WIDTH + 14, 99)
         if self.settings_panel.isVisible():
             self.settings_panel.raise_()
@@ -476,11 +507,12 @@ class MainWindow(QMainWindow):
 
 
 _STYLE = """
-QMainWindow#mainWindow, QWidget#root, QWidget#mainContent, QWidget#chatContent {
+QMainWindow#mainWindow, QWidget#root {
     background: #121416;
     color: #ababab;
     font-family: Arial;
 }
+QWidget#mainContent, QWidget#chatContent { background: transparent; }
 QWidget#sidebar {
     background: #101010;
     border-right: 1px solid #272727;
@@ -528,21 +560,22 @@ QProgressBar#contextWindowBar::chunk {
     background: #d4d4d4;
     border-radius: 2px;
 }
-QScrollArea#chatView { background: #121416; border: none; }
+QScrollArea#chatView { background: transparent; border: none; }
+QScrollArea#chatView QWidget#qt_scrollarea_viewport { background: transparent; }
 QFrame#userMessage {
     background: #28292a;
     border: none;
-    border-radius: 26px;
+    border-radius: 23px;
 }
 QFrame#orsiMessage, QFrame#errorMessage { background: transparent; border: none; }
 QFrame#userMessage QLabel, QFrame#orsiMessage QLabel {
     color: #adadad;
     font-family: Arial;
-    font-size: 23px;
+    font-size: 20px;
     font-weight: 400;
 }
-QFrame#userMessage QLabel { font-size: 22px; }
-QFrame#errorMessage QLabel { color: #ff8d86; font-size: 18px; }
+QFrame#userMessage QLabel { font-size: 19px; }
+QFrame#errorMessage QLabel { color: #ff8d86; font-size: 16px; }
 QFrame#codeBlock {
     background: #202020;
     border: 1px solid #3b3b3b;
@@ -595,7 +628,7 @@ QTextEdit#messageInput {
     border: none;
     padding: 14px 0 8px 8px;
     font-family: Arial;
-    font-size: 25px;
+    font-size: 21px;
     selection-background-color: #666666;
 }
 QTextEdit#messageInput:focus { border: none; }

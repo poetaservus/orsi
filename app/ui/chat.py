@@ -213,11 +213,16 @@ class ChatView(QScrollArea):
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.viewport().setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.viewport().setAutoFillBackground(False)
         self._follow_tail = True
         self._setting_scroll_position = False
 
         self._content = QWidget()
         self._content.setObjectName("chatContent")
+        self._content.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self._content.setAutoFillBackground(False)
         self._layout = QVBoxLayout(self._content)
         self._layout.setContentsMargins(0, 55, 0, 170)
         self._layout.setSpacing(40)

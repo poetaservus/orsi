@@ -34,7 +34,7 @@ class UiTests(unittest.TestCase):
         self.assertNotIn("HOSTNAME-SHOULD-NOT-APPEAR", visible_text)
         window.close()
 
-    def test_context_window_bar_is_in_settings_panel_and_shows_numeric_capacity(self):
+    def test_context_window_bar_is_visible_on_chat_surface_and_shows_capacity(self):
         class FakeInference:
             available_modes = ("local",)
             mode = "local"
@@ -49,10 +49,11 @@ class UiTests(unittest.TestCase):
         self.assertEqual(window.context_window.title.text(), "Context Window")
         self.assertEqual(window.context_window.size.text(), "32,768")
         self.assertEqual(window.context_window.bar.maximum(), 32768)
-        self.assertIs(window.context_window.parentWidget(), window.settings_panel)
-        self.assertTrue(window.settings_panel.isHidden())
+        self.assertIs(window.context_window.parentWidget(), window._content)
+        self.assertFalse(window.context_window.isHidden())
         window.settings_button.click()
         self.assertFalse(window.settings_panel.isHidden())
+        self.assertIs(window.context_window.parentWidget(), window._content)
         window.close()
 
     def test_context_window_bar_uses_conversation_estimate(self):
@@ -144,6 +145,13 @@ class UiTests(unittest.TestCase):
         self.assertEqual(window.composer.height(), 94)
         self.assertEqual(window.composer.y(), window._content.height() - 130)
         self.assertEqual(window._content.width() - window.composer.geometry().right() - 1, 457)
+        middle_panel = window._content.middle_panel_rect()
+        self.assertEqual(middle_panel.width(), 1020)
+        self.assertEqual(middle_panel.x(), 371)
+        self.assertEqual(
+            window._content.width() - window.context_window.geometry().right() - 1,
+            44,
+        )
         self.assertTrue(window.settings_panel.isHidden())
         window.close()
 
