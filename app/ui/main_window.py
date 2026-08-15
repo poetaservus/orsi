@@ -29,7 +29,8 @@ from app.ui.status import ConversationStatus
 _ICON_DIRECTORY = Path(__file__).with_name("assets")
 _SIDEBAR_WIDTH = 98
 _CONVERSATION_WIDTH = 968
-_COMPOSER_HEIGHT = 94
+_COMPOSER_WIDTH = 880
+_COMPOSER_HEIGHT = 76
 _COMPOSER_BOTTOM_MARGIN = 36
 _COMPOSER_RIGHT_COMPENSATION = 60
 _MIDDLE_PANEL_WIDTH = 1020
@@ -202,28 +203,28 @@ class MainWindow(QMainWindow):
         self.composer.setObjectName("composer")
         self.composer.setFixedHeight(_COMPOSER_HEIGHT)
         composer_layout = QHBoxLayout(self.composer)
-        composer_layout.setContentsMargins(26, 10, 16, 10)
+        composer_layout.setContentsMargins(22, 8, 12, 8)
         composer_layout.setSpacing(8)
 
         self.input = MessageInput()
         self.input.setObjectName("messageInput")
         self.input.setPlaceholderText("Ask O.R.S.I")
         self.input.setAcceptRichText(False)
-        self.input.setFixedHeight(74)
+        self.input.setFixedHeight(60)
 
         self.send = QPushButton()
         self.send.setObjectName("sendButton")
-        self.send.setFixedSize(56, 56)
+        self.send.setFixedSize(46, 46)
         self.send.setIcon(QIcon(str(_ICON_DIRECTORY / "send.svg")))
-        self.send.setIconSize(QSize(34, 34))
+        self.send.setIconSize(QSize(28, 28))
         self.send.setToolTip("Send")
         self.send.setAccessibleName("Send")
 
         self.stop = QPushButton()
         self.stop.setObjectName("stopButton")
-        self.stop.setFixedSize(56, 56)
+        self.stop.setFixedSize(46, 46)
         self.stop.setIcon(QIcon(str(_ICON_DIRECTORY / "stop.svg")))
-        self.stop.setIconSize(QSize(22, 22))
+        self.stop.setIconSize(QSize(18, 18))
         self.stop.setToolTip("Stop")
         self.stop.setAccessibleName("Stop")
         self.stop.setEnabled(False)
@@ -261,7 +262,7 @@ class MainWindow(QMainWindow):
             return
         content = self.composer.parentWidget()
         available_width = max(0, content.width() - _COMPOSER_RIGHT_COMPENSATION)
-        width = min(_CONVERSATION_WIDTH, max(320, available_width - 32))
+        width = min(_COMPOSER_WIDTH, max(320, available_width - 32))
         x = max(16, (available_width - width) // 2)
         y = max(16, content.height() - _COMPOSER_BOTTOM_MARGIN - _COMPOSER_HEIGHT)
         self.composer.setGeometry(x, y, width, _COMPOSER_HEIGHT)
@@ -637,13 +638,13 @@ QLabel#conversationStatus {
 QFrame#composer {
     background: #3a3a3b;
     border: none;
-    border-radius: 19px;
+    border-radius: 17px;
 }
 QTextEdit#messageInput {
     color: #b2b2b2;
     background: transparent;
     border: none;
-    padding: 19px 0 3px 8px;
+    padding: 12px 0 4px 8px;
     font-family: Arial;
     font-size: 21px;
     selection-background-color: #666666;
@@ -653,7 +654,7 @@ QTextEdit#messageInput:disabled { color: #777777; background: transparent; }
 QPushButton#sendButton, QPushButton#stopButton {
     background: #292a2b;
     border: none;
-    border-radius: 28px;
+    border-radius: 23px;
     padding: 0;
 }
 QPushButton#sendButton:hover, QPushButton#stopButton:hover { background: #333435; }

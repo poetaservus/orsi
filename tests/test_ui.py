@@ -114,9 +114,9 @@ class UiTests(unittest.TestCase):
 
     def test_composer_preserves_large_multiline_pastes_and_shift_enter(self):
         window = MainWindow(None, "TEST-HOST")
-        self.assertEqual(window.composer.height(), 94)
-        self.assertEqual(window.input.height(), 74)
-        self.assertEqual(window.send.size().width(), 56)
+        self.assertEqual(window.composer.height(), 76)
+        self.assertEqual(window.input.height(), 60)
+        self.assertEqual(window.send.size().width(), 46)
         self.assertIs(window.model_selector.parentWidget(), window.settings_panel)
         pasted = ("A full paragraph.\n\n" * 3000).rstrip()
         window.input.setPlainText(pasted)
@@ -141,10 +141,10 @@ class UiTests(unittest.TestCase):
 
         sidebar = window.findChild(QWidget, "sidebar")
         self.assertEqual(sidebar.width(), 98)
-        self.assertEqual(window.composer.width(), 968)
-        self.assertEqual(window.composer.height(), 94)
-        self.assertEqual(window.composer.y(), window._content.height() - 130)
-        self.assertEqual(window._content.width() - window.composer.geometry().right() - 1, 457)
+        self.assertEqual(window.composer.width(), 880)
+        self.assertEqual(window.composer.height(), 76)
+        self.assertEqual(window.composer.y(), window._content.height() - 112)
+        self.assertEqual(window._content.width() - window.composer.geometry().right() - 1, 501)
         middle_panel = window._content.middle_panel_rect()
         self.assertFalse(window._content._background.isNull())
         self.assertEqual(middle_panel.width(), 1020)
