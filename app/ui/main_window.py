@@ -94,7 +94,7 @@ class ChatSurface(QWidget):
             painter.fillRect(self.rect(), gradient)
         else:
             painter.drawPixmap(self.rect(), self._background)
-        painter.fillRect(self.middle_panel_rect(), QColor(18, 20, 22, 188))
+        painter.fillRect(self.middle_panel_rect(), QColor("#121416"))
 
 
 class MainWindow(QMainWindow):
