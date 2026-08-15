@@ -1,5 +1,9 @@
 # Current O.R.S.I baseline audit
 
+> Historical note: this audit records the chat-only checkpoint from 2026-08-12. See the
+> [current status report](status-report.md) and [roadmap](roadmap.md) for the integrated capability
+> and GUI state.
+
 ## Scope
 
 This document audits the conversational baseline created on 2026-08-12. It intentionally contains

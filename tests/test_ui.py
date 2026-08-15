@@ -7,9 +7,9 @@ from unittest.mock import patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 try:
-    from PySide6.QtCore import Qt
+    from PySide6.QtCore import QPoint, Qt
     from PySide6.QtTest import QTest
-    from PySide6.QtWidgets import QApplication, QLabel, QMessageBox
+    from PySide6.QtWidgets import QApplication, QLabel, QMessageBox, QWidget
 
     from app.ui.chat import ChatView
     from app.ui.main_window import MainWindow
@@ -34,7 +34,7 @@ class UiTests(unittest.TestCase):
         self.assertNotIn("HOSTNAME-SHOULD-NOT-APPEAR", visible_text)
         window.close()
 
-    def test_context_window_bar_is_top_right_and_shows_numeric_capacity(self):
+    def test_context_window_bar_is_visible_on_chat_surface_and_shows_capacity(self):
         class FakeInference:
             available_modes = ("local",)
             mode = "local"
@@ -49,9 +49,11 @@ class UiTests(unittest.TestCase):
         self.assertEqual(window.context_window.title.text(), "Context Window")
         self.assertEqual(window.context_window.size.text(), "32,768")
         self.assertEqual(window.context_window.bar.maximum(), 32768)
-        header_layout = window.context_window.parentWidget().layout()
-        self.assertIsNotNone(header_layout.itemAt(0).spacerItem())
-        self.assertIs(header_layout.itemAt(1).widget(), window.context_window)
+        self.assertIs(window.context_window.parentWidget(), window._content)
+        self.assertFalse(window.context_window.isHidden())
+        window.settings_button.click()
+        self.assertFalse(window.settings_panel.isHidden())
+        self.assertIs(window.context_window.parentWidget(), window._content)
         window.close()
 
     def test_context_window_bar_uses_conversation_estimate(self):
@@ -107,13 +109,15 @@ class UiTests(unittest.TestCase):
         self.assertEqual(window.context_window.bar.value(), 0)
         self.assertEqual(window.new_session_button.accessibleName(), "New session")
         self.assertEqual(window.settings_button.accessibleName(), "Settings")
-        self.assertFalse(window.settings_button.isEnabled())
+        self.assertTrue(window.settings_button.isEnabled())
         window.close()
 
     def test_composer_preserves_large_multiline_pastes_and_shift_enter(self):
         window = MainWindow(None, "TEST-HOST")
-        self.assertEqual(window.input.height(), window.send.minimumHeight())
-        self.assertEqual(window.input.height(), window.model_selector.minimumHeight())
+        self.assertEqual(window.composer.height(), 76)
+        self.assertEqual(window.input.height(), 60)
+        self.assertEqual(window.send.size().width(), 46)
+        self.assertIs(window.model_selector.parentWidget(), window.settings_panel)
         pasted = ("A full paragraph.\n\n" * 3000).rstrip()
         window.input.setPlainText(pasted)
 
@@ -127,6 +131,52 @@ class UiTests(unittest.TestCase):
             Qt.KeyboardModifier.ShiftModifier,
         )
         self.assertEqual(window.input.toPlainText(), "\n")
+        window.close()
+
+    def test_reference_layout_matches_mockup_geometry(self):
+        window = MainWindow(None, "TEST-HOST")
+        window.resize(1920, 1080)
+        window.show()
+        QApplication.processEvents()
+
+        sidebar = window.findChild(QWidget, "sidebar")
+        self.assertEqual(sidebar.width(), 98)
+        self.assertEqual(window.composer.width(), 880)
+        self.assertEqual(window.composer.height(), 76)
+        self.assertEqual(window.composer.y(), window._content.height() - 112)
+        self.assertEqual(window._content.width() - window.composer.geometry().right() - 1, 501)
+        middle_panel = window._content.middle_panel_rect()
+        self.assertFalse(window._content._background.isNull())
+        self.assertEqual(middle_panel.width(), 1020)
+        self.assertEqual(middle_panel.x(), 371)
+        self.assertEqual(
+            window._content.width() - window.context_window.geometry().right() - 1,
+            44,
+        )
+        self.assertTrue(window.settings_panel.isHidden())
+        window.close()
+
+    def test_compact_window_reserves_a_non_overlapping_context_header(self):
+        window = MainWindow(None, "TEST-HOST")
+        window.resize(1280, 700)
+        window.show()
+        QApplication.processEvents()
+
+        self.assertEqual(window._content_layout.contentsMargins().top(), 54)
+        self.assertLess(window.context_window.geometry().bottom(), window.chat.y())
+        left_space = window.context_window.x()
+        right_space = window._content.width() - window.context_window.geometry().right() - 1
+        self.assertLessEqual(abs(left_space - right_space), 1)
+        self.assertLessEqual(window.context_window.width(), window._content.width() - 32)
+        middle_panel = window._content.middle_panel_rect()
+        panel_right_space = window._content.width() - middle_panel.right() - 1
+        self.assertLessEqual(abs(middle_panel.x() - panel_right_space), 1)
+        composer_right_space = window._content.width() - window.composer.geometry().right() - 1
+        self.assertLessEqual(abs(window.composer.x() - composer_right_space), 1)
+        window.chat.add_message("Agent", "A compact response")
+        QApplication.processEvents()
+        response_left = window.chat._messages[0].mapTo(window._content, QPoint(0, 0)).x()
+        self.assertGreaterEqual(response_left - middle_panel.x(), 24)
         window.close()
 
     def test_cloud_selector_warns_and_keeps_key_in_memory(self):
