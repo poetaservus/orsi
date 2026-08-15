@@ -43,7 +43,9 @@ class BlockingStatModel(InferenceEngine):
         self.release = Event()
 
     def respond(self, messages):
-        raise AssertionError("Agent mode must use the structured model boundary.")
+        self.started.set()
+        self.release.wait(2.0)
+        return "late response"
 
     def respond_with_capabilities(self, messages, capabilities):
         self.started.set()

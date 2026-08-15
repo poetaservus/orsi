@@ -208,6 +208,80 @@ class AgentRuntime:
         self.approval_manager.shutdown()
         self.executor.executor.shutdown()
 
+    def run_conversation(
+        self,
+        messages: Iterable[dict[str, Any]],
+        *,
+        cancellation: CancellationToken | None = None,
+    ) -> AgentRunResult:
+        """Run one bounded model step without advertising computer capabilities."""
+        user_cancellation = cancellation or CancellationToken()
+        if not isinstance(user_cancellation, CancellationToken):
+            raise TypeError("Conversation cancellation must be a CancellationToken.")
+        transcript = deepcopy(tuple(messages))
+        if not all(
+            isinstance(message, dict)
+            and set(message) == {"role", "content"}
+            and message.get("role") in {"system", "user", "assistant"}
+            and isinstance(message.get("content"), str)
+            and bool(message["content"].strip())
+            for message in transcript
+        ):
+            return self._stopped(
+                AgentRunStatus.INTERNAL_FAILURE,
+                "The conversational model transcript is invalid.",
+                steps=0,
+                capability_calls=0,
+                protocol_failures=0,
+            )
+        transcript = [deepcopy(message) for message in transcript]
+        try:
+            self._check_transcript_size(transcript)
+        except (TypeError, ValueError):
+            return self._stopped(
+                AgentRunStatus.TRANSCRIPT_LIMIT,
+                "The conversational model transcript reached the size limit.",
+                steps=0,
+                capability_calls=0,
+                protocol_failures=0,
+            )
+
+        started = self._timestamp()
+        deadline_cancellation = _DeadlineCancellationToken(
+            self._clock,
+            started + self.limits.overall_timeout_seconds,
+        )
+        response, stop = self._text_model_step(
+            transcript,
+            started,
+            user_cancellation,
+            deadline_cancellation,
+        )
+        if stop is not None:
+            status, message = stop
+            return self._stopped(
+                status,
+                message,
+                steps=0,
+                capability_calls=0,
+                protocol_failures=0,
+            )
+        if not isinstance(response, str) or not response.strip():
+            return self._stopped(
+                AgentRunStatus.INTERNAL_FAILURE,
+                "The model returned an invalid conversational response.",
+                steps=1,
+                capability_calls=0,
+                protocol_failures=0,
+            )
+        return AgentRunResult(
+            status=AgentRunStatus.COMPLETED,
+            assistant_text=response.strip(),
+            steps=1,
+            capability_calls=0,
+            protocol_failures=0,
+        )
+
     def run(
         self,
         messages: Iterable[dict[str, Any]],
@@ -218,6 +292,11 @@ class AgentRuntime:
         allowed_read_roots: Iterable[Path],
         host_access_policy: HostAccessPolicy | None = None,
         cancellation: CancellationToken | None = None,
+        result_observer: Callable[
+            [tuple[ModelCapabilityCall, ...], tuple[CapabilityResult, ...]], None
+        ]
+        | None = None,
+        required_calls: tuple[ModelCapabilityCall, ...] = (),
     ) -> AgentRunResult:
         if not _safe_identifier(session_id) or not _safe_identifier(turn_id):
             raise ValueError("Agent session and turn IDs must use bounded stable syntax.")
@@ -233,6 +312,13 @@ class AgentRuntime:
         user_cancellation = cancellation or CancellationToken()
         if not isinstance(user_cancellation, CancellationToken):
             raise TypeError("Agent cancellation must be a CancellationToken.")
+        if result_observer is not None and not callable(result_observer):
+            raise TypeError("Agent result observers must be callable when supplied.")
+        if (
+            not isinstance(required_calls, tuple)
+            or not all(isinstance(call, ModelCapabilityCall) for call in required_calls)
+        ):
+            raise TypeError("Required agent calls must be a tuple of model capability calls.")
 
         definitions = self.registry.model_definitions()
         if not definitions:
@@ -275,6 +361,22 @@ class AgentRuntime:
         used_call_ids: set[str] = set()
         used_provider_call_ids: set[str] = set()
         advertised_names = {item.name for item in definitions}
+        required_fingerprints = tuple(_call_fingerprint(call) for call in required_calls)
+        if (
+            len(required_calls) > self.limits.max_capability_calls
+            or len(set(required_fingerprints)) != len(required_fingerprints)
+            or any(call.capability not in advertised_names for call in required_calls)
+        ):
+            return self._stopped(
+                AgentRunStatus.INTERNAL_FAILURE,
+                "The required capability-call plan is invalid.",
+                steps=0,
+                capability_calls=0,
+                protocol_failures=0,
+            )
+        required_set = set(required_fingerprints)
+        completed_required: set[str] = set()
+        planned_response = ModelResponse.calls(required_calls) if required_calls else None
 
         while True:
             stop = self._stop_status(started, user_cancellation, deadline_cancellation)
@@ -296,13 +398,18 @@ class AgentRuntime:
                     protocol_failures=protocol_failures,
                 )
 
-            response, model_stop = self._model_step(
-                transcript,
-                definitions,
-                started,
-                user_cancellation,
-                deadline_cancellation,
-            )
+            if planned_response is not None:
+                response = planned_response
+                planned_response = None
+                model_stop = None
+            else:
+                response, model_stop = self._model_step(
+                    transcript,
+                    definitions,
+                    started,
+                    user_cancellation,
+                    deadline_cancellation,
+                )
             if model_stop is not None:
                 status, message = model_stop
                 return self._stopped(
@@ -322,6 +429,15 @@ class AgentRuntime:
                     protocol_failures=protocol_failures,
                 )
             if response.kind == ModelResponseKind.ASSISTANT_TEXT:
+                if required_set - completed_required:
+                    transcript.append(_required_calls_feedback())
+                    if not self._transcript_within_limit(transcript):
+                        return self._transcript_limited(
+                            steps,
+                            capability_calls,
+                            protocol_failures,
+                        )
+                    continue
                 return AgentRunResult(
                     status=AgentRunStatus.COMPLETED,
                     assistant_text=response.assistant_text,
@@ -347,6 +463,19 @@ class AgentRuntime:
                 continue
 
             calls = response.capability_calls
+            call_fingerprints = [_call_fingerprint(call) for call in calls]
+            if required_set and any(
+                fingerprint not in required_set or fingerprint in completed_required
+                for fingerprint in call_fingerprints
+            ):
+                transcript.append(_required_calls_feedback())
+                if not self._transcript_within_limit(transcript):
+                    return self._transcript_limited(
+                        steps,
+                        capability_calls,
+                        protocol_failures,
+                    )
+                continue
             batch_allowed = True
             if len(calls) > 1:
                 batch_names = {call.capability for call in calls}
@@ -421,7 +550,7 @@ class AgentRuntime:
                     )
                 continue
 
-            fingerprints = [_call_fingerprint(call) for call in calls]
+            fingerprints = call_fingerprints
             if len(set(fingerprints)) != len(fingerprints):
                 return self._stopped(
                     AgentRunStatus.REPEATED_CALL,
@@ -491,6 +620,32 @@ class AgentRuntime:
                         protocol_failures=protocol_failures,
                     )
                 results.append(outcome.result)
+            completed_required.update(
+                fingerprint
+                for fingerprint in fingerprints
+                if fingerprint in required_set
+            )
+
+            if result_observer is not None:
+                try:
+                    result_observer(tuple(calls), tuple(results))
+                except Exception:
+                    return self._stopped(
+                        AgentRunStatus.INTERNAL_FAILURE,
+                        "The capability context could not be retained safely.",
+                        steps=steps,
+                        capability_calls=capability_calls,
+                        protocol_failures=protocol_failures,
+                    )
+
+            if required_set and completed_required == required_set:
+                return AgentRunResult(
+                    status=AgentRunStatus.COMPLETED,
+                    assistant_text="The requested capability calls completed.",
+                    steps=steps,
+                    capability_calls=capability_calls,
+                    protocol_failures=protocol_failures,
+                )
 
             try:
                 transcript.append(model_capability_calls_message(calls))
@@ -799,6 +954,52 @@ class AgentRuntime:
                 )
             return response, None
 
+    def _text_model_step(
+        self,
+        transcript: list[dict[str, Any]],
+        started: float,
+        user_cancellation: CancellationToken,
+        deadline_cancellation: _DeadlineCancellationToken,
+    ) -> tuple[str | None, tuple[AgentRunStatus, str] | None]:
+        future: Future[str] = Future()
+
+        def invoke() -> None:
+            try:
+                future.set_result(self.model.respond(deepcopy(transcript)))
+            except BaseException as exc:
+                future.set_exception(exc)
+
+        Thread(target=invoke, name="orsi-conversation-model-step", daemon=True).start()
+        while True:
+            stop = self._stop_status(started, user_cancellation, deadline_cancellation)
+            if stop is not None:
+                if not future.done():
+                    cancel = getattr(self.model, "cancel_current_request", None)
+                    if callable(cancel):
+                        try:
+                            cancel()
+                        except Exception:
+                            pass
+                return None, stop
+            remaining = self._remaining(started)
+            try:
+                response = future.result(
+                    timeout=min(self.limits.poll_interval_seconds, remaining)
+                )
+            except FutureTimeoutError:
+                continue
+            except InferenceUnavailable:
+                return None, (
+                    AgentRunStatus.MODEL_UNAVAILABLE,
+                    "The selected model provider is unavailable.",
+                )
+            except Exception:
+                return None, (
+                    AgentRunStatus.INTERNAL_FAILURE,
+                    "The model provider failed unexpectedly.",
+                )
+            return response, None
+
     def _stop_status(
         self,
         started: float,
@@ -914,6 +1115,18 @@ def _protocol_feedback(code: str) -> dict[str, str]:
         "content": (
             f"The prior structured response was rejected ({code}). "
             f"No call from it was executed. {instruction}"
+        ),
+    }
+
+
+def _required_calls_feedback() -> dict[str, str]:
+    return {
+        "role": "system",
+        "content": (
+            "The latest user request has a bounded, exact filesystem.stat target set from the "
+            "active directory listing. Do not return final text yet. Call filesystem.stat once "
+            "for every requested target that has not received a capability result. Do not call "
+            "filesystem.list and do not repeat a completed target."
         ),
     }
 

@@ -35,9 +35,13 @@ class ScriptedModel(InferenceEngine):
     def __init__(self, responses):
         self.responses = list(responses)
         self.requests: list[list[dict]] = []
+        self.text_requests: list[list[dict]] = []
 
     def respond(self, messages):
-        raise AssertionError("Agent mode must use the native capability boundary.")
+        self.text_requests.append(deepcopy(messages))
+        response = self.responses.pop(0)
+        assert response.assistant_text is not None
+        return response.assistant_text
 
     def respond_with_capabilities(self, messages, capabilities):
         assert [item.name for item in capabilities] == ["filesystem.stat"]
@@ -254,7 +258,8 @@ def test_full_local_mode_preserves_ordinary_conversation_without_calls(tmp_path:
     try:
         answer = service.run("Give me a pancake recipe")
         assert answer.startswith("Pancakes")
-        assert len(model.requests) == 1
+        assert model.requests == []
+        assert len(model.text_requests) == 1
         assert runtime.executor.journal.records == ()
     finally:
         service.shutdown()
