@@ -81,6 +81,7 @@ class ConversationService:
         self._session_id = uuid4().hex
         self._turn_number = 0
         self._active_listing: _ActiveDirectoryListing | None = None
+        self._last_filesystem_operation: str | None = None
         # Capability calls/results stay only in memory for coherent follow-ups.
         # ConversationStore intentionally persists user and final assistant text only.
         self._agent_history = self.store.messages()
@@ -175,6 +176,15 @@ class ConversationService:
                     call.capability == "filesystem.list" for call in required_calls
                 ):
                     answer = _render_listing_results(required_calls, turn_results)
+                completed_capabilities = {
+                    call.capability for call, _result in turn_results
+                }
+                if "filesystem.stat" in completed_capabilities:
+                    self._last_filesystem_operation = "metadata"
+                elif "filesystem.list" in completed_capabilities:
+                    self._last_filesystem_operation = "listing"
+                else:
+                    self._last_filesystem_operation = None
             self.store.append("assistant", answer)
             if self.agent_enabled:
                 if capability_turn:
@@ -207,6 +217,7 @@ class ConversationService:
             self._session_id = uuid4().hex
             self._turn_number = 0
             self._active_listing = None
+            self._last_filesystem_operation = None
             self._agent_history = []
         finally:
             self._run_lock.release()
@@ -300,6 +311,8 @@ class ConversationService:
             lowered,
         )
         if "filesystem.stat" in available:
+            if self._metadata_continuation_targets(text):
+                return True
             if re.search(r"\b(?:metadata|file properties|directory properties)\b", lowered):
                 return True
             if re.search(
@@ -347,12 +360,15 @@ class ConversationService:
             r"modified|modification|timestamps?|stat)\b",
             lowered,
         )
+        continuation_targets = self._metadata_continuation_targets(text)
         if (
             listing is not None
             and "filesystem.stat" in self.agent_capabilities
-            and metadata_request
+            and (metadata_request or continuation_targets)
         ):
-            if re.search(r"\b(?:the\s+)?(?:rest|remaining)\b", lowered):
+            if continuation_targets:
+                targets = list(continuation_targets)
+            elif re.search(r"\b(?:the\s+)?(?:rest|remaining)\b", lowered):
                 targets = [
                     name for name in listing.files if name not in listing.metadata_received
                 ]
@@ -386,6 +402,20 @@ class ConversationService:
                 ),
             )
         return ()
+
+    def _metadata_continuation_targets(self, text: str) -> tuple[str, ...]:
+        listing = self._active_listing
+        if listing is None or self._last_filesystem_operation != "metadata":
+            return ()
+        lowered = " ".join(str(text).casefold().split())
+        if re.search(
+            r"^(?:and\s+)?for\b|^what\s+about\b|\b(?:as\s+well|also|too|same\s+for)\b",
+            lowered,
+        ) is None:
+            return ()
+        return tuple(
+            name for name in listing.files if _mentions_filename(lowered, name)
+        )
 
     def _retain_filesystem_context(self, calls, results) -> None:
         for call, result in zip(calls, results, strict=True):

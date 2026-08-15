@@ -575,17 +575,31 @@ def test_bundled_model_switches_naturally_between_chat_and_filesystem_tasks(
         assert sum(record.capability == "filesystem.list" for record in listing_records) == 1
         assert all(name.casefold() in listing_answer.casefold() for name in expected_sizes)
 
-        selected = {"wokr.py", "3.jpg"}
+        first_selected = {"work_css.txt"}
         before_records = len(runtime.executor.journal.records)
         selected_answer = service.run(
-            "can you tell me the metadata of files wokr.py and 3.jpg from these?"
+            "can you tell me the metadata of work_css.txt"
         )
         selected_records = runtime.executor.journal.records
-        assert len(selected_records) - before_records == len(selected), selected_answer
-        assert sum(record.capability == "filesystem.stat" for record in selected_records) == 2
+        assert len(selected_records) - before_records == 1, selected_answer
+        assert sum(record.capability == "filesystem.stat" for record in selected_records) == 1
         lowered = selected_answer.casefold()
-        assert all(name in lowered for name in selected)
-        assert all(f"{expected_sizes[name]:,} bytes" in lowered for name in selected)
+        assert all(name in lowered for name in first_selected)
+        assert all(f"{expected_sizes[name]:,} bytes" in lowered for name in first_selected)
+
+        continuation = {"fixed_v1.txt"}
+        before_records = len(runtime.executor.journal.records)
+        continuation_answer = service.run("and for fixed_v1.txt as well please")
+        continuation_records = runtime.executor.journal.records
+        assert len(continuation_records) - before_records == 1, continuation_answer
+        assert sum(
+            record.capability == "filesystem.stat" for record in continuation_records
+        ) == 2
+        lowered = continuation_answer.casefold()
+        assert all(name in lowered for name in continuation)
+        assert all(f"{expected_sizes[name]:,} bytes" in lowered for name in continuation)
+
+        selected = first_selected | continuation
 
         remaining = set(expected_sizes) - selected
         before_records = len(runtime.executor.journal.records)

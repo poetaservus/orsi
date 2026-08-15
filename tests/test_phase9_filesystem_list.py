@@ -337,11 +337,13 @@ def test_listing_context_is_ephemeral_and_metadata_followup_is_deterministic(
         )
         assert "first.txt" in listing_answer
 
-        answer = service.run("Tell me the metadata of first.txt and second.txt from these.")
+        first_answer = service.run("Tell me the metadata of first.txt from these.")
+        answer = service.run("and for second.txt as well please")
 
+        assert "first.txt" in first_answer.casefold() and "11 bytes" in first_answer.casefold()
         lowered = answer.casefold()
-        assert "first.txt" in lowered and "11 bytes" in lowered
         assert "second.txt" in lowered and "22 bytes" in lowered
+        assert "11 bytes" not in lowered
         records = runtime.executor.journal.records
         assert [record.capability for record in records].count("filesystem.list") == 1
         assert [record.capability for record in records].count("filesystem.stat") == 2
