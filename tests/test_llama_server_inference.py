@@ -111,7 +111,7 @@ def test_explicit_stat_request_uses_native_server_tools_and_strict_normalizer():
     assert requests[0]["tools"][0]["function"]["strict"] is True
 
 
-def test_server_schema_projection_drops_only_unsupported_length_hints():
+def test_server_schema_projection_drops_only_unsupported_validation_hints():
     constrained = ModelCapabilityDefinition(
         name="filesystem.stat",
         description="Return metadata.",
@@ -124,7 +124,21 @@ def test_server_schema_projection_drops_only_unsupported_length_hints():
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 32767,
-                }
+                },
+                "max_entries": {
+                    "title": "Max Entries",
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 50,
+                    "default": 50,
+                },
+                "cursor": {
+                    "anyOf": [
+                        {"type": "string", "pattern": "^[A-Za-z0-9_-]+$"},
+                        {"type": "null"},
+                    ],
+                    "default": None,
+                },
             },
             "required": ["path"],
             "additionalProperties": False,
@@ -136,11 +150,19 @@ def test_server_schema_projection_drops_only_unsupported_length_hints():
     assert tool["strict"] is True
     assert tool["parameters"] == {
         "type": "object",
-        "properties": {"path": {"type": "string"}},
+        "properties": {
+            "path": {"type": "string"},
+            "max_entries": {"type": "integer"},
+            "cursor": {
+                "anyOf": [{"type": "string"}, {"type": "null"}],
+            },
+        },
         "required": ["path"],
         "additionalProperties": False,
     }
     assert constrained.input_schema["properties"]["path"]["minLength"] == 1
+    assert constrained.input_schema["properties"]["max_entries"]["maximum"] == 50
+    assert constrained.input_schema["properties"]["cursor"]["default"] is None
 
 
 def test_ordinary_conversation_with_advertised_tool_returns_zero_calls():

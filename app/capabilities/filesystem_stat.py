@@ -42,6 +42,9 @@ class FilesystemStatCapability(Capability[FilesystemStatArguments]):
     permission = PermissionClass.READ
     timeout_seconds = 2.0
     execution_isolation = ExecutionIsolation.IN_PROCESS_COOPERATIVE
+    # A model may request a small metadata set together. AgentRuntime still
+    # validates, authorizes, executes, and journals each call sequentially.
+    max_calls_per_batch = 7
 
     def permission_resource(
         self,

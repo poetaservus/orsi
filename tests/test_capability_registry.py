@@ -90,6 +90,9 @@ def test_duplicate_names_fail_deterministically():
         ("timeout_seconds", 0),
         ("timeout_seconds", float("inf")),
         ("execution_isolation", "in_process_cooperative"),
+        ("max_calls_per_batch", 0),
+        ("max_calls_per_batch", 17),
+        ("max_calls_per_batch", True),
     ],
 )
 def test_invalid_capability_definitions_are_rejected(attribute, value):
@@ -117,6 +120,19 @@ def test_argument_model_must_forbid_unknown_fields():
         CapabilityRegistry([registration(PermissiveCapability())])
 
     assert caught.value.code == RegistryConfigurationCode.INVALID_DEFINITION
+
+
+def test_only_read_capabilities_can_opt_into_call_batches():
+    class BatchedWriteCapability(AlphaCapability):
+        name = "test.batched_write"
+        permission = PermissionClass.WRITE
+        max_calls_per_batch = 2
+
+    with pytest.raises(CapabilityRegistryConfigurationError) as caught:
+        CapabilityRegistry([registration(BatchedWriteCapability())])
+
+    assert caught.value.code == RegistryConfigurationCode.INVALID_DEFINITION
+    assert "batch only read-only calls" in str(caught.value)
 
 
 def test_disabled_capability_cannot_be_model_visible():

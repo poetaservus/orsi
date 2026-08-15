@@ -17,6 +17,14 @@ FULL_LOCAL_READ_WARNING = (
     "device, or background-indexing authority."
 )
 
+FULL_LOCAL_LIST_READ_WARNING = (
+    "Full local read access lets O.R.S.I's enabled read-only capabilities use requested files and "
+    "directories across local drives that the current Windows account can access. This build can "
+    "inspect metadata and return bounded names and types from one requested directory, but it "
+    "cannot read file content or search the host. It does not grant write, delete, execute, "
+    "administrator, network, device, or background-indexing authority."
+)
+
 CLOUD_FILE_CONTENT_WARNING = (
     "In Cloud mode, requested host-file content and related conversation context may be sent to "
     "the selected provider. Do not enable Cloud mode for confidential host data."

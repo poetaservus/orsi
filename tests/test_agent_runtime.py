@@ -65,6 +65,21 @@ class EchoCapability(Capability[EchoArguments]):
         return {"echo": arguments.value}
 
 
+class BatchEchoCapability(EchoCapability):
+    max_calls_per_batch = 3
+
+
+class CancellingBatchEchoCapability(BatchEchoCapability):
+    def __init__(self, source: CancellationSource):
+        super().__init__()
+        self.source = source
+
+    def execute(self, arguments, context):
+        result = super().execute(arguments, context)
+        self.source.cancel("stop batch")
+        return result
+
+
 class BlockingCapability(EchoCapability):
     def __init__(self):
         super().__init__()
@@ -424,6 +439,29 @@ def test_protocol_failure_can_recover_but_repeated_failures_stop(tmp_path: Path)
     assert stopped_result.steps == 2
 
 
+def test_mixed_response_feedback_preserves_strict_sequential_continuation(
+    tmp_path: Path,
+):
+    mixed = ModelResponse.failure(
+        ModelProtocolFailureCode.MIXED_RESPONSE,
+        "Mixed assistant text and capability calls.",
+    )
+    runtime, model, capability, journal, _ = build_runtime(
+        tmp_path,
+        [mixed, capability_call(1), ModelResponse.text("finished")],
+    )
+
+    result = run(runtime, tmp_path)
+
+    assert result.status == AgentRunStatus.COMPLETED
+    feedback = model.requests[1][-1]["content"]
+    assert "No call from it was executed" in feedback
+    assert "only one native capability call" in feedback
+    assert "Never combine text and a call" in feedback
+    assert capability.values == ["hello"]
+    assert len(journal.records) == 1
+
+
 def test_multi_call_response_is_rejected_without_execution_and_can_recover(
     tmp_path: Path,
 ):
@@ -452,7 +490,123 @@ def test_multi_call_response_is_rejected_without_execution_and_can_recover(
     assert result.protocol_failures == 1
     assert capability.values == []
     assert journal.records == ()
-    assert "at most one" in model.requests[1][-1]["content"]
+    feedback = model.requests[1][-1]["content"]
+    assert "No call was executed" in feedback
+    assert "only the next required item" in feedback
+    assert "Never return multiple calls together" in feedback
+
+
+def test_opted_in_call_batch_executes_and_journals_each_call_sequentially(
+    tmp_path: Path,
+):
+    calls = tuple(
+        ModelCapabilityCall(
+            provider_call_id=f"provider-batch-{index}",
+            capability="test.echo",
+            arguments={"value": value},
+        )
+        for index, value in enumerate(("one", "two", "three"), start=1)
+    )
+    runtime, model, capability, journal, _ = build_runtime(
+        tmp_path,
+        [ModelResponse.calls(calls), ModelResponse.text("finished")],
+        capability=BatchEchoCapability(),
+    )
+
+    result = run(runtime, tmp_path)
+
+    assert result.status == AgentRunStatus.COMPLETED
+    assert result.capability_calls == 3
+    assert capability.values == ["one", "two", "three"]
+    assert len(journal.records) == 3
+    assert all(record.state == CallLifecycleState.COMPLETED for record in journal.records)
+    continuation = model.requests[1]
+    assert continuation[-4]["role"] == "assistant"
+    assert len(continuation[-4]["capability_calls"]) == 3
+    assert [message["role"] for message in continuation[-3:]] == [
+        "capability",
+        "capability",
+        "capability",
+    ]
+
+
+def test_call_batch_and_total_call_limits_fail_before_execution(tmp_path: Path):
+    calls = tuple(
+        ModelCapabilityCall(
+            provider_call_id=f"provider-bounded-{index}",
+            capability="test.echo",
+            arguments={"value": str(index)},
+        )
+        for index in range(3)
+    )
+    runtime, model, capability, journal, _ = build_runtime(
+        tmp_path,
+        [ModelResponse.calls(calls), ModelResponse.text("recovered")],
+        capability=BatchEchoCapability(),
+        limits=AgentRuntimeLimits(max_capability_calls=2),
+    )
+
+    result = run(runtime, tmp_path)
+
+    assert result.status == AgentRunStatus.CAPABILITY_CALL_LIMIT
+    assert result.capability_calls == 0
+    assert len(model.requests) == 1
+    assert capability.values == []
+    assert journal.records == ()
+
+
+def test_duplicate_calls_in_an_allowed_batch_fail_before_execution(tmp_path: Path):
+    calls = tuple(
+        ModelCapabilityCall(
+            provider_call_id=f"provider-duplicate-{index}",
+            capability="test.echo",
+            arguments={"value": "same"},
+        )
+        for index in range(2)
+    )
+    runtime, _model, capability, journal, _ = build_runtime(
+        tmp_path,
+        [ModelResponse.calls(calls)],
+        capability=BatchEchoCapability(),
+    )
+
+    result = run(runtime, tmp_path)
+
+    assert result.status == AgentRunStatus.REPEATED_CALL
+    assert result.capability_calls == 2
+    assert capability.values == []
+    assert journal.records == ()
+
+
+def test_call_batch_stops_sequentially_when_cancelled_after_first_call(tmp_path: Path):
+    source = CancellationSource()
+    calls = tuple(
+        ModelCapabilityCall(
+            provider_call_id=f"provider-cancel-{index}",
+            capability="test.echo",
+            arguments={"value": value},
+        )
+        for index, value in enumerate(("one", "two", "three"), start=1)
+    )
+    runtime, _model, capability, journal, _ = build_runtime(
+        tmp_path,
+        [ModelResponse.calls(calls)],
+        capability=CancellingBatchEchoCapability(source),
+    )
+
+    result = runtime.run(
+        [{"role": "user", "content": "Run the bounded batch."}],
+        session_id="session-1",
+        turn_id="turn-1",
+        portable_root=tmp_path,
+        allowed_read_roots=(tmp_path,),
+        cancellation=source.token,
+    )
+
+    assert result.status == AgentRunStatus.CANCELLED
+    assert capability.values == ["one"]
+    assert len(journal.records) == 1
+    assert journal.records[0].state == CallLifecycleState.CANCELLED
 
 
 def test_maximum_step_limit_stops_before_another_model_request(tmp_path: Path):
@@ -586,6 +740,7 @@ def test_agent_runtime_is_connected_only_through_the_phase8_feature_gate():
 
     assert config == {
         "filesystem_stat_enabled": False,
+        "filesystem_list_enabled": False,
         "full_local_read_enabled": False,
     }
     assert "load_agent_feature_config" in main

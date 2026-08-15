@@ -274,10 +274,15 @@ class MainWindow(QMainWindow):
         if self.inference is None:
             return "Ready · Chat only"
         if self._agent_enabled():
+            read_capabilities = (
+                "Metadata + listing"
+                if self._filesystem_list_enabled()
+                else "Metadata only"
+            )
             read_status = (
-                "Full local read · Metadata only"
+                f"Full local read · {read_capabilities}"
                 if self._host_read_scope() == HostReadScope.FULL_LOCAL
-                else "Portable-root read · Metadata only"
+                else f"Portable-root read · {read_capabilities}"
             )
             if self.inference.mode == "cloud":
                 return (
@@ -352,6 +357,10 @@ class MainWindow(QMainWindow):
         except ValueError:
             return None
 
+    def _filesystem_list_enabled(self) -> bool:
+        values = getattr(self.service, "agent_capabilities", ())
+        return isinstance(values, tuple) and "filesystem.list" in values
+
     def _cloud_privacy_message(self) -> str:
         provider = self.inference.cloud_provider_name
         if self._agent_enabled():
@@ -360,11 +369,19 @@ class MainWindow(QMainWindow):
                 if self._host_read_scope() == HostReadScope.FULL_LOCAL
                 else "inside O.R.S.I's portable root"
             )
+            if self._filesystem_list_enabled():
+                results = (
+                    "filesystem.stat metadata and filesystem.list directory names and types"
+                )
+                access = "inspect metadata or list one requested directory"
+            else:
+                results = "filesystem.stat metadata results"
+                access = "inspect metadata for one requested file or directory"
             return (
-                f"Cloud mode sends this conversation and any filesystem.stat metadata results "
-                f"to {provider}. Agent mode can inspect metadata for one requested file or "
-                f"directory {scope}, but cannot read file content or perform other "
-                "computer actions.\n\nDo not use Cloud mode for confidential information.\n\nContinue?"
+                f"Cloud mode sends this conversation and any {results} to {provider}. Agent mode "
+                f"can {access} {scope}, but cannot read file content or perform other computer "
+                "actions.\n\nDirectory and file names may be confidential. Do not use Cloud mode "
+                "for confidential information.\n\nContinue?"
             )
         return (
             f"Cloud mode sends this conversation to {provider}. O.R.S.I is chat-only and cannot "
