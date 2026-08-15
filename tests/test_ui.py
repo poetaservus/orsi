@@ -158,7 +158,7 @@ class UiTests(unittest.TestCase):
 
     def test_compact_window_reserves_a_non_overlapping_context_header(self):
         window = MainWindow(None, "TEST-HOST")
-        window.resize(900, 600)
+        window.resize(1280, 700)
         window.show()
         QApplication.processEvents()
 
@@ -168,6 +168,11 @@ class UiTests(unittest.TestCase):
         right_space = window._content.width() - window.context_window.geometry().right() - 1
         self.assertLessEqual(abs(left_space - right_space), 1)
         self.assertLessEqual(window.context_window.width(), window._content.width() - 32)
+        middle_panel = window._content.middle_panel_rect()
+        panel_right_space = window._content.width() - middle_panel.right() - 1
+        self.assertLessEqual(abs(middle_panel.x() - panel_right_space), 1)
+        composer_right_space = window._content.width() - window.composer.geometry().right() - 1
+        self.assertLessEqual(abs(window.composer.x() - composer_right_space), 1)
         window.close()
 
     def test_cloud_selector_warns_and_keeps_key_in_memory(self):

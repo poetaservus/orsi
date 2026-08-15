@@ -78,7 +78,9 @@ class ChatSurface(QWidget):
         self._background = QPixmap(str(_ICON_DIRECTORY / "o.r.s.i_gui_bck.png"))
 
     def middle_panel_rect(self) -> QRect:
-        available_width = max(0, self.width() - _COMPOSER_RIGHT_COMPENSATION)
+        compact = self.width() < 1500
+        compensation = 0 if compact else _COMPOSER_RIGHT_COMPENSATION
+        available_width = max(0, self.width() - compensation)
         width = min(_MIDDLE_PANEL_WIDTH, available_width)
         x = max(0, (available_width - width) // 2)
         return QRect(x, 0, width, self.height())
@@ -261,13 +263,14 @@ class MainWindow(QMainWindow):
         if not hasattr(self, "composer"):
             return
         content = self.composer.parentWidget()
-        available_width = max(0, content.width() - _COMPOSER_RIGHT_COMPENSATION)
-        width = min(_COMPOSER_WIDTH, max(320, available_width - 32))
-        x = max(16, (available_width - width) // 2)
+        compact_header = content.width() < 1500
+        sizing_width = max(0, content.width() - _COMPOSER_RIGHT_COMPENSATION)
+        width = min(_COMPOSER_WIDTH, max(320, sizing_width - 32))
+        positioning_width = content.width() if compact_header else sizing_width
+        x = max(16, (positioning_width - width) // 2)
         y = max(16, content.height() - _COMPOSER_BOTTOM_MARGIN - _COMPOSER_HEIGHT)
         self.composer.setGeometry(x, y, width, _COMPOSER_HEIGHT)
         self.composer.raise_()
-        compact_header = content.width() < 1500
         header_height = 54 if compact_header else 0
         if self._content_layout.contentsMargins().top() != header_height:
             self._content_layout.setContentsMargins(0, header_height, 0, 0)
