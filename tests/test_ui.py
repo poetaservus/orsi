@@ -155,6 +155,21 @@ class UiTests(unittest.TestCase):
         self.assertTrue(window.settings_panel.isHidden())
         window.close()
 
+    def test_compact_window_reserves_a_non_overlapping_context_header(self):
+        window = MainWindow(None, "TEST-HOST")
+        window.resize(900, 600)
+        window.show()
+        QApplication.processEvents()
+
+        self.assertEqual(window._content_layout.contentsMargins().top(), 54)
+        self.assertLess(window.context_window.geometry().bottom(), window.chat.y())
+        self.assertEqual(
+            window._content.width() - window.context_window.geometry().right() - 1,
+            16,
+        )
+        self.assertLessEqual(window.context_window.width(), window._content.width() - 32)
+        window.close()
+
     def test_cloud_selector_warns_and_keeps_key_in_memory(self):
         class FakeInference:
             available_modes = ("local", "cloud")

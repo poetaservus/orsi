@@ -147,6 +147,7 @@ class MainWindow(QMainWindow):
         self._content = content
         content.installEventFilter(self)
         content_layout = QVBoxLayout(content)
+        self._content_layout = content_layout
         content_layout.setContentsMargins(0, 0, 0, 0)
         content_layout.setSpacing(0)
         root_layout.addWidget(content, 1)
@@ -261,11 +262,19 @@ class MainWindow(QMainWindow):
         y = max(16, content.height() - _COMPOSER_BOTTOM_MARGIN - _COMPOSER_HEIGHT)
         self.composer.setGeometry(x, y, width, _COMPOSER_HEIGHT)
         self.composer.raise_()
-        context_width = min(350, max(228, int(content.width() * 0.20)))
+        compact_header = content.width() < 1500
+        header_height = 54 if compact_header else 0
+        if self._content_layout.contentsMargins().top() != header_height:
+            self._content_layout.setContentsMargins(0, header_height, 0, 0)
+
+        context_margin = 16 if compact_header else _CONTEXT_RIGHT_MARGIN
+        maximum_context_width = max(140, content.width() - context_margin * 2)
+        desired_context_width = min(350, max(228, int(content.width() * 0.30)))
+        context_width = min(desired_context_width, maximum_context_width)
         context_height = max(28, self.context_window.sizeHint().height())
-        context_x = max(16, content.width() - context_width - _CONTEXT_RIGHT_MARGIN)
+        context_x = max(context_margin, content.width() - context_width - context_margin)
         self.context_window.setFixedSize(context_width, context_height)
-        self.context_window.move(context_x, 22)
+        self.context_window.move(context_x, 12 if compact_header else 22)
         self.context_window.raise_()
         self.settings_panel.move(_SIDEBAR_WIDTH + 14, 99)
         if self.settings_panel.isVisible():
@@ -626,7 +635,7 @@ QTextEdit#messageInput {
     color: #b2b2b2;
     background: transparent;
     border: none;
-    padding: 14px 0 8px 8px;
+    padding: 19px 0 3px 8px;
     font-family: Arial;
     font-size: 21px;
     selection-background-color: #666666;
