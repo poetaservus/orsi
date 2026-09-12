@@ -18,6 +18,7 @@ from app.capabilities.contracts import (
     CapabilityFailure,
     CapabilityResult,
     ExecutionIsolation,
+    PermissionClass,
 )
 from app.capabilities.permissions import (
     ApprovalStatus,
@@ -158,7 +159,11 @@ class CapabilityExecutor:
                 prepared.context.cancellation,
                 control.token,
             )
-            execution_context = replace(prepared.context, cancellation=linked)
+            execution_context = replace(
+                prepared.context, cancellation=linked,
+                authorized_resource=prepared.request.resource,
+                authorized_resource_identity=prepared.request.resource_identity,
+            )
             future: Future[tuple[dict[str, Any], int, bool]] = Future()
             worker = Thread(
                 target=self._run_worker,
@@ -207,6 +212,9 @@ class CapabilityExecutor:
                 worker.join(self._limits.cancellation_grace_seconds)
                 if worker.is_alive():
                     poisoned = True
+                if prepared.request.permission == PermissionClass.WRITE:
+                    stop_code = CapabilityErrorCode.OUTCOME_UNKNOWN
+                    stop_message = "The write was interrupted; its outcome needs review before any retry."
                 return self._failure(
                     prepared,
                     started,
@@ -321,6 +329,9 @@ class CapabilityExecutor:
             return "The permission decision cannot authorize execution."
         if authorization.request_sha256 != prepared.request.request_sha256:
             return "The authorization does not match the prepared capability call."
+        if (prepared.request.permission == PermissionClass.WRITE
+                and authorization.decision != PermissionDecision.ASK):
+            return "Host writes require explicit approval for each exact call."
         if authorization.decision == PermissionDecision.ASK and (
             authorization.approval_id is None
             or authorization.approval_status != ApprovalStatus.CONSUMED
@@ -360,6 +371,9 @@ class CapabilityExecutor:
         error: BaseException,
     ) -> CapabilityResult:
         if isinstance(error, TaskCancelled):
+            if prepared.request.permission == PermissionClass.WRITE:
+                return self._failure(prepared, started, CapabilityErrorCode.OUTCOME_UNKNOWN,
+                    "The write was interrupted; its outcome needs review before any retry.")
             return self._failure(
                 prepared,
                 started,
@@ -369,6 +383,9 @@ class CapabilityExecutor:
         if isinstance(error, CapabilityExecutionError):
             return self._failure(prepared, started, error.code, str(error))
         if isinstance(error, _InvalidCapabilityOutput):
+            if prepared.request.permission == PermissionClass.WRITE:
+                return self._failure(prepared, started, CapabilityErrorCode.OUTCOME_UNKNOWN,
+                    "The write result could not be verified. Review the target before any retry.")
             return self._failure(
                 prepared,
                 started,
@@ -383,8 +400,11 @@ class CapabilityExecutor:
         return self._failure(
             prepared,
             started,
-            CapabilityErrorCode.INTERNAL_ERROR,
-            "The capability failed unexpectedly.",
+            (CapabilityErrorCode.OUTCOME_UNKNOWN if prepared.request.permission == PermissionClass.WRITE
+             else CapabilityErrorCode.INTERNAL_ERROR),
+            ("The write result could not be verified. Review the target before any retry."
+             if prepared.request.permission == PermissionClass.WRITE
+             else "The capability failed unexpectedly."),
         )
 
     def _bound_output(

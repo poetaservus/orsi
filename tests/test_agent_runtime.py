@@ -742,6 +742,7 @@ def test_agent_runtime_is_connected_only_through_the_phase8_feature_gate():
         "filesystem_stat_enabled": True,
         "filesystem_list_enabled": True,
         "filesystem_read_text_enabled": True,
+        "filesystem_mkdir_enabled": True,
         "full_local_read_enabled": True,
     }
     assert "load_agent_feature_config" in main

@@ -82,6 +82,7 @@ class ConversationService:
         self._turn_number = 0
         self._active_listing: _ActiveDirectoryListing | None = None
         self._last_filesystem_operation: str | None = None
+        self._awaiting_folder_path = False
         # Capability calls/results stay only in memory for coherent follow-ups.
         # ConversationStore intentionally persists user and final assistant text only.
         self._agent_history = self.store.messages()
@@ -115,6 +116,16 @@ class ConversationService:
             self.store.append("user", text)
             if self.agent_enabled:
                 self._agent_history.append({"role": "user", "content": text})
+            folder_request = text
+            if self._awaiting_folder_path and _folder_creation_target(f"mkdir {text}"):
+                folder_request = f"mkdir {text}"
+            self._awaiting_folder_path = False
+            if _is_folder_creation_request(folder_request):
+                answer = self._create_folder(folder_request, source, activity)
+                self.store.append("assistant", answer)
+                if self.agent_enabled:
+                    self._agent_history.append({"role": "assistant", "content": answer})
+                return answer
             capability_turn = self.agent_enabled and self._requires_capabilities(text)
             if activity:
                 activity("Working..." if capability_turn else "Thinking...")
@@ -155,6 +166,7 @@ class ConversationService:
                         cancellation=source.token,
                         result_observer=retain_results,
                         required_calls=required_calls,
+                        capability_names=self._read_capabilities(),
                     )
                 else:
                     result = self.agent_runtime.run_conversation(
@@ -205,6 +217,57 @@ class ConversationService:
                     self._cancellation = None
             self._run_lock.release()
 
+    def set_approval_requester(self, requester) -> None:
+        if self.agent_runtime is not None:
+            self.agent_runtime.set_approval_requester(requester)
+
+    def resolve_approval(self, approval_id: str, approved: bool) -> None:
+        if self.agent_runtime is not None:
+            self.agent_runtime.resolve_approval(approval_id, approved)
+
+    def approval_status(self, approval_id: str) -> str | None:
+        if self.agent_runtime is None:
+            return None
+        return self.agent_runtime.approval_status(approval_id)
+
+    def _read_capabilities(self) -> tuple[str, ...]:
+        return tuple(name for name in self.agent_capabilities if name != "filesystem.mkdir")
+
+    def _create_folder(self, text, source, activity) -> str:
+        self._last_filesystem_operation = None
+        if "filesystem.mkdir" not in self.agent_capabilities:
+            return "Folder creation is not enabled. No folder was created."
+        target = _folder_creation_target(text)
+        if target is None:
+            self._awaiting_folder_path = True
+            return "What is the full absolute path of the new folder? Its parent folder must already exist."
+        self._turn_number += 1
+        call = ModelCapabilityCall(
+            provider_call_id=f"required-{self._turn_number}-1",
+            capability="filesystem.mkdir", arguments={"path": target},
+        )
+        observed = []
+        if activity:
+            activity("Preparing folder approval...")
+        result = self.agent_runtime.run(
+            [{"role": "user", "content": text}],
+            session_id=self._session_id, turn_id=f"turn-{self._turn_number}",
+            portable_root=self.portable_root, allowed_read_roots=self.allowed_read_roots,
+            host_access_policy=self.host_access_policy, cancellation=source.token,
+            required_calls=(call,), capability_names=("filesystem.mkdir",),
+            result_observer=lambda calls, results: observed.extend(results),
+        )
+        if result.status == AgentRunStatus.CANCELLED:
+            return "Folder creation was cancelled before execution."
+        if result.status != AgentRunStatus.COMPLETED:
+            raise RuntimeError(result.message or "Folder creation did not complete.")
+        if not observed:
+            raise RuntimeError("The folder creation result was not returned.")
+        outcome = observed[0]
+        if not outcome.success:
+            return outcome.error.message if outcome.error else "The folder could not be created."
+        return f"Created empty folder: {outcome.output['path']}"
+
     def cancel_current_task(self) -> bool:
         with self._cancellation_lock:
             source = self._cancellation
@@ -224,6 +287,7 @@ class ConversationService:
             self._turn_number = 0
             self._active_listing = None
             self._last_filesystem_operation = None
+            self._awaiting_folder_path = False
             self._agent_history = []
         finally:
             self._run_lock.release()
@@ -251,7 +315,7 @@ class ConversationService:
             (
                 agent_system_prompt(
                     self.host_read_scope or HostReadScope.PORTABLE_ROOT,
-                    self.agent_capabilities,
+                    self._read_capabilities(),
                 )
                 if capability_turn is not False
                 else AGENT_CONVERSATION_SYSTEM_PROMPT
@@ -555,6 +619,35 @@ class ConversationService:
     def _response_reserve(self) -> int:
         configured = max(32, int(getattr(self.inference, "max_response_tokens", 512)))
         return min(configured, self._context_length() // 2)
+
+
+_FOLDER_REQUEST = re.compile(
+    r"\A(?:please\s+)?(?:(?:can|could|would)\s+you\s+)?"
+    r"(?:(?:create|make)\s+(?:(?:a|an|new|empty)\s+)*(?:folder|directory)\b"
+    r"|(?:filesystem[.]mkdir|mkdir)\b)", re.I,
+)
+
+
+def _is_folder_creation_request(text: str) -> bool:
+    return _FOLDER_REQUEST.match(text.strip()) is not None
+
+
+def _folder_creation_target(text: str) -> str | None:
+    match = _FOLDER_REQUEST.match(text.strip())
+    if match is None:
+        return None
+    remainder = text.strip()[match.end():].strip()
+    remainder = re.sub(r"^(?:at path|at)\s+", "", remainder, flags=re.I)
+    if remainder.startswith(('"', "'")):
+        quote = remainder[0]
+        if len(remainder) < 3 or remainder[-1] != quote:
+            return None
+        remainder = remainder[1:-1]
+    if (not re.fullmatch(r"[A-Za-z]:[\\/].+", remainder)
+            or re.search(r"[\r\n\"']|\s+(?:and|then)\s+", remainder, re.I)
+            or len(re.findall(r"[A-Za-z]:[\\/]", remainder)) != 1):
+        return None
+    return remainder
 
 
 def _conversation_turn_groups(history: list[dict]) -> list[list[dict]]:

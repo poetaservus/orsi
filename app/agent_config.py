@@ -11,6 +11,7 @@ from app.paths import PATHS
 _FILESYSTEM_STAT_GATE = "ORSI_ENABLE_FILESYSTEM_STAT"
 _FILESYSTEM_LIST_GATE = "ORSI_ENABLE_FILESYSTEM_LIST"
 _FILESYSTEM_READ_TEXT_GATE = "ORSI_ENABLE_FILESYSTEM_READ_TEXT"
+_FILESYSTEM_MKDIR_GATE = "ORSI_ENABLE_FILESYSTEM_MKDIR"
 _FULL_LOCAL_READ_GATE = "ORSI_ENABLE_FULL_LOCAL_READ"
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 _FALSE_VALUES = {"0", "false", "no", "off"}
@@ -24,10 +25,13 @@ class AgentFeatureConfig(BaseModel):
     filesystem_stat_enabled: bool = False
     filesystem_list_enabled: bool = False
     filesystem_read_text_enabled: bool = False
+    filesystem_mkdir_enabled: bool = False
     full_local_read_enabled: bool = False
 
     @model_validator(mode="after")
     def validate_feature_dependencies(self):
+        if self.filesystem_mkdir_enabled and not self.filesystem_stat_enabled:
+            raise ValueError("Folder creation requires the filesystem metadata agent.")
         if self.filesystem_list_enabled and not self.filesystem_stat_enabled:
             raise ValueError(
                 "Directory listing requires the filesystem metadata agent."
@@ -52,6 +56,7 @@ def load_agent_feature_config() -> AgentFeatureConfig:
         (_FILESYSTEM_STAT_GATE, "filesystem_stat_enabled"),
         (_FILESYSTEM_LIST_GATE, "filesystem_list_enabled"),
         (_FILESYSTEM_READ_TEXT_GATE, "filesystem_read_text_enabled"),
+        (_FILESYSTEM_MKDIR_GATE, "filesystem_mkdir_enabled"),
         (_FULL_LOCAL_READ_GATE, "full_local_read_enabled"),
     ):
         override = os.environ.get(name)

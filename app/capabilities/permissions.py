@@ -104,6 +104,7 @@ class PermissionRequest(BaseModel):
     arguments_json: str = Field(min_length=2, max_length=2_000_000)
     arguments_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     resource: str | None = Field(default=None, max_length=32_767)
+    resource_identity: str | None = Field(default=None, max_length=256)
     request_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @classmethod
@@ -115,6 +116,7 @@ class PermissionRequest(BaseModel):
         permission: PermissionClass,
         arguments_json: str,
         resource: str | None,
+        resource_identity: str | None = None,
     ) -> PermissionRequest:
         arguments_sha256 = _sha256(arguments_json)
         request_sha256 = _digest_json(
@@ -124,6 +126,7 @@ class PermissionRequest(BaseModel):
                 "capability": capability,
                 "permission": permission.value,
                 "resource": resource,
+                "resource_identity": resource_identity,
             }
         )
         return cls(
@@ -133,6 +136,7 @@ class PermissionRequest(BaseModel):
             arguments_json=arguments_json,
             arguments_sha256=arguments_sha256,
             resource=resource,
+            resource_identity=resource_identity,
             request_sha256=request_sha256,
         )
 
@@ -147,6 +151,7 @@ class PermissionRequest(BaseModel):
                 "capability": self.capability,
                 "permission": self.permission.value,
                 "resource": self.resource,
+                "resource_identity": self.resource_identity,
             }
         )
         if expected != self.request_sha256:
@@ -268,6 +273,7 @@ class ApprovalRecord(BaseModel):
     matched_rule_id: str = Field(min_length=1, max_length=128)
     status: ApprovalStatus
     expires_at: float = Field(ge=0)
+    resource: str | None = Field(default=None, max_length=32_767)
 
 
 class ApprovalNotFoundError(LookupError):
@@ -360,6 +366,7 @@ class ApprovalManager:
                 matched_rule_id=evaluation.matched_rule_id,
                 status=status,
                 expires_at=timestamp + ttl,
+                resource=evaluation.request.resource,
             )
             self._records[approval_id] = record
             return record
@@ -387,6 +394,10 @@ class ApprovalManager:
             updated = record.model_copy(update={"status": status})
             self._records[approval_id] = updated
             return updated
+
+    def get(self, approval_id: str) -> ApprovalRecord:
+        with self._lock:
+            return self._record_locked(approval_id, self._timestamp(None))
 
     def authorize(
         self,
@@ -545,6 +556,7 @@ def prepare_capability_call(
         permission=capability.permission,
         arguments_json=arguments_json,
         resource=str(resource) if resource is not None else None,
+        resource_identity=capability.permission_resource_identity(arguments, context),
     )
     return PreparedCapabilityCall(
         capability=capability,

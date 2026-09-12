@@ -78,6 +78,7 @@ def build_application(
                     "filesystem_stat_enabled": False,
                     "filesystem_list_enabled": False,
                     "filesystem_read_text_enabled": False,
+                    "filesystem_mkdir_enabled": False,
                     "full_local_read_enabled": False,
                 }
             )

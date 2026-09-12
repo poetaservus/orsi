@@ -203,6 +203,21 @@ class AgentRuntime:
         """Apply the journal's explicit privacy retention policy."""
         return self.executor.journal.purge()
 
+    def set_approval_requester(self, requester: Callable[[ApprovalRecord], None]) -> None:
+        if not callable(requester):
+            raise TypeError("The approval requester must be callable.")
+        self._approval_requester = requester
+
+    def resolve_approval(self, approval_id: str, approved: bool) -> None:
+        if not isinstance(approved, bool):
+            raise TypeError("Approval must be an explicit boolean.")
+        self.approval_manager.resolve(
+            approval_id, ApprovalStatus.APPROVED if approved else ApprovalStatus.DENIED
+        )
+
+    def approval_status(self, approval_id: str) -> str:
+        return self.approval_manager.get(approval_id).status.value
+
     def shutdown(self) -> None:
         """Resolve pending approval waits and stop capability execution."""
         self.approval_manager.shutdown()
@@ -297,6 +312,7 @@ class AgentRuntime:
         ]
         | None = None,
         required_calls: tuple[ModelCapabilityCall, ...] = (),
+        capability_names: tuple[str, ...] | None = None,
     ) -> AgentRunResult:
         if not _safe_identifier(session_id) or not _safe_identifier(turn_id):
             raise ValueError("Agent session and turn IDs must use bounded stable syntax.")
@@ -321,6 +337,12 @@ class AgentRuntime:
             raise TypeError("Required agent calls must be a tuple of model capability calls.")
 
         definitions = self.registry.model_definitions()
+        if capability_names is not None:
+            if not isinstance(capability_names, tuple) or not set(capability_names).issubset(
+                self.registry.model_visible_names
+            ):
+                raise ValueError("The turn capability catalog must be a subset of the visible registry.")
+            definitions = tuple(item for item in definitions if item.name in capability_names)
         if not definitions:
             return self._stopped(
                 AgentRunStatus.INTERNAL_FAILURE,
@@ -681,6 +703,9 @@ class AgentRuntime:
         user_cancellation: CancellationToken,
         deadline_cancellation: _DeadlineCancellationToken,
     ) -> _CallOutcome:
+        if self.executor.review_required:
+            return _CallOutcome(stop_status=AgentRunStatus.INTERNAL_FAILURE,
+                stop_message="A previous write outcome requires review before another operation can run.")
         if call.capability not in advertised_names:
             return _CallOutcome(
                 result=_failure_result(
@@ -801,8 +826,11 @@ class AgentRuntime:
         except Exception:
             return _CallOutcome(
                 stop_status=AgentRunStatus.INTERNAL_FAILURE,
-                stop_message="The capability result could not be persisted safely.",
+                stop_message="The capability result could not be persisted safely. Review its outcome before retrying.",
             )
+        if result.error is not None and result.error.code == CapabilityErrorCode.OUTCOME_UNKNOWN:
+            return _CallOutcome(stop_status=AgentRunStatus.INTERNAL_FAILURE,
+                                stop_message=result.error.message)
         if (
             result.error is not None
             and result.error.code == CapabilityErrorCode.CANCELLED

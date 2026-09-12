@@ -77,7 +77,7 @@ _ALLOWED_TRANSITIONS = {
         CallLifecycleState.TIMED_OUT,
     },
     CallLifecycleState.AUTHORIZED: {CallLifecycleState.RUNNING},
-    CallLifecycleState.RUNNING: _RESULT_TERMINAL_STATES,
+    CallLifecycleState.RUNNING: _RESULT_TERMINAL_STATES | {CallLifecycleState.INTERRUPTED_UNKNOWN_OUTCOME},
 }
 
 
@@ -335,6 +335,8 @@ class CapabilityCrashJournal:
                 raise LifecycleTransitionError("The result call is not recorded in the crash journal.")
             if result.capability != current.capability:
                 raise LifecycleTransitionError("The result capability does not match the journaled call.")
+            if result.error is not None and result.error.code == CapabilityErrorCode.OUTCOME_UNKNOWN:
+                return self._transition_locked(current, CallLifecycleState.INTERRUPTED_UNKNOWN_OUTCOME)
             target = _result_terminal_state(result)
             return self._transition_locked(
                 current,
@@ -533,15 +535,27 @@ class JournaledCapabilityExecutor:
             raise TypeError("Journaled execution requires a CapabilityCrashJournal.")
         self.executor = executor
         self.journal = journal
+        self._persistence_failed = False
+
+    @property
+    def review_required(self) -> bool:
+        return self._persistence_failed or self.journal.review_required
 
     def execute(
         self,
         prepared: PreparedCapabilityCall,
         authorization: PermissionAuthorization,
     ) -> CapabilityResult:
+        if self.review_required:
+            raise LifecycleTransitionError("A previous outcome requires review before more calls can run.")
         self.journal.mark_running(prepared, authorization)
-        result = self.executor.execute(prepared, authorization)
-        self.journal.record_result(result)
+        try:
+            result = self.executor.execute(prepared, authorization)
+            self.journal.record_result(result)
+        except BaseException:
+            # The durable RUNNING record is recoverable on restart; block this live session too.
+            self._persistence_failed = True
+            raise
         return result
 
 

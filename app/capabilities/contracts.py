@@ -47,6 +47,7 @@ class CapabilityErrorCode(StrEnum):
     EXECUTOR_UNAVAILABLE = "executor_unavailable"
     ISOLATION_REQUIRED = "isolation_required"
     INTERNAL_ERROR = "internal_error"
+    OUTCOME_UNKNOWN = "outcome_unknown"
 
 
 class CapabilityFailure(BaseModel):
@@ -86,6 +87,8 @@ class CapabilityContext:
     allowed_read_roots: tuple[Path, ...]
     cancellation: CancellationToken
     host_access_policy: HostAccessPolicy | None = None
+    authorized_resource: str | None = None
+    authorized_resource_identity: str | None = None
 
 
 class CapabilityExecutionError(RuntimeError):
@@ -193,6 +196,10 @@ class Capability(ABC, Generic[ArgumentsT]):
     @abstractmethod
     def execute(self, arguments: ArgumentsT, context: CapabilityContext) -> dict[str, Any]:
         raise NotImplementedError
+
+    def permission_resource_identity(self, arguments: ArgumentsT, context: CapabilityContext) -> str | None:
+        """Optional precondition identity bound to the approval and rechecked by a write."""
+        return None
 
     def _failure(
         self,

@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QObject, QRect, QSize, Qt, QThread, Signal, Slot
+from PySide6.QtCore import QEvent, QObject, QRect, QSize, Qt, QThread, QTimer, Signal, Slot
 from PySide6.QtGui import QColor, QIcon, QLinearGradient, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
     QFrame,
     QHBoxLayout,
     QInputDialog,
@@ -14,6 +16,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QPlainTextEdit,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -100,6 +103,8 @@ class ChatSurface(QWidget):
 
 
 class MainWindow(QMainWindow):
+    approval_requested = Signal(object)
+
     def __init__(self, service, hostname: str, startup_error: str | None = None, inference=None):
         super().__init__()
         del hostname
@@ -109,6 +114,11 @@ class MainWindow(QMainWindow):
         self._cloud_privacy_accepted = False
         self.thread = None
         self.worker = None
+        self._approval_dialog = None
+        self.approval_requested.connect(self._show_folder_approval, Qt.ConnectionType.QueuedConnection)
+        bind_approval = getattr(service, "set_approval_requester", None)
+        if callable(bind_approval):
+            bind_approval(self.approval_requested.emit)
 
         self.setObjectName("mainWindow")
         self.setWindowTitle("O.R.S.I")
@@ -324,6 +334,62 @@ class MainWindow(QMainWindow):
         self.thread.finished.connect(self._thread_finished)
         self.thread.start()
 
+    @Slot(object)
+    def _show_folder_approval(self, record) -> None:
+        if (record.capability != "filesystem.mkdir" or not record.resource
+                or self._approval_dialog is not None):
+            self.service.resolve_approval(record.approval_id, False)
+            return
+        if self.service.approval_status(record.approval_id) != "pending":
+            return
+        dialog = QDialog(self)
+        dialog.setObjectName("folderApproval")
+        dialog.setWindowTitle("Create folder?")
+        dialog.setWindowModality(Qt.WindowModality.WindowModal)
+        dialog.resize(560, 240)
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel("Create one empty folder at:", dialog))
+        path = QPlainTextEdit(dialog)
+        path.setObjectName("approvalPath")
+        path.setPlainText(record.resource)
+        path.setReadOnly(True)
+        layout.addWidget(path)
+        notice = QLabel("Existing entries will not be replaced. Approval is for this folder only.", dialog)
+        notice.setWordWrap(True)
+        layout.addWidget(notice)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel, dialog)
+        create = buttons.addButton("Create folder", QDialogButtonBox.ButtonRole.AcceptRole)
+        create.setObjectName("approveFolder")
+        create.setAutoDefault(False)
+        cancel = buttons.button(QDialogButtonBox.StandardButton.Cancel)
+        cancel.setDefault(True)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        timer = QTimer(dialog)
+
+        def refresh():
+            try:
+                pending = self.service.approval_status(record.approval_id) == "pending"
+            except (LookupError, ValueError):
+                pending = False
+            if not pending:
+                dialog.reject()
+
+        def finish(code):
+            timer.stop()
+            self.service.resolve_approval(record.approval_id, code == QDialog.DialogCode.Accepted)
+            self._approval_dialog = None
+            dialog.deleteLater()
+
+        timer.timeout.connect(refresh)
+        dialog.finished.connect(finish)
+        self._approval_dialog = dialog
+        self.activity.set_activity("Waiting for folder approval...")
+        timer.start(100)
+        dialog.open()
+        cancel.setFocus()
+
     @Slot(str)
     def _worker_succeeded(self, text: str) -> None:
         self._done(text, False)
@@ -404,6 +470,8 @@ class MainWindow(QMainWindow):
                 if self._host_read_scope() == HostReadScope.FULL_LOCAL
                 else f"Portable-root read · {read_capabilities}"
             )
+            if "filesystem.mkdir" in getattr(self.service, "agent_capabilities", ()):
+                read_status += " · Folder approval"
             if self.inference.mode == "cloud":
                 return (
                     f"Cloud key needed · Agent · {read_status}"
@@ -523,6 +591,12 @@ class MainWindow(QMainWindow):
             else:
                 boundary = "but cannot read file content or perform other computer actions"
                 confidentiality = "Directory and file names may be confidential"
+            if "filesystem.mkdir" in getattr(self.service, "agent_capabilities", ()):
+                boundary = (
+                    "and can create one empty folder only after separate approval of its exact path; "
+                    "it cannot write file content, copy, move, or delete entries"
+                )
+                results += " and approved folder paths"
             return (
                 f"Cloud mode sends this conversation and any {results} to {provider}. Agent mode "
                 f"can {access} {scope}, {boundary}.\n\n{confidentiality}. Do not use Cloud mode "
@@ -535,6 +609,8 @@ class MainWindow(QMainWindow):
         )
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt API name
+        if self._approval_dialog is not None:
+            self._approval_dialog.reject()
         shutdown = getattr(self.service, "shutdown", None)
         if callable(shutdown):
             shutdown()
@@ -558,6 +634,35 @@ class MainWindow(QMainWindow):
 
 
 _STYLE = """
+QDialog#folderApproval {
+    background: #202224;
+    color: #ededed;
+}
+QDialog#folderApproval QLabel {
+    color: #dedede;
+    font-family: Arial;
+    font-size: 14px;
+}
+QPlainTextEdit#approvalPath {
+    background: #151719;
+    color: #f2f2f2;
+    border: 1px solid #55595c;
+    padding: 8px;
+    font-family: Consolas;
+    font-size: 14px;
+    selection-background-color: #355e7e;
+}
+QDialog#folderApproval QPushButton {
+    background: #34383b;
+    color: #f1f1f1;
+    border: 1px solid #64696d;
+    border-radius: 4px;
+    padding: 7px 15px;
+    font-family: Arial;
+    font-size: 14px;
+}
+QDialog#folderApproval QPushButton:focus { border: 2px solid #91bfe0; }
+QDialog#folderApproval QPushButton:hover { background: #42484d; }
 QMainWindow#mainWindow, QWidget#root {
     background: #121416;
     color: #ababab;
