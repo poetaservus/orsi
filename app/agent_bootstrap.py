@@ -11,6 +11,7 @@ from app.capabilities.crash_journal import (
 )
 from app.capabilities.executor import CapabilityExecutor
 from app.capabilities.filesystem_list import FilesystemListCapability
+from app.capabilities.filesystem_read_text import FilesystemReadTextCapability
 from app.capabilities.filesystem_stat import FilesystemStatCapability
 from app.capabilities.host_access import HostAccessPolicy, HostReadScope
 from app.capabilities.permissions import (
@@ -88,6 +89,14 @@ def build_filesystem_stat_runtime(
                 model_visible=True,
             )
         )
+    if config.filesystem_read_text_enabled:
+        registrations.append(
+            CapabilityRegistration(
+                FilesystemReadTextCapability(),
+                enabled=True,
+                model_visible=True,
+            )
+        )
     registry = CapabilityRegistry(registrations)
     if policy.read_scope == HostReadScope.PORTABLE_ROOT:
         permission_rules = [
@@ -106,6 +115,16 @@ def build_filesystem_stat_runtime(
                     PermissionDecision.ALLOW,
                     permission=PermissionClass.READ,
                     capability_pattern="filesystem.list",
+                    resource_root=root,
+                )
+            )
+        if config.filesystem_read_text_enabled:
+            permission_rules.append(
+                PermissionRule(
+                    "phase9-portable-root-read-text",
+                    PermissionDecision.ALLOW,
+                    permission=PermissionClass.READ,
+                    capability_pattern="filesystem.read_text",
                     resource_root=root,
                 )
             )
@@ -129,6 +148,16 @@ def build_filesystem_stat_runtime(
                         PermissionDecision.ALLOW,
                         permission=PermissionClass.READ,
                         capability_pattern="filesystem.list",
+                        resource_root=permission_root,
+                    )
+                )
+            if config.filesystem_read_text_enabled:
+                permission_rules.append(
+                    PermissionRule(
+                        f"phase9-local-{drive}-read-text",
+                        PermissionDecision.ALLOW,
+                        permission=PermissionClass.READ,
+                        capability_pattern="filesystem.read_text",
                         resource_root=permission_root,
                     )
                 )

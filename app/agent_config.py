@@ -10,6 +10,7 @@ from app.paths import PATHS
 
 _FILESYSTEM_STAT_GATE = "ORSI_ENABLE_FILESYSTEM_STAT"
 _FILESYSTEM_LIST_GATE = "ORSI_ENABLE_FILESYSTEM_LIST"
+_FILESYSTEM_READ_TEXT_GATE = "ORSI_ENABLE_FILESYSTEM_READ_TEXT"
 _FULL_LOCAL_READ_GATE = "ORSI_ENABLE_FULL_LOCAL_READ"
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 _FALSE_VALUES = {"0", "false", "no", "off"}
@@ -22,6 +23,7 @@ class AgentFeatureConfig(BaseModel):
 
     filesystem_stat_enabled: bool = False
     filesystem_list_enabled: bool = False
+    filesystem_read_text_enabled: bool = False
     full_local_read_enabled: bool = False
 
     @model_validator(mode="after")
@@ -29,6 +31,10 @@ class AgentFeatureConfig(BaseModel):
         if self.filesystem_list_enabled and not self.filesystem_stat_enabled:
             raise ValueError(
                 "Directory listing requires the filesystem metadata agent."
+            )
+        if self.filesystem_read_text_enabled and not self.filesystem_stat_enabled:
+            raise ValueError(
+                "Text-file reading requires the filesystem metadata agent."
             )
         if self.full_local_read_enabled and not self.filesystem_stat_enabled:
             raise ValueError(
@@ -45,6 +51,7 @@ def load_agent_feature_config() -> AgentFeatureConfig:
     for name, field in (
         (_FILESYSTEM_STAT_GATE, "filesystem_stat_enabled"),
         (_FILESYSTEM_LIST_GATE, "filesystem_list_enabled"),
+        (_FILESYSTEM_READ_TEXT_GATE, "filesystem_read_text_enabled"),
         (_FULL_LOCAL_READ_GATE, "full_local_read_enabled"),
     ):
         override = os.environ.get(name)

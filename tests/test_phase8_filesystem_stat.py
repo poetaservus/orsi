@@ -87,12 +87,20 @@ def build_service(tmp_path: Path, model: InferenceEngine):
     return service, runtime, store, portable_root
 
 
-def test_checked_in_feature_gate_is_disabled_by_default(monkeypatch):
-    monkeypatch.delenv("ORSI_ENABLE_FILESYSTEM_STAT", raising=False)
+def test_checked_in_config_enables_requested_read_capabilities(monkeypatch):
+    for name in (
+        "ORSI_ENABLE_FILESYSTEM_STAT",
+        "ORSI_ENABLE_FILESYSTEM_LIST",
+        "ORSI_ENABLE_FILESYSTEM_READ_TEXT",
+        "ORSI_ENABLE_FULL_LOCAL_READ",
+    ):
+        monkeypatch.delenv(name, raising=False)
 
     assert load_agent_feature_config() == AgentFeatureConfig(
-        filesystem_stat_enabled=False,
-        full_local_read_enabled=False,
+        filesystem_stat_enabled=True,
+        filesystem_list_enabled=True,
+        filesystem_read_text_enabled=True,
+        full_local_read_enabled=True,
     )
 
 

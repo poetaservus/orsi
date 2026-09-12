@@ -389,11 +389,16 @@ class MainWindow(QMainWindow):
         if self.inference is None:
             return "Ready · Chat only"
         if self._agent_enabled():
-            read_capabilities = (
-                "Metadata + listing"
-                if self._filesystem_list_enabled()
-                else "Metadata only"
-            )
+            listing_enabled = self._filesystem_list_enabled()
+            text_read_enabled = self._filesystem_read_text_enabled()
+            if listing_enabled and text_read_enabled:
+                read_capabilities = "Metadata + listing + text"
+            elif listing_enabled:
+                read_capabilities = "Metadata + listing"
+            elif text_read_enabled:
+                read_capabilities = "Metadata + text"
+            else:
+                read_capabilities = "Metadata only"
             read_status = (
                 f"Full local read · {read_capabilities}"
                 if self._host_read_scope() == HostReadScope.FULL_LOCAL
@@ -476,6 +481,10 @@ class MainWindow(QMainWindow):
         values = getattr(self.service, "agent_capabilities", ())
         return isinstance(values, tuple) and "filesystem.list" in values
 
+    def _filesystem_read_text_enabled(self) -> bool:
+        values = getattr(self.service, "agent_capabilities", ())
+        return isinstance(values, tuple) and "filesystem.read_text" in values
+
     def _cloud_privacy_message(self) -> str:
         provider = self.inference.cloud_provider_name
         if self._agent_enabled():
@@ -484,7 +493,23 @@ class MainWindow(QMainWindow):
                 if self._host_read_scope() == HostReadScope.FULL_LOCAL
                 else "inside O.R.S.I's portable root"
             )
-            if self._filesystem_list_enabled():
+            listing_enabled = self._filesystem_list_enabled()
+            text_read_enabled = self._filesystem_read_text_enabled()
+            if listing_enabled and text_read_enabled:
+                results = (
+                    "filesystem.stat metadata, filesystem.list directory names and types, and "
+                    "filesystem.read_text file content"
+                )
+                access = (
+                    "inspect metadata, list one requested directory, or read bounded text from one "
+                    "specifically requested file"
+                )
+            elif text_read_enabled:
+                results = "filesystem.stat metadata and filesystem.read_text file content"
+                access = (
+                    "inspect metadata or read bounded text from one specifically requested file"
+                )
+            elif listing_enabled:
                 results = (
                     "filesystem.stat metadata and filesystem.list directory names and types"
                 )
@@ -492,10 +517,15 @@ class MainWindow(QMainWindow):
             else:
                 results = "filesystem.stat metadata results"
                 access = "inspect metadata for one requested file or directory"
+            if text_read_enabled:
+                boundary = "but cannot search, write, or perform other computer actions"
+                confidentiality = "File content and directory or file names may be confidential"
+            else:
+                boundary = "but cannot read file content or perform other computer actions"
+                confidentiality = "Directory and file names may be confidential"
             return (
                 f"Cloud mode sends this conversation and any {results} to {provider}. Agent mode "
-                f"can {access} {scope}, but cannot read file content or perform other computer "
-                "actions.\n\nDirectory and file names may be confidential. Do not use Cloud mode "
+                f"can {access} {scope}, {boundary}.\n\n{confidentiality}. Do not use Cloud mode "
                 "for confidential information.\n\nContinue?"
             )
         return (

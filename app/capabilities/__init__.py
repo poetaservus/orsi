@@ -13,6 +13,7 @@ from app.capabilities.contracts import (
 )
 from app.capabilities.filesystem_stat import FilesystemStatCapability
 from app.capabilities.filesystem_list import FilesystemListCapability
+from app.capabilities.filesystem_read_text import FilesystemReadTextCapability
 from app.capabilities.executor import (
     CapabilityExecutor,
     ExecutorLimits,
@@ -87,6 +88,7 @@ __all__ = [
     "CapabilityRegistryConfigurationError",
     "FilesystemStatCapability",
     "FilesystemListCapability",
+    "FilesystemReadTextCapability",
     "ModelCapabilityDefinition",
     "PermissionAuthorization",
     "PermissionClass",

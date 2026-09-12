@@ -17,7 +17,9 @@ from app.agent_config import AgentFeatureConfig, load_agent_feature_config
 from app.conversation import ConversationService, ConversationStore
 from app.host_access import (
     FULL_LOCAL_LIST_READ_WARNING,
+    FULL_LOCAL_LIST_TEXT_READ_WARNING,
     FULL_LOCAL_READ_WARNING,
+    FULL_LOCAL_TEXT_READ_WARNING,
     HostAccessPolicy,
 )
 from app.inference import (
@@ -75,6 +77,7 @@ def build_application(
                 update={
                     "filesystem_stat_enabled": False,
                     "filesystem_list_enabled": False,
+                    "filesystem_read_text_enabled": False,
                     "full_local_read_enabled": False,
                 }
             )
@@ -210,7 +213,10 @@ def main() -> int:
         startup_agent_config = None
     if startup_agent_config is not None and startup_agent_config.full_local_read_enabled:
         full_local_read_acknowledged = request_full_local_read_acknowledgement(
-            filesystem_list_enabled=startup_agent_config.filesystem_list_enabled
+            filesystem_list_enabled=startup_agent_config.filesystem_list_enabled,
+            filesystem_read_text_enabled=(
+                startup_agent_config.filesystem_read_text_enabled
+            ),
         )
     service, host, error, inference = build_application(
         agent_config_override=startup_agent_config,
@@ -224,17 +230,27 @@ def main() -> int:
 def request_full_local_read_acknowledgement(
     *,
     filesystem_list_enabled: bool = False,
+    filesystem_read_text_enabled: bool = False,
 ) -> bool:
     """Ask once per launch before host-wide read authority can be constructed."""
     from PySide6.QtWidgets import QMessageBox
 
     if not isinstance(filesystem_list_enabled, bool):
         raise TypeError("Filesystem listing acknowledgement state must be a boolean.")
-    warning = (
-        FULL_LOCAL_LIST_READ_WARNING
-        if filesystem_list_enabled
-        else FULL_LOCAL_READ_WARNING
-    )
+    if not isinstance(filesystem_read_text_enabled, bool):
+        raise TypeError("Filesystem text-read acknowledgement state must be a boolean.")
+    if filesystem_read_text_enabled:
+        warning = (
+            FULL_LOCAL_LIST_TEXT_READ_WARNING
+            if filesystem_list_enabled
+            else FULL_LOCAL_TEXT_READ_WARNING
+        )
+    else:
+        warning = (
+            FULL_LOCAL_LIST_READ_WARNING
+            if filesystem_list_enabled
+            else FULL_LOCAL_READ_WARNING
+        )
     answer = QMessageBox.question(
         None,
         "Enable Full local read access?",

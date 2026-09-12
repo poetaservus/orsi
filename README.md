@@ -1,8 +1,8 @@
 # O.R.S.I — gated read-only filesystem agent
 
-O.R.S.I is a local-first Windows desktop assistant. It starts in chat-only mode and can use either
-the bundled local GGUF model or an OpenAI-compatible cloud model. The current integration combines
-optional Phase 9 metadata and bounded directory-listing capabilities with the approved dark GUI.
+O.R.S.I is a local-first Windows desktop assistant using the bundled local GGUF model or an
+OpenAI-compatible cloud model. This development copy enables Phase 9 metadata, bounded directory
+listing, and bounded text-file reading with the approved dark GUI.
 
 ## Current interface
 
@@ -28,16 +28,18 @@ implementation state and next milestones.
   application run only.
 - When explicitly enabled, can return bounded metadata through `filesystem.stat` and deterministic,
   paginated names and types from one requested directory through `filesystem.list`.
+- Returns bounded UTF text from one requested file through `filesystem.read_text`.
 - A follow-up may request metadata for up to seven files from the active listing. O.R.S.I validates,
   authorizes, executes, and journals those read-only stat calls one at a time.
 - Can use acknowledged full-local read access across enabled local drives under the current Windows
   account without elevation.
 
-O.R.S.I cannot read file content, search directories, launch or close applications, run commands,
+O.R.S.I cannot search directories, launch or close applications, run commands,
 use the clipboard, automate windows, write or delete files, or make any operating-system change.
 Directory listing is limited to one explicitly requested directory, 50 returned entries per call,
 and a 4,096-entry bounded snapshot. Only `filesystem.stat` opts into same-response batching, with a
 seven-call limit; all other capabilities default to one call, and mixed capability batches fail.
+Text reads default to 16,384 bytes and 200 lines, with hard limits of 65,536 bytes and 1,000 lines.
 
 When asked to do anything outside that boundary, the model is instructed to state the limitation
 honestly. It can still discuss a task, review text pasted into the conversation, or explain steps
@@ -45,29 +47,28 @@ a person can perform manually.
 
 ## Enable the read-only capabilities
 
-The checked-in defaults in `config/agent.json` are disabled. Enable the current Phase 9 checkpoint
-for one deliberate process with:
+The read-only capabilities are enabled in this development copy's `config/agent.json`.
+Environment overrides are also supported:
 
 ```powershell
 $env:ORSI_ENABLE_FILESYSTEM_STAT = "1"
 $env:ORSI_ENABLE_FILESYSTEM_LIST = "1"
+$env:ORSI_ENABLE_FILESYSTEM_READ_TEXT = "1"
 $env:ORSI_ENABLE_FULL_LOCAL_READ = "1"
 python -m app.main
 ```
 
 Full-local read is not constructed until the user accepts its warning for that application launch.
 Declining keeps the enabled capabilities confined to the portable O.R.S.I root. Network and device
-paths remain denied. In Cloud mode, the conversation, metadata, and returned directory names/types
-are sent to the selected provider after an additional disclosure. File content is never read by
-these capabilities.
+paths remain denied. In Cloud mode, the conversation, metadata, returned directory names/types,
+and requested text-file content may be sent to the selected provider after an additional disclosure.
 
 When this gate is enabled, local capability requests use the bundled loopback-only
 `llama-server.exe`. The server is pinned to llama.cpp build `b9976` (`e3546c794`), matching the
 llama.cpp revision in `llama-cpp-python 0.3.34`, and reuses the same portable CUDA 13 runtime. It
 runs hidden with bounded startup and shutdown. The server only decodes Qwen's native tool envelope;
 every returned call still passes O.R.S.I's strict allowlisted normalizer, permission gate, executor,
-and crash journal before anything can run. The feature remains disabled by default; enabling it is
-an explicit local release choice.
+and crash journal before anything can run. Missing or invalid configuration fails closed.
 
 ## Run
 
@@ -87,7 +88,7 @@ Cloud settings live in `config/cloud.json`; credentials are not accepted in that
 python -m pytest
 ```
 
-The suite covers the disabled chat-only default, provider adapters, capability contracts and
+The suite covers the chat-only fallback, provider adapters, capability contracts and
 permissions, path denials, cursor pagination, crash-journaled execution, bounded model round trips,
 cancellation, list-to-metadata follow-ups, conversation privacy boundaries, and responsive GUI
 geometry.

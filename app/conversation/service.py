@@ -176,10 +176,16 @@ class ConversationService:
                     call.capability == "filesystem.list" for call in required_calls
                 ):
                     answer = _render_listing_results(required_calls, turn_results)
+                elif required_calls and all(
+                    call.capability == "filesystem.read_text" for call in required_calls
+                ):
+                    answer = _render_text_result(required_calls, turn_results)
                 completed_capabilities = {
                     call.capability for call, _result in turn_results
                 }
-                if "filesystem.stat" in completed_capabilities:
+                if "filesystem.read_text" in completed_capabilities:
+                    self._last_filesystem_operation = "read_text"
+                elif "filesystem.stat" in completed_capabilities:
                     self._last_filesystem_operation = "metadata"
                 elif "filesystem.list" in completed_capabilities:
                     self._last_filesystem_operation = "listing"
@@ -301,6 +307,10 @@ class ConversationService:
             r"\bfilesystem[.]list\b", lowered
         ):
             return True
+        if "filesystem.read_text" in available and re.search(
+            r"\bfilesystem[.]read_text\b", lowered
+        ):
+            return True
 
         filesystem_object = re.search(
             r"\b(?:files?|folders?|directories|directory|paths?|drives?|entries|contents)\b",
@@ -310,6 +320,12 @@ class ConversationService:
             r"(?:\b[a-z]:[\\/]|\\\\|\b[^\\/\s]+[.][a-z0-9]{1,12}\b)",
             lowered,
         )
+        if (
+            "filesystem.read_text" in available
+            and _is_text_read_request(lowered)
+            and (self._text_read_target(text) is not None or path_like is not None)
+        ):
+            return True
         if "filesystem.stat" in available:
             if self._metadata_continuation_targets(text):
                 return True
@@ -355,6 +371,18 @@ class ConversationService:
     ) -> tuple[ModelCapabilityCall, ...]:
         listing = self._active_listing
         lowered = " ".join(str(text).casefold().split())
+        read_text_target = self._text_read_target(text)
+        if (
+            read_text_target is not None
+            and "filesystem.read_text" in self.agent_capabilities
+        ):
+            return (
+                ModelCapabilityCall(
+                    provider_call_id=f"required-{self._turn_number}-1",
+                    capability="filesystem.read_text",
+                    arguments={"path": read_text_target},
+                ),
+            )
         metadata_request = re.search(
             r"\b(?:metadata|file properties|directory properties|size|bytes?|created|creation|"
             r"modified|modification|timestamps?|stat)\b",
@@ -402,6 +430,31 @@ class ConversationService:
                 ),
             )
         return ()
+
+    def _text_read_target(self, text: str) -> str | None:
+        if (
+            "filesystem.read_text" not in self.agent_capabilities
+            or not _is_text_read_request(" ".join(str(text).casefold().split()))
+        ):
+            return None
+        requested_path = _explicit_windows_path(text)
+        if requested_path is not None:
+            return requested_path
+        listing = self._active_listing
+        if listing is None:
+            return None
+        lowered = " ".join(str(text).casefold().split())
+        exact_matches = [
+            name for name in listing.files if _mentions_filename(lowered, name)
+        ]
+        if len(exact_matches) == 1:
+            return str(Path(listing.path) / exact_matches[0])
+        stem_matches = [
+            name for name in listing.files if _mentions_filename(lowered, Path(name).stem)
+        ]
+        if len(stem_matches) == 1:
+            return str(Path(listing.path) / stem_matches[0])
+        return None
 
     def _metadata_continuation_targets(self, text: str) -> tuple[str, ...]:
         listing = self._active_listing
@@ -607,6 +660,52 @@ def _render_listing_results(
     return "\n".join(lines)
 
 
+def _render_text_result(
+    _required_calls: tuple[ModelCapabilityCall, ...],
+    observed_results: list[tuple],
+) -> str:
+    call_and_result = next(
+        (
+            (call, observed)
+            for call, observed in observed_results
+            if call.capability == "filesystem.read_text"
+        ),
+        None,
+    )
+    if call_and_result is None:
+        return "The text-file content was not returned."
+    call, result = call_and_result
+    if not result.success:
+        message = (
+            result.error.message
+            if result.error is not None
+            else "The text-file read failed."
+        )
+        return _safe_text(message)
+    output = result.output or {}
+    text = output.get("text")
+    if not isinstance(text, str):
+        return "The text-file read returned an invalid result."
+    name = _safe_filename(Path(str(call.arguments.get("path", "file"))).name)
+    if not text:
+        answer = f"{name} is empty."
+    else:
+        fence = _markdown_code_fence(text)
+        closing_prefix = "" if text.endswith(("\n", "\r")) else "\n"
+        answer = f"Here is the content of {name}:\n\n{fence}text\n{text}{closing_prefix}{fence}"
+    if output.get("truncated_by_bytes") is True or output.get("truncated_by_lines") is True:
+        answer += "\n\nThe displayed content was truncated by the configured read limit."
+    return answer
+
+
+def _markdown_code_fence(text: str) -> str:
+    longest_run = max(
+        (len(match.group(0)) for match in re.finditer(r"`+", text)),
+        default=0,
+    )
+    return "`" * max(3, longest_run + 1)
+
+
 def _safe_filename(value: str) -> str:
     return _safe_text(value).replace("\\", "\\\\").replace("`", "\\`").replace("*", "\\*")
 
@@ -647,4 +746,20 @@ def _is_listing_request(lowered: str) -> bool:
         )
         or re.search(r"\b(?:contents|entries)\s+(?:of|in|inside)\b", lowered)
         or re.search(r"\b(?:show\s+me\s+)?what\s+is\s+in\b", lowered)
+    )
+
+
+def _is_text_read_request(lowered: str) -> bool:
+    return bool(
+        re.search(r"\bfilesystem[.]read_text\b", lowered)
+        or re.search(r"\b(?:read|open|summarize)\s+", lowered)
+        or re.search(
+            r"\b(?:show|display)\b.{0,40}\b(?:contents?|text)\b",
+            lowered,
+        )
+        or re.search(
+            r"\b(?:what(?:'s|\s+is)|tell\s+me\s+what(?:'s|\s+is))\b"
+            r".{0,40}\b(?:in|inside)\b",
+            lowered,
+        )
     )

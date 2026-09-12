@@ -111,7 +111,9 @@ def test_bootstrap_uses_fresh_conversation_state(monkeypatch, tmp_path: Path):
 
     monkeypatch.setattr(main, "HybridInferenceEngine", FakeHybrid)
 
-    service, host, error, inference = main.build_application()
+    service, host, error, inference = main.build_application(
+        agent_config_override=main.AgentFeatureConfig()
+    )
 
     assert isinstance(service, ConversationService)
     assert host["hostname"] and error is None and isinstance(inference, FakeHybrid)
