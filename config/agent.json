@@ -3,5 +3,6 @@
   "filesystem_list_enabled": true,
   "filesystem_read_text_enabled": true,
   "filesystem_mkdir_enabled": true,
+  "filesystem_write_text_enabled": true,
   "full_local_read_enabled": true
 }

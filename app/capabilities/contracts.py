@@ -201,6 +201,11 @@ class Capability(ABC, Generic[ArgumentsT]):
         """Optional precondition identity bound to the approval and rechecked by a write."""
         return None
 
+    def approval_preview(self, arguments: ArgumentsT, context: CapabilityContext) -> str | None:
+        """Optional plain-text side-effect preview shown only in the trusted approval UI."""
+        del arguments, context
+        return None
+
     def _failure(
         self,
         context: CapabilityContext,

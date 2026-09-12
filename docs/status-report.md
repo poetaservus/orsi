@@ -4,12 +4,14 @@ Date: 2026-09-12
 
 ## Overall status
 
-Phase 10 has started on `codex/phase-10-filesystem-mkdir`, based on accepted text-read
-checkpoint `523e1f9`. The first development checkpoint adds approved creation of one empty
-folder. Phase 10 is not complete: text writes, copy, move, and trash remain unimplemented.
+Phase 10 is continuing on `codex/phase-10-filesystem-write-text`, based on approved folder-creation
+checkpoint `076007f`. The second development checkpoint adds approved creation or replacement of
+one UTF-8 text file with exact path and content preview. Phase 10 is not complete: copy, move, and
+trash remain unimplemented.
 The user requested this progression while Phase 9 bounded search and the dedicated text-read
 real-model matrix remain outstanding. Phase 9's enabled file-reading workflow was manually
-confirmed on 2026-09-12; Phase 10 manual acceptance is still pending.
+confirmed on 2026-09-12. Phase 10 text writing was manually reported working on 2026-09-12;
+folder-specific create/cancel acceptance remains separately pending unless tested.
 
 ## GUI status: approved and integrated
 
@@ -46,6 +48,13 @@ confirmed on 2026-09-12; Phase 10 manual acceptance is still pending.
   approved parent's identity, creates one child atomically, and verifies the returned directory handle.
 - Read and ordinary model turns cannot access the write capability. Folder creation uses the
   explicit user target and a deterministic result, without model tool selection or generated claims.
+- `filesystem.write_text` has a separate enabled development gate and mandatory approval. An exact
+  write request must include an absolute file path and exact text. The approval dialog shows the
+  path and content as readonly plain text; Cancel remains the default. Text writes are bounded to
+  65,536 UTF-8 bytes and 1,000 lines.
+- Text writing uses a same-directory temporary file, flushes it, atomically replaces the target, and
+  verifies the final file by identity and SHA-256 digest. If the target appears, disappears, or is
+  replaced after preview, the write is denied and the newer entry is preserved.
 - Interrupted or unverified writes require review before further operations, including across restart.
   A failed result save also blocks the live session. No automatic retry, rollback, or deletion occurs.
 - Other filesystem mutation, shell/process execution, window control, clipboard access, network
@@ -53,16 +62,20 @@ confirmed on 2026-09-12; Phase 10 manual acceptance is still pending.
 
 ## Verification
 
-- Complete integrated Phase 10 suite: 342 passed, 14 skipped on Windows on 2026-09-12.
-- The 44 new cases cover actual native folder creation, exact approval, denial, expiry, cancellation,
+- Complete integrated Phase 10 suite after text writing: 370 passed, 14 skipped on Windows on
+  2026-09-12.
+- The 72 Phase 10 cases cover actual native folder creation, exact approval, denial, expiry, cancellation,
   collisions, changed parents, protected/reparse paths, read/write isolation, unknown outcomes,
-  result-save failure, restart recovery, and real Qt worker/dialog interactions.
-- Approval-dialog screenshot inspected with actual Windows fonts; path and controls are readable.
+  result-save failure, restart recovery, exact text-write previews, create/replace behavior, target
+  replacement after approval, hostile read-content isolation, and real Qt worker/dialog interactions.
+- Folder approval-dialog screenshot inspected with actual Windows fonts; path and controls are readable.
 - Historical Phase 9 suite after enablement: 298 passed, 14 skipped.
 - Deterministic tests cover list-to-read actual content, direct-path reads, literal Markdown fences,
   untrusted-content isolation, strict decoding/bounds, permissions, cancellation, and disclosures.
 - Manual Phase 9 workflow acceptance: user confirmed the enabled app works on 2026-09-12.
-- Manual Phase 10 application acceptance and real-model follow-up conversation are still pending.
+- Manual Phase 10 text-write application acceptance: user reported it works on 2026-09-12.
+- Folder create/cancel manual acceptance and real-model follow-up conversation after writes remain
+  pending.
 - The dedicated automated text-read real-model call/no-call matrix has not been run.
 - Historical GUI baseline visual checks passed at 1920-pixel and 1280-pixel window widths.
 
@@ -75,13 +88,15 @@ confirmed on 2026-09-12; Phase 10 manual acceptance is still pending.
 - Complete the dedicated automated text-read real-model matrix, including ordinary conversation
   after a read, before proceeding to the next separately designed capability, bounded search.
 - Fresh-runtime packaging and real-model/UI acceptance remain before portable release promotion.
-- Phase 10 is a development-only feature-branch checkpoint. Confirm the folder preview/create/cancel workflow
-  before starting `filesystem.write_text`. See `phase10-mkdir-threat-review.md` for protection scope
+- Phase 10 is a development-only feature-branch checkpoint. Confirm folder preview/create/cancel and
+  text-file preview/create/replace/cancel workflows before starting copy/move/trash. See
+  `phase10-mkdir-threat-review.md` and `phase10-write-text-threat-review.md` for protection scope
   and recovery limitations, including nonstandard application/service locations.
 
 ## Checkpoint scope
 
-- The Phase 10 folder-creation implementation, tests, configuration, and repository reports are
-  recorded together on `codex/phase-10-filesystem-mkdir` at the user's request.
-- This is a local checkpoint, not a push, merge, release promotion, or confirmation of manual acceptance.
+- The Phase 10 folder-creation checkpoint is committed on `codex/phase-10-filesystem-mkdir` at
+  `076007f`. The text-write checkpoint is implemented and tested on
+  `codex/phase-10-filesystem-write-text` but is not yet committed, pushed, merged, or
+  release-promoted. The user reported the text-write workflow works on 2026-09-12.
 - The private Desktop `statusreport.md` remains outside Git and records the resulting commit ID.

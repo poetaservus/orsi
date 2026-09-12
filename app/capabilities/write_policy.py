@@ -39,22 +39,36 @@ class HostWritePolicy:
         object.__setattr__(self, "protected_roots", tuple(p.resolve(strict=False) for p in protected))
 
     def resolve_new_directory(self, raw: str) -> Path:
+        return self._resolve_write_path(
+            raw,
+            action="Folder creation",
+            location_hint="Choose a folder inside an existing directory, below the drive root.",
+        )
+
+    def resolve_text_file(self, raw: str) -> Path:
+        return self._resolve_write_path(
+            raw,
+            action="Text writing",
+            location_hint="Choose a file inside an existing directory, below the drive root.",
+        )
+
+    def _resolve_write_path(self, raw: str, *, action: str, location_hint: str) -> Path:
         path = PureWindowsPath(raw)
         if (not path.is_absolute() or not re.fullmatch(r"[A-Za-z]:", path.drive)
                 or raw.startswith(("\\\\", "//"))):
-            self._deny("Folder creation requires an exact absolute local-drive path.")
+            self._deny(f"{action} requires an exact absolute local-drive path.")
         if len(path.parts) < 3 or len(path.parts) > 64:
-            self._deny("Choose a folder inside an existing directory, below the drive root.")
+            self._deny(location_hint)
         for part in path.parts[1:]:
             if (part in {".", ".."} or part.endswith((".", " ")) or _DEVICE_NAME.match(part)
                     or re.search(r'[<>:"|?*\x00-\x1f\x7f\u202a-\u202e\u2066-\u2069]', part)):
-                self._deny("The requested folder path contains an unsafe or ambiguous name.")
+                self._deny("The requested write path contains an unsafe or ambiguous name.")
         candidate = Path(path)
         try:
             canonical = candidate.resolve(strict=False)
         except (OSError, RuntimeError, ValueError) as exc:
             raise CapabilityExecutionError(CapabilityErrorCode.INACCESSIBLE,
-                "The folder path could not be resolved safely.") from exc
+                "The write path could not be resolved safely.") from exc
         if os.path.normcase(str(candidate)) != os.path.normcase(str(canonical)):
             self._deny("Aliases and redirected folder paths are not allowed for writes.")
         if not any(is_path_within(canonical, root) for root in _windows_local_drive_roots()):

@@ -14,7 +14,13 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.capabilities.contracts import Capability, CapabilityContext, PermissionClass
+from app.capabilities.contracts import (
+    Capability,
+    CapabilityContext,
+    CapabilityErrorCode,
+    CapabilityExecutionError,
+    PermissionClass,
+)
 from app.capabilities.path_policy import is_path_within
 from app.runtime.cancellation import CancellationToken
 
@@ -105,6 +111,7 @@ class PermissionRequest(BaseModel):
     arguments_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     resource: str | None = Field(default=None, max_length=32_767)
     resource_identity: str | None = Field(default=None, max_length=256)
+    approval_preview: str | None = Field(default=None, max_length=65_536)
     request_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
     @classmethod
@@ -117,10 +124,12 @@ class PermissionRequest(BaseModel):
         arguments_json: str,
         resource: str | None,
         resource_identity: str | None = None,
+        approval_preview: str | None = None,
     ) -> PermissionRequest:
         arguments_sha256 = _sha256(arguments_json)
         request_sha256 = _digest_json(
             {
+                "approval_preview": approval_preview,
                 "arguments_sha256": arguments_sha256,
                 "call_id": call_id,
                 "capability": capability,
@@ -137,6 +146,7 @@ class PermissionRequest(BaseModel):
             arguments_sha256=arguments_sha256,
             resource=resource,
             resource_identity=resource_identity,
+            approval_preview=approval_preview,
             request_sha256=request_sha256,
         )
 
@@ -146,6 +156,7 @@ class PermissionRequest(BaseModel):
             raise ValueError("The argument digest does not match the canonical arguments.")
         expected = _digest_json(
             {
+                "approval_preview": self.approval_preview,
                 "arguments_sha256": self.arguments_sha256,
                 "call_id": self.call_id,
                 "capability": self.capability,
@@ -274,6 +285,7 @@ class ApprovalRecord(BaseModel):
     status: ApprovalStatus
     expires_at: float = Field(ge=0)
     resource: str | None = Field(default=None, max_length=32_767)
+    approval_preview: str | None = Field(default=None, max_length=65_536)
 
 
 class ApprovalNotFoundError(LookupError):
@@ -367,6 +379,7 @@ class ApprovalManager:
                 status=status,
                 expires_at=timestamp + ttl,
                 resource=evaluation.request.resource,
+                approval_preview=evaluation.request.approval_preview,
             )
             self._records[approval_id] = record
             return record
@@ -550,6 +563,12 @@ def prepare_capability_call(
         sort_keys=True,
     )
     resource = capability.permission_resource(arguments, context)
+    approval_preview = capability.approval_preview(arguments, context)
+    if approval_preview is not None and not isinstance(approval_preview, str):
+        raise CapabilityExecutionError(
+            CapabilityErrorCode.INVALID_ARGUMENTS,
+            "The approval preview was not valid text.",
+        )
     request = PermissionRequest.build(
         call_id=context.call_id,
         capability=capability.name,
@@ -557,6 +576,7 @@ def prepare_capability_call(
         arguments_json=arguments_json,
         resource=str(resource) if resource is not None else None,
         resource_identity=capability.permission_resource_identity(arguments, context),
+        approval_preview=approval_preview,
     )
     return PreparedCapabilityCall(
         capability=capability,

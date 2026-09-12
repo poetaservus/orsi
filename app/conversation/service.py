@@ -126,6 +126,12 @@ class ConversationService:
                 if self.agent_enabled:
                     self._agent_history.append({"role": "assistant", "content": answer})
                 return answer
+            if _is_text_write_request(text):
+                answer = self._write_text(text, source, activity)
+                self.store.append("assistant", answer)
+                if self.agent_enabled:
+                    self._agent_history.append({"role": "assistant", "content": answer})
+                return answer
             capability_turn = self.agent_enabled and self._requires_capabilities(text)
             if activity:
                 activity("Working..." if capability_turn else "Thinking...")
@@ -231,7 +237,10 @@ class ConversationService:
         return self.agent_runtime.approval_status(approval_id)
 
     def _read_capabilities(self) -> tuple[str, ...]:
-        return tuple(name for name in self.agent_capabilities if name != "filesystem.mkdir")
+        return tuple(
+            name for name in self.agent_capabilities
+            if name not in {"filesystem.mkdir", "filesystem.write_text"}
+        )
 
     def _create_folder(self, text, source, activity) -> str:
         self._last_filesystem_operation = None
@@ -266,7 +275,45 @@ class ConversationService:
         outcome = observed[0]
         if not outcome.success:
             return outcome.error.message if outcome.error else "The folder could not be created."
+        self._active_listing = None
         return f"Created empty folder: {outcome.output['path']}"
+
+    def _write_text(self, text, source, activity) -> str:
+        self._last_filesystem_operation = None
+        if "filesystem.write_text" not in self.agent_capabilities:
+            return "Text-file writing is not enabled. No file was changed."
+        request = _text_write_request(text)
+        if request is None:
+            return "Tell me the exact file path and text to write, for example: write text to C:\\Users\\you\\Desktop\\note.txt:\nHello"
+        target, content = request
+        self._turn_number += 1
+        call = ModelCapabilityCall(
+            provider_call_id=f"required-{self._turn_number}-1",
+            capability="filesystem.write_text", arguments={"path": target, "text": content},
+        )
+        observed = []
+        if activity:
+            activity("Preparing file approval...")
+        result = self.agent_runtime.run(
+            [{"role": "user", "content": text}],
+            session_id=self._session_id, turn_id=f"turn-{self._turn_number}",
+            portable_root=self.portable_root, allowed_read_roots=self.allowed_read_roots,
+            host_access_policy=self.host_access_policy, cancellation=source.token,
+            required_calls=(call,), capability_names=("filesystem.write_text",),
+            result_observer=lambda calls, results: observed.extend(results),
+        )
+        if result.status == AgentRunStatus.CANCELLED:
+            return "Text-file writing was cancelled before execution."
+        if result.status != AgentRunStatus.COMPLETED:
+            raise RuntimeError(result.message or "Text-file writing did not complete.")
+        if not observed:
+            raise RuntimeError("The text-file write result was not returned.")
+        outcome = observed[0]
+        if not outcome.success:
+            return outcome.error.message if outcome.error else "The text file could not be written."
+        self._active_listing = None
+        output = outcome.output or {}
+        return f"Wrote text file: {output['path']} ({output['bytes_written']:,} bytes, {output['operation']})."
 
     def cancel_current_task(self) -> bool:
         with self._cancellation_lock:
@@ -648,6 +695,74 @@ def _folder_creation_target(text: str) -> str | None:
             or len(re.findall(r"[A-Za-z]:[\\/]", remainder)) != 1):
         return None
     return remainder
+
+
+_TEXT_WRITE_START = re.compile(
+    r"\A(?:please\s+)?(?:(?:can|could|would)\s+you\s+)?"
+    r"(?:(?:write|save)\b|filesystem[.]write_text\b)", re.I,
+)
+
+
+def _is_text_write_request(text: str) -> bool:
+    value = str(text).strip()
+    lowered = " ".join(value.casefold().split())
+    if re.match(r"\Afilesystem[.]write_text\b", lowered):
+        return True
+    if _TEXT_WRITE_START.match(value) is None:
+        return False
+    return (
+        _text_write_request(value) is not None
+        or (re.search(r"\bto\b", lowered) is not None
+            and re.search(r"[A-Za-z]:[\\/]", value) is not None)
+    )
+
+
+def _text_write_request(text: str) -> tuple[str, str] | None:
+    value = str(text).strip()
+    first_line, separator, content = value.partition("\n")
+    if separator:
+        match = re.match(
+            r"\A(?:please\s+)?(?:(?:can|could|would)\s+you\s+)?(?:write|save)\s+"
+            r"(?:(?:the|this|following|exact)\s+)?(?:text|content|file)\s+to\s+(.+):\s*\Z",
+            first_line.strip(), re.I,
+        )
+        if match is not None:
+            path = _write_path_argument(match.group(1))
+            if path is not None:
+                return path, content
+    match = re.match(
+        r"\A(?:please\s+)?(?:(?:can|could|would)\s+you\s+)?(?:write|save)\s+"
+        r"(?:(?:text|content)\s+)?(?P<quote>[\"'])(?P<content>.*)(?P=quote)\s+to\s+(?P<path>.+)\Z",
+        value, re.I | re.S,
+    )
+    if match is not None:
+        path = _write_path_argument(match.group("path"))
+        if path is not None:
+            return path, match.group("content")
+    match = re.match(
+        r"\Afilesystem[.]write_text\s+(?P<path>(?:\"[^\"]+\"|'[^']+'|[A-Za-z]:[^\r\n]+?))\s+"
+        r"(?P<quote>[\"'])(?P<content>.*)(?P=quote)\Z",
+        value, re.I | re.S,
+    )
+    if match is not None:
+        path = _write_path_argument(match.group("path"))
+        if path is not None:
+            return path, match.group("content")
+    return None
+
+
+def _write_path_argument(raw: str) -> str | None:
+    value = str(raw).strip()
+    if value.startswith(("\"", "'")):
+        quote = value[0]
+        if len(value) < 3 or value[-1] != quote:
+            return None
+        value = value[1:-1]
+    if (not re.fullmatch(r"[A-Za-z]:[\\/].+", value)
+            or re.search(r"[\r\n\"']|\s+(?:and|then)\s+", value, re.I)
+            or len(re.findall(r"[A-Za-z]:[\\/]", value)) != 1):
+        return None
+    return value
 
 
 def _conversation_turn_groups(history: list[dict]) -> list[list[dict]]:

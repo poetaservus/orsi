@@ -115,7 +115,7 @@ class MainWindow(QMainWindow):
         self.thread = None
         self.worker = None
         self._approval_dialog = None
-        self.approval_requested.connect(self._show_folder_approval, Qt.ConnectionType.QueuedConnection)
+        self.approval_requested.connect(self._show_approval, Qt.ConnectionType.QueuedConnection)
         bind_approval = getattr(service, "set_approval_requester", None)
         if callable(bind_approval):
             bind_approval(self.approval_requested.emit)
@@ -335,9 +335,20 @@ class MainWindow(QMainWindow):
         self.thread.start()
 
     @Slot(object)
+    def _show_approval(self, record) -> None:
+        if self._approval_dialog is not None:
+            self.service.resolve_approval(record.approval_id, False)
+            return
+        if record.capability == "filesystem.mkdir":
+            self._show_folder_approval(record)
+            return
+        if record.capability == "filesystem.write_text":
+            self._show_text_write_approval(record)
+            return
+        self.service.resolve_approval(record.approval_id, False)
+
     def _show_folder_approval(self, record) -> None:
-        if (record.capability != "filesystem.mkdir" or not record.resource
-                or self._approval_dialog is not None):
+        if record.capability != "filesystem.mkdir" or not record.resource:
             self.service.resolve_approval(record.approval_id, False)
             return
         if self.service.approval_status(record.approval_id) != "pending":
@@ -386,6 +397,68 @@ class MainWindow(QMainWindow):
         dialog.finished.connect(finish)
         self._approval_dialog = dialog
         self.activity.set_activity("Waiting for folder approval...")
+        timer.start(100)
+        dialog.open()
+        cancel.setFocus()
+
+    def _show_text_write_approval(self, record) -> None:
+        preview = getattr(record, "approval_preview", None)
+        if record.capability != "filesystem.write_text" or not record.resource or not isinstance(preview, str):
+            self.service.resolve_approval(record.approval_id, False)
+            return
+        if self.service.approval_status(record.approval_id) != "pending":
+            return
+        dialog = QDialog(self)
+        dialog.setObjectName("writeApproval")
+        dialog.setWindowTitle("Write text file?")
+        dialog.setWindowModality(Qt.WindowModality.WindowModal)
+        dialog.resize(640, 420)
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel("Write text to:", dialog))
+        path = QPlainTextEdit(dialog)
+        path.setObjectName("approvalPath")
+        path.setPlainText(record.resource)
+        path.setReadOnly(True)
+        path.setMaximumHeight(92)
+        layout.addWidget(path)
+        layout.addWidget(QLabel("New file content:", dialog))
+        content = QPlainTextEdit(dialog)
+        content.setObjectName("approvalContent")
+        content.setPlainText(preview)
+        content.setReadOnly(True)
+        layout.addWidget(content, 1)
+        notice = QLabel("This creates the file or replaces the entire existing file. Approval is for this path and content only.", dialog)
+        notice.setWordWrap(True)
+        layout.addWidget(notice)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel, dialog)
+        write = buttons.addButton("Write file", QDialogButtonBox.ButtonRole.AcceptRole)
+        write.setObjectName("approveTextWrite")
+        write.setAutoDefault(False)
+        cancel = buttons.button(QDialogButtonBox.StandardButton.Cancel)
+        cancel.setDefault(True)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        timer = QTimer(dialog)
+
+        def refresh():
+            try:
+                pending = self.service.approval_status(record.approval_id) == "pending"
+            except (LookupError, ValueError):
+                pending = False
+            if not pending:
+                dialog.reject()
+
+        def finish(code):
+            timer.stop()
+            self.service.resolve_approval(record.approval_id, code == QDialog.DialogCode.Accepted)
+            self._approval_dialog = None
+            dialog.deleteLater()
+
+        timer.timeout.connect(refresh)
+        dialog.finished.connect(finish)
+        self._approval_dialog = dialog
+        self.activity.set_activity("Waiting for file approval...")
         timer.start(100)
         dialog.open()
         cancel.setFocus()
@@ -472,6 +545,8 @@ class MainWindow(QMainWindow):
             )
             if "filesystem.mkdir" in getattr(self.service, "agent_capabilities", ()):
                 read_status += " · Folder approval"
+            if "filesystem.write_text" in getattr(self.service, "agent_capabilities", ()):
+                read_status += " · Text-write approval"
             if self.inference.mode == "cloud":
                 return (
                     f"Cloud key needed · Agent · {read_status}"
@@ -591,12 +666,27 @@ class MainWindow(QMainWindow):
             else:
                 boundary = "but cannot read file content or perform other computer actions"
                 confidentiality = "Directory and file names may be confidential"
-            if "filesystem.mkdir" in getattr(self.service, "agent_capabilities", ()):
+            mkdir_enabled = "filesystem.mkdir" in getattr(self.service, "agent_capabilities", ())
+            text_write_enabled = "filesystem.write_text" in getattr(self.service, "agent_capabilities", ())
+            if mkdir_enabled and text_write_enabled:
+                boundary = (
+                    "and can create one empty folder or create/replace one text file only after "
+                    "separate approval of the exact path and, for text files, the exact content; "
+                    "it cannot copy, move, or delete entries"
+                )
+                results += " plus approved folder paths, text-write paths, and text-write content"
+            elif mkdir_enabled:
                 boundary = (
                     "and can create one empty folder only after separate approval of its exact path; "
                     "it cannot write file content, copy, move, or delete entries"
                 )
                 results += " and approved folder paths"
+            elif text_write_enabled:
+                boundary = (
+                    "and can create or replace one text file only after separate approval of its "
+                    "exact path and content; it cannot copy, move, or delete entries"
+                )
+                results += " and approved text-write paths and content"
             return (
                 f"Cloud mode sends this conversation and any {results} to {provider}. Agent mode "
                 f"can {access} {scope}, {boundary}.\n\n{confidentiality}. Do not use Cloud mode "
@@ -634,16 +724,16 @@ class MainWindow(QMainWindow):
 
 
 _STYLE = """
-QDialog#folderApproval {
+QDialog#folderApproval, QDialog#writeApproval {
     background: #202224;
     color: #ededed;
 }
-QDialog#folderApproval QLabel {
+QDialog#folderApproval QLabel, QDialog#writeApproval QLabel {
     color: #dedede;
     font-family: Arial;
     font-size: 14px;
 }
-QPlainTextEdit#approvalPath {
+QPlainTextEdit#approvalPath, QPlainTextEdit#approvalContent {
     background: #151719;
     color: #f2f2f2;
     border: 1px solid #55595c;
@@ -652,7 +742,7 @@ QPlainTextEdit#approvalPath {
     font-size: 14px;
     selection-background-color: #355e7e;
 }
-QDialog#folderApproval QPushButton {
+QDialog#folderApproval QPushButton, QDialog#writeApproval QPushButton {
     background: #34383b;
     color: #f1f1f1;
     border: 1px solid #64696d;
@@ -661,8 +751,8 @@ QDialog#folderApproval QPushButton {
     font-family: Arial;
     font-size: 14px;
 }
-QDialog#folderApproval QPushButton:focus { border: 2px solid #91bfe0; }
-QDialog#folderApproval QPushButton:hover { background: #42484d; }
+QDialog#folderApproval QPushButton:focus, QDialog#writeApproval QPushButton:focus { border: 2px solid #91bfe0; }
+QDialog#folderApproval QPushButton:hover, QDialog#writeApproval QPushButton:hover { background: #42484d; }
 QMainWindow#mainWindow, QWidget#root {
     background: #121416;
     color: #ababab;
