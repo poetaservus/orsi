@@ -4,14 +4,14 @@ Date: 2026-09-12
 
 ## Overall status
 
-Phase 10 is continuing on `codex/phase-10-filesystem-write-text`, based on approved folder-creation
-checkpoint `076007f`. The second development checkpoint adds approved creation or replacement of
-one UTF-8 text file with exact path and content preview. Phase 10 is not complete: copy, move, and
-trash remain unimplemented.
+Phase 10 is continuing on `codex/phase-10-filesystem-copy`, based on approved text-write checkpoint
+`6a8fcbb`. The third development checkpoint adds approved copying of one bounded regular file with
+exact source, destination, and collision-policy preview. Phase 10 is not complete: move and trash
+remain unimplemented.
 The user requested this progression while Phase 9 bounded search and the dedicated text-read
 real-model matrix remain outstanding. Phase 9's enabled file-reading workflow was manually
-confirmed on 2026-09-12. Phase 10 text writing was manually reported working on 2026-09-12;
-folder-specific create/cancel acceptance remains separately pending unless tested.
+confirmed on 2026-09-12. Phase 10 text writing and copy were manually reported working on
+2026-09-12.
 
 ## GUI status: approved and integrated
 
@@ -55,6 +55,12 @@ folder-specific create/cancel acceptance remains separately pending unless teste
 - Text writing uses a same-directory temporary file, flushes it, atomically replaces the target, and
   verifies the final file by identity and SHA-256 digest. If the target appears, disappears, or is
   replaced after preview, the write is denied and the newer entry is preserved.
+- `filesystem.copy` has a separate enabled development gate and mandatory approval. Exact copy
+  requests include a source path, destination path, and collision policy. Default collision behavior
+  refuses an existing destination; explicit replace binds the destination identity before replacing.
+- File copying is limited to 16 MiB, copies only regular non-reparse files, writes through a
+  same-directory destination temp file, atomically places the result, and verifies final identity and
+  SHA-256 digest. If the source or destination changes after preview, the copy is denied.
 - Interrupted or unverified writes require review before further operations, including across restart.
   A failed result save also blocks the live session. No automatic retry, rollback, or deletion occurs.
 - Other filesystem mutation, shell/process execution, window control, clipboard access, network
@@ -62,20 +68,22 @@ folder-specific create/cancel acceptance remains separately pending unless teste
 
 ## Verification
 
-- Complete integrated Phase 10 suite after text writing: 370 passed, 14 skipped on Windows on
+- Complete integrated Phase 10 suite after copy: 399 passed, 14 skipped on Windows on
   2026-09-12.
-- The 72 Phase 10 cases cover actual native folder creation, exact approval, denial, expiry, cancellation,
+- The 101 Phase 10 cases cover actual native folder creation, exact approval, denial, expiry, cancellation,
   collisions, changed parents, protected/reparse paths, read/write isolation, unknown outcomes,
   result-save failure, restart recovery, exact text-write previews, create/replace behavior, target
-  replacement after approval, hostile read-content isolation, and real Qt worker/dialog interactions.
+  replacement after approval, exact copy previews, collision policy, source/destination changes after
+  approval, hostile read-content isolation, and real Qt worker/dialog interactions.
 - Folder approval-dialog screenshot inspected with actual Windows fonts; path and controls are readable.
 - Historical Phase 9 suite after enablement: 298 passed, 14 skipped.
 - Deterministic tests cover list-to-read actual content, direct-path reads, literal Markdown fences,
   untrusted-content isolation, strict decoding/bounds, permissions, cancellation, and disclosures.
 - Manual Phase 9 workflow acceptance: user confirmed the enabled app works on 2026-09-12.
 - Manual Phase 10 text-write application acceptance: user reported it works on 2026-09-12.
-- Folder create/cancel manual acceptance and real-model follow-up conversation after writes remain
-  pending.
+- Manual Phase 10 copy application acceptance: user reported it works on 2026-09-12.
+- Folder create/cancel manual acceptance if not already tested and real-model follow-up conversation
+  after writes remain pending.
 - The dedicated automated text-read real-model call/no-call matrix has not been run.
 - Historical GUI baseline visual checks passed at 1920-pixel and 1280-pixel window widths.
 
@@ -88,15 +96,17 @@ folder-specific create/cancel acceptance remains separately pending unless teste
 - Complete the dedicated automated text-read real-model matrix, including ordinary conversation
   after a read, before proceeding to the next separately designed capability, bounded search.
 - Fresh-runtime packaging and real-model/UI acceptance remain before portable release promotion.
-- Phase 10 is a development-only feature-branch checkpoint. Confirm folder preview/create/cancel and
-  text-file preview/create/replace/cancel workflows before starting copy/move/trash. See
-  `phase10-mkdir-threat-review.md` and `phase10-write-text-threat-review.md` for protection scope
+- Phase 10 is a development-only feature-branch checkpoint. Confirm copy preview/create/replace/cancel
+  workflows before starting move/trash. See `phase10-mkdir-threat-review.md`,
+  `phase10-write-text-threat-review.md`, and `phase10-copy-threat-review.md` for protection scope
   and recovery limitations, including nonstandard application/service locations.
 
 ## Checkpoint scope
 
 - The Phase 10 folder-creation checkpoint is committed on `codex/phase-10-filesystem-mkdir` at
   `076007f`. The text-write checkpoint is implemented and tested on
-  `codex/phase-10-filesystem-write-text` but is not yet committed, pushed, merged, or
-  release-promoted. The user reported the text-write workflow works on 2026-09-12.
+  `codex/phase-10-filesystem-write-text` and committed at `6a8fcbb`; the user reported the
+  text-write workflow works on 2026-09-12. The copy checkpoint is implemented and tested on
+  `codex/phase-10-filesystem-copy` but is not yet committed, pushed, merged, or release-promoted.
+  The user reported the copy workflow works on 2026-09-12.
 - The private Desktop `statusreport.md` remains outside Git and records the resulting commit ID.

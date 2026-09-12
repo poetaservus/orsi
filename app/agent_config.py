@@ -13,6 +13,7 @@ _FILESYSTEM_LIST_GATE = "ORSI_ENABLE_FILESYSTEM_LIST"
 _FILESYSTEM_READ_TEXT_GATE = "ORSI_ENABLE_FILESYSTEM_READ_TEXT"
 _FILESYSTEM_MKDIR_GATE = "ORSI_ENABLE_FILESYSTEM_MKDIR"
 _FILESYSTEM_WRITE_TEXT_GATE = "ORSI_ENABLE_FILESYSTEM_WRITE_TEXT"
+_FILESYSTEM_COPY_GATE = "ORSI_ENABLE_FILESYSTEM_COPY"
 _FULL_LOCAL_READ_GATE = "ORSI_ENABLE_FULL_LOCAL_READ"
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 _FALSE_VALUES = {"0", "false", "no", "off"}
@@ -28,6 +29,7 @@ class AgentFeatureConfig(BaseModel):
     filesystem_read_text_enabled: bool = False
     filesystem_mkdir_enabled: bool = False
     filesystem_write_text_enabled: bool = False
+    filesystem_copy_enabled: bool = False
     full_local_read_enabled: bool = False
 
     @model_validator(mode="after")
@@ -36,6 +38,8 @@ class AgentFeatureConfig(BaseModel):
             raise ValueError("Folder creation requires the filesystem metadata agent.")
         if self.filesystem_write_text_enabled and not self.filesystem_stat_enabled:
             raise ValueError("Text writing requires the filesystem metadata agent.")
+        if self.filesystem_copy_enabled and not self.filesystem_stat_enabled:
+            raise ValueError("File copying requires the filesystem metadata agent.")
         if self.filesystem_list_enabled and not self.filesystem_stat_enabled:
             raise ValueError(
                 "Directory listing requires the filesystem metadata agent."
@@ -62,6 +66,7 @@ def load_agent_feature_config() -> AgentFeatureConfig:
         (_FILESYSTEM_READ_TEXT_GATE, "filesystem_read_text_enabled"),
         (_FILESYSTEM_MKDIR_GATE, "filesystem_mkdir_enabled"),
         (_FILESYSTEM_WRITE_TEXT_GATE, "filesystem_write_text_enabled"),
+        (_FILESYSTEM_COPY_GATE, "filesystem_copy_enabled"),
         (_FULL_LOCAL_READ_GATE, "full_local_read_enabled"),
     ):
         override = os.environ.get(name)

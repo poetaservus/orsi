@@ -345,6 +345,9 @@ class MainWindow(QMainWindow):
         if record.capability == "filesystem.write_text":
             self._show_text_write_approval(record)
             return
+        if record.capability == "filesystem.copy":
+            self._show_copy_approval(record)
+            return
         self.service.resolve_approval(record.approval_id, False)
 
     def _show_folder_approval(self, record) -> None:
@@ -397,6 +400,61 @@ class MainWindow(QMainWindow):
         dialog.finished.connect(finish)
         self._approval_dialog = dialog
         self.activity.set_activity("Waiting for folder approval...")
+        timer.start(100)
+        dialog.open()
+        cancel.setFocus()
+
+    def _show_copy_approval(self, record) -> None:
+        preview = getattr(record, "approval_preview", None)
+        if record.capability != "filesystem.copy" or not record.resource or not isinstance(preview, str):
+            self.service.resolve_approval(record.approval_id, False)
+            return
+        if self.service.approval_status(record.approval_id) != "pending":
+            return
+        dialog = QDialog(self)
+        dialog.setObjectName("copyApproval")
+        dialog.setWindowTitle("Copy file?")
+        dialog.setWindowModality(Qt.WindowModality.WindowModal)
+        dialog.resize(640, 340)
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel("Copy file with these exact details:", dialog))
+        details = QPlainTextEdit(dialog)
+        details.setObjectName("approvalDetails")
+        details.setPlainText(preview)
+        details.setReadOnly(True)
+        layout.addWidget(details, 1)
+        notice = QLabel("Approval is for this source, destination, and collision policy only.", dialog)
+        notice.setWordWrap(True)
+        layout.addWidget(notice)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel, dialog)
+        copy = buttons.addButton("Copy file", QDialogButtonBox.ButtonRole.AcceptRole)
+        copy.setObjectName("approveCopy")
+        copy.setAutoDefault(False)
+        cancel = buttons.button(QDialogButtonBox.StandardButton.Cancel)
+        cancel.setDefault(True)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        timer = QTimer(dialog)
+
+        def refresh():
+            try:
+                pending = self.service.approval_status(record.approval_id) == "pending"
+            except (LookupError, ValueError):
+                pending = False
+            if not pending:
+                dialog.reject()
+
+        def finish(code):
+            timer.stop()
+            self.service.resolve_approval(record.approval_id, code == QDialog.DialogCode.Accepted)
+            self._approval_dialog = None
+            dialog.deleteLater()
+
+        timer.timeout.connect(refresh)
+        dialog.finished.connect(finish)
+        self._approval_dialog = dialog
+        self.activity.set_activity("Waiting for copy approval...")
         timer.start(100)
         dialog.open()
         cancel.setFocus()
@@ -547,6 +605,8 @@ class MainWindow(QMainWindow):
                 read_status += " · Folder approval"
             if "filesystem.write_text" in getattr(self.service, "agent_capabilities", ()):
                 read_status += " · Text-write approval"
+            if "filesystem.copy" in getattr(self.service, "agent_capabilities", ()):
+                read_status += " · Copy approval"
             if self.inference.mode == "cloud":
                 return (
                     f"Cloud key needed · Agent · {read_status}"
@@ -668,13 +728,35 @@ class MainWindow(QMainWindow):
                 confidentiality = "Directory and file names may be confidential"
             mkdir_enabled = "filesystem.mkdir" in getattr(self.service, "agent_capabilities", ())
             text_write_enabled = "filesystem.write_text" in getattr(self.service, "agent_capabilities", ())
-            if mkdir_enabled and text_write_enabled:
+            copy_enabled = "filesystem.copy" in getattr(self.service, "agent_capabilities", ())
+            if mkdir_enabled and text_write_enabled and copy_enabled:
+                boundary = (
+                    "and can create one empty folder, create/replace one text file, or copy one "
+                    "regular file only after separate approval of exact paths and relevant content "
+                    "or collision policy; it cannot move or delete entries"
+                )
+                results += " plus approved folder paths, text-write paths/content, and copy paths"
+            elif mkdir_enabled and text_write_enabled:
                 boundary = (
                     "and can create one empty folder or create/replace one text file only after "
                     "separate approval of the exact path and, for text files, the exact content; "
                     "it cannot copy, move, or delete entries"
                 )
                 results += " plus approved folder paths, text-write paths, and text-write content"
+            elif mkdir_enabled and copy_enabled:
+                boundary = (
+                    "and can create one empty folder or copy one regular file only after separate "
+                    "approval of exact paths and, for copies, collision policy; it cannot move or "
+                    "delete entries"
+                )
+                results += " plus approved folder paths and copy paths"
+            elif text_write_enabled and copy_enabled:
+                boundary = (
+                    "and can create/replace one text file or copy one regular file only after "
+                    "separate approval of exact paths and relevant content or collision policy; "
+                    "it cannot move or delete entries"
+                )
+                results += " plus approved text-write paths/content and copy paths"
             elif mkdir_enabled:
                 boundary = (
                     "and can create one empty folder only after separate approval of its exact path; "
@@ -687,6 +769,12 @@ class MainWindow(QMainWindow):
                     "exact path and content; it cannot copy, move, or delete entries"
                 )
                 results += " and approved text-write paths and content"
+            elif copy_enabled:
+                boundary = (
+                    "and can copy one regular file only after separate approval of the exact source, "
+                    "destination, and collision policy; it cannot move or delete entries"
+                )
+                results += " and approved copy paths"
             return (
                 f"Cloud mode sends this conversation and any {results} to {provider}. Agent mode "
                 f"can {access} {scope}, {boundary}.\n\n{confidentiality}. Do not use Cloud mode "
@@ -724,16 +812,16 @@ class MainWindow(QMainWindow):
 
 
 _STYLE = """
-QDialog#folderApproval, QDialog#writeApproval {
+QDialog#folderApproval, QDialog#writeApproval, QDialog#copyApproval {
     background: #202224;
     color: #ededed;
 }
-QDialog#folderApproval QLabel, QDialog#writeApproval QLabel {
+QDialog#folderApproval QLabel, QDialog#writeApproval QLabel, QDialog#copyApproval QLabel {
     color: #dedede;
     font-family: Arial;
     font-size: 14px;
 }
-QPlainTextEdit#approvalPath, QPlainTextEdit#approvalContent {
+QPlainTextEdit#approvalPath, QPlainTextEdit#approvalContent, QPlainTextEdit#approvalDetails {
     background: #151719;
     color: #f2f2f2;
     border: 1px solid #55595c;
@@ -742,7 +830,7 @@ QPlainTextEdit#approvalPath, QPlainTextEdit#approvalContent {
     font-size: 14px;
     selection-background-color: #355e7e;
 }
-QDialog#folderApproval QPushButton, QDialog#writeApproval QPushButton {
+QDialog#folderApproval QPushButton, QDialog#writeApproval QPushButton, QDialog#copyApproval QPushButton {
     background: #34383b;
     color: #f1f1f1;
     border: 1px solid #64696d;
@@ -751,8 +839,8 @@ QDialog#folderApproval QPushButton, QDialog#writeApproval QPushButton {
     font-family: Arial;
     font-size: 14px;
 }
-QDialog#folderApproval QPushButton:focus, QDialog#writeApproval QPushButton:focus { border: 2px solid #91bfe0; }
-QDialog#folderApproval QPushButton:hover, QDialog#writeApproval QPushButton:hover { background: #42484d; }
+QDialog#folderApproval QPushButton:focus, QDialog#writeApproval QPushButton:focus, QDialog#copyApproval QPushButton:focus { border: 2px solid #91bfe0; }
+QDialog#folderApproval QPushButton:hover, QDialog#writeApproval QPushButton:hover, QDialog#copyApproval QPushButton:hover { background: #42484d; }
 QMainWindow#mainWindow, QWidget#root {
     background: #121416;
     color: #ababab;

@@ -94,6 +94,7 @@ def test_checked_in_config_enables_requested_read_capabilities(monkeypatch):
         "ORSI_ENABLE_FILESYSTEM_READ_TEXT",
         "ORSI_ENABLE_FILESYSTEM_MKDIR",
         "ORSI_ENABLE_FILESYSTEM_WRITE_TEXT",
+        "ORSI_ENABLE_FILESYSTEM_COPY",
         "ORSI_ENABLE_FULL_LOCAL_READ",
     ):
         monkeypatch.delenv(name, raising=False)
@@ -104,6 +105,7 @@ def test_checked_in_config_enables_requested_read_capabilities(monkeypatch):
         filesystem_read_text_enabled=True,
         filesystem_mkdir_enabled=True,
         filesystem_write_text_enabled=True,
+        filesystem_copy_enabled=True,
         full_local_read_enabled=True,
     )
 

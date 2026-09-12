@@ -10,6 +10,7 @@ from app.capabilities.crash_journal import (
     JournaledCapabilityExecutor,
 )
 from app.capabilities.executor import CapabilityExecutor
+from app.capabilities.filesystem_copy import FilesystemCopyCapability
 from app.capabilities.filesystem_list import FilesystemListCapability
 from app.capabilities.filesystem_read_text import FilesystemReadTextCapability
 from app.capabilities.filesystem_stat import FilesystemStatCapability
@@ -113,6 +114,12 @@ def build_filesystem_stat_runtime(
             enabled=True,
             model_visible=True,
         ))
+    if config.filesystem_copy_enabled:
+        registrations.append(CapabilityRegistration(
+            FilesystemCopyCapability(HostWritePolicy(root, (state_directory,))),
+            enabled=True,
+            model_visible=True,
+        ))
     registry = CapabilityRegistry(registrations)
     if policy.read_scope == HostReadScope.PORTABLE_ROOT:
         permission_rules = [
@@ -193,6 +200,15 @@ def build_filesystem_stat_runtime(
                 PermissionDecision.ASK,
                 permission=PermissionClass.WRITE,
                 capability_pattern="filesystem.write_text",
+                resource_root=drive_root,
+            ))
+    if config.filesystem_copy_enabled:
+        for drive_root in _windows_local_drive_roots():
+            permission_rules.append(PermissionRule(
+                f"phase10-local-{drive_root.drive[0].casefold()}-copy",
+                PermissionDecision.ASK,
+                permission=PermissionClass.WRITE,
+                capability_pattern="filesystem.copy",
                 resource_root=drive_root,
             ))
     permission_gate = PermissionGate(permission_rules)

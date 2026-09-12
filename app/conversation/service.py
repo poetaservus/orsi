@@ -132,6 +132,12 @@ class ConversationService:
                 if self.agent_enabled:
                     self._agent_history.append({"role": "assistant", "content": answer})
                 return answer
+            if _is_copy_request(text):
+                answer = self._copy_file(text, source, activity)
+                self.store.append("assistant", answer)
+                if self.agent_enabled:
+                    self._agent_history.append({"role": "assistant", "content": answer})
+                return answer
             capability_turn = self.agent_enabled and self._requires_capabilities(text)
             if activity:
                 activity("Working..." if capability_turn else "Thinking...")
@@ -239,7 +245,7 @@ class ConversationService:
     def _read_capabilities(self) -> tuple[str, ...]:
         return tuple(
             name for name in self.agent_capabilities
-            if name not in {"filesystem.mkdir", "filesystem.write_text"}
+            if name not in {"filesystem.mkdir", "filesystem.write_text", "filesystem.copy"}
         )
 
     def _create_folder(self, text, source, activity) -> str:
@@ -314,6 +320,46 @@ class ConversationService:
         self._active_listing = None
         output = outcome.output or {}
         return f"Wrote text file: {output['path']} ({output['bytes_written']:,} bytes, {output['operation']})."
+
+    def _copy_file(self, text, source, activity) -> str:
+        self._last_filesystem_operation = None
+        if "filesystem.copy" not in self.agent_capabilities:
+            return "File copying is not enabled. No file was changed."
+        request = _copy_request(text)
+        if request is None:
+            return "Tell me the exact source and destination paths, for example: copy C:\\Users\\you\\Desktop\\a.txt to C:\\Users\\you\\Desktop\\b.txt"
+        source_path, destination_path, on_collision = request
+        self._turn_number += 1
+        call = ModelCapabilityCall(
+            provider_call_id=f"required-{self._turn_number}-1",
+            capability="filesystem.copy",
+            arguments={"source_path": source_path, "destination_path": destination_path,
+                       "on_collision": on_collision},
+        )
+        observed = []
+        if activity:
+            activity("Preparing copy approval...")
+        result = self.agent_runtime.run(
+            [{"role": "user", "content": text}],
+            session_id=self._session_id, turn_id=f"turn-{self._turn_number}",
+            portable_root=self.portable_root, allowed_read_roots=self.allowed_read_roots,
+            host_access_policy=self.host_access_policy, cancellation=source.token,
+            required_calls=(call,), capability_names=("filesystem.copy",),
+            result_observer=lambda calls, results: observed.extend(results),
+        )
+        if result.status == AgentRunStatus.CANCELLED:
+            return "File copying was cancelled before execution."
+        if result.status != AgentRunStatus.COMPLETED:
+            raise RuntimeError(result.message or "File copying did not complete.")
+        if not observed:
+            raise RuntimeError("The file-copy result was not returned.")
+        outcome = observed[0]
+        if not outcome.success:
+            return outcome.error.message if outcome.error else "The file could not be copied."
+        self._active_listing = None
+        output = outcome.output or {}
+        return (f"Copied file: {output['destination_path']} "
+                f"({output['bytes_copied']:,} bytes, {output['operation']}).")
 
     def cancel_current_task(self) -> bool:
         with self._cancellation_lock:
@@ -763,6 +809,42 @@ def _write_path_argument(raw: str) -> str | None:
             or len(re.findall(r"[A-Za-z]:[\\/]", value)) != 1):
         return None
     return value
+
+
+_COPY_START = re.compile(
+    r"\A(?:please\s+)?(?:(?:can|could|would)\s+you\s+)?(?:filesystem[.]copy|copy)\b",
+    re.I,
+)
+
+
+def _is_copy_request(text: str) -> bool:
+    return _COPY_START.match(str(text).strip()) is not None
+
+
+def _copy_request(text: str) -> tuple[str, str, str] | None:
+    value = str(text).strip()
+    match = _COPY_START.match(value)
+    if match is None:
+        return None
+    remainder = value[match.end():].strip()
+    remainder = re.sub(r"^(?:file\s+)?(?:from\s+)?", "", remainder, flags=re.I)
+    parts = re.split(r"\s+to\s+", remainder, maxsplit=1, flags=re.I)
+    if len(parts) != 2:
+        return None
+    source = _write_path_argument(parts[0])
+    destination_text = parts[1].strip()
+    on_collision = "fail"
+    policy = re.search(
+        r"\s+(?:(?:with\s+)?(?:replace|overwrite)(?:\s+existing(?:\s+file)?)?|replacing\s+existing(?:\s+file)?)\s*\Z",
+        destination_text, re.I,
+    )
+    if policy is not None:
+        on_collision = "replace"
+        destination_text = destination_text[:policy.start()].strip()
+    destination = _write_path_argument(destination_text)
+    if source is None or destination is None:
+        return None
+    return source, destination, on_collision
 
 
 def _conversation_turn_groups(history: list[dict]) -> list[list[dict]]:

@@ -52,6 +52,20 @@ class HostWritePolicy:
             location_hint="Choose a file inside an existing directory, below the drive root.",
         )
 
+    def resolve_copy_source(self, raw: str) -> Path:
+        return self._resolve_write_path(
+            raw,
+            action="File copy source",
+            location_hint="Choose a source file inside an existing directory, below the drive root.",
+        )
+
+    def resolve_copy_destination(self, raw: str) -> Path:
+        return self._resolve_write_path(
+            raw,
+            action="File copy destination",
+            location_hint="Choose a destination file inside an existing directory, below the drive root.",
+        )
+
     def _resolve_write_path(self, raw: str, *, action: str, location_hint: str) -> Path:
         path = PureWindowsPath(raw)
         if (not path.is_absolute() or not re.fullmatch(r"[A-Za-z]:", path.drive)
