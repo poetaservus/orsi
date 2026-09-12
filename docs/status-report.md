@@ -4,13 +4,13 @@ Date: 2026-09-12
 
 ## Overall status
 
-Phase 10 is continuing on `codex/phase-10-filesystem-copy`, based on approved text-write checkpoint
-`6a8fcbb`. The third development checkpoint adds approved copying of one bounded regular file with
-exact source, destination, and collision-policy preview. Phase 10 is not complete: move and trash
-remain unimplemented.
+Phase 10 is continuing on `codex/phase-10-filesystem-move`, based on approved copy checkpoint
+`9376a7e`. The fourth development checkpoint adds approved moving of one bounded regular file with
+exact source, destination, and collision-policy preview. Phase 10 is not complete: trash remains
+unimplemented.
 The user requested this progression while Phase 9 bounded search and the dedicated text-read
 real-model matrix remain outstanding. Phase 9's enabled file-reading workflow was manually
-confirmed on 2026-09-12. Phase 10 text writing and copy were manually reported working on
+confirmed on 2026-09-12. Phase 10 text writing, copy, and move were manually reported working on
 2026-09-12.
 
 ## GUI status: approved and integrated
@@ -61,6 +61,13 @@ confirmed on 2026-09-12. Phase 10 text writing and copy were manually reported w
 - File copying is limited to 16 MiB, copies only regular non-reparse files, writes through a
   same-directory destination temp file, atomically places the result, and verifies final identity and
   SHA-256 digest. If the source or destination changes after preview, the copy is denied.
+- `filesystem.move` has a separate enabled development gate and mandatory approval. Exact move
+  requests include a source path, destination path, and collision policy. Default collision behavior
+  refuses an existing destination; explicit replace binds the destination identity before replacing.
+- File moving is limited to 16 MiB and regular non-reparse files. Same-drive moves use native
+  rename/replace placement and verify the destination digest. Cross-drive moves copy through a
+  same-directory destination temp file, verify placement, then remove the source. If the source or
+  destination changes after preview, the move is denied.
 - Interrupted or unverified writes require review before further operations, including across restart.
   A failed result save also blocks the live session. No automatic retry, rollback, or deletion occurs.
 - Other filesystem mutation, shell/process execution, window control, clipboard access, network
@@ -68,13 +75,14 @@ confirmed on 2026-09-12. Phase 10 text writing and copy were manually reported w
 
 ## Verification
 
-- Complete integrated Phase 10 suite after copy: 399 passed, 14 skipped on Windows on
+- Complete integrated Phase 10 suite after move: 429 passed, 14 skipped on Windows on
   2026-09-12.
-- The 101 Phase 10 cases cover actual native folder creation, exact approval, denial, expiry, cancellation,
+- The 131 Phase 10 cases cover actual native folder creation, exact approval, denial, expiry, cancellation,
   collisions, changed parents, protected/reparse paths, read/write isolation, unknown outcomes,
   result-save failure, restart recovery, exact text-write previews, create/replace behavior, target
   replacement after approval, exact copy previews, collision policy, source/destination changes after
-  approval, hostile read-content isolation, and real Qt worker/dialog interactions.
+  approval, exact move previews, source removal, hostile read-content isolation, and real Qt
+  worker/dialog interactions.
 - Folder approval-dialog screenshot inspected with actual Windows fonts; path and controls are readable.
 - Historical Phase 9 suite after enablement: 298 passed, 14 skipped.
 - Deterministic tests cover list-to-read actual content, direct-path reads, literal Markdown fences,
@@ -82,6 +90,7 @@ confirmed on 2026-09-12. Phase 10 text writing and copy were manually reported w
 - Manual Phase 9 workflow acceptance: user confirmed the enabled app works on 2026-09-12.
 - Manual Phase 10 text-write application acceptance: user reported it works on 2026-09-12.
 - Manual Phase 10 copy application acceptance: user reported it works on 2026-09-12.
+- Manual Phase 10 move application acceptance: user reported it works on 2026-09-12.
 - Folder create/cancel manual acceptance if not already tested and real-model follow-up conversation
   after writes remain pending.
 - The dedicated automated text-read real-model call/no-call matrix has not been run.
@@ -96,17 +105,19 @@ confirmed on 2026-09-12. Phase 10 text writing and copy were manually reported w
 - Complete the dedicated automated text-read real-model matrix, including ordinary conversation
   after a read, before proceeding to the next separately designed capability, bounded search.
 - Fresh-runtime packaging and real-model/UI acceptance remain before portable release promotion.
-- Phase 10 is a development-only feature-branch checkpoint. Confirm copy preview/create/replace/cancel
-  workflows before starting move/trash. See `phase10-mkdir-threat-review.md`,
-  `phase10-write-text-threat-review.md`, and `phase10-copy-threat-review.md` for protection scope
-  and recovery limitations, including nonstandard application/service locations.
+- Phase 10 is a development-only feature-branch checkpoint. Confirm move preview/create/replace/cancel
+  workflows were manually accepted before continuing to trash. See `phase10-mkdir-threat-review.md`,
+  `phase10-write-text-threat-review.md`, `phase10-copy-threat-review.md`, and
+  `phase10-move-threat-review.md` for protection scope and recovery limitations, including
+  nonstandard application/service locations.
 
 ## Checkpoint scope
 
 - The Phase 10 folder-creation checkpoint is committed on `codex/phase-10-filesystem-mkdir` at
   `076007f`. The text-write checkpoint is implemented and tested on
   `codex/phase-10-filesystem-write-text` and committed at `6a8fcbb`; the user reported the
-  text-write workflow works on 2026-09-12. The copy checkpoint is implemented and tested on
-  `codex/phase-10-filesystem-copy` but is not yet committed, pushed, merged, or release-promoted.
-  The user reported the copy workflow works on 2026-09-12.
+  text-write workflow works on 2026-09-12. The copy checkpoint is committed locally at `9376a7e`;
+  the user reported the copy workflow works on 2026-09-12. The move checkpoint is implemented,
+  tested, and manually accepted on `codex/phase-10-filesystem-move` but is not pushed, merged, or
+  release-promoted.
 - The private Desktop `statusreport.md` remains outside Git and records the resulting commit ID.

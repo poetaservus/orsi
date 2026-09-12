@@ -5,5 +5,6 @@
   "filesystem_mkdir_enabled": true,
   "filesystem_write_text_enabled": true,
   "filesystem_copy_enabled": true,
+  "filesystem_move_enabled": true,
   "full_local_read_enabled": true
 }

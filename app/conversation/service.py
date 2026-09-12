@@ -138,6 +138,12 @@ class ConversationService:
                 if self.agent_enabled:
                     self._agent_history.append({"role": "assistant", "content": answer})
                 return answer
+            if _is_move_request(text):
+                answer = self._move_file(text, source, activity)
+                self.store.append("assistant", answer)
+                if self.agent_enabled:
+                    self._agent_history.append({"role": "assistant", "content": answer})
+                return answer
             capability_turn = self.agent_enabled and self._requires_capabilities(text)
             if activity:
                 activity("Working..." if capability_turn else "Thinking...")
@@ -245,7 +251,7 @@ class ConversationService:
     def _read_capabilities(self) -> tuple[str, ...]:
         return tuple(
             name for name in self.agent_capabilities
-            if name not in {"filesystem.mkdir", "filesystem.write_text", "filesystem.copy"}
+            if name not in {"filesystem.mkdir", "filesystem.write_text", "filesystem.copy", "filesystem.move"}
         )
 
     def _create_folder(self, text, source, activity) -> str:
@@ -360,6 +366,46 @@ class ConversationService:
         output = outcome.output or {}
         return (f"Copied file: {output['destination_path']} "
                 f"({output['bytes_copied']:,} bytes, {output['operation']}).")
+
+    def _move_file(self, text, source, activity) -> str:
+        self._last_filesystem_operation = None
+        if "filesystem.move" not in self.agent_capabilities:
+            return "File moving is not enabled. No file was changed."
+        request = _move_request(text)
+        if request is None:
+            return "Tell me the exact source and destination paths, for example: move C:\\Users\\you\\Desktop\\a.txt to C:\\Users\\you\\Desktop\\b.txt"
+        source_path, destination_path, on_collision = request
+        self._turn_number += 1
+        call = ModelCapabilityCall(
+            provider_call_id=f"required-{self._turn_number}-1",
+            capability="filesystem.move",
+            arguments={"source_path": source_path, "destination_path": destination_path,
+                       "on_collision": on_collision},
+        )
+        observed = []
+        if activity:
+            activity("Preparing move approval...")
+        result = self.agent_runtime.run(
+            [{"role": "user", "content": text}],
+            session_id=self._session_id, turn_id=f"turn-{self._turn_number}",
+            portable_root=self.portable_root, allowed_read_roots=self.allowed_read_roots,
+            host_access_policy=self.host_access_policy, cancellation=source.token,
+            required_calls=(call,), capability_names=("filesystem.move",),
+            result_observer=lambda calls, results: observed.extend(results),
+        )
+        if result.status == AgentRunStatus.CANCELLED:
+            return "File moving was cancelled before execution."
+        if result.status != AgentRunStatus.COMPLETED:
+            raise RuntimeError(result.message or "File moving did not complete.")
+        if not observed:
+            raise RuntimeError("The file-move result was not returned.")
+        outcome = observed[0]
+        if not outcome.success:
+            return outcome.error.message if outcome.error else "The file could not be moved."
+        self._active_listing = None
+        output = outcome.output or {}
+        return (f"Moved file: {output['destination_path']} "
+                f"({output['bytes_moved']:,} bytes, {output['operation']}).")
 
     def cancel_current_task(self) -> bool:
         with self._cancellation_lock:
@@ -824,6 +870,49 @@ def _is_copy_request(text: str) -> bool:
 def _copy_request(text: str) -> tuple[str, str, str] | None:
     value = str(text).strip()
     match = _COPY_START.match(value)
+    if match is None:
+        return None
+    remainder = value[match.end():].strip()
+    remainder = re.sub(r"^(?:file\s+)?(?:from\s+)?", "", remainder, flags=re.I)
+    parts = re.split(r"\s+to\s+", remainder, maxsplit=1, flags=re.I)
+    if len(parts) != 2:
+        return None
+    source = _write_path_argument(parts[0])
+    destination_text = parts[1].strip()
+    on_collision = "fail"
+    policy = re.search(
+        r"\s+(?:(?:with\s+)?(?:replace|overwrite)(?:\s+existing(?:\s+file)?)?|replacing\s+existing(?:\s+file)?)\s*\Z",
+        destination_text, re.I,
+    )
+    if policy is not None:
+        on_collision = "replace"
+        destination_text = destination_text[:policy.start()].strip()
+    destination = _write_path_argument(destination_text)
+    if source is None or destination is None:
+        return None
+    return source, destination, on_collision
+
+
+_MOVE_START = re.compile(
+    r"\A(?:please\s+)?(?:(?:can|could|would)\s+you\s+)?(?:filesystem[.]move|move)\b",
+    re.I,
+)
+
+
+def _is_move_request(text: str) -> bool:
+    value = str(text).strip()
+    if _MOVE_START.match(value) is None:
+        return False
+    return (
+        _move_request(value) is not None
+        or (re.search(r"\s+to\s+", value, re.I) is not None
+            and re.search(r"[A-Za-z]:[\\/]", value) is not None)
+    )
+
+
+def _move_request(text: str) -> tuple[str, str, str] | None:
+    value = str(text).strip()
+    match = _MOVE_START.match(value)
     if match is None:
         return None
     remainder = value[match.end():].strip()

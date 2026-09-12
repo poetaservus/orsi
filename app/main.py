@@ -81,6 +81,7 @@ def build_application(
                     "filesystem_mkdir_enabled": False,
                     "filesystem_write_text_enabled": False,
                     "filesystem_copy_enabled": False,
+                    "filesystem_move_enabled": False,
                     "full_local_read_enabled": False,
                 }
             )
