@@ -9,7 +9,8 @@ Phase 10 trash checkpoint `e5a6092` because the user chose to close the skipped 
 finishing the Phase 10 mutation set. `filesystem.search` adds bounded literal UTF-text snippet search
 inside one explicitly requested directory tree. The dedicated text-read real-model call/no-call gate
 and the new search real-model call/no-call gate both passed on 2026-09-13. Manual application
-acceptance for search remains pending before the strict roadmap gate into Phase 11 is fully closed.
+acceptance for search was reported working on 2026-09-13, closing the strict Phase 9 gate before
+Phase 11 development.
 
 ## GUI status: approved and integrated
 
@@ -111,7 +112,7 @@ acceptance for search remains pending before the strict roadmap gate into Phase 
 - Manual Phase 10 copy application acceptance: user reported it works on 2026-09-12.
 - Manual Phase 10 move application acceptance: user reported it works on 2026-09-12.
 - Manual Phase 10 trash application acceptance: user reported it works on 2026-09-13.
-- Manual Phase 9 search application acceptance is pending.
+- Manual Phase 9 search application acceptance: user reported it works on 2026-09-13.
 - Folder create/cancel manual acceptance if not already tested and real-model follow-up conversation
   after writes remain pending.
 - Historical GUI baseline visual checks passed at 1920-pixel and 1280-pixel window widths.
@@ -122,8 +123,8 @@ acceptance for search remains pending before the strict roadmap gate into Phase 
 - Malformed conversation JSON still needs a preserve-and-recover path.
 - Conversation state is persisted during the active run but is not replayed visually; each new
   application launch currently starts a fresh private session.
-- Manually verify `filesystem.search` in the app before treating the strict Phase 9 gate as fully
-  accepted for Phase 11 planning.
+- Phase 9 search is manually accepted for Phase 11 planning. Fresh-runtime packaging and release
+  promotion remain separate gates.
 - Fresh-runtime packaging and real-model/UI acceptance remain before portable release promotion.
 - Phase 10 is a development-only feature-branch checkpoint. Trash preview/approve/cancel workflows
   were manually accepted before the next roadmap decision. See `phase10-mkdir-threat-review.md`,
@@ -131,7 +132,7 @@ acceptance for search remains pending before the strict roadmap gate into Phase 
   `phase10-move-threat-review.md`, and `phase10-trash-threat-review.md` for protection scope and
   recovery limitations, including nonstandard application/service locations.
 - Phase 9 search is a development-only feature-branch checkpoint on top of the accepted local Phase
-  10 line. It is not pushed, merged, release-promoted, or manually app-accepted yet. See
+  10 line. It is manually app-accepted but not pushed, merged, or release-promoted. See
   `phase9-search-threat-review.md` for protection scope.
 
 ## Checkpoint scope

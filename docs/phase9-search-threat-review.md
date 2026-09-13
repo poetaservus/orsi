@@ -1,7 +1,7 @@
 # Phase 9: bounded filesystem search
 
 Date: 2026-09-13
-Status: development checkpoint implemented and tested; manual application acceptance pending.
+Status: development checkpoint implemented, tested, and manually accepted.
 
 ## Scope And Authority
 
@@ -45,5 +45,5 @@ Status: development checkpoint implemented and tested; manual application accept
   deterministic direct routing, and hostile snippet isolation.
 - Opt-in live gates passed separately on 2026-09-13: dedicated `filesystem.read_text` real-model
   call/no-call matrix and `filesystem.search` real-model call/no-call matrix.
-- Manual application acceptance for search remains pending. Fresh packaging and broader release
-  promotion remain separate gates.
+- Manual application acceptance for search was reported working on 2026-09-13. Fresh packaging and
+  broader release promotion remain separate gates.
