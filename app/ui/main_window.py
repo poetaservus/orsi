@@ -100,56 +100,6 @@ class ComposerFrame(QFrame):
         painter.drawRoundedRect(inner, max(1.0, radius - 2.0), max(1.0, radius - 2.0))
 
 
-class ComposerActionButton(QPushButton):
-    """Icon button whose hover circle stays aligned with the upward-nudged icon."""
-
-    def __init__(self, icon_path: Path, icon_size: int, parent: QWidget | None = None):
-        super().__init__(parent)
-        self._action_icon = QIcon(str(icon_path))
-        self._action_icon_size = QSize(icon_size, icon_size)
-        self._circle_size = 42
-        self.setFixedSize(self._circle_size, 46)
-        self.setMouseTracking(True)
-
-    def enterEvent(self, event) -> None:  # noqa: N802 - Qt API name
-        super().enterEvent(event)
-        self.update()
-
-    def leaveEvent(self, event) -> None:  # noqa: N802 - Qt API name
-        super().leaveEvent(event)
-        self.update()
-
-    def mousePressEvent(self, event) -> None:  # noqa: N802 - Qt API name
-        super().mousePressEvent(event)
-        self.update()
-
-    def mouseReleaseEvent(self, event) -> None:  # noqa: N802 - Qt API name
-        super().mouseReleaseEvent(event)
-        self.update()
-
-    def paintEvent(self, event) -> None:  # noqa: N802 - Qt API name
-        del event
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
-        circle = QRectF(0.0, 0.0, float(self._circle_size), float(self._circle_size))
-        if self.isDown():
-            painter.setBrush(QColor("#2c2e35"))
-        elif self.underMouse() and self.isEnabled():
-            painter.setBrush(QColor("#454852"))
-        else:
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.drawEllipse(circle)
-
-        pixmap = self._action_icon.pixmap(self._action_icon_size)
-        x = (self._circle_size - self._action_icon_size.width()) / 2
-        y = (self._circle_size - self._action_icon_size.height()) / 2
-        if not self.isEnabled():
-            painter.setOpacity(0.45)
-        painter.drawPixmap(QRectF(x, y, self._action_icon_size.width(), self._action_icon_size.height()), pixmap, QRectF(pixmap.rect()))
-
-
 class ChatSurface(QWidget):
     """Paint the quiet gradient and centered conversation panel."""
 
@@ -325,21 +275,32 @@ class MainWindow(QMainWindow):
         self.input.setAcceptRichText(False)
         self.input.setFixedHeight(58)
 
-        self.send = ComposerActionButton(_ICON_DIRECTORY / "input_button_cropped.png", 38)
+        self.action_slot = QWidget()
+        self.action_slot.setObjectName("composerActionSlot")
+        self.action_slot.setFixedSize(42, 46)
+
+        self.send = QPushButton(self.action_slot)
         self.send.setObjectName("sendButton")
+        self.send.setFixedSize(42, 42)
+        self.send.move(0, 0)
+        self.send.setIcon(QIcon(str(_ICON_DIRECTORY / "input_button_cropped.png")))
+        self.send.setIconSize(QSize(38, 38))
         self.send.setToolTip("Send")
         self.send.setAccessibleName("Send")
 
-        self.stop = ComposerActionButton(_ICON_DIRECTORY / "stop.svg", 18)
+        self.stop = QPushButton(self.action_slot)
         self.stop.setObjectName("stopButton")
+        self.stop.setFixedSize(42, 42)
+        self.stop.move(0, 0)
+        self.stop.setIcon(QIcon(str(_ICON_DIRECTORY / "stop.svg")))
+        self.stop.setIconSize(QSize(18, 18))
         self.stop.setToolTip("Stop")
         self.stop.setAccessibleName("Stop")
         self.stop.setEnabled(False)
         self.stop.hide()
 
         composer_layout.addWidget(self.input, 1)
-        composer_layout.addWidget(self.send)
-        composer_layout.addWidget(self.stop)
+        composer_layout.addWidget(self.action_slot)
 
         self.setCentralWidget(root)
         self.setStyleSheet(_STYLE)
