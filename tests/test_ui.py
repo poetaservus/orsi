@@ -352,6 +352,40 @@ class UiTests(unittest.TestCase):
         self.assertIn("bounded names and types", warning)
         self.assertIn("cannot read file content", warning)
 
+    def test_find_status_and_cloud_disclosure_name_exact_lookup(self):
+        class FakeService:
+            agent_enabled = True
+            agent_error = None
+            host_read_scope = "full_local"
+            agent_capabilities = ("filesystem.find", "filesystem.stat")
+
+            @staticmethod
+            def estimated_context_tokens():
+                return 0
+
+        class FakeInference:
+            available_modes = ("local", "cloud")
+            mode = "local"
+            context_length = 8192
+            cloud_has_api_key = True
+            cloud_provider_name = "Test Cloud"
+
+            @staticmethod
+            def consume_notice():
+                return None
+
+        window = MainWindow(FakeService(), "TEST-HOST", inference=FakeInference())
+        self.assertEqual(
+            window.activity.text(),
+            "Ready · Local · Agent · Full local read · Metadata + find",
+        )
+        disclosure = window._cloud_privacy_message()
+        self.assertIn("filesystem.find matching file and folder names", disclosure)
+        self.assertIn("resolve exact file or folder names", disclosure)
+        self.assertIn("Directory and file names may be confidential", disclosure)
+        self.assertIn("cannot read file content", disclosure)
+        window.close()
+
     def test_text_read_status_warning_and_cloud_disclosure_name_file_content(self):
         class FakeService:
             agent_enabled = True

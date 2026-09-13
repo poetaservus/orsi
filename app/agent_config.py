@@ -9,6 +9,7 @@ from app.paths import PATHS
 
 
 _FILESYSTEM_STAT_GATE = "ORSI_ENABLE_FILESYSTEM_STAT"
+_FILESYSTEM_FIND_GATE = "ORSI_ENABLE_FILESYSTEM_FIND"
 _FILESYSTEM_LIST_GATE = "ORSI_ENABLE_FILESYSTEM_LIST"
 _FILESYSTEM_READ_TEXT_GATE = "ORSI_ENABLE_FILESYSTEM_READ_TEXT"
 _FILESYSTEM_SEARCH_GATE = "ORSI_ENABLE_FILESYSTEM_SEARCH"
@@ -28,6 +29,7 @@ class AgentFeatureConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
 
     filesystem_stat_enabled: bool = False
+    filesystem_find_enabled: bool = False
     filesystem_list_enabled: bool = False
     filesystem_read_text_enabled: bool = False
     filesystem_search_enabled: bool = False
@@ -40,6 +42,10 @@ class AgentFeatureConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_feature_dependencies(self):
+        if self.filesystem_find_enabled and not self.filesystem_stat_enabled:
+            raise ValueError(
+                "Filesystem name lookup requires the filesystem metadata agent."
+            )
         if self.filesystem_mkdir_enabled and not self.filesystem_stat_enabled:
             raise ValueError("Folder creation requires the filesystem metadata agent.")
         if self.filesystem_write_text_enabled and not self.filesystem_stat_enabled:
@@ -76,6 +82,7 @@ def load_agent_feature_config() -> AgentFeatureConfig:
     values = dict(values)
     for name, field in (
         (_FILESYSTEM_STAT_GATE, "filesystem_stat_enabled"),
+        (_FILESYSTEM_FIND_GATE, "filesystem_find_enabled"),
         (_FILESYSTEM_LIST_GATE, "filesystem_list_enabled"),
         (_FILESYSTEM_READ_TEXT_GATE, "filesystem_read_text_enabled"),
         (_FILESYSTEM_SEARCH_GATE, "filesystem_search_enabled"),

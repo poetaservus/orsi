@@ -12,6 +12,7 @@ from app.capabilities.contracts import (
     PermissionClass,
 )
 from app.capabilities.filesystem_stat import FilesystemStatCapability
+from app.capabilities.filesystem_find import FilesystemFindCapability
 from app.capabilities.filesystem_list import FilesystemListCapability
 from app.capabilities.filesystem_read_text import FilesystemReadTextCapability
 from app.capabilities.filesystem_search import FilesystemSearchCapability
@@ -88,6 +89,7 @@ __all__ = [
     "CapabilityRegistry",
     "CapabilityRegistryConfigurationError",
     "FilesystemStatCapability",
+    "FilesystemFindCapability",
     "FilesystemListCapability",
     "FilesystemReadTextCapability",
     "FilesystemSearchCapability",

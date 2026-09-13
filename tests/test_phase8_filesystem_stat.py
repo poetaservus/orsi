@@ -90,6 +90,7 @@ def build_service(tmp_path: Path, model: InferenceEngine):
 def test_checked_in_config_enables_requested_read_capabilities(monkeypatch):
     for name in (
         "ORSI_ENABLE_FILESYSTEM_STAT",
+        "ORSI_ENABLE_FILESYSTEM_FIND",
         "ORSI_ENABLE_FILESYSTEM_LIST",
         "ORSI_ENABLE_FILESYSTEM_READ_TEXT",
         "ORSI_ENABLE_FILESYSTEM_SEARCH",
@@ -104,6 +105,7 @@ def test_checked_in_config_enables_requested_read_capabilities(monkeypatch):
 
     assert load_agent_feature_config() == AgentFeatureConfig(
         filesystem_stat_enabled=True,
+        filesystem_find_enabled=True,
         filesystem_list_enabled=True,
         filesystem_read_text_enabled=True,
         filesystem_search_enabled=True,

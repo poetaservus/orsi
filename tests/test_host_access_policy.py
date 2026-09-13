@@ -187,6 +187,8 @@ def test_phase9_policy_exposes_separately_gated_content_and_search():
 
     assert "HostAccessPolicy" in production
     assert "full_local_read_enabled" in production
+    assert "filesystem_find_enabled" in production
+    assert "filesystem.find" in production
     assert "filesystem.list" in production
     assert "filesystem_read_text_enabled" in production
     assert "filesystem.read_text" in production

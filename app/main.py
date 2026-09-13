@@ -80,6 +80,7 @@ def build_application(
             agent_config = agent_config.model_copy(
                 update={
                     "filesystem_stat_enabled": False,
+                    "filesystem_find_enabled": False,
                     "filesystem_list_enabled": False,
                     "filesystem_read_text_enabled": False,
                     "filesystem_search_enabled": False,
@@ -223,7 +224,10 @@ def main() -> int:
         startup_agent_config = None
     if startup_agent_config is not None and startup_agent_config.full_local_read_enabled:
         full_local_read_acknowledged = request_full_local_read_acknowledgement(
-            filesystem_list_enabled=startup_agent_config.filesystem_list_enabled,
+            filesystem_list_enabled=(
+                startup_agent_config.filesystem_list_enabled
+                or startup_agent_config.filesystem_find_enabled
+            ),
             filesystem_read_text_enabled=(
                 startup_agent_config.filesystem_read_text_enabled
             ),

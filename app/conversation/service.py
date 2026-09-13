@@ -209,6 +209,10 @@ class ConversationService:
                 ):
                     answer = _render_metadata_results(required_calls, turn_results)
                 elif required_calls and all(
+                    call.capability == "filesystem.find" for call in required_calls
+                ):
+                    answer = _render_find_result(required_calls, turn_results)
+                elif required_calls and all(
                     call.capability == "filesystem.list" for call in required_calls
                 ):
                     answer = _render_listing_results(required_calls, turn_results)
@@ -223,7 +227,9 @@ class ConversationService:
                 completed_capabilities = {
                     call.capability for call, _result in turn_results
                 }
-                if "filesystem.search" in completed_capabilities:
+                if "filesystem.find" in completed_capabilities:
+                    self._last_filesystem_operation = "find"
+                elif "filesystem.search" in completed_capabilities:
                     self._last_filesystem_operation = "search"
                 elif "filesystem.read_text" in completed_capabilities:
                     self._last_filesystem_operation = "read_text"
@@ -554,6 +560,10 @@ class ConversationService:
             r"\bfilesystem[.]stat\b", lowered
         ):
             return True
+        if "filesystem.find" in available and re.search(
+            r"\bfilesystem[.]find\b", lowered
+        ):
+            return True
         if "filesystem.list" in available and re.search(
             r"\bfilesystem[.]list\b", lowered
         ):
@@ -575,6 +585,11 @@ class ConversationService:
             r"(?:\b[a-z]:[\\/]|\\\\|\b[^\\/\s]+[.][a-z0-9]{1,12}\b)",
             lowered,
         )
+        if (
+            "filesystem.find" in available
+            and _find_target(text, self.host_access_policy) is not None
+        ):
+            return True
         if (
             "filesystem.read_text" in available
             and _is_text_read_request(lowered)
@@ -632,6 +647,19 @@ class ConversationService:
     ) -> tuple[ModelCapabilityCall, ...]:
         listing = self._active_listing
         lowered = " ".join(str(text).casefold().split())
+        find_target = _find_target(text, self.host_access_policy)
+        if (
+            find_target is not None
+            and "filesystem.find" in self.agent_capabilities
+        ):
+            find_path, name, kind = find_target
+            return (
+                ModelCapabilityCall(
+                    provider_call_id=f"required-{self._turn_number}-1",
+                    capability="filesystem.find",
+                    arguments={"path": find_path, "name": name, "kind": kind},
+                ),
+            )
         search_target = _search_target_and_query(text)
         if (
             search_target is not None
@@ -1136,6 +1164,45 @@ def _render_listing_results(
     return "\n".join(lines)
 
 
+def _render_find_result(
+    _required_calls: tuple[ModelCapabilityCall, ...],
+    observed_results: list[tuple],
+) -> str:
+    result = next(
+        (
+            observed
+            for call, observed in observed_results
+            if call.capability == "filesystem.find"
+        ),
+        None,
+    )
+    if result is None:
+        return "The file or folder lookup was not returned."
+    if not result.success:
+        message = (
+            result.error.message
+            if result.error is not None
+            else "The file or folder lookup failed."
+        )
+        return _safe_text(message)
+    output = result.output or {}
+    name = _safe_filename(str(output.get("name", "entry")))
+    kind = str(output.get("kind", "any"))
+    path = _safe_text(str(output.get("path", "the requested folder")))
+    matches = output.get("matches")
+    if not isinstance(matches, list) or not matches:
+        label = "entry" if kind == "any" else kind
+        return f"No {label} named {name} was found in {path}."
+    lines = [f"Found {len(matches)} matching entr{'y' if len(matches) == 1 else 'ies'}:"]
+    for match in matches:
+        if not isinstance(match, dict):
+            continue
+        entry_type = _safe_text(str(match.get("type", "unknown")))
+        entry_path = _safe_text(str(match.get("path", "")))
+        lines.append(f"- {entry_type}: {entry_path}")
+    return "\n".join(lines)
+
+
 def _render_text_result(
     _required_calls: tuple[ModelCapabilityCall, ...],
     observed_results: list[tuple],
@@ -1294,6 +1361,109 @@ def _is_search_request(lowered: str) -> bool:
         or re.search(r"\b(?:search|find|look\s+for)\b", lowered)
         or re.search(r"\b(?:files?|documents?)\b.{0,60}\b(?:containing|matching)\b", lowered)
     )
+
+
+def _find_target(
+    text: str,
+    host_access_policy: HostAccessPolicy | None,
+) -> tuple[str, str, str] | None:
+    value = str(text).strip()
+    lowered = " ".join(value.casefold().split())
+    if not _is_find_name_request(lowered):
+        return None
+    name = _find_requested_name(value)
+    if not name:
+        return None
+    path = _find_base_path(value, host_access_policy)
+    if path is None:
+        return None
+    kind = _find_requested_kind(lowered)
+    return str(path), name, kind
+
+
+def _is_find_name_request(lowered: str) -> bool:
+    if re.search(r"\bfilesystem[.]find\b", lowered):
+        return True
+    if re.search(r"\b(?:called|named)\b", lowered) and re.search(
+        r"\b(?:find|locate|where|folder|directory|file|document)\b",
+        lowered,
+    ):
+        return True
+    if re.search(r"\b(?:find|locate)\b.{0,60}\b(?:folder|directory|file|document)\b", lowered):
+        return True
+    return False
+
+
+def _find_requested_kind(lowered: str) -> str:
+    if re.search(r"\b(?:folders?|directories|directory)\b", lowered):
+        return "directory"
+    if re.search(r"\b(?:files?|documents?)\b", lowered):
+        return "file"
+    return "any"
+
+
+def _find_requested_name(value: str) -> str | None:
+    patterns = (
+        r"(?is)\b(?:called|named)\s+[\"']([^\"'\\/\r\n]+)[\"']",
+        r"(?is)\b(?:called|named)\s+([^,;?!\\/\r\n]+)",
+        r"(?is)\b(?:folder|directory|file|document)\s+[\"']([^\"'\\/\r\n]+)[\"']",
+        r"(?is)\b(?:find|locate)\s+(?:the\s+)?(?:folder|directory|file|document)\s+([^,;?!\\/\r\n]+?)\s+\b(?:on|in|inside|under)\b",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, value)
+        if match is None:
+            continue
+        name = _clean_find_name(match.group(1))
+        if name:
+            return name
+    return None
+
+
+def _clean_find_name(value: str) -> str:
+    name = str(value).strip().strip("\"'").strip()
+    name = re.sub(r"(?is)\s+\b(?:find|locate)\s+it\b.*$", "", name).strip()
+    name = re.sub(r"(?is)^(?:a|an|the)\s+", "", name).strip()
+    name = name.rstrip(".").strip()
+    if (
+        not name
+        or len(name) > 255
+        or "\x00" in name
+        or any(separator in name for separator in ("/", "\\"))
+        or name in {".", ".."}
+    ):
+        return ""
+    return name
+
+
+def _find_base_path(
+    value: str,
+    host_access_policy: HostAccessPolicy | None,
+) -> Path | None:
+    explicit_path = _explicit_windows_path(value)
+    if explicit_path is not None:
+        return Path(explicit_path)
+    alias = _known_folder_alias(value)
+    if alias is None or host_access_policy is None:
+        return None
+    user_home = getattr(host_access_policy, "user_home", None)
+    if not isinstance(user_home, Path):
+        return None
+    if alias == "home":
+        return user_home
+    return user_home / alias
+
+
+def _known_folder_alias(value: str) -> str | None:
+    lowered = " ".join(str(value).casefold().split())
+    if re.search(r"\b(?:on|in|inside|under)\s+(?:my\s+|the\s+)?desktop(?:\s+folder)?\b", lowered):
+        return "Desktop"
+    if re.search(r"\b(?:on|in|inside|under)\s+(?:my\s+|the\s+)?downloads(?:\s+folder)?\b", lowered):
+        return "Downloads"
+    if re.search(r"\b(?:on|in|inside|under)\s+(?:my\s+|the\s+)?documents(?:\s+folder)?\b", lowered):
+        return "Documents"
+    if re.search(r"\b(?:in|inside|under)\s+(?:my\s+)?home(?:\s+folder|\s+directory)?\b", lowered):
+        return "home"
+    return None
 
 
 def _search_target_and_query(text: str) -> tuple[str, str] | None:

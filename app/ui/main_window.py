@@ -703,9 +703,12 @@ class MainWindow(QMainWindow):
             return "Ready · Chat only"
         if self._agent_enabled():
             listing_enabled = self._filesystem_list_enabled()
+            find_enabled = self._filesystem_find_enabled()
             text_read_enabled = self._filesystem_read_text_enabled()
             search_enabled = self._filesystem_search_enabled()
             parts = ["Metadata"]
+            if find_enabled:
+                parts.append("find")
             if listing_enabled:
                 parts.append("listing")
             if text_read_enabled:
@@ -805,6 +808,10 @@ class MainWindow(QMainWindow):
         values = getattr(self.service, "agent_capabilities", ())
         return isinstance(values, tuple) and "filesystem.list" in values
 
+    def _filesystem_find_enabled(self) -> bool:
+        values = getattr(self.service, "agent_capabilities", ())
+        return isinstance(values, tuple) and "filesystem.find" in values
+
     def _filesystem_read_text_enabled(self) -> bool:
         values = getattr(self.service, "agent_capabilities", ())
         return isinstance(values, tuple) and "filesystem.read_text" in values
@@ -821,11 +828,15 @@ class MainWindow(QMainWindow):
                 if self._host_read_scope() == HostReadScope.FULL_LOCAL
                 else "inside O.R.S.I's portable root"
             )
+            find_enabled = self._filesystem_find_enabled()
             listing_enabled = self._filesystem_list_enabled()
             text_read_enabled = self._filesystem_read_text_enabled()
             search_enabled = self._filesystem_search_enabled()
             result_parts = ["filesystem.stat metadata"]
             access_parts = ["inspect metadata"]
+            if find_enabled:
+                result_parts.append("filesystem.find matching file and folder names")
+                access_parts.append("resolve exact file or folder names inside one requested folder")
             if listing_enabled:
                 result_parts.append("filesystem.list directory names and types")
                 access_parts.append("list one requested directory")

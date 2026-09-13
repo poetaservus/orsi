@@ -740,6 +740,7 @@ def test_agent_runtime_is_connected_only_through_the_phase8_feature_gate():
 
     assert config == {
         "filesystem_stat_enabled": True,
+        "filesystem_find_enabled": True,
         "filesystem_list_enabled": True,
         "filesystem_read_text_enabled": True,
         "filesystem_search_enabled": True,

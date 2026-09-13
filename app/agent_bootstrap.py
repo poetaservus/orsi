@@ -11,6 +11,7 @@ from app.capabilities.crash_journal import (
 )
 from app.capabilities.executor import CapabilityExecutor
 from app.capabilities.filesystem_copy import FilesystemCopyCapability
+from app.capabilities.filesystem_find import FilesystemFindCapability
 from app.capabilities.filesystem_list import FilesystemListCapability
 from app.capabilities.filesystem_move import FilesystemMoveCapability
 from app.capabilities.filesystem_read_text import FilesystemReadTextCapability
@@ -89,6 +90,14 @@ def build_filesystem_stat_runtime(
             model_visible=True,
         )
     ]
+    if config.filesystem_find_enabled:
+        registrations.append(
+            CapabilityRegistration(
+                FilesystemFindCapability(),
+                enabled=True,
+                model_visible=True,
+            )
+        )
     if config.filesystem_list_enabled:
         registrations.append(
             CapabilityRegistration(
@@ -154,6 +163,16 @@ def build_filesystem_stat_runtime(
                 resource_root=root,
             ),
         ]
+        if config.filesystem_find_enabled:
+            permission_rules.append(
+                PermissionRule(
+                    "phase9-portable-root-find",
+                    PermissionDecision.ALLOW,
+                    permission=PermissionClass.READ,
+                    capability_pattern="filesystem.find",
+                    resource_root=root,
+                )
+            )
         if config.filesystem_list_enabled:
             permission_rules.append(
                 PermissionRule(
@@ -197,6 +216,16 @@ def build_filesystem_stat_runtime(
                     resource_root=permission_root,
                 )
             )
+            if config.filesystem_find_enabled:
+                permission_rules.append(
+                    PermissionRule(
+                        f"phase9-local-{drive}-find",
+                        PermissionDecision.ALLOW,
+                        permission=PermissionClass.READ,
+                        capability_pattern="filesystem.find",
+                        resource_root=permission_root,
+                    )
+                )
             if config.filesystem_list_enabled:
                 permission_rules.append(
                     PermissionRule(

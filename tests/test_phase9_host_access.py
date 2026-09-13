@@ -107,6 +107,7 @@ def test_full_local_feature_gate_requires_metadata_agent_and_explicit_values(
         SimpleNamespace(config=config_directory),
     )
     monkeypatch.delenv("ORSI_ENABLE_FILESYSTEM_STAT", raising=False)
+    monkeypatch.delenv("ORSI_ENABLE_FILESYSTEM_FIND", raising=False)
     monkeypatch.delenv("ORSI_ENABLE_FILESYSTEM_LIST", raising=False)
     monkeypatch.delenv("ORSI_ENABLE_FULL_LOCAL_READ", raising=False)
 
