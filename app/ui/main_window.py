@@ -277,11 +277,11 @@ class MainWindow(QMainWindow):
 
         self.action_slot = QWidget()
         self.action_slot.setObjectName("composerActionSlot")
-        self.action_slot.setFixedSize(42, 46)
+        self.action_slot.setFixedSize(46, 50)
 
         self.send = QPushButton(self.action_slot)
         self.send.setObjectName("sendButton")
-        self.send.setFixedSize(42, 42)
+        self.send.setFixedSize(46, 46)
         self.send.move(0, 0)
         self.send.setIcon(QIcon(str(_ICON_DIRECTORY / "input_button_cropped.png")))
         self.send.setIconSize(QSize(38, 38))
@@ -290,7 +290,7 @@ class MainWindow(QMainWindow):
 
         self.stop = QPushButton(self.action_slot)
         self.stop.setObjectName("stopButton")
-        self.stop.setFixedSize(42, 42)
+        self.stop.setFixedSize(46, 46)
         self.stop.move(0, 0)
         self.stop.setIcon(QIcon(str(_ICON_DIRECTORY / "stop.svg")))
         self.stop.setIconSize(QSize(18, 18))
@@ -1158,7 +1158,7 @@ QTextEdit#messageInput:disabled { color: #777777; background: transparent; }
 QPushButton#sendButton, QPushButton#stopButton {
     background: transparent;
     border: none;
-    border-radius: 21px;
+    border-radius: 23px;
     padding: 0;
 }
 QPushButton#sendButton:hover, QPushButton#stopButton:hover { background: #454852; }
