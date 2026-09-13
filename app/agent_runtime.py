@@ -454,6 +454,19 @@ class AgentRuntime:
                     protocol_failures=protocol_failures,
                 )
             if response.kind == ModelResponseKind.ASSISTANT_TEXT:
+                filename_feedback = _filename_disambiguation_feedback(
+                    transcript,
+                    advertised_names,
+                )
+                if filename_feedback is not None:
+                    transcript.append(filename_feedback)
+                    if not self._transcript_within_limit(transcript):
+                        return self._transcript_limited(
+                            steps,
+                            capability_calls,
+                            protocol_failures,
+                        )
+                    continue
                 if required_set - completed_required:
                     transcript.append(_required_calls_feedback())
                     if not self._transcript_within_limit(transcript):
@@ -1175,6 +1188,186 @@ def _single_call_feedback() -> dict[str, str]:
             "Never return multiple calls together."
         ),
     }
+
+
+_FILENAME_DISAMBIGUATION_MARKER = "Bounded filename disambiguation is still pending."
+
+
+def _filename_disambiguation_feedback(
+    transcript: list[dict[str, Any]],
+    advertised_names: set[str],
+) -> dict[str, str] | None:
+    if not {
+        "filesystem.find",
+        "filesystem.list",
+        "filesystem.read_text",
+    }.issubset(advertised_names):
+        return None
+    if _disambiguation_feedback_already_sent(transcript):
+        return None
+    latest_user = _latest_user_text(transcript).casefold()
+    if re.search(r"\b(?:read|show|explain|summari[sz]e|fix)\b", latest_user) is None:
+        return None
+    pending = _pending_zero_match_file_find(transcript)
+    if pending is None:
+        return None
+    directory, requested_name = pending
+    last_result = _last_capability_result(transcript)
+    if last_result is None:
+        return None
+    capability = last_result.get("capability")
+    output = last_result.get("result", {}).get("output", {})
+    if capability == "filesystem.find":
+        if _has_following_capability_result(transcript, "filesystem.list", directory):
+            return None
+        return {
+            "role": "system",
+            "content": (
+                f"{_FILENAME_DISAMBIGUATION_MARKER} The exact file lookup returned no matches. "
+                f"Return exactly one native filesystem.list call for the same containing directory: "
+                f"{directory}. Do not answer that the file is missing until this bounded same-folder "
+                "disambiguation has run. Do not search another folder."
+            ),
+        }
+    if capability == "filesystem.list" and _same_path(output.get("path"), directory):
+        if _has_following_capability_result(transcript, "filesystem.read_text", directory):
+            return None
+        candidates = _disambiguated_file_candidates(
+            requested_name,
+            list(output.get("entries") or []),
+        )
+        if len(candidates) != 1:
+            return None
+        return {
+            "role": "system",
+            "content": (
+                f"{_FILENAME_DISAMBIGUATION_MARKER} The same-folder list has exactly one obvious "
+                f"file match for {requested_name}: {candidates[0]}. Return exactly one native "
+                f"filesystem.read_text call for {str(Path(directory) / candidates[0])}. Do not "
+                "return assistant text before reading it."
+            ),
+        }
+    return None
+
+
+def _disambiguation_feedback_already_sent(transcript: list[dict[str, Any]]) -> bool:
+    last_result_index = None
+    for index, message in enumerate(transcript):
+        if message.get("role") == "capability":
+            last_result_index = index
+    if last_result_index is None:
+        return False
+    return any(
+        index > last_result_index
+        and
+        message.get("role") == "system"
+        and isinstance(message.get("content"), str)
+        and _FILENAME_DISAMBIGUATION_MARKER in message["content"]
+        for index, message in enumerate(transcript)
+    )
+
+
+def _latest_user_text(transcript: list[dict[str, Any]]) -> str:
+    for message in reversed(transcript):
+        if message.get("role") == "user" and isinstance(message.get("content"), str):
+            return message["content"]
+    return ""
+
+
+def _last_capability_result(transcript: list[dict[str, Any]]) -> dict[str, Any] | None:
+    for message in reversed(transcript):
+        if message.get("role") == "capability":
+            return message
+    return None
+
+
+def _pending_zero_match_file_find(transcript: list[dict[str, Any]]) -> tuple[str, str] | None:
+    for message in reversed(transcript):
+        if message.get("role") != "capability" or message.get("capability") != "filesystem.find":
+            continue
+        result = message.get("result") or {}
+        output = result.get("output") or {}
+        if (
+            result.get("success") is True
+            and output.get("kind") == "file"
+            and not output.get("matches")
+            and isinstance(output.get("path"), str)
+            and isinstance(output.get("name"), str)
+        ):
+            return output["path"], output["name"]
+    return None
+
+
+def _has_following_capability_result(
+    transcript: list[dict[str, Any]],
+    capability: str,
+    directory: str,
+) -> bool:
+    pending_index = None
+    for index, message in enumerate(transcript):
+        if message.get("role") != "capability" or message.get("capability") != "filesystem.find":
+            continue
+        result = message.get("result") or {}
+        output = result.get("output") or {}
+        if (
+            result.get("success") is True
+            and output.get("kind") == "file"
+            and not output.get("matches")
+            and _same_path(output.get("path"), directory)
+        ):
+            pending_index = index
+    if pending_index is None:
+        return False
+    for message in transcript[pending_index + 1:]:
+        if message.get("role") != "capability" or message.get("capability") != capability:
+            continue
+        result = message.get("result") or {}
+        output = result.get("output") or {}
+        path = output.get("path") or output.get("destination_path")
+        if capability == "filesystem.read_text":
+            try:
+                if _same_path(str(Path(path).parent), directory):
+                    return True
+            except TypeError:
+                continue
+        elif _same_path(path, directory):
+            return True
+    return False
+
+
+def _disambiguated_file_candidates(requested_name: str, entries: list[dict[str, Any]]) -> list[str]:
+    requested_keys = _filename_keys(requested_name)
+    candidates: list[str] = []
+    for entry in entries:
+        if not isinstance(entry, dict) or entry.get("type") != "file":
+            continue
+        name = entry.get("name")
+        if not isinstance(name, str):
+            continue
+        if requested_keys & _filename_keys(name):
+            candidates.append(name)
+    return candidates
+
+
+def _filename_keys(name: str) -> set[str]:
+    value = str(name).strip().casefold()
+    stem = Path(value).stem
+    return {
+        value,
+        stem,
+        _filename_loose_key(value),
+        _filename_loose_key(stem),
+    } - {""}
+
+
+def _filename_loose_key(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", name.casefold())
+
+
+def _same_path(left: Any, right: Any) -> bool:
+    if not isinstance(left, str) or not isinstance(right, str):
+        return False
+    return str(Path(left)).casefold() == str(Path(right)).casefold()
 
 
 def _canonical_json(value: Any) -> str:

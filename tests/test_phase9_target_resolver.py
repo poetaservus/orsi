@@ -72,6 +72,73 @@ class DeterministicFindModel(InferenceEngine):
         return ModelResponse.text(self.conversation_response)
 
 
+class ReluctantFilenameDisambiguationModel(InferenceEngine):
+    def __init__(self):
+        self.requests: list[list[dict]] = []
+        self.host_policy: HostAccessPolicy | None = None
+        self.next_call = 1
+
+    def respond(self, messages):
+        raise AssertionError("Agent mode must use the native capability boundary.")
+
+    def respond_with_capabilities(self, messages, capabilities):
+        del capabilities
+        self.requests.append(messages)
+        latest = messages[-1]
+        if latest.get("role") == "system" and "filesystem.list" in latest.get("content", ""):
+            pending = _pending_failed_file_lookup(messages)
+            assert pending is not None
+            directory, _requested_name = pending
+            return self._call("filesystem.list", {"path": directory})
+        if latest.get("role") == "system" and "filesystem.read_text" in latest.get("content", ""):
+            pending = _pending_failed_file_lookup(messages)
+            assert pending is not None
+            directory, requested_name = pending
+            listing = next(
+                message["result"]["output"]
+                for message in reversed(messages)
+                if message.get("role") == "capability"
+                and message.get("capability") == "filesystem.list"
+            )
+            candidates = _disambiguated_file_candidates(
+                requested_name,
+                list(listing.get("entries") or []),
+            )
+            assert len(candidates) == 1
+            return self._call("filesystem.read_text", {"path": str(Path(directory) / candidates[0])})
+        if latest.get("role") == "capability":
+            result = latest["result"]
+            if result.get("capability") == "filesystem.read_text":
+                return ModelResponse.text(result["output"]["text"])
+            return ModelResponse.text("I could not find that file on your desktop.")
+
+        latest_user = next(
+            message["content"]
+            for message in reversed(messages)
+            if message.get("role") == "user"
+        )
+        target = _find_target(latest_user, self.host_policy)
+        assert target is not None
+        containing_path, name, kind = target
+        return self._call(
+            "filesystem.find",
+            {"path": containing_path, "name": name, "kind": kind},
+        )
+
+    def _call(self, capability: str, arguments: dict) -> ModelResponse:
+        call_id = f"reluctant-filename-{self.next_call}"
+        self.next_call += 1
+        return ModelResponse.calls(
+            (
+                ModelCapabilityCall(
+                    provider_call_id=call_id,
+                    capability=capability,
+                    arguments=arguments,
+                ),
+            )
+        )
+
+
 def _call(capability: str, arguments: dict) -> ModelResponse:
     return ModelResponse.calls(
         (
@@ -262,7 +329,7 @@ def build_service(tmp_path: Path, model: InferenceEngine):
         user_home=user_home,
         acknowledged=True,
     )
-    if isinstance(model, DeterministicFindModel):
+    if isinstance(model, (DeterministicFindModel, ReluctantFilenameDisambiguationModel)):
         model.host_policy = policy
     runtime = build_filesystem_stat_runtime(
         model,
@@ -519,6 +586,35 @@ def test_failed_desktop_file_lookup_asks_when_disambiguation_is_ambiguous(
             "filesystem.list",
         ]
         assert len(model.capability_requests) == 3
+    finally:
+        service.shutdown()
+
+
+def test_runtime_feedback_recovers_when_model_answers_after_failed_filename_lookup(
+    tmp_path: Path,
+):
+    model = ReluctantFilenameDisambiguationModel()
+    service, runtime, user_home, _policy = build_service(tmp_path, model)
+    desktop = user_home / "Desktop"
+    target = desktop / "atiflix css.txt"
+    desktop.mkdir()
+    target.write_text("REAL CSS CONTENT", encoding="utf-8")
+    try:
+        answer = service.run("there is a file on my desktop called atiflix css, can you read it?")
+
+        assert answer == "REAL CSS CONTENT"
+        assert sorted(record.capability for record in runtime.executor.journal.records) == [
+            "filesystem.find",
+            "filesystem.list",
+            "filesystem.read_text",
+        ]
+        feedback_messages = [
+            request[-1]["content"]
+            for request in model.requests
+            if request[-1].get("role") == "system"
+        ]
+        assert any("filesystem.list" in message for message in feedback_messages)
+        assert any("filesystem.read_text" in message for message in feedback_messages)
     finally:
         service.shutdown()
 
