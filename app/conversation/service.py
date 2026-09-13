@@ -32,6 +32,12 @@ class _ActiveDirectoryListing:
     metadata_received: set[str] = field(default_factory=set)
 
 
+@dataclass(slots=True)
+class _ActiveFoundDirectory:
+    path: str
+    name: str
+
+
 class ConversationService:
     """UI-facing private conversation with an optional bounded agent loop."""
 
@@ -81,6 +87,7 @@ class ConversationService:
         self._session_id = uuid4().hex
         self._turn_number = 0
         self._active_listing: _ActiveDirectoryListing | None = None
+        self._active_found_directory: _ActiveFoundDirectory | None = None
         self._last_filesystem_operation: str | None = None
         self._awaiting_folder_path = False
         # Capability calls/results stay only in memory for coherent follow-ups.
@@ -639,6 +646,8 @@ class ConversationService:
                 lowered,
             ):
                 return True
+            if self._active_directory_listing_target(lowered) is not None:
+                return True
         return False
 
     def _required_capability_calls(
@@ -697,6 +706,18 @@ class ConversationService:
                     provider_call_id=f"required-{self._turn_number}-1",
                     capability="filesystem.read_text",
                     arguments={"path": read_text_target},
+                ),
+            )
+        active_directory = self._active_directory_listing_target(lowered)
+        if (
+            active_directory is not None
+            and "filesystem.list" in self.agent_capabilities
+        ):
+            return (
+                ModelCapabilityCall(
+                    provider_call_id=f"required-{self._turn_number}-1",
+                    capability="filesystem.list",
+                    arguments={"path": active_directory},
                 ),
             )
         metadata_request = re.search(
@@ -772,6 +793,26 @@ class ConversationService:
             return str(Path(listing.path) / stem_matches[0])
         return None
 
+    def _active_directory_listing_target(self, lowered: str) -> str | None:
+        if self._active_found_directory is None and self._active_listing is None:
+            return None
+        affirmative = re.fullmatch(
+            r"(?:yes|yep|yeah|sure|ok|okay|please|please\s+do|do\s+it|proceed)",
+            lowered,
+        )
+        if affirmative is None and not (
+            _is_listing_request(lowered)
+            and re.search(r"\b(?:it|there|that|this|inside|in\s+it|what(?:'s|\s+is)\s+in)\b", lowered)
+        ):
+            return None
+        if affirmative is not None and self._last_filesystem_operation != "find":
+            return None
+        if self._active_found_directory is not None:
+            return self._active_found_directory.path
+        if self._active_listing is not None:
+            return self._active_listing.path
+        return None
+
     def _metadata_continuation_targets(self, text: str) -> tuple[str, ...]:
         listing = self._active_listing
         if listing is None or self._last_filesystem_operation != "metadata":
@@ -796,6 +837,10 @@ class ConversationService:
                 entries = output.get("entries")
                 if not isinstance(path, str) or not isinstance(entries, list):
                     continue
+                self._active_found_directory = _ActiveFoundDirectory(
+                    path=path,
+                    name=Path(path).name,
+                )
                 files = tuple(
                     entry["name"]
                     for entry in entries
@@ -813,6 +858,24 @@ class ConversationService:
                     self._active_listing.files = combined
                 else:
                     self._active_listing = _ActiveDirectoryListing(path=path, files=files)
+                continue
+            if call.capability == "filesystem.find":
+                matches = output.get("matches")
+                if not isinstance(matches, list):
+                    continue
+                directories = [
+                    match
+                    for match in matches
+                    if isinstance(match, dict)
+                    and match.get("type") == "directory"
+                    and isinstance(match.get("path"), str)
+                    and isinstance(match.get("name"), str)
+                ]
+                if len(directories) == 1:
+                    self._active_found_directory = _ActiveFoundDirectory(
+                        path=directories[0]["path"],
+                        name=directories[0]["name"],
+                    )
                 continue
             if call.capability != "filesystem.stat" or self._active_listing is None:
                 continue
@@ -1349,6 +1412,12 @@ def _is_listing_request(lowered: str) -> bool:
             lowered,
         )
         or re.search(r"\b(?:contents|entries)\s+(?:of|in|inside)\b", lowered)
+        or re.search(r"\bwhat(?:'s|\s+is)\s+(?:in|inside)\s+(?:it|there|that|this)\b", lowered)
+        or re.search(
+            r"\bwhat\s+(?:files?|folders?|directories|entries|items)\s+"
+            r"(?:i|we)\s+have\s+(?:there|in\s+it|inside\s+it)\b",
+            lowered,
+        )
         or re.search(r"\b(?:show\s+me\s+)?what\s+is\s+in\b", lowered)
     )
 

@@ -37,12 +37,12 @@ Status: development checkpoint implemented and deterministically tested.
 
 ## Verification And Remaining Limits
 
-- Full deterministic suite after the resolver fix: 516 passed, 17 skipped on Windows on 2026-09-13.
-  The suite collected 533 tests.
-- New resolver coverage: 17 focused capability tests and 13 integration tests covering schema
+- Full deterministic suite after the active-context resolver fix: 520 passed, 17 skipped on Windows
+  on 2026-09-13. The suite collected 537 tests.
+- New resolver coverage: 17 focused capability tests and 17 integration tests covering schema
   strictness, exact file/folder matching, type filters, entry bounds, denied paths, cancellation,
   full-local host paths, Desktop/Downloads alias routing, prompt contract, cloud disclosure,
   ordinary no-call conversation, content-search separation, named-folder listing, location-phrase
-  trimming, and no-match behavior.
+  trimming, found-directory follow-ups, affirmative follow-ups, and no-match behavior.
 - Manual application acceptance for the exact-name resolver remains pending. Fresh packaging and
   broader release promotion remain separate gates.

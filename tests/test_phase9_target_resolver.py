@@ -78,6 +78,7 @@ def build_service(tmp_path: Path, model: InferenceEngine):
     ("prompt", "name", "kind"),
     [
         ("there is a folder on my desktop called lab, find it", "lab", "directory"),
+        ("i have a folder on my desktop called lab, what's in it?", "lab", "directory"),
         ("there is a folder called lab on my desktop, find it", "lab", "directory"),
         ("find the folder lab on my desktop", "lab", "directory"),
         ("there is a file in my downloads called report.txt, find it", "report.txt", "file"),
@@ -174,6 +175,65 @@ def test_named_desktop_folder_listing_routes_to_directory_contents(tmp_path: Pat
         records = runtime.executor.journal.records
         assert [record.capability for record in records] == ["filesystem.list"]
         assert records[0].state == CallLifecycleState.COMPLETED
+    finally:
+        service.shutdown()
+
+
+def test_whats_in_named_desktop_folder_lists_contents_in_one_turn(tmp_path: Path):
+    model = DeterministicFindModel()
+    service, runtime, user_home, _policy = build_service(tmp_path, model)
+    target = user_home / "Desktop" / "lab"
+    target.mkdir(parents=True)
+    (target / "note.txt").write_text("PRIVATE NOTE CONTENT", encoding="utf-8")
+    try:
+        answer = service.run("i have a folder on my desktop called lab, what's in it?")
+
+        assert "note.txt (file)" in answer
+        assert "PRIVATE NOTE CONTENT" not in answer
+        assert model.capability_requests == []
+        assert model.text_requests == []
+        assert [record.capability for record in runtime.executor.journal.records] == [
+            "filesystem.list"
+        ]
+    finally:
+        service.shutdown()
+
+
+def test_found_directory_remains_active_for_there_followup(tmp_path: Path):
+    model = DeterministicFindModel()
+    service, runtime, user_home, _policy = build_service(tmp_path, model)
+    target = user_home / "Desktop" / "lab"
+    target.mkdir(parents=True)
+    (target / "followup.txt").touch()
+    try:
+        found = service.run("there is a folder on my desktop called lab, find it")
+        answer = service.run("what files i have there?")
+
+        assert "directory:" in found
+        assert "followup.txt (file)" in answer
+        assert model.capability_requests == []
+        assert model.text_requests == []
+        capabilities = [record.capability for record in runtime.executor.journal.records]
+        assert capabilities.count("filesystem.find") == 1
+        assert capabilities.count("filesystem.list") == 1
+    finally:
+        service.shutdown()
+
+
+def test_yes_after_found_directory_lists_active_directory(tmp_path: Path):
+    model = DeterministicFindModel()
+    service, runtime, user_home, _policy = build_service(tmp_path, model)
+    target = user_home / "Desktop" / "lab"
+    target.mkdir(parents=True)
+    (target / "yes.txt").touch()
+    try:
+        service.run("there is a folder on my desktop called lab, find it")
+        answer = service.run("yes")
+
+        assert "yes.txt (file)" in answer
+        capabilities = [record.capability for record in runtime.executor.journal.records]
+        assert capabilities.count("filesystem.find") == 1
+        assert capabilities.count("filesystem.list") == 1
     finally:
         service.shutdown()
 

@@ -93,8 +93,8 @@ Phase 11 development.
 - Complete deterministic suite after Phase 9 search: 485 passed, 17 skipped on Windows on
   2026-09-13. The suite collected 502 tests; opt-in live gates remain skipped unless explicitly
   enabled.
-- Complete deterministic suite after Phase 9.5 exact-name resolver fix: 516 passed, 17 skipped on
-  Windows on 2026-09-13. The suite collected 533 tests; opt-in live gates remain skipped unless
+- Complete deterministic suite after Phase 9.5 active-context resolver fix: 520 passed, 17 skipped
+  on Windows on 2026-09-13. The suite collected 537 tests; opt-in live gates remain skipped unless
   explicitly enabled.
 - Opt-in live gates run separately on 2026-09-13: the dedicated `filesystem.read_text` real-model
   call/no-call matrix passed, and the `filesystem.search` real-model call/no-call matrix passed.
@@ -117,8 +117,8 @@ Phase 11 development.
 - Target-resolver deterministic tests cover strict exact-name lookup, type filtering, extension
   preservation, entry bounds, denied paths, cancellation, full-local host paths, prompt contract,
   cloud disclosure, Desktop/Downloads alias routing, ordinary no-call conversation, content-search
-  separation, location-phrase trimming, named-folder listing, and no-match reporting without
-  guessing.
+  separation, location-phrase trimming, named-folder listing, found-directory follow-ups,
+  affirmative follow-ups, and no-match reporting without guessing.
 - Manual Phase 9 workflow acceptance: user confirmed the enabled app works on 2026-09-12.
 - Manual Phase 10 text-write application acceptance: user reported it works on 2026-09-12.
 - Manual Phase 10 copy application acceptance: user reported it works on 2026-09-12.
