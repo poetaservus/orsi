@@ -27,7 +27,7 @@ class UiTests(unittest.TestCase):
     def test_window_is_explicitly_chat_only_and_has_no_action_controls(self):
         window = MainWindow(None, "HOSTNAME-SHOULD-NOT-APPEAR")
         self.assertEqual(window.windowTitle(), "O.R.S.I")
-        self.assertEqual(window.input.placeholderText(), "Ask O.R.S.I")
+        self.assertEqual(window.input.placeholderText(), "Ask O.R.S.I.")
         self.assertEqual(window.activity.text(), "Ready · Chat only")
         self.assertFalse(hasattr(window, "undo"))
         visible_text = [label.text() for label in window.findChildren(QLabel)]
@@ -48,12 +48,16 @@ class UiTests(unittest.TestCase):
 
         self.assertEqual(window.context_window.title.text(), "Context Window")
         self.assertEqual(window.context_window.size.text(), "32,768")
+        self.assertEqual(
+            window.context_window.status.text(),
+            "O.R.S.I. v0.4.0-dev // Local // Context Window: 0%",
+        )
         self.assertEqual(window.context_window.bar.maximum(), 32768)
-        self.assertIs(window.context_window.parentWidget(), window._content)
+        self.assertIs(window.context_window.parentWidget(), window.topbar)
         self.assertFalse(window.context_window.isHidden())
         window.settings_button.click()
         self.assertFalse(window.settings_panel.isHidden())
-        self.assertIs(window.context_window.parentWidget(), window._content)
+        self.assertIs(window.context_window.parentWidget(), window.topbar)
         window.close()
 
     def test_context_window_bar_uses_conversation_estimate(self):
@@ -74,6 +78,7 @@ class UiTests(unittest.TestCase):
         window = MainWindow(FakeService(), "TEST-HOST", inference=FakeInference())
         self.assertEqual(window.context_window.bar.value(), 1200)
         self.assertIn("1,200 of 8,192 tokens", window.context_window.toolTip())
+        self.assertIn("Context Window: 15%", window.context_window.status.text())
         window.close()
 
     def test_new_session_button_clears_chat_context_and_persisted_session(self):
@@ -114,8 +119,8 @@ class UiTests(unittest.TestCase):
 
     def test_composer_preserves_large_multiline_pastes_and_shift_enter(self):
         window = MainWindow(None, "TEST-HOST")
-        self.assertEqual(window.composer.height(), 76)
-        self.assertEqual(window.input.height(), 60)
+        self.assertEqual(window.composer.height(), 74)
+        self.assertEqual(window.input.height(), 58)
         self.assertEqual(window.send.size().width(), 46)
         self.assertIs(window.model_selector.parentWidget(), window.settings_panel)
         pasted = ("A full paragraph.\n\n" * 3000).rstrip()
@@ -139,20 +144,24 @@ class UiTests(unittest.TestCase):
         window.show()
         QApplication.processEvents()
 
-        sidebar = window.findChild(QWidget, "sidebar")
-        self.assertEqual(sidebar.width(), 98)
-        self.assertEqual(window.composer.width(), 880)
-        self.assertEqual(window.composer.height(), 76)
-        self.assertEqual(window.composer.y(), window._content.height() - 112)
-        self.assertEqual(window._content.width() - window.composer.geometry().right() - 1, 501)
+        self.assertEqual(window.topbar.height(), 68)
+        self.assertEqual(window.composer.width(), 1040)
+        self.assertEqual(window.composer.height(), 74)
+        self.assertEqual(window.composer.y(), window._content.height() - 118)
+        self.assertLessEqual(abs(window.composer.x() - 440), 1)
+        self.assertLessEqual(
+            abs(window._content.width() - window.composer.geometry().right() - 1 - 440),
+            1,
+        )
         middle_panel = window._content.middle_panel_rect()
         self.assertFalse(window._content._background.isNull())
-        self.assertEqual(middle_panel.width(), 1020)
-        self.assertEqual(middle_panel.x(), 371)
+        self.assertEqual(middle_panel.width(), 1120)
+        self.assertEqual(middle_panel.x(), 400)
         self.assertEqual(
-            window._content.width() - window.context_window.geometry().right() - 1,
-            44,
+            window.topbar.width() - window.context_window.geometry().right() - 1,
+            22,
         )
+        self.assertIn("O.R.S.I. v0.4.0-dev // Local", window.context_window.status.text())
         self.assertTrue(window.settings_panel.isHidden())
         window.close()
 
@@ -162,12 +171,9 @@ class UiTests(unittest.TestCase):
         window.show()
         QApplication.processEvents()
 
-        self.assertEqual(window._content_layout.contentsMargins().top(), 54)
-        self.assertLess(window.context_window.geometry().bottom(), window.chat.y())
-        left_space = window.context_window.x()
-        right_space = window._content.width() - window.context_window.geometry().right() - 1
-        self.assertLessEqual(abs(left_space - right_space), 1)
-        self.assertLessEqual(window.context_window.width(), window._content.width() - 32)
+        self.assertEqual(window._content_layout.contentsMargins().top(), 0)
+        self.assertEqual(window.topbar.height(), 68)
+        self.assertLess(window.context_window.geometry().bottom(), window.topbar.height())
         middle_panel = window._content.middle_panel_rect()
         panel_right_space = window._content.width() - middle_panel.right() - 1
         self.assertLessEqual(abs(middle_panel.x() - panel_right_space), 1)
@@ -176,7 +182,7 @@ class UiTests(unittest.TestCase):
         window.chat.add_message("Agent", "A compact response")
         QApplication.processEvents()
         response_left = window.chat._messages[0].mapTo(window._content, QPoint(0, 0)).x()
-        self.assertGreaterEqual(response_left - middle_panel.x(), 24)
+        self.assertGreaterEqual(response_left, middle_panel.x())
         window.close()
 
     def test_cloud_selector_warns_and_keeps_key_in_memory(self):

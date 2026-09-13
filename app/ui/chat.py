@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 
 from PySide6.QtCore import QRect, QTimer, Qt
-from PySide6.QtGui import QFontDatabase
+from PySide6.QtGui import QColor, QFontDatabase, QPainter
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
@@ -25,10 +25,7 @@ _FENCED_CODE = re.compile(
     re.MULTILINE | re.DOTALL,
 )
 
-_CONVERSATION_WIDTH = 968
-_COLUMN_RIGHT_COMPENSATION = 36
-_COMPACT_BREAKPOINT = 1500
-_SCROLLBAR_WIDTH = 22
+_CONVERSATION_WIDTH = 1120
 
 
 def _split_fenced_code(content: str) -> list[tuple[str, str, str]]:
@@ -112,6 +109,8 @@ class _Message(QFrame):
         self._content = content
         if from_user:
             self.setObjectName("userMessage")
+            self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+            self.setAutoFillBackground(False)
         elif error:
             self.setObjectName("errorMessage")
         else:
@@ -156,6 +155,18 @@ class _Message(QFrame):
                 if self.label is None:
                     self.label = label
                 layout.addWidget(label)
+
+    def paintEvent(self, event) -> None:  # noqa: N802 - Qt API name
+        if not self.from_user:
+            super().paintEvent(event)
+            return
+        del event
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor("#3c3e49"))
+        radius = min(27, max(1, self.height() // 2))
+        painter.drawRoundedRect(self.rect(), radius, radius)
 
     def set_available_width(self, width: int) -> None:
         if self.from_user:
@@ -214,7 +225,7 @@ class ChatView(QScrollArea):
         self.setWidgetResizable(True)
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.viewport().setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.viewport().setAutoFillBackground(False)
@@ -336,11 +347,7 @@ class ChatView(QScrollArea):
         return min(_CONVERSATION_WIDTH, max(280, available))
 
     def _column_margins(self) -> tuple[int, int]:
-        if self.width() < _COMPACT_BREAKPOINT:
-            # Balance the always-visible scrollbar so the conversation column
-            # stays centered inside the compact middle panel.
-            return _SCROLLBAR_WIDTH, 0
-        return 0, _COLUMN_RIGHT_COMPENSATION
+        return 0, 0
 
     def _scroll_to_bottom(self) -> None:
         try:

@@ -30,14 +30,14 @@ from app.ui.status import ConversationStatus
 
 
 _ICON_DIRECTORY = Path(__file__).with_name("assets")
-_SIDEBAR_WIDTH = 98
-_CONVERSATION_WIDTH = 968
-_COMPOSER_WIDTH = 880
-_COMPOSER_HEIGHT = 76
-_COMPOSER_BOTTOM_MARGIN = 36
-_COMPOSER_RIGHT_COMPENSATION = 60
-_MIDDLE_PANEL_WIDTH = 1020
-_CONTEXT_RIGHT_MARGIN = 44
+_TOP_BAR_HEIGHT = 68
+_TOP_BUTTON_SIZE = 42
+_TOP_ICON_SIZE = 30
+_COMPOSER_WIDTH = 1040
+_COMPOSER_HEIGHT = 74
+_COMPOSER_BOTTOM_MARGIN = 44
+_MIDDLE_PANEL_WIDTH = 1120
+_BACKGROUND_TOP_CROP = 68
 
 
 class MessageInput(QTextEdit):
@@ -72,6 +72,23 @@ class Worker(QObject):
             self.failed.emit(str(exc))
 
 
+class ComposerFrame(QFrame):
+    """Paint the supplied v2 input-field asset behind the live composer controls."""
+
+    def __init__(self, background: Path, parent: QWidget | None = None):
+        super().__init__(parent)
+        self._background = QPixmap(str(background))
+
+    def paintEvent(self, event) -> None:  # noqa: N802 - Qt API name
+        if self._background.isNull():
+            super().paintEvent(event)
+            return
+        del event
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        painter.drawPixmap(self.rect(), self._background)
+
+
 class ChatSurface(QWidget):
     """Paint the quiet gradient and centered conversation panel."""
 
@@ -81,11 +98,8 @@ class ChatSurface(QWidget):
         self._background = QPixmap(str(_ICON_DIRECTORY / "o.r.s.i_gui_bck.png"))
 
     def middle_panel_rect(self) -> QRect:
-        compact = self.width() < 1500
-        compensation = 0 if compact else _COMPOSER_RIGHT_COMPENSATION
-        available_width = max(0, self.width() - compensation)
-        width = min(_MIDDLE_PANEL_WIDTH, available_width)
-        x = max(0, (available_width - width) // 2)
+        width = min(_MIDDLE_PANEL_WIDTH, max(0, self.width()))
+        x = max(0, (self.width() - width) // 2)
         return QRect(x, 0, width, self.height())
 
     def paintEvent(self, event) -> None:  # noqa: N802 - Qt API name
@@ -98,8 +112,14 @@ class ChatSurface(QWidget):
             gradient.setColorAt(1.0, QColor("#101214"))
             painter.fillRect(self.rect(), gradient)
         else:
-            painter.drawPixmap(self.rect(), self._background)
-        painter.fillRect(self.middle_panel_rect(), QColor("#121416"))
+            source_y = min(_BACKGROUND_TOP_CROP, max(0, self._background.height() - 1))
+            source = QRect(
+                0,
+                source_y,
+                self._background.width(),
+                max(1, self._background.height() - source_y),
+            )
+            painter.drawPixmap(self.rect(), self._background, source)
 
 
 class MainWindow(QMainWindow):
@@ -127,38 +147,63 @@ class MainWindow(QMainWindow):
 
         root = QWidget()
         root.setObjectName("root")
-        root_layout = QHBoxLayout(root)
+        root_layout = QVBoxLayout(root)
         root_layout.setContentsMargins(0, 0, 0, 0)
         root_layout.setSpacing(0)
 
-        sidebar = QWidget()
-        sidebar.setObjectName("sidebar")
-        sidebar.setFixedWidth(_SIDEBAR_WIDTH)
-        sidebar_layout = QVBoxLayout(sidebar)
-        sidebar_layout.setContentsMargins(26, 29, 26, 20)
-        sidebar_layout.setSpacing(20)
+        topbar = QWidget()
+        self.topbar = topbar
+        topbar.setObjectName("topBar")
+        topbar.setFixedHeight(_TOP_BAR_HEIGHT)
+        topbar_layout = QHBoxLayout(topbar)
+        topbar_layout.setContentsMargins(21, 0, 22, 0)
+        topbar_layout.setSpacing(17)
 
         self.new_session_button = QPushButton()
-        self.new_session_button.setObjectName("sidebarButton")
-        self.new_session_button.setFixedSize(46, 46)
-        self.new_session_button.setIcon(QIcon(str(_ICON_DIRECTORY / "new_session.svg")))
-        self.new_session_button.setIconSize(QSize(32, 32))
+        self.new_session_button.setObjectName("topBarButton")
+        self.new_session_button.setFixedSize(_TOP_BUTTON_SIZE, _TOP_BUTTON_SIZE)
+        self.new_session_button.setIcon(QIcon(str(_ICON_DIRECTORY / "new_message_icon_cropped.png")))
+        self.new_session_button.setIconSize(QSize(_TOP_ICON_SIZE, _TOP_ICON_SIZE))
         self.new_session_button.setToolTip("New session — permanently clears this conversation")
         self.new_session_button.setAccessibleName("New session")
         self.new_session_button.setEnabled(service is not None)
 
+        first_separator = QFrame()
+        first_separator.setObjectName("topBarSeparator")
+        first_separator.setFixedSize(1, 28)
+
+        self.history_button = QPushButton()
+        self.history_button.setObjectName("topBarButton")
+        self.history_button.setFixedSize(_TOP_BUTTON_SIZE, _TOP_BUTTON_SIZE)
+        self.history_button.setIcon(QIcon(str(_ICON_DIRECTORY / "history.svg")))
+        self.history_button.setIconSize(QSize(_TOP_ICON_SIZE, _TOP_ICON_SIZE))
+        self.history_button.setToolTip("History")
+        self.history_button.setAccessibleName("History")
+
+        second_separator = QFrame()
+        second_separator.setObjectName("topBarSeparator")
+        second_separator.setFixedSize(1, 28)
+
         self.settings_button = QPushButton()
-        self.settings_button.setObjectName("sidebarButton")
-        self.settings_button.setFixedSize(46, 46)
-        self.settings_button.setIcon(QIcon(str(_ICON_DIRECTORY / "settings.svg")))
-        self.settings_button.setIconSize(QSize(32, 32))
+        self.settings_button.setObjectName("topBarButton")
+        self.settings_button.setFixedSize(_TOP_BUTTON_SIZE, _TOP_BUTTON_SIZE)
+        self.settings_button.setIcon(QIcon(str(_ICON_DIRECTORY / "settings_icon_cropped.png")))
+        self.settings_button.setIconSize(QSize(_TOP_ICON_SIZE, _TOP_ICON_SIZE))
         self.settings_button.setToolTip("Settings")
         self.settings_button.setAccessibleName("Settings")
 
-        sidebar_layout.addWidget(self.new_session_button)
-        sidebar_layout.addWidget(self.settings_button)
-        sidebar_layout.addStretch(1)
-        root_layout.addWidget(sidebar)
+        topbar_layout.addWidget(self.new_session_button, 0, Qt.AlignmentFlag.AlignVCenter)
+        topbar_layout.addWidget(first_separator, 0, Qt.AlignmentFlag.AlignVCenter)
+        topbar_layout.addWidget(self.history_button, 0, Qt.AlignmentFlag.AlignVCenter)
+        topbar_layout.addWidget(second_separator, 0, Qt.AlignmentFlag.AlignVCenter)
+        topbar_layout.addWidget(self.settings_button, 0, Qt.AlignmentFlag.AlignVCenter)
+        topbar_layout.addStretch(1)
+        self.context_window = ContextWindowBar(
+            int(getattr(inference, "context_length", 0)),
+            topbar,
+        )
+        topbar_layout.addWidget(self.context_window, 0, Qt.AlignmentFlag.AlignVCenter)
+        root_layout.addWidget(topbar)
 
         content = ChatSurface()
         self._content = content
@@ -171,11 +216,6 @@ class MainWindow(QMainWindow):
 
         self.chat = ChatView()
         content_layout.addWidget(self.chat, 1)
-
-        self.context_window = ContextWindowBar(
-            int(getattr(inference, "context_length", 0)),
-            content,
-        )
 
         self.settings_panel = QFrame(root)
         self.settings_panel.setObjectName("settingsPanel")
@@ -211,24 +251,24 @@ class MainWindow(QMainWindow):
         settings_layout.addWidget(self.activity)
         self.settings_panel.hide()
 
-        self.composer = QFrame(content)
+        self.composer = ComposerFrame(_ICON_DIRECTORY / "input_field_cropped.png", content)
         self.composer.setObjectName("composer")
         self.composer.setFixedHeight(_COMPOSER_HEIGHT)
         composer_layout = QHBoxLayout(self.composer)
-        composer_layout.setContentsMargins(22, 8, 12, 8)
-        composer_layout.setSpacing(8)
+        composer_layout.setContentsMargins(30, 8, 16, 8)
+        composer_layout.setSpacing(10)
 
         self.input = MessageInput()
         self.input.setObjectName("messageInput")
-        self.input.setPlaceholderText("Ask O.R.S.I")
+        self.input.setPlaceholderText("Ask O.R.S.I.")
         self.input.setAcceptRichText(False)
-        self.input.setFixedHeight(60)
+        self.input.setFixedHeight(58)
 
         self.send = QPushButton()
         self.send.setObjectName("sendButton")
         self.send.setFixedSize(46, 46)
-        self.send.setIcon(QIcon(str(_ICON_DIRECTORY / "send.svg")))
-        self.send.setIconSize(QSize(28, 28))
+        self.send.setIcon(QIcon(str(_ICON_DIRECTORY / "input_button_cropped.png")))
+        self.send.setIconSize(QSize(36, 36))
         self.send.setToolTip("Send")
         self.send.setAccessibleName("Send")
 
@@ -273,32 +313,12 @@ class MainWindow(QMainWindow):
         if not hasattr(self, "composer"):
             return
         content = self.composer.parentWidget()
-        compact_header = content.width() < 1500
-        sizing_width = max(0, content.width() - _COMPOSER_RIGHT_COMPENSATION)
-        width = min(_COMPOSER_WIDTH, max(320, sizing_width - 32))
-        positioning_width = content.width() if compact_header else sizing_width
-        x = max(16, (positioning_width - width) // 2)
+        width = min(_COMPOSER_WIDTH, max(320, content.width() - 32))
+        x = max(16, (content.width() - width) // 2)
         y = max(16, content.height() - _COMPOSER_BOTTOM_MARGIN - _COMPOSER_HEIGHT)
         self.composer.setGeometry(x, y, width, _COMPOSER_HEIGHT)
         self.composer.raise_()
-        header_height = 54 if compact_header else 0
-        if self._content_layout.contentsMargins().top() != header_height:
-            self._content_layout.setContentsMargins(0, header_height, 0, 0)
-
-        context_margin = 16 if compact_header else _CONTEXT_RIGHT_MARGIN
-        maximum_context_width = max(140, content.width() - context_margin * 2)
-        desired_context_width = min(350, max(228, int(content.width() * 0.30)))
-        context_width = min(desired_context_width, maximum_context_width)
-        context_height = max(28, self.context_window.sizeHint().height())
-        context_x = (
-            max(0, (content.width() - context_width) // 2)
-            if compact_header
-            else max(context_margin, content.width() - context_width - context_margin)
-        )
-        self.context_window.setFixedSize(context_width, context_height)
-        self.context_window.move(context_x, 12 if compact_header else 22)
-        self.context_window.raise_()
-        self.settings_panel.move(_SIDEBAR_WIDTH + 14, 99)
+        self.settings_panel.move(162, _TOP_BAR_HEIGHT + 12)
         if self.settings_panel.isVisible():
             self.settings_panel.raise_()
 
@@ -938,8 +958,14 @@ class MainWindow(QMainWindow):
             self.model_selector.setCurrentIndex(index)
             self.model_selector.blockSignals(False)
 
+    def _runtime_mode_label(self) -> str:
+        if self.inference is None:
+            return "Local"
+        return "Cloud" if self.inference.mode == "cloud" else "Local"
+
     def _update_context_window(self) -> None:
         length = int(getattr(self.inference, "context_length", 0))
+        self.context_window.set_runtime_mode(self._runtime_mode_label())
         self.context_window.set_context_length(length)
         estimate = getattr(self.service, "estimated_context_tokens", None)
         used = estimate() if callable(estimate) else 0
@@ -977,24 +1003,28 @@ QDialog#folderApproval QPushButton, QDialog#writeApproval QPushButton, QDialog#c
 QDialog#folderApproval QPushButton:focus, QDialog#writeApproval QPushButton:focus, QDialog#copyApproval QPushButton:focus, QDialog#moveApproval QPushButton:focus, QDialog#trashApproval QPushButton:focus { border: 2px solid #91bfe0; }
 QDialog#folderApproval QPushButton:hover, QDialog#writeApproval QPushButton:hover, QDialog#copyApproval QPushButton:hover, QDialog#moveApproval QPushButton:hover, QDialog#trashApproval QPushButton:hover { background: #42484d; }
 QMainWindow#mainWindow, QWidget#root {
-    background: #121416;
-    color: #ababab;
+    background: #050506;
+    color: #d7d7d9;
     font-family: Arial;
 }
 QWidget#mainContent, QWidget#chatContent { background: transparent; }
-QWidget#sidebar {
-    background: #101010;
-    border-right: 1px solid #272727;
+QWidget#topBar {
+    background: #050506;
+    border-bottom: 1px solid #101217;
 }
-QPushButton#sidebarButton {
+QPushButton#topBarButton {
     background: transparent;
     border: none;
-    border-radius: 12px;
+    border-radius: 10px;
     padding: 0;
 }
-QPushButton#sidebarButton:hover { background: #222222; }
-QPushButton#sidebarButton:pressed { background: #2a2a2a; }
-QPushButton#sidebarButton:disabled { background: transparent; }
+QPushButton#topBarButton:hover { background: #15161a; }
+QPushButton#topBarButton:pressed { background: #202128; }
+QPushButton#topBarButton:disabled { background: transparent; }
+QFrame#topBarSeparator {
+    background: #15161a;
+    border: none;
+}
 QFrame#settingsPanel {
     background: #252627;
     border: 1px solid #3a3b3c;
@@ -1014,6 +1044,13 @@ QLabel#settingsLabel {
     font-size: 12px;
 }
 QWidget#contextWindow { background: transparent; }
+QLabel#contextStatusLine {
+    color: #d6d4d4;
+    background: transparent;
+    border: none;
+    font-family: Arial;
+    font-size: 17px;
+}
 QLabel#contextWindowTitle, QLabel#contextWindowSize {
     color: #a8a8a8;
     background: transparent;
@@ -1032,18 +1069,18 @@ QProgressBar#contextWindowBar::chunk {
 QScrollArea#chatView { background: transparent; border: none; }
 QScrollArea#chatView QWidget#qt_scrollarea_viewport { background: transparent; }
 QFrame#userMessage {
-    background: #28292a;
+    background: transparent;
     border: none;
-    border-radius: 23px;
+    border-radius: 27px;
 }
 QFrame#orsiMessage, QFrame#errorMessage { background: transparent; border: none; }
 QFrame#userMessage QLabel, QFrame#orsiMessage QLabel {
-    color: #adadad;
+    color: #e3e3e4;
     font-family: Arial;
-    font-size: 20px;
+    font-size: 22px;
     font-weight: 400;
 }
-QFrame#userMessage QLabel { font-size: 19px; }
+QFrame#userMessage QLabel { font-size: 21px; }
 QFrame#errorMessage QLabel { color: #ff8d86; font-size: 16px; }
 QFrame#codeBlock {
     background: #202020;
@@ -1087,30 +1124,30 @@ QLabel#conversationStatus {
     font-size: 11px;
 }
 QFrame#composer {
-    background: #343435;
-    border: none;
-    border-radius: 17px;
+    background: rgba(57, 59, 70, 214);
+    border: 1px solid #575a66;
+    border-radius: 36px;
 }
 QTextEdit#messageInput {
-    color: #b2b2b2;
+    color: #dedee0;
     background: transparent;
     border: none;
-    padding: 12px 0 4px 8px;
+    padding: 11px 0 4px 4px;
     font-family: Arial;
-    font-size: 21px;
+    font-size: 24px;
     selection-background-color: #666666;
 }
 QTextEdit#messageInput:focus { border: none; }
 QTextEdit#messageInput:disabled { color: #777777; background: transparent; }
 QPushButton#sendButton, QPushButton#stopButton {
-    background: #292a2b;
+    background: transparent;
     border: none;
     border-radius: 23px;
     padding: 0;
 }
-QPushButton#sendButton:hover, QPushButton#stopButton:hover { background: #333435; }
-QPushButton#sendButton:pressed, QPushButton#stopButton:pressed { background: #222324; }
-QPushButton#sendButton:disabled, QPushButton#stopButton:disabled { background: #292a2b; }
+QPushButton#sendButton:hover, QPushButton#stopButton:hover { background: #454852; }
+QPushButton#sendButton:pressed, QPushButton#stopButton:pressed { background: #2c2e35; }
+QPushButton#sendButton:disabled, QPushButton#stopButton:disabled { background: transparent; }
 QComboBox#modelSelector {
     color: #ededed;
     background: #262626;
@@ -1127,12 +1164,12 @@ QComboBox#modelSelector QAbstractItemView {
     border: 1px solid #424242;
     selection-background-color: #3b3b3b;
 }
-QScrollBar:vertical { background: transparent; width: 22px; margin: 0; }
+QScrollBar:vertical { background: transparent; width: 14px; margin: 0; }
 QScrollBar::handle:vertical {
-    background: #444444;
+    background: #3f4149;
     border-radius: 6px;
     min-height: 72px;
-    margin: 0 10px 0 0;
+    margin: 0 6px 0 0;
 }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
