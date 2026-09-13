@@ -78,8 +78,10 @@ def build_service(tmp_path: Path, model: InferenceEngine):
     ("prompt", "name", "kind"),
     [
         ("there is a folder on my desktop called lab, find it", "lab", "directory"),
+        ("there is a folder called lab on my desktop, find it", "lab", "directory"),
         ("find the folder lab on my desktop", "lab", "directory"),
         ("there is a file in my downloads called report.txt, find it", "report.txt", "file"),
+        ("there is a folder called Mats on my desktop, can you list me the items in it?", "Mats", "directory"),
     ],
 )
 def test_find_target_parser_resolves_known_folder_aliases(
@@ -147,6 +149,30 @@ def test_desktop_folder_request_finds_actual_directory_without_model_tool_select
         assert model.text_requests == []
         records = runtime.executor.journal.records
         assert [record.capability for record in records] == ["filesystem.find"]
+        assert records[0].state == CallLifecycleState.COMPLETED
+    finally:
+        service.shutdown()
+
+
+def test_named_desktop_folder_listing_routes_to_directory_contents(tmp_path: Path):
+    model = DeterministicFindModel()
+    service, runtime, user_home, _policy = build_service(tmp_path, model)
+    target = user_home / "Desktop" / "Mats"
+    target.mkdir(parents=True)
+    (target / "alpha.txt").write_text("PRIVATE ALPHA CONTENT", encoding="utf-8")
+    (target / "Subfolder").mkdir()
+    try:
+        answer = service.run(
+            "there is a folder called Mats on my desktop, can you list me the items in it?"
+        )
+
+        assert "alpha.txt (file)" in answer
+        assert "Subfolder (directory)" in answer
+        assert "PRIVATE ALPHA CONTENT" not in answer
+        assert model.capability_requests == []
+        assert model.text_requests == []
+        records = runtime.executor.journal.records
+        assert [record.capability for record in records] == ["filesystem.list"]
         assert records[0].state == CallLifecycleState.COMPLETED
     finally:
         service.shutdown()

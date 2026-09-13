@@ -620,14 +620,14 @@ class ConversationService:
                 return True
             if re.search(
                 r"\b(?:list|show|display)\b.{0,80}\b"
-                r"(?:files?|folders?|director(?:y|ies)|entries|contents)\b",
+                r"(?:files?|folders?|director(?:y|ies)|entries|contents|items)\b",
                 lowered,
             ):
                 return True
-            if re.search(r"\b(?:what|which)\s+(?:files?|folders?|directories|entries)\b", lowered):
+            if re.search(r"\b(?:what|which)\s+(?:files?|folders?|directories|entries|items)\b", lowered):
                 return True
             if re.search(
-                r"\b(?:files?|folders?|directories|entries)\s+"
+                r"\b(?:files?|folders?|directories|entries|items)\s+"
                 r"(?:do\s+i\s+have|are\s+(?:in|inside|under|there))\b",
                 lowered,
             ):
@@ -648,6 +648,20 @@ class ConversationService:
         listing = self._active_listing
         lowered = " ".join(str(text).casefold().split())
         find_target = _find_target(text, self.host_access_policy)
+        if (
+            find_target is not None
+            and _is_listing_request(lowered)
+            and find_target[2] == "directory"
+            and "filesystem.list" in self.agent_capabilities
+        ):
+            find_path, name, _kind = find_target
+            return (
+                ModelCapabilityCall(
+                    provider_call_id=f"required-{self._turn_number}-1",
+                    capability="filesystem.list",
+                    arguments={"path": str(Path(find_path) / name)},
+                ),
+            )
         if (
             find_target is not None
             and "filesystem.find" in self.agent_capabilities
@@ -1325,12 +1339,12 @@ def _is_listing_request(lowered: str) -> bool:
         re.search(r"\bfilesystem[.]list\b", lowered)
         or re.search(
             r"\b(?:list|show|display)\b.{0,80}\b"
-            r"(?:files?|folders?|director(?:y|ies)|entries|contents)\b",
+            r"(?:files?|folders?|director(?:y|ies)|entries|contents|items)\b",
             lowered,
         )
-        or re.search(r"\b(?:what|which)\s+(?:files?|folders?|directories|entries)\b", lowered)
+        or re.search(r"\b(?:what|which)\s+(?:files?|folders?|directories|entries|items)\b", lowered)
         or re.search(
-            r"\b(?:files?|folders?|directories|entries)\s+"
+            r"\b(?:files?|folders?|directories|entries|items)\s+"
             r"(?:do\s+i\s+have|are\s+(?:in|inside|under|there))\b",
             lowered,
         )
@@ -1422,6 +1436,12 @@ def _find_requested_name(value: str) -> str | None:
 def _clean_find_name(value: str) -> str:
     name = str(value).strip().strip("\"'").strip()
     name = re.sub(r"(?is)\s+\b(?:find|locate)\s+it\b.*$", "", name).strip()
+    name = re.sub(
+        r"(?is)\s+\b(?:on|in|inside|under)\s+(?:my\s+|the\s+)?"
+        r"(?:desktop|downloads|documents|home)(?:\s+(?:folder|directory))?\b.*$",
+        "",
+        name,
+    ).strip()
     name = re.sub(r"(?is)^(?:a|an|the)\s+", "", name).strip()
     name = name.rstrip(".").strip()
     if (
