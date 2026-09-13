@@ -1162,7 +1162,7 @@ QPushButton#sendButton, QPushButton#stopButton {
     padding: 0;
 }
 QPushButton#sendButton:hover, QPushButton#stopButton:hover { background: #454852; }
-QPushButton#sendButton:pressed, QPushButton#stopButton:pressed { background: #2c2e35; }
+QPushButton#sendButton:pressed, QPushButton#stopButton:pressed { background: #2c2e35;  }
 QPushButton#sendButton:disabled, QPushButton#stopButton:disabled { background: transparent; }
 QComboBox#modelSelector {
     color: #ededed;
