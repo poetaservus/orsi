@@ -421,6 +421,163 @@ def test_bundled_model_full_local_directory_listing_acceptance(tmp_path: Path):
 
 
 @pytest.mark.skipif(
+    os.environ.get("ORSI_RUN_PHASE9_READ_TEXT_LIVE_MODEL") != "1",
+    reason="Set ORSI_RUN_PHASE9_READ_TEXT_LIVE_MODEL=1 for the filesystem.read_text model gate.",
+)
+def test_bundled_model_full_local_text_read_acceptance(tmp_path: Path):
+    """Real-model gate for bounded text reading and ordinary no-call chat."""
+    portable_root = tmp_path / "portable"
+    user_home = tmp_path / "host-user"
+    host_files = tmp_path / "host-files"
+    portable_root.mkdir()
+    user_home.mkdir()
+    host_files.mkdir()
+    state = tmp_path / "state"
+    policy = HostAccessPolicy.full_local(
+        application_root=portable_root,
+        user_home=user_home,
+        acknowledged=True,
+    )
+    model = LlamaServerInferenceEngine(load_model_config())
+    runtime = build_filesystem_stat_runtime(
+        model,
+        config=AgentFeatureConfig(
+            filesystem_stat_enabled=True,
+            filesystem_list_enabled=True,
+            filesystem_read_text_enabled=True,
+            full_local_read_enabled=True,
+        ),
+        portable_root=portable_root,
+        state_directory=state,
+        host_access_policy=policy,
+    )
+    service = ConversationService(
+        model,
+        ConversationStore(state / "conversation.json"),
+        agent_runtime=runtime,
+        portable_root=portable_root,
+        allowed_read_roots=policy.permission_roots(),
+        host_access_policy=policy,
+    )
+    try:
+        prompts = (
+            "Read this exact text file and show its contents: {path}",
+            "Open {path} and tell me what it says.",
+            'Show the contents of "{path}".',
+            "Use filesystem.read_text exactly once for {path}.",
+            "Summarize the text inside {path}.",
+        )
+        for index in range(25):
+            target = host_files / f"read-target-{index}.txt"
+            marker = f"PHASE9-READ-TEXT-MARKER-{index}"
+            target.write_text(f"{marker}\nactual file content\n", encoding="utf-8")
+            answer = service.run(prompts[index % len(prompts)].format(path=target.resolve()))
+
+            records = runtime.executor.journal.records
+            assert len(records) == 1, (index, answer, records)
+            assert records[0].capability == "filesystem.read_text"
+            assert records[0].state == CallLifecycleState.COMPLETED
+            assert marker in answer
+            assert "sample" not in answer.casefold()
+            service.new_session()
+
+        for index in range(25):
+            answer = service.run(
+                f"Ordinary text-read-enabled conversation {index}. "
+                f"Reply exactly with read-chat-{index}; do not use a tool."
+            )
+            assert answer.strip()
+            assert runtime.executor.journal.records == ()
+            service.new_session()
+    finally:
+        service.shutdown()
+        model.close()
+
+
+@pytest.mark.skipif(
+    os.environ.get("ORSI_RUN_PHASE9_SEARCH_LIVE_MODEL") != "1",
+    reason="Set ORSI_RUN_PHASE9_SEARCH_LIVE_MODEL=1 for the filesystem.search model gate.",
+)
+def test_bundled_model_full_local_search_acceptance(tmp_path: Path):
+    """Real-model gate for bounded text search and ordinary no-call chat."""
+    portable_root = tmp_path / "portable"
+    user_home = tmp_path / "host-user"
+    host_directories = tmp_path / "host-directories"
+    portable_root.mkdir()
+    user_home.mkdir()
+    host_directories.mkdir()
+    state = tmp_path / "state"
+    policy = HostAccessPolicy.full_local(
+        application_root=portable_root,
+        user_home=user_home,
+        acknowledged=True,
+    )
+    model = LlamaServerInferenceEngine(load_model_config())
+    runtime = build_filesystem_stat_runtime(
+        model,
+        config=AgentFeatureConfig(
+            filesystem_stat_enabled=True,
+            filesystem_list_enabled=True,
+            filesystem_read_text_enabled=True,
+            filesystem_search_enabled=True,
+            full_local_read_enabled=True,
+        ),
+        portable_root=portable_root,
+        state_directory=state,
+        host_access_policy=policy,
+    )
+    service = ConversationService(
+        model,
+        ConversationStore(state / "conversation.json"),
+        agent_runtime=runtime,
+        portable_root=portable_root,
+        allowed_read_roots=policy.permission_roots(),
+        host_access_policy=policy,
+    )
+    try:
+        prompts = (
+            "Search for {marker} in {path}",
+            "Find {marker} inside {path}",
+            "Search {path} for {marker}",
+            'Find "{marker}" inside "{path}"',
+            "Use filesystem.search for {marker} in {path}",
+        )
+        for index in range(25):
+            directory = host_directories / f"directory-{index}"
+            directory.mkdir()
+            marker = f"PHASE9-SEARCH-MARKER-{index}"
+            expected_file = directory / "target.txt"
+            expected_file.write_text(f"alpha {marker} omega\n", encoding="utf-8")
+            (directory / "other.txt").write_text("no marker here\n", encoding="utf-8")
+            answer = service.run(
+                prompts[index % len(prompts)].format(
+                    marker=marker,
+                    path=directory.resolve(),
+                )
+            )
+
+            records = runtime.executor.journal.records
+            assert len(records) == 1, (index, answer, records)
+            assert records[0].capability == "filesystem.search"
+            assert records[0].state == CallLifecycleState.COMPLETED
+            assert marker in answer
+            assert "target.txt" in answer
+            service.new_session()
+
+        for index in range(25):
+            answer = service.run(
+                f"Ordinary search-enabled conversation {index}. "
+                f"Reply exactly with search-chat-{index}; do not use a tool."
+            )
+            assert answer.strip()
+            assert runtime.executor.journal.records == ()
+            service.new_session()
+    finally:
+        service.shutdown()
+        model.close()
+
+
+@pytest.mark.skipif(
     os.environ.get("ORSI_RUN_PHASE9_LIST_LIVE_MODEL") != "1",
     reason="Set ORSI_RUN_PHASE9_LIST_LIVE_MODEL=1 for the filesystem.list model gate.",
 )

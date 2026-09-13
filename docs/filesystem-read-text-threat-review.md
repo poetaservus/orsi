@@ -7,7 +7,7 @@ application bootstrap, prompts, deterministic conversation routing, and UI discl
 and is enabled in this development copy at the user's request. Missing configuration
 still defaults to disabled. Full-local access requires the existing per-launch
 acknowledgement. The user confirmed the enabled app workflow works on 2026-09-12.
-The separate automated real-model call/no-call matrix remains pending.
+The separate automated real-model call/no-call matrix passed on 2026-09-13.
 
 ## Capability Boundary
 
@@ -64,4 +64,4 @@ Full standard suite after enablement: 298 passed, 14 skipped on Windows on 2026-
 - Cloud disclosure tests name that requested host-file content may be sent to
   the selected provider.
 - User-reported manual acceptance of the enabled app workflow is recorded on 2026-09-12.
-- Dedicated automated real-model call/no-call tests remain before broader release promotion.
+- Dedicated automated real-model call/no-call tests passed on 2026-09-13.

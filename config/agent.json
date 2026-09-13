@@ -2,6 +2,7 @@
   "filesystem_stat_enabled": true,
   "filesystem_list_enabled": true,
   "filesystem_read_text_enabled": true,
+  "filesystem_search_enabled": true,
   "filesystem_mkdir_enabled": true,
   "filesystem_write_text_enabled": true,
   "filesystem_copy_enabled": true,

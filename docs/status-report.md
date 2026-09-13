@@ -4,14 +4,12 @@ Date: 2026-09-13
 
 ## Overall status
 
-Phase 10 is continuing on `codex/phase-10-filesystem-trash`, based on approved move checkpoint
-`e1595bc`. The fifth development checkpoint adds approved trashing of one bounded regular file with
-exact target preview and Windows Recycle Bin semantics. Phase 10's planned mutation set is now
-implemented, locally tested, and manually accepted; the local commit is being preserved.
-The user requested this progression while Phase 9 bounded search and the dedicated text-read
-real-model matrix remain outstanding. Phase 9's enabled file-reading workflow was manually
-confirmed on 2026-09-12. Phase 10 text writing, copy, and move were manually reported working on
-2026-09-12. Phase 10 trash was manually reported working on 2026-09-13.
+Phase 9 bounded search is implemented on `codex/phase-9-filesystem-search`, based on the accepted
+Phase 10 trash checkpoint `e5a6092` because the user chose to close the skipped Phase 9 gates after
+finishing the Phase 10 mutation set. `filesystem.search` adds bounded literal UTF-text snippet search
+inside one explicitly requested directory tree. The dedicated text-read real-model call/no-call gate
+and the new search real-model call/no-call gate both passed on 2026-09-13. Manual application
+acceptance for search remains pending before the strict roadmap gate into Phase 11 is fully closed.
 
 ## GUI status: approved and integrated
 
@@ -27,7 +25,7 @@ confirmed on 2026-09-12. Phase 10 text writing, copy, and move were manually rep
 ## Runtime status
 
 - General conversation works through local or cloud inference.
-- `filesystem.stat`, `filesystem.list`, and `filesystem.read_text` are enabled in the checked-in
+- `filesystem.stat`, `filesystem.list`, `filesystem.read_text`, and `filesystem.search` are enabled in the checked-in
   development configuration at the user's explicit request. Missing configuration still defaults
   to disabled, and invalid configuration or native startup failures retain the chat-only fallback.
 - Full-local read scope requires explicit acknowledgement on every application launch. Declining
@@ -39,6 +37,11 @@ confirmed on 2026-09-12. Phase 10 text writing, copy, and move were manually rep
   a summary in the same turn.
 - UI status and host/cloud disclosures now cover requested file content. File contents remain
   untrusted data; the deterministic read path does not execute instructions found inside them.
+- `filesystem.search` has a separate enabled development gate. It searches for literal text inside
+  one explicitly requested directory tree, defaults to depth 3, 256 files, 16,384 bytes per file,
+  and 25 returned matches, and hard-limits depth to 8, files to 1,024, file bytes to 65,536, and
+  matches to 100. It skips symlink/reparse entries and non-UTF or inaccessible files, returns only
+  bounded snippets, and treats snippets and filenames as untrusted data.
 - `filesystem.mkdir` has a separate enabled development gate, disabled when configuration is absent.
   An explicit create-folder request with an absolute path opens an exact-path approval dialog.
   Cancel is the default; approval is single-use and expires after 60 seconds. Read acknowledgement
@@ -78,12 +81,16 @@ confirmed on 2026-09-12. Phase 10 text writing, copy, and move were manually rep
 - Interrupted or unverified writes require review before further operations, including across restart.
   A failed result save also blocks the live session. No automatic retry, rollback, or deletion occurs.
 - Other filesystem mutation, shell/process execution, window control, clipboard access, network
-  paths, device namespaces, and host-wide search are not enabled.
+  paths, device namespaces, background indexing, and unbounded host-wide search are not enabled.
 
 ## Verification
 
-- Complete integrated Phase 10 suite after trash: 459 passed, 14 skipped on Windows on
-  2026-09-13.
+- Complete deterministic suite after Phase 9 search: 485 passed, 17 skipped on Windows on
+  2026-09-13. The suite collected 502 tests; opt-in live gates remain skipped unless explicitly
+  enabled.
+- Opt-in live gates run separately on 2026-09-13: the dedicated `filesystem.read_text` real-model
+  call/no-call matrix passed, and the `filesystem.search` real-model call/no-call matrix passed.
+- Previous integrated Phase 10 suite after trash: 459 passed, 14 skipped on Windows on 2026-09-13.
 - The 161 Phase 10 cases cover actual native folder creation, exact approval, denial, expiry, cancellation,
   collisions, changed parents, protected/reparse paths, read/write isolation, unknown outcomes,
   result-save failure, restart recovery, exact text-write previews, create/replace behavior, target
@@ -95,14 +102,18 @@ confirmed on 2026-09-12. Phase 10 text writing, copy, and move were manually rep
 - Historical Phase 9 suite after enablement: 298 passed, 14 skipped.
 - Deterministic tests cover list-to-read actual content, direct-path reads, literal Markdown fences,
   untrusted-content isolation, strict decoding/bounds, permissions, cancellation, and disclosures.
+- Search deterministic tests cover schema strictness, literal matching, stable ordering, depth/file/
+  entry/match bounds, denied paths, missing and non-directory failures, cancellation, full-local host
+  paths, prompt contract, cloud disclosure, ordinary no-call conversation, deterministic direct search
+  routing, and hostile snippet isolation.
 - Manual Phase 9 workflow acceptance: user confirmed the enabled app works on 2026-09-12.
 - Manual Phase 10 text-write application acceptance: user reported it works on 2026-09-12.
 - Manual Phase 10 copy application acceptance: user reported it works on 2026-09-12.
 - Manual Phase 10 move application acceptance: user reported it works on 2026-09-12.
 - Manual Phase 10 trash application acceptance: user reported it works on 2026-09-13.
+- Manual Phase 9 search application acceptance is pending.
 - Folder create/cancel manual acceptance if not already tested and real-model follow-up conversation
   after writes remain pending.
-- The dedicated automated text-read real-model call/no-call matrix has not been run.
 - Historical GUI baseline visual checks passed at 1920-pixel and 1280-pixel window widths.
 
 ## Known follow-up work
@@ -111,18 +122,23 @@ confirmed on 2026-09-12. Phase 10 text writing, copy, and move were manually rep
 - Malformed conversation JSON still needs a preserve-and-recover path.
 - Conversation state is persisted during the active run but is not replayed visually; each new
   application launch currently starts a fresh private session.
-- Complete the dedicated automated text-read real-model matrix, including ordinary conversation
-  after a read, before proceeding to the next separately designed capability, bounded search.
+- Manually verify `filesystem.search` in the app before treating the strict Phase 9 gate as fully
+  accepted for Phase 11 planning.
 - Fresh-runtime packaging and real-model/UI acceptance remain before portable release promotion.
 - Phase 10 is a development-only feature-branch checkpoint. Trash preview/approve/cancel workflows
   were manually accepted before the next roadmap decision. See `phase10-mkdir-threat-review.md`,
   `phase10-write-text-threat-review.md`, `phase10-copy-threat-review.md`,
   `phase10-move-threat-review.md`, and `phase10-trash-threat-review.md` for protection scope and
   recovery limitations, including nonstandard application/service locations.
+- Phase 9 search is a development-only feature-branch checkpoint on top of the accepted local Phase
+  10 line. It is not pushed, merged, release-promoted, or manually app-accepted yet. See
+  `phase9-search-threat-review.md` for protection scope.
 
 ## Checkpoint scope
 
-- The Phase 10 folder-creation checkpoint is committed on `codex/phase-10-filesystem-mkdir` at
+- The Phase 9 search checkpoint is implemented and tested on `codex/phase-9-filesystem-search`; a
+  local commit is being preserved. The Phase 10 folder-creation checkpoint is committed on
+  `codex/phase-10-filesystem-mkdir` at
   `076007f`. The text-write checkpoint is implemented and tested on
   `codex/phase-10-filesystem-write-text` and committed at `6a8fcbb`; the user reported the
   text-write workflow works on 2026-09-12. The copy checkpoint is committed locally at `9376a7e`;

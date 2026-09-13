@@ -42,6 +42,39 @@ FULL_LOCAL_LIST_TEXT_READ_WARNING = (
     "authority."
 )
 
+FULL_LOCAL_SEARCH_READ_WARNING = (
+    "Full local read access lets O.R.S.I's enabled read-only capabilities use requested files and "
+    "directories across local drives that the current Windows account can access. This build can "
+    "inspect metadata and search for literal text snippets inside one requested directory tree. It "
+    "does not grant write, delete, execute, administrator, network, device, or background-indexing "
+    "authority."
+)
+
+FULL_LOCAL_LIST_SEARCH_READ_WARNING = (
+    "Full local read access lets O.R.S.I's enabled read-only capabilities use requested files and "
+    "directories across local drives that the current Windows account can access. This build can "
+    "inspect metadata, return bounded names and types from one requested directory, and search for "
+    "literal text snippets inside one requested directory tree. It does not grant write, delete, "
+    "execute, administrator, network, device, or background-indexing authority."
+)
+
+FULL_LOCAL_TEXT_SEARCH_READ_WARNING = (
+    "Full local read access lets O.R.S.I's enabled read-only capabilities use requested files and "
+    "directories across local drives that the current Windows account can access. This build can "
+    "inspect metadata, return bounded content from one specifically requested UTF text file, and "
+    "search for literal text snippets inside one requested directory tree. It does not grant write, "
+    "delete, execute, administrator, network, device, or background-indexing authority."
+)
+
+FULL_LOCAL_LIST_TEXT_SEARCH_READ_WARNING = (
+    "Full local read access lets O.R.S.I's enabled read-only capabilities use requested files and "
+    "directories across local drives that the current Windows account can access. This build can "
+    "inspect metadata, return bounded names and types from one requested directory, return bounded "
+    "content from one specifically requested UTF text file, and search for literal text snippets "
+    "inside one requested directory tree. It does not grant write, delete, execute, administrator, "
+    "network, device, or background-indexing authority."
+)
+
 CLOUD_FILE_CONTENT_WARNING = (
     "In Cloud mode, requested host-file content and related conversation context may be sent to "
     "the selected provider. Do not enable Cloud mode for confidential host data."

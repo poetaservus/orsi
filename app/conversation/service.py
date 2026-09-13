@@ -216,10 +216,16 @@ class ConversationService:
                     call.capability == "filesystem.read_text" for call in required_calls
                 ):
                     answer = _render_text_result(required_calls, turn_results)
+                elif required_calls and all(
+                    call.capability == "filesystem.search" for call in required_calls
+                ):
+                    answer = _render_search_result(required_calls, turn_results)
                 completed_capabilities = {
                     call.capability for call, _result in turn_results
                 }
-                if "filesystem.read_text" in completed_capabilities:
+                if "filesystem.search" in completed_capabilities:
+                    self._last_filesystem_operation = "search"
+                elif "filesystem.read_text" in completed_capabilities:
                     self._last_filesystem_operation = "read_text"
                 elif "filesystem.stat" in completed_capabilities:
                     self._last_filesystem_operation = "metadata"
@@ -556,6 +562,10 @@ class ConversationService:
             r"\bfilesystem[.]read_text\b", lowered
         ):
             return True
+        if "filesystem.search" in available and re.search(
+            r"\bfilesystem[.]search\b", lowered
+        ):
+            return True
 
         filesystem_object = re.search(
             r"\b(?:files?|folders?|directories|directory|paths?|drives?|entries|contents)\b",
@@ -569,6 +579,12 @@ class ConversationService:
             "filesystem.read_text" in available
             and _is_text_read_request(lowered)
             and (self._text_read_target(text) is not None or path_like is not None)
+        ):
+            return True
+        if (
+            "filesystem.search" in available
+            and _is_search_request(lowered)
+            and (_search_target_and_query(text) is not None or path_like is not None)
         ):
             return True
         if "filesystem.stat" in available:
@@ -616,6 +632,19 @@ class ConversationService:
     ) -> tuple[ModelCapabilityCall, ...]:
         listing = self._active_listing
         lowered = " ".join(str(text).casefold().split())
+        search_target = _search_target_and_query(text)
+        if (
+            search_target is not None
+            and "filesystem.search" in self.agent_capabilities
+        ):
+            search_path, query = search_target
+            return (
+                ModelCapabilityCall(
+                    provider_call_id=f"required-{self._turn_number}-1",
+                    capability="filesystem.search",
+                    arguments={"path": search_path, "query": query},
+                ),
+            )
         read_text_target = self._text_read_target(text)
         if (
             read_text_target is not None
@@ -1145,6 +1174,53 @@ def _render_text_result(
     return answer
 
 
+def _render_search_result(
+    _required_calls: tuple[ModelCapabilityCall, ...],
+    observed_results: list[tuple],
+) -> str:
+    result = next(
+        (
+            observed
+            for call, observed in observed_results
+            if call.capability == "filesystem.search"
+        ),
+        None,
+    )
+    if result is None:
+        return "The search results were not returned."
+    if not result.success:
+        message = (
+            result.error.message
+            if result.error is not None
+            else "The filesystem search failed."
+        )
+        return _safe_text(message)
+    output = result.output or {}
+    query = _safe_text(str(output.get("query", "")))
+    matches = output.get("matches")
+    if not isinstance(matches, list) or not matches:
+        return f"No matches were found for {_safe_text(query)!r}."
+    lines = [f"Found {len(matches)} match{'es' if len(matches) != 1 else ''} for {_safe_text(query)!r}:"]
+    for match in matches:
+        if not isinstance(match, dict):
+            continue
+        relative_path = _safe_filename(str(match.get("relative_path", "file")))
+        line_number = match.get("line_number")
+        line_label = line_number if isinstance(line_number, int) and not isinstance(line_number, bool) else "?"
+        snippet = _safe_text(str(match.get("snippet", "")))
+        lines.append(f"- {relative_path}:{line_label}: {snippet}")
+    notices: list[str] = []
+    if output.get("truncated_by_matches") is True:
+        notices.append("More matches exist beyond the configured match limit.")
+    if isinstance(output.get("truncated_files"), int) and output["truncated_files"]:
+        notices.append("Some files were searched only up to the configured byte limit.")
+    if isinstance(output.get("skipped_files"), int) and output["skipped_files"]:
+        notices.append("Some files were skipped because they were inaccessible or not UTF text.")
+    if notices:
+        lines.extend(("", *notices))
+    return "\n".join(lines)
+
+
 def _markdown_code_fence(text: str) -> str:
     longest_run = max(
         (len(match.group(0)) for match in re.finditer(r"`+", text)),
@@ -1210,3 +1286,81 @@ def _is_text_read_request(lowered: str) -> bool:
             lowered,
         )
     )
+
+
+def _is_search_request(lowered: str) -> bool:
+    return bool(
+        re.search(r"\bfilesystem[.]search\b", lowered)
+        or re.search(r"\b(?:search|find|look\s+for)\b", lowered)
+        or re.search(r"\b(?:files?|documents?)\b.{0,60}\b(?:containing|matching)\b", lowered)
+    )
+
+
+def _search_target_and_query(text: str) -> tuple[str, str] | None:
+    value = str(text).strip()
+    lowered = " ".join(value.casefold().split())
+    if not _is_search_request(lowered):
+        return None
+
+    quoted_path = re.search(r"[\"']([A-Za-z]:[\\/][^\"']+)[\"']", value)
+    if quoted_path is not None:
+        path = quoted_path.group(1).strip()
+        query = _first_quoted_search_query(value, path)
+        if query is None:
+            query = _query_around_path(value, path)
+        return (path, query) if query else None
+
+    path_then_query = re.search(
+        r"(?is)\b(?:search|find)\b\s+([a-z]:[\\/].+?)\s+\b(?:for|containing|matching)\s+(.+)$",
+        value,
+    )
+    if path_then_query is not None:
+        path = path_then_query.group(1).strip().rstrip("?!.,;:\"'")
+        query = _clean_search_query(path_then_query.group(2))
+        return (path, query) if path and query else None
+
+    query_then_path = re.search(
+        r"(?is)\b(?:search|find|look\s+for)\b(?:\s+for)?\s+(.+?)\s+\b(?:in|inside|under|within)\s+([a-z]:[\\/].+)$",
+        value,
+    )
+    if query_then_path is not None:
+        query = _clean_search_query(query_then_path.group(1))
+        path = query_then_path.group(2).strip().rstrip("?!.,;:\"'")
+        return (path, query) if path and query else None
+
+    return None
+
+
+def _first_quoted_search_query(value: str, path: str) -> str | None:
+    for match in re.finditer(r"[\"']([^\"']+)[\"']", value):
+        candidate = match.group(1).strip()
+        if candidate.casefold() == path.casefold():
+            continue
+        if re.search(r"(?i)^[a-z]:[\\/]", candidate):
+            continue
+        query = _clean_search_query(candidate)
+        if query:
+            return query
+    return None
+
+
+def _query_around_path(value: str, path: str) -> str | None:
+    escaped_path = re.escape(path)
+    after = re.search(rf"(?is){escaped_path}[\"']?\s+\b(?:for|containing|matching)\s+(.+)$", value)
+    if after is not None:
+        return _clean_search_query(after.group(1))
+    before = re.search(
+        rf"(?is)\b(?:search|find|look\s+for)\b(?:\s+for)?\s+(.+?)\s+\b(?:in|inside|under|within)\s+[\"']?{escaped_path}",
+        value,
+    )
+    if before is not None:
+        return _clean_search_query(before.group(1))
+    return None
+
+
+def _clean_search_query(value: str) -> str:
+    query = str(value).strip().strip("\"'").strip().rstrip("?!.,;")
+    query = re.sub(r"(?i)^(?:literal\s+)?(?:text|phrase|string)\s+", "", query).strip()
+    if "\x00" in query or len(query) > 512:
+        return ""
+    return query

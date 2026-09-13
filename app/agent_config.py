@@ -11,6 +11,7 @@ from app.paths import PATHS
 _FILESYSTEM_STAT_GATE = "ORSI_ENABLE_FILESYSTEM_STAT"
 _FILESYSTEM_LIST_GATE = "ORSI_ENABLE_FILESYSTEM_LIST"
 _FILESYSTEM_READ_TEXT_GATE = "ORSI_ENABLE_FILESYSTEM_READ_TEXT"
+_FILESYSTEM_SEARCH_GATE = "ORSI_ENABLE_FILESYSTEM_SEARCH"
 _FILESYSTEM_MKDIR_GATE = "ORSI_ENABLE_FILESYSTEM_MKDIR"
 _FILESYSTEM_WRITE_TEXT_GATE = "ORSI_ENABLE_FILESYSTEM_WRITE_TEXT"
 _FILESYSTEM_COPY_GATE = "ORSI_ENABLE_FILESYSTEM_COPY"
@@ -29,6 +30,7 @@ class AgentFeatureConfig(BaseModel):
     filesystem_stat_enabled: bool = False
     filesystem_list_enabled: bool = False
     filesystem_read_text_enabled: bool = False
+    filesystem_search_enabled: bool = False
     filesystem_mkdir_enabled: bool = False
     filesystem_write_text_enabled: bool = False
     filesystem_copy_enabled: bool = False
@@ -56,6 +58,10 @@ class AgentFeatureConfig(BaseModel):
             raise ValueError(
                 "Text-file reading requires the filesystem metadata agent."
             )
+        if self.filesystem_search_enabled and not self.filesystem_stat_enabled:
+            raise ValueError(
+                "Filesystem search requires the filesystem metadata agent."
+            )
         if self.full_local_read_enabled and not self.filesystem_stat_enabled:
             raise ValueError(
                 "Full local read access requires the filesystem metadata agent."
@@ -72,6 +78,7 @@ def load_agent_feature_config() -> AgentFeatureConfig:
         (_FILESYSTEM_STAT_GATE, "filesystem_stat_enabled"),
         (_FILESYSTEM_LIST_GATE, "filesystem_list_enabled"),
         (_FILESYSTEM_READ_TEXT_GATE, "filesystem_read_text_enabled"),
+        (_FILESYSTEM_SEARCH_GATE, "filesystem_search_enabled"),
         (_FILESYSTEM_MKDIR_GATE, "filesystem_mkdir_enabled"),
         (_FILESYSTEM_WRITE_TEXT_GATE, "filesystem_write_text_enabled"),
         (_FILESYSTEM_COPY_GATE, "filesystem_copy_enabled"),

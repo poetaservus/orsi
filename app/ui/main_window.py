@@ -704,14 +704,15 @@ class MainWindow(QMainWindow):
         if self._agent_enabled():
             listing_enabled = self._filesystem_list_enabled()
             text_read_enabled = self._filesystem_read_text_enabled()
-            if listing_enabled and text_read_enabled:
-                read_capabilities = "Metadata + listing + text"
-            elif listing_enabled:
-                read_capabilities = "Metadata + listing"
-            elif text_read_enabled:
-                read_capabilities = "Metadata + text"
-            else:
-                read_capabilities = "Metadata only"
+            search_enabled = self._filesystem_search_enabled()
+            parts = ["Metadata"]
+            if listing_enabled:
+                parts.append("listing")
+            if text_read_enabled:
+                parts.append("text")
+            if search_enabled:
+                parts.append("search")
+            read_capabilities = "Metadata only" if parts == ["Metadata"] else " + ".join(parts)
             read_status = (
                 f"Full local read · {read_capabilities}"
                 if self._host_read_scope() == HostReadScope.FULL_LOCAL
@@ -808,6 +809,10 @@ class MainWindow(QMainWindow):
         values = getattr(self.service, "agent_capabilities", ())
         return isinstance(values, tuple) and "filesystem.read_text" in values
 
+    def _filesystem_search_enabled(self) -> bool:
+        values = getattr(self.service, "agent_capabilities", ())
+        return isinstance(values, tuple) and "filesystem.search" in values
+
     def _cloud_privacy_message(self) -> str:
         provider = self.inference.cloud_provider_name
         if self._agent_enabled():
@@ -818,33 +823,39 @@ class MainWindow(QMainWindow):
             )
             listing_enabled = self._filesystem_list_enabled()
             text_read_enabled = self._filesystem_read_text_enabled()
-            if listing_enabled and text_read_enabled:
-                results = (
-                    "filesystem.stat metadata, filesystem.list directory names and types, and "
-                    "filesystem.read_text file content"
-                )
-                access = (
-                    "inspect metadata, list one requested directory, or read bounded text from one "
-                    "specifically requested file"
-                )
-            elif text_read_enabled:
-                results = "filesystem.stat metadata and filesystem.read_text file content"
-                access = (
-                    "inspect metadata or read bounded text from one specifically requested file"
-                )
-            elif listing_enabled:
-                results = (
-                    "filesystem.stat metadata and filesystem.list directory names and types"
-                )
-                access = "inspect metadata or list one requested directory"
-            else:
-                results = "filesystem.stat metadata results"
-                access = "inspect metadata for one requested file or directory"
+            search_enabled = self._filesystem_search_enabled()
+            result_parts = ["filesystem.stat metadata"]
+            access_parts = ["inspect metadata"]
+            if listing_enabled:
+                result_parts.append("filesystem.list directory names and types")
+                access_parts.append("list one requested directory")
             if text_read_enabled:
-                boundary = "but cannot search, write, or perform other computer actions"
-                confidentiality = "File content and directory or file names may be confidential"
+                result_parts.append("filesystem.read_text file content")
+                access_parts.append("read bounded text from one specifically requested file")
+            if search_enabled:
+                result_parts.append("filesystem.search matching snippets")
+                access_parts.append("search bounded text snippets inside one requested directory")
+            if len(result_parts) == 1:
+                results = f"{result_parts[0]} results"
+            elif len(result_parts) == 2:
+                results = " and ".join(result_parts)
             else:
-                boundary = "but cannot read file content or perform other computer actions"
+                results = ", ".join(result_parts[:-1]) + f", and {result_parts[-1]}"
+            if len(access_parts) == 1:
+                access = f"{access_parts[0]} for one requested file or directory"
+            elif len(access_parts) == 2:
+                access = " or ".join(access_parts)
+            else:
+                access = ", ".join(access_parts[:-1]) + f", or {access_parts[-1]}"
+            if text_read_enabled or search_enabled:
+                boundary = "but cannot write or perform other computer actions"
+                confidentiality = (
+                    "File content, snippets, and directory or file names may be confidential"
+                    if search_enabled
+                    else "File content and directory or file names may be confidential"
+                )
+            else:
+                boundary = "but cannot read file content, search, or perform other computer actions"
                 confidentiality = "Directory and file names may be confidential"
             mkdir_enabled = "filesystem.mkdir" in getattr(self.service, "agent_capabilities", ())
             text_write_enabled = "filesystem.write_text" in getattr(self.service, "agent_capabilities", ())

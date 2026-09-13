@@ -17,8 +17,12 @@ from app.agent_config import AgentFeatureConfig, load_agent_feature_config
 from app.conversation import ConversationService, ConversationStore
 from app.host_access import (
     FULL_LOCAL_LIST_READ_WARNING,
+    FULL_LOCAL_LIST_SEARCH_READ_WARNING,
+    FULL_LOCAL_LIST_TEXT_SEARCH_READ_WARNING,
     FULL_LOCAL_LIST_TEXT_READ_WARNING,
     FULL_LOCAL_READ_WARNING,
+    FULL_LOCAL_SEARCH_READ_WARNING,
+    FULL_LOCAL_TEXT_SEARCH_READ_WARNING,
     FULL_LOCAL_TEXT_READ_WARNING,
     HostAccessPolicy,
 )
@@ -78,6 +82,7 @@ def build_application(
                     "filesystem_stat_enabled": False,
                     "filesystem_list_enabled": False,
                     "filesystem_read_text_enabled": False,
+                    "filesystem_search_enabled": False,
                     "filesystem_mkdir_enabled": False,
                     "filesystem_write_text_enabled": False,
                     "filesystem_copy_enabled": False,
@@ -222,6 +227,7 @@ def main() -> int:
             filesystem_read_text_enabled=(
                 startup_agent_config.filesystem_read_text_enabled
             ),
+            filesystem_search_enabled=startup_agent_config.filesystem_search_enabled,
         )
     service, host, error, inference = build_application(
         agent_config_override=startup_agent_config,
@@ -236,6 +242,7 @@ def request_full_local_read_acknowledgement(
     *,
     filesystem_list_enabled: bool = False,
     filesystem_read_text_enabled: bool = False,
+    filesystem_search_enabled: bool = False,
 ) -> bool:
     """Ask once per launch before host-wide read authority can be constructed."""
     from PySide6.QtWidgets import QMessageBox
@@ -244,7 +251,21 @@ def request_full_local_read_acknowledgement(
         raise TypeError("Filesystem listing acknowledgement state must be a boolean.")
     if not isinstance(filesystem_read_text_enabled, bool):
         raise TypeError("Filesystem text-read acknowledgement state must be a boolean.")
-    if filesystem_read_text_enabled:
+    if not isinstance(filesystem_search_enabled, bool):
+        raise TypeError("Filesystem search acknowledgement state must be a boolean.")
+    if filesystem_search_enabled and filesystem_read_text_enabled:
+        warning = (
+            FULL_LOCAL_LIST_TEXT_SEARCH_READ_WARNING
+            if filesystem_list_enabled
+            else FULL_LOCAL_TEXT_SEARCH_READ_WARNING
+        )
+    elif filesystem_search_enabled:
+        warning = (
+            FULL_LOCAL_LIST_SEARCH_READ_WARNING
+            if filesystem_list_enabled
+            else FULL_LOCAL_SEARCH_READ_WARNING
+        )
+    elif filesystem_read_text_enabled:
         warning = (
             FULL_LOCAL_LIST_TEXT_READ_WARNING
             if filesystem_list_enabled

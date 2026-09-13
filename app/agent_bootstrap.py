@@ -14,6 +14,7 @@ from app.capabilities.filesystem_copy import FilesystemCopyCapability
 from app.capabilities.filesystem_list import FilesystemListCapability
 from app.capabilities.filesystem_move import FilesystemMoveCapability
 from app.capabilities.filesystem_read_text import FilesystemReadTextCapability
+from app.capabilities.filesystem_search import FilesystemSearchCapability
 from app.capabilities.filesystem_stat import FilesystemStatCapability
 from app.capabilities.filesystem_trash import FilesystemTrashCapability
 from app.capabilities.filesystem_mkdir import FilesystemMkdirCapability
@@ -104,6 +105,14 @@ def build_filesystem_stat_runtime(
                 model_visible=True,
             )
         )
+    if config.filesystem_search_enabled:
+        registrations.append(
+            CapabilityRegistration(
+                FilesystemSearchCapability(),
+                enabled=True,
+                model_visible=True,
+            )
+        )
     if config.filesystem_mkdir_enabled:
         registrations.append(CapabilityRegistration(
             FilesystemMkdirCapability(HostWritePolicy(root, (state_directory,))),
@@ -165,6 +174,16 @@ def build_filesystem_stat_runtime(
                     resource_root=root,
                 )
             )
+        if config.filesystem_search_enabled:
+            permission_rules.append(
+                PermissionRule(
+                    "phase9-portable-root-search",
+                    PermissionDecision.ALLOW,
+                    permission=PermissionClass.READ,
+                    capability_pattern="filesystem.search",
+                    resource_root=root,
+                )
+            )
     else:
         permission_rules = []
         for permission_root in permission_roots:
@@ -195,6 +214,16 @@ def build_filesystem_stat_runtime(
                         PermissionDecision.ALLOW,
                         permission=PermissionClass.READ,
                         capability_pattern="filesystem.read_text",
+                        resource_root=permission_root,
+                    )
+                )
+            if config.filesystem_search_enabled:
+                permission_rules.append(
+                    PermissionRule(
+                        f"phase9-local-{drive}-search",
+                        PermissionDecision.ALLOW,
+                        permission=PermissionClass.READ,
+                        capability_pattern="filesystem.search",
                         resource_root=permission_root,
                     )
                 )
