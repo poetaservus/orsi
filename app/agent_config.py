@@ -15,6 +15,7 @@ _FILESYSTEM_MKDIR_GATE = "ORSI_ENABLE_FILESYSTEM_MKDIR"
 _FILESYSTEM_WRITE_TEXT_GATE = "ORSI_ENABLE_FILESYSTEM_WRITE_TEXT"
 _FILESYSTEM_COPY_GATE = "ORSI_ENABLE_FILESYSTEM_COPY"
 _FILESYSTEM_MOVE_GATE = "ORSI_ENABLE_FILESYSTEM_MOVE"
+_FILESYSTEM_TRASH_GATE = "ORSI_ENABLE_FILESYSTEM_TRASH"
 _FULL_LOCAL_READ_GATE = "ORSI_ENABLE_FULL_LOCAL_READ"
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 _FALSE_VALUES = {"0", "false", "no", "off"}
@@ -32,6 +33,7 @@ class AgentFeatureConfig(BaseModel):
     filesystem_write_text_enabled: bool = False
     filesystem_copy_enabled: bool = False
     filesystem_move_enabled: bool = False
+    filesystem_trash_enabled: bool = False
     full_local_read_enabled: bool = False
 
     @model_validator(mode="after")
@@ -44,6 +46,8 @@ class AgentFeatureConfig(BaseModel):
             raise ValueError("File copying requires the filesystem metadata agent.")
         if self.filesystem_move_enabled and not self.filesystem_stat_enabled:
             raise ValueError("File moving requires the filesystem metadata agent.")
+        if self.filesystem_trash_enabled and not self.filesystem_stat_enabled:
+            raise ValueError("File trashing requires the filesystem metadata agent.")
         if self.filesystem_list_enabled and not self.filesystem_stat_enabled:
             raise ValueError(
                 "Directory listing requires the filesystem metadata agent."
@@ -72,6 +76,7 @@ def load_agent_feature_config() -> AgentFeatureConfig:
         (_FILESYSTEM_WRITE_TEXT_GATE, "filesystem_write_text_enabled"),
         (_FILESYSTEM_COPY_GATE, "filesystem_copy_enabled"),
         (_FILESYSTEM_MOVE_GATE, "filesystem_move_enabled"),
+        (_FILESYSTEM_TRASH_GATE, "filesystem_trash_enabled"),
         (_FULL_LOCAL_READ_GATE, "full_local_read_enabled"),
     ):
         override = os.environ.get(name)

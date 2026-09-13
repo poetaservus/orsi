@@ -6,5 +6,6 @@
   "filesystem_write_text_enabled": true,
   "filesystem_copy_enabled": true,
   "filesystem_move_enabled": true,
+  "filesystem_trash_enabled": true,
   "full_local_read_enabled": true
 }

@@ -144,6 +144,12 @@ class ConversationService:
                 if self.agent_enabled:
                     self._agent_history.append({"role": "assistant", "content": answer})
                 return answer
+            if _is_trash_request(text):
+                answer = self._trash_file(text, source, activity)
+                self.store.append("assistant", answer)
+                if self.agent_enabled:
+                    self._agent_history.append({"role": "assistant", "content": answer})
+                return answer
             capability_turn = self.agent_enabled and self._requires_capabilities(text)
             if activity:
                 activity("Working..." if capability_turn else "Thinking...")
@@ -251,7 +257,7 @@ class ConversationService:
     def _read_capabilities(self) -> tuple[str, ...]:
         return tuple(
             name for name in self.agent_capabilities
-            if name not in {"filesystem.mkdir", "filesystem.write_text", "filesystem.copy", "filesystem.move"}
+            if name not in {"filesystem.mkdir", "filesystem.write_text", "filesystem.copy", "filesystem.move", "filesystem.trash"}
         )
 
     def _create_folder(self, text, source, activity) -> str:
@@ -406,6 +412,42 @@ class ConversationService:
         output = outcome.output or {}
         return (f"Moved file: {output['destination_path']} "
                 f"({output['bytes_moved']:,} bytes, {output['operation']}).")
+
+    def _trash_file(self, text, source, activity) -> str:
+        self._last_filesystem_operation = None
+        if "filesystem.trash" not in self.agent_capabilities:
+            return "File trashing is not enabled. No file was changed."
+        target = _trash_target(text)
+        if target is None:
+            return "Tell me the exact file path to send to the Recycle Bin, for example: trash C:\\Users\\you\\Desktop\\old.txt"
+        self._turn_number += 1
+        call = ModelCapabilityCall(
+            provider_call_id=f"required-{self._turn_number}-1",
+            capability="filesystem.trash", arguments={"path": target},
+        )
+        observed = []
+        if activity:
+            activity("Preparing trash approval...")
+        result = self.agent_runtime.run(
+            [{"role": "user", "content": text}],
+            session_id=self._session_id, turn_id=f"turn-{self._turn_number}",
+            portable_root=self.portable_root, allowed_read_roots=self.allowed_read_roots,
+            host_access_policy=self.host_access_policy, cancellation=source.token,
+            required_calls=(call,), capability_names=("filesystem.trash",),
+            result_observer=lambda calls, results: observed.extend(results),
+        )
+        if result.status == AgentRunStatus.CANCELLED:
+            return "File trashing was cancelled before execution."
+        if result.status != AgentRunStatus.COMPLETED:
+            raise RuntimeError(result.message or "File trashing did not complete.")
+        if not observed:
+            raise RuntimeError("The file-trash result was not returned.")
+        outcome = observed[0]
+        if not outcome.success:
+            return outcome.error.message if outcome.error else "The file could not be sent to the Recycle Bin."
+        self._active_listing = None
+        output = outcome.output or {}
+        return f"Sent file to Recycle Bin: {output['path']} ({output['bytes_trashed']:,} bytes)."
 
     def cancel_current_task(self) -> bool:
         with self._cancellation_lock:
@@ -934,6 +976,32 @@ def _move_request(text: str) -> tuple[str, str, str] | None:
     if source is None or destination is None:
         return None
     return source, destination, on_collision
+
+
+_TRASH_START = re.compile(
+    r"\A(?:please\s+)?(?:(?:can|could|would)\s+you\s+)?(?:filesystem[.]trash|trash|recycle|delete)\b",
+    re.I,
+)
+
+
+def _is_trash_request(text: str) -> bool:
+    value = str(text).strip()
+    if _TRASH_START.match(value) is None:
+        return False
+    return _trash_target(value) is not None or re.search(r"[A-Za-z]:[\\/]", value) is not None
+
+
+def _trash_target(text: str) -> str | None:
+    value = str(text).strip()
+    match = _TRASH_START.match(value)
+    if match is None:
+        return None
+    lowered = " ".join(value.casefold().split())
+    if re.search(r"\b(?:permanently\s+delete|delete\s+permanently|remove\s+permanently)\b", lowered):
+        return None
+    remainder = value[match.end():].strip()
+    remainder = re.sub(r"^(?:file\s+)?(?:at\s+)?(?:path\s+)?", "", remainder, flags=re.I)
+    return _write_path_argument(remainder)
 
 
 def _conversation_turn_groups(history: list[dict]) -> list[list[dict]]:

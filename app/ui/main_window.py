@@ -351,6 +351,9 @@ class MainWindow(QMainWindow):
         if record.capability == "filesystem.move":
             self._show_move_approval(record)
             return
+        if record.capability == "filesystem.trash":
+            self._show_trash_approval(record)
+            return
         self.service.resolve_approval(record.approval_id, False)
 
     def _show_folder_approval(self, record) -> None:
@@ -517,6 +520,61 @@ class MainWindow(QMainWindow):
         dialog.open()
         cancel.setFocus()
 
+    def _show_trash_approval(self, record) -> None:
+        preview = getattr(record, "approval_preview", None)
+        if record.capability != "filesystem.trash" or not record.resource or not isinstance(preview, str):
+            self.service.resolve_approval(record.approval_id, False)
+            return
+        if self.service.approval_status(record.approval_id) != "pending":
+            return
+        dialog = QDialog(self)
+        dialog.setObjectName("trashApproval")
+        dialog.setWindowTitle("Send file to Recycle Bin?")
+        dialog.setWindowModality(Qt.WindowModality.WindowModal)
+        dialog.resize(640, 320)
+        layout = QVBoxLayout(dialog)
+        layout.addWidget(QLabel("Send this file to the Windows Recycle Bin:", dialog))
+        details = QPlainTextEdit(dialog)
+        details.setObjectName("approvalDetails")
+        details.setPlainText(preview)
+        details.setReadOnly(True)
+        layout.addWidget(details, 1)
+        notice = QLabel("Approval is for this exact file only. Directories and permanent deletion are not part of this checkpoint.", dialog)
+        notice.setWordWrap(True)
+        layout.addWidget(notice)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel, dialog)
+        trash = buttons.addButton("Send to Recycle Bin", QDialogButtonBox.ButtonRole.AcceptRole)
+        trash.setObjectName("approveTrash")
+        trash.setAutoDefault(False)
+        cancel = buttons.button(QDialogButtonBox.StandardButton.Cancel)
+        cancel.setDefault(True)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        timer = QTimer(dialog)
+
+        def refresh():
+            try:
+                pending = self.service.approval_status(record.approval_id) == "pending"
+            except (LookupError, ValueError):
+                pending = False
+            if not pending:
+                dialog.reject()
+
+        def finish(code):
+            timer.stop()
+            self.service.resolve_approval(record.approval_id, code == QDialog.DialogCode.Accepted)
+            self._approval_dialog = None
+            dialog.deleteLater()
+
+        timer.timeout.connect(refresh)
+        dialog.finished.connect(finish)
+        self._approval_dialog = dialog
+        self.activity.set_activity("Waiting for trash approval...")
+        timer.start(100)
+        dialog.open()
+        cancel.setFocus()
+
     def _show_text_write_approval(self, record) -> None:
         preview = getattr(record, "approval_preview", None)
         if record.capability != "filesystem.write_text" or not record.resource or not isinstance(preview, str):
@@ -667,6 +725,8 @@ class MainWindow(QMainWindow):
                 read_status += " · Copy approval"
             if "filesystem.move" in getattr(self.service, "agent_capabilities", ()):
                 read_status += " · Move approval"
+            if "filesystem.trash" in getattr(self.service, "agent_capabilities", ()):
+                read_status += " · Trash approval"
             if self.inference.mode == "cloud":
                 return (
                     f"Cloud key needed · Agent · {read_status}"
@@ -790,6 +850,7 @@ class MainWindow(QMainWindow):
             text_write_enabled = "filesystem.write_text" in getattr(self.service, "agent_capabilities", ())
             copy_enabled = "filesystem.copy" in getattr(self.service, "agent_capabilities", ())
             move_enabled = "filesystem.move" in getattr(self.service, "agent_capabilities", ())
+            trash_enabled = "filesystem.trash" in getattr(self.service, "agent_capabilities", ())
             write_actions = []
             approved_results = []
             if mkdir_enabled:
@@ -804,13 +865,18 @@ class MainWindow(QMainWindow):
             if move_enabled:
                 write_actions.append("move one regular file")
                 approved_results.append("move paths")
+            if trash_enabled:
+                write_actions.append("send one regular file to the Recycle Bin")
+                approved_results.append("trash paths")
             if write_actions:
                 if len(write_actions) == 1:
                     actions = write_actions[0]
                 else:
                     actions = ", ".join(write_actions[:-1]) + f", or {write_actions[-1]}"
                 delete_boundary = (
-                    "it cannot trash entries or delete anything except the source of an approved move"
+                    "it cannot permanently delete entries or trash directories"
+                    if trash_enabled
+                    else "it cannot trash entries or delete anything except the source of an approved move"
                     if move_enabled
                     else "it cannot move, trash, or delete entries"
                 )
@@ -859,11 +925,11 @@ class MainWindow(QMainWindow):
 
 
 _STYLE = """
-QDialog#folderApproval, QDialog#writeApproval, QDialog#copyApproval, QDialog#moveApproval {
+QDialog#folderApproval, QDialog#writeApproval, QDialog#copyApproval, QDialog#moveApproval, QDialog#trashApproval {
     background: #202224;
     color: #ededed;
 }
-QDialog#folderApproval QLabel, QDialog#writeApproval QLabel, QDialog#copyApproval QLabel, QDialog#moveApproval QLabel {
+QDialog#folderApproval QLabel, QDialog#writeApproval QLabel, QDialog#copyApproval QLabel, QDialog#moveApproval QLabel, QDialog#trashApproval QLabel {
     color: #dedede;
     font-family: Arial;
     font-size: 14px;
@@ -877,7 +943,7 @@ QPlainTextEdit#approvalPath, QPlainTextEdit#approvalContent, QPlainTextEdit#appr
     font-size: 14px;
     selection-background-color: #355e7e;
 }
-QDialog#folderApproval QPushButton, QDialog#writeApproval QPushButton, QDialog#copyApproval QPushButton, QDialog#moveApproval QPushButton {
+QDialog#folderApproval QPushButton, QDialog#writeApproval QPushButton, QDialog#copyApproval QPushButton, QDialog#moveApproval QPushButton, QDialog#trashApproval QPushButton {
     background: #34383b;
     color: #f1f1f1;
     border: 1px solid #64696d;
@@ -886,8 +952,8 @@ QDialog#folderApproval QPushButton, QDialog#writeApproval QPushButton, QDialog#c
     font-family: Arial;
     font-size: 14px;
 }
-QDialog#folderApproval QPushButton:focus, QDialog#writeApproval QPushButton:focus, QDialog#copyApproval QPushButton:focus, QDialog#moveApproval QPushButton:focus { border: 2px solid #91bfe0; }
-QDialog#folderApproval QPushButton:hover, QDialog#writeApproval QPushButton:hover, QDialog#copyApproval QPushButton:hover, QDialog#moveApproval QPushButton:hover { background: #42484d; }
+QDialog#folderApproval QPushButton:focus, QDialog#writeApproval QPushButton:focus, QDialog#copyApproval QPushButton:focus, QDialog#moveApproval QPushButton:focus, QDialog#trashApproval QPushButton:focus { border: 2px solid #91bfe0; }
+QDialog#folderApproval QPushButton:hover, QDialog#writeApproval QPushButton:hover, QDialog#copyApproval QPushButton:hover, QDialog#moveApproval QPushButton:hover, QDialog#trashApproval QPushButton:hover { background: #42484d; }
 QMainWindow#mainWindow, QWidget#root {
     background: #121416;
     color: #ababab;

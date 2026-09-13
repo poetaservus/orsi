@@ -1,17 +1,17 @@
 # O.R.S.I status report
 
-Date: 2026-09-12
+Date: 2026-09-13
 
 ## Overall status
 
-Phase 10 is continuing on `codex/phase-10-filesystem-move`, based on approved copy checkpoint
-`9376a7e`. The fourth development checkpoint adds approved moving of one bounded regular file with
-exact source, destination, and collision-policy preview. Phase 10 is not complete: trash remains
-unimplemented.
+Phase 10 is continuing on `codex/phase-10-filesystem-trash`, based on approved move checkpoint
+`e1595bc`. The fifth development checkpoint adds approved trashing of one bounded regular file with
+exact target preview and Windows Recycle Bin semantics. Phase 10's planned mutation set is now
+implemented, locally tested, and manually accepted; the local commit is being preserved.
 The user requested this progression while Phase 9 bounded search and the dedicated text-read
 real-model matrix remain outstanding. Phase 9's enabled file-reading workflow was manually
 confirmed on 2026-09-12. Phase 10 text writing, copy, and move were manually reported working on
-2026-09-12.
+2026-09-12. Phase 10 trash was manually reported working on 2026-09-13.
 
 ## GUI status: approved and integrated
 
@@ -68,6 +68,13 @@ confirmed on 2026-09-12. Phase 10 text writing, copy, and move were manually rep
   rename/replace placement and verify the destination digest. Cross-drive moves copy through a
   same-directory destination temp file, verify placement, then remove the source. If the source or
   destination changes after preview, the move is denied.
+- `filesystem.trash` has a separate enabled development gate and mandatory approval. Exact trash,
+  recycle, or plain delete requests include one target path and reject permanent-delete wording. The
+  approval dialog shows the exact target and Recycle Bin destination; Cancel remains the default.
+- File trashing is limited to 16 MiB and regular non-reparse files. The operation binds the target
+  identity, target SHA-256 digest, and parent identity before approval, rechecks them after approval,
+  then uses the Windows shell file-operation API with Recycle Bin semantics. Automated tests fake the
+  dispatcher; the real shell operation was manually reported working on 2026-09-13.
 - Interrupted or unverified writes require review before further operations, including across restart.
   A failed result save also blocks the live session. No automatic retry, rollback, or deletion occurs.
 - Other filesystem mutation, shell/process execution, window control, clipboard access, network
@@ -75,14 +82,15 @@ confirmed on 2026-09-12. Phase 10 text writing, copy, and move were manually rep
 
 ## Verification
 
-- Complete integrated Phase 10 suite after move: 429 passed, 14 skipped on Windows on
-  2026-09-12.
-- The 131 Phase 10 cases cover actual native folder creation, exact approval, denial, expiry, cancellation,
+- Complete integrated Phase 10 suite after trash: 459 passed, 14 skipped on Windows on
+  2026-09-13.
+- The 161 Phase 10 cases cover actual native folder creation, exact approval, denial, expiry, cancellation,
   collisions, changed parents, protected/reparse paths, read/write isolation, unknown outcomes,
   result-save failure, restart recovery, exact text-write previews, create/replace behavior, target
   replacement after approval, exact copy previews, collision policy, source/destination changes after
-  approval, exact move previews, source removal, hostile read-content isolation, and real Qt
-  worker/dialog interactions.
+  approval, exact move previews, source removal, exact trash previews, plain-delete aliasing to
+  Recycle Bin, target changes after approval, permanent-delete wording rejection, hostile
+  read-content isolation, and real Qt worker/dialog interactions.
 - Folder approval-dialog screenshot inspected with actual Windows fonts; path and controls are readable.
 - Historical Phase 9 suite after enablement: 298 passed, 14 skipped.
 - Deterministic tests cover list-to-read actual content, direct-path reads, literal Markdown fences,
@@ -91,6 +99,7 @@ confirmed on 2026-09-12. Phase 10 text writing, copy, and move were manually rep
 - Manual Phase 10 text-write application acceptance: user reported it works on 2026-09-12.
 - Manual Phase 10 copy application acceptance: user reported it works on 2026-09-12.
 - Manual Phase 10 move application acceptance: user reported it works on 2026-09-12.
+- Manual Phase 10 trash application acceptance: user reported it works on 2026-09-13.
 - Folder create/cancel manual acceptance if not already tested and real-model follow-up conversation
   after writes remain pending.
 - The dedicated automated text-read real-model call/no-call matrix has not been run.
@@ -105,11 +114,11 @@ confirmed on 2026-09-12. Phase 10 text writing, copy, and move were manually rep
 - Complete the dedicated automated text-read real-model matrix, including ordinary conversation
   after a read, before proceeding to the next separately designed capability, bounded search.
 - Fresh-runtime packaging and real-model/UI acceptance remain before portable release promotion.
-- Phase 10 is a development-only feature-branch checkpoint. Confirm move preview/create/replace/cancel
-  workflows were manually accepted before continuing to trash. See `phase10-mkdir-threat-review.md`,
-  `phase10-write-text-threat-review.md`, `phase10-copy-threat-review.md`, and
-  `phase10-move-threat-review.md` for protection scope and recovery limitations, including
-  nonstandard application/service locations.
+- Phase 10 is a development-only feature-branch checkpoint. Trash preview/approve/cancel workflows
+  were manually accepted before the next roadmap decision. See `phase10-mkdir-threat-review.md`,
+  `phase10-write-text-threat-review.md`, `phase10-copy-threat-review.md`,
+  `phase10-move-threat-review.md`, and `phase10-trash-threat-review.md` for protection scope and
+  recovery limitations, including nonstandard application/service locations.
 
 ## Checkpoint scope
 
@@ -119,5 +128,6 @@ confirmed on 2026-09-12. Phase 10 text writing, copy, and move were manually rep
   text-write workflow works on 2026-09-12. The copy checkpoint is committed locally at `9376a7e`;
   the user reported the copy workflow works on 2026-09-12. The move checkpoint is implemented,
   tested, and manually accepted on `codex/phase-10-filesystem-move` but is not pushed, merged, or
-  release-promoted.
+  release-promoted. The trash checkpoint is implemented, tested, and manually accepted on
+  `codex/phase-10-filesystem-trash` but is not pushed, merged, or release-promoted.
 - The private Desktop `statusreport.md` remains outside Git and records the resulting commit ID.

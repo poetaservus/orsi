@@ -1,7 +1,7 @@
 # Phase 10: approved file moving
 
 Date: 2026-09-12
-Status: fourth development checkpoint; manual application acceptance pending.
+Status: fourth development checkpoint; manual application accepted and committed locally.
 
 ## Scope and authority
 
