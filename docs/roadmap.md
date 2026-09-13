@@ -1,6 +1,6 @@
 # O.R.S.I roadmap
 
-Updated: 2026-08-15
+Updated: 2026-09-13
 
 ## Product direction
 
@@ -33,32 +33,44 @@ time. The application must keep a safe chat fallback throughout development.
 - Network paths, device namespaces, file contents, mutations, execution, and background search
   remain outside the granted authority.
 
-### Approved desktop GUI baseline
+### GUI v2 desktop baseline
 
-- Dark image-backed shell with a fixed left rail and an opaque centered conversation panel.
-- Main-chat context-window meter and retained settings popover.
-- Centered compact composer, assistant responses, user bubbles, code blocks, copy action, and
-  stop/send states.
-- Responsive wide and compact layouts, including centered headers and balanced message padding in
-  small windows.
-- Automated geometry and behavior coverage plus native Windows visual checks.
+- Dark v2 image-backed shell with a thin top instrumentation bar, top-left controls, and persistent
+  version / execution mode / context-window status text.
+- Centered transcript area with quiet assistant text, rounded user bubbles, code blocks, copy action,
+  and retained stop/send states.
+- Bottom composer pill matched to the v2 mockup, with Qt-native send button rendering and padded hover
+  behavior after reverting the custom hover artifact.
+- Responsive wide and compact layouts, with focused UI coverage and rendered previews for the new
+  composer and hover states.
+
+### Natural-language resolver and planner loop
+
+- Planner-first capability loop restored so natural-language file/folder requests can progress through
+  capability calls instead of collapsing into chat-only disclaimers.
+- Active filesystem targets are retained for follow-ups such as listing a previously found folder,
+  confirming an action, or fixing a previously read file.
+- Bounded filename disambiguation handles exact-name/stem/extension variants inside the requested
+  directory only; it does not fuzzy-match, recurse, index, or search the whole host.
 
 ## Current release lane
 
-The approved GUI is integrated with the current read-only filesystem build and is ready for review
-as the default interface. The integration must retain the capability gates, permission boundaries,
-and chat fallback already in place.
+The active development line is `codex/phase-9-target-resolver`. It carries the accepted Phase 10
+mutation checkpoints, Phase 9 search, the target resolver, the planner-loop repair, bounded filename
+disambiguation, and GUI v2 polish through local code checkpoint `76167c8`. The branch is still a
+development line: it is not merged, release-promoted, or ready to change the version beyond
+`v0.4.0-dev` until the remaining manual acceptance and packaging gates are closed.
 
 ## Next milestones
 
-1. Merge and smoke-test the approved GUI integration on the main development line.
-2. Improve interruption behavior for in-progress local generation and blocking cloud requests.
-3. Add safe recovery for malformed conversation state and decide whether stored messages should be
-   replayed visually on launch.
-4. Design `filesystem.read` as the next separately gated capability, with strict content, size,
-   encoding, path, and cloud-disclosure limits.
-5. Add mutating filesystem and process capabilities only after their permission, confirmation,
-   audit, recovery, and cancellation contracts pass independently.
+1. Publish `codex/phase-9-target-resolver` to GitHub with upstream tracking after explicit approval.
+2. Manually accept the target-resolver / planner-loop workflows in the app, including follow-up reads,
+   folder listing, filename disambiguation, writes, and GUI v2 composer behavior.
+3. Run a fresh-runtime packaging check before any release promotion.
+4. Keep `v0.4.0-dev` until Phase 9 resolver acceptance and packaging are recorded; advance the version
+   only at the next accepted milestone.
+5. Improve interruption behavior and malformed conversation recovery after the current branch is
+   accepted.
 
 ## Release rule
 

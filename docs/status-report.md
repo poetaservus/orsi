@@ -4,24 +4,24 @@ Date: 2026-09-13
 
 ## Overall status
 
-Phase 9 bounded search is implemented on `codex/phase-9-filesystem-search`, based on the accepted
-Phase 10 trash checkpoint `e5a6092` because the user chose to close the skipped Phase 9 gates after
-finishing the Phase 10 mutation set. `filesystem.search` adds bounded literal UTF-text snippet search
-inside one explicitly requested directory tree. The dedicated text-read real-model call/no-call gate
-and the new search real-model call/no-call gate both passed on 2026-09-13. Manual application
-acceptance for search was reported working on 2026-09-13, closing the strict Phase 9 gate before
-Phase 11 development.
+The active development line is `codex/phase-9-target-resolver`. It builds on the accepted Phase 10
+trash checkpoint `e5a6092` and Phase 9 search, then adds the target resolver, planner-first
+capability loop, bounded filename disambiguation, and GUI v2 polish through local code checkpoint
+`76167c8`. Manual application acceptance is complete for Phase 10 trash and Phase 9 search. The
+current gate is manual acceptance for the resolver/planner follow-up workflows and GUI v2 behavior,
+followed by fresh-runtime packaging before any release promotion. The version remains `v0.4.0-dev`.
 
-## GUI status: approved and integrated
+## GUI status: v2 integrated locally
 
-- The mockup-aligned dark interface is now the project baseline.
-- The custom PNG background is stored under `app/ui/assets/`.
-- The central conversation block uses a uniform opaque fill, independent of the background image.
-- The context-window meter appears in the main chat and moves to a centered header in compact mode.
-- The composer is smaller, darker, vertically balanced, and centered at wide and compact sizes.
-- Assistant responses and user bubbles keep balanced gutters inside the central block in compact
-  windows.
-- The settings menu remains available from the left navigation rail.
+- GUI v2 is implemented on `codex/phase-9-target-resolver` through `76167c8`.
+- The v2 background and top instrumentation bar are in place, with left-side controls and persistent
+  `O.R.S.I. v0.4.0-dev // Local // Context Window` status text.
+- The chat transcript is centered over the dark background with quiet assistant text, rounded user
+  bubbles, code blocks, and copy controls.
+- The composer was rebuilt as the v2 bottom pill. The custom hover implementation from `75467d8`
+  was reverted in `e0cf7a6`; `76167c8` keeps normal Qt send-button rendering while padding the hover
+  state correctly.
+- The version remains `v0.4.0-dev`; GUI v2 is a development checkpoint, not a release-version bump.
 
 ## Runtime status
 
@@ -47,6 +47,13 @@ Phase 11 development.
   one requested directory. The deterministic target resolver supports known-folder aliases such as
   Desktop and Downloads only when the user supplies an exact file or folder name; it does not
   recurse, fuzzy-match, index, read file content, or search the whole host.
+- The planner-first capability loop has been restored for natural-language filesystem requests.
+  Resolved file/folder targets are retained for bounded follow-ups, including affirmative replies,
+  listing a previously found folder, reading a previously named file, and fixing a previously read
+  file.
+- Bounded filename disambiguation is limited to the requested directory and exact filename/stem/
+  extension variants. It is designed for cases such as a spoken or typed name missing its extension,
+  while still refusing fuzzy, recursive, indexed, or host-wide guesses.
 - `filesystem.mkdir` has a separate enabled development gate, disabled when configuration is absent.
   An explicit create-folder request with an absolute path opens an exact-path approval dialog.
   Cancel is the default; approval is single-use and expires after 60 seconds. Read acknowledgement
@@ -119,6 +126,10 @@ Phase 11 development.
   cloud disclosure, Desktop/Downloads alias routing, ordinary no-call conversation, content-search
   separation, location-phrase trimming, named-folder listing, found-directory follow-ups,
   affirmative follow-ups, and no-match reporting without guessing.
+- Planner-loop and filename-disambiguation checkpoints are committed at `54872cc`, `853480e`,
+  `b39c7a5`, and `9ea55e2` on the active branch.
+- GUI v2 checkpoints are committed from `6967485` through `76167c8`; focused UI tests were rerun for
+  the composer and send-hover fixes.
 - Manual Phase 9 workflow acceptance: user confirmed the enabled app works on 2026-09-12.
 - Manual Phase 10 text-write application acceptance: user reported it works on 2026-09-12.
 - Manual Phase 10 copy application acceptance: user reported it works on 2026-09-12.
@@ -138,8 +149,9 @@ Phase 11 development.
   application launch currently starts a fresh private session.
 - Phase 9 search is manually accepted for Phase 11 planning. Fresh-runtime packaging and release
   promotion remain separate gates.
-- Phase 9.5 exact-name resolver is implemented and tested, but needs manual app acceptance before it
-  can be treated as accepted for the next roadmap gate.
+- Phase 9.5 target resolver, planner-loop follow-ups, and bounded filename disambiguation are
+  implemented and committed on `codex/phase-9-target-resolver`; manual app acceptance for the full
+  workflow remains the current gate.
 - Fresh-runtime packaging and real-model/UI acceptance remain before portable release promotion.
 - Phase 10 is a development-only feature-branch checkpoint. Trash preview/approve/cancel workflows
   were manually accepted before the next roadmap decision. See `phase10-mkdir-threat-review.md`,
@@ -147,24 +159,20 @@ Phase 11 development.
   `phase10-move-threat-review.md`, and `phase10-trash-threat-review.md` for protection scope and
   recovery limitations, including nonstandard application/service locations.
 - Phase 9 search is a development-only feature-branch checkpoint on top of the accepted local Phase
-  10 line. It is manually app-accepted but not pushed, merged, or release-promoted. See
+  10 line. It is manually app-accepted but not merged or release-promoted. See
   `phase9-search-threat-review.md` for protection scope.
-- Phase 9.5 target resolver is a development-only checkpoint on top of the accepted local Phase 9
-  search and Phase 10 line. It is not pushed, merged, release-promoted, or manually app-accepted.
-  See `phase9-target-resolver-threat-review.md` for protection scope.
+- Phase 9.5 target resolver, planner-loop repair, bounded filename disambiguation, and GUI v2 are
+  development-only checkpoints on `codex/phase-9-target-resolver`. The latest recorded code commit is
+  `76167c8`. The branch still needs GitHub upstream publication, manual full-workflow app acceptance,
+  and fresh-runtime packaging before merge or release promotion. See
+  `phase9-target-resolver-threat-review.md` for protection scope.
 
 ## Checkpoint scope
 
-- The Phase 9 search checkpoint is implemented and tested on `codex/phase-9-filesystem-search`; a
-  local commit is being preserved. The Phase 10 folder-creation checkpoint is committed on
-  `codex/phase-10-filesystem-mkdir` at
-  `076007f`. The text-write checkpoint is implemented and tested on
-  `codex/phase-10-filesystem-write-text` and committed at `6a8fcbb`; the user reported the
-  text-write workflow works on 2026-09-12. The copy checkpoint is committed locally at `9376a7e`;
-  the user reported the copy workflow works on 2026-09-12. The move checkpoint is implemented,
-  tested, and manually accepted on `codex/phase-10-filesystem-move` but is not pushed, merged, or
-  release-promoted. The trash checkpoint is implemented, tested, and manually accepted on
-  `codex/phase-10-filesystem-trash` but is not pushed, merged, or release-promoted. The Phase 9.5
-  target-resolver checkpoint is implemented and tested on `codex/phase-9-target-resolver`, pending
-  manual app acceptance.
-- The private Desktop `statusreport.md` remains outside Git and records the resulting commit ID.
+- The active checkpoint branch is `codex/phase-9-target-resolver`. The Phase 10 folder-creation
+  checkpoint is committed at `076007f`; text writing at `6a8fcbb`; copy at `9376a7e`; move at
+  `e1595bc`; trash at `e5a6092`; Phase 9 search at `a08aa32`; target resolver at `456376d` with
+  follow-up fixes through `4e339be`; planner-loop repair through `54872cc` and `853480e`; bounded
+  filename disambiguation through `b39c7a5` and `9ea55e2`; GUI v2 through `76167c8`.
+- The private Desktop `statusreport.md`, `roadmap.md`, and `versioning.md` remain outside Git but
+  have been updated for the same checkpoint state.
