@@ -259,8 +259,8 @@ def test_full_local_mode_preserves_ordinary_conversation_without_calls(tmp_path:
     try:
         answer = service.run("Give me a pancake recipe")
         assert answer.startswith("Pancakes")
-        assert model.requests == []
-        assert len(model.text_requests) == 1
+        assert len(model.requests) == 1
+        assert model.text_requests == []
         assert runtime.executor.journal.records == ()
     finally:
         service.shutdown()

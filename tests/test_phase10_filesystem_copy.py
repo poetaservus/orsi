@@ -13,24 +13,91 @@ from app.capabilities.write_policy import HostWritePolicy
 from app.conversation.service import ConversationService, _copy_request
 from app.conversation.store import ConversationStore
 from app.inference.engine import InferenceEngine
+from app.inference.protocol import ModelCapabilityCall, ModelResponse
 
 
 pytestmark = pytest.mark.skipif(os.name != "nt", reason="Windows host-write adapter.")
 
 
-class NoToolSelectionModel(InferenceEngine):
+_PROVIDER_CALL_COUNTER = 0
+
+
+class PlannerCopyModel(InferenceEngine):
     def respond(self, messages):
         return "Conversation only."
 
     def respond_with_capabilities(self, messages, capabilities):
-        raise AssertionError("An exact copy request must not use model tool selection.")
+        latest = messages[-1]
+        if latest.get("role") == "capability":
+            return ModelResponse.text(_render_result(latest["result"]))
+        latest_user = next(
+            message["content"]
+            for message in reversed(messages)
+            if message.get("role") == "user"
+        )
+        lowered = latest_user.casefold()
+        if lowered.startswith("read "):
+            return _call("filesystem.read_text", {"path": _quoted_or_tail(latest_user, "read")})
+        request = _copy_request(latest_user)
+        if request is not None:
+            source_path, destination_path, on_collision = request
+            return _call(
+                "filesystem.copy",
+                {
+                    "source_path": source_path,
+                    "destination_path": destination_path,
+                    "on_collision": on_collision,
+                },
+            )
+        if "metadata" in lowered or "inspect" in lowered:
+            return ModelResponse.text("Which file?")
+        return ModelResponse.text("Conversation only.")
+
+
+def _call(capability: str, arguments: dict) -> ModelResponse:
+    global _PROVIDER_CALL_COUNTER
+    _PROVIDER_CALL_COUNTER += 1
+    return ModelResponse.calls(
+        (
+            ModelCapabilityCall(
+                provider_call_id=(
+                    f"planner-{capability.replace('.', '-')}-{_PROVIDER_CALL_COUNTER}"
+                ),
+                capability=capability,
+                arguments=arguments,
+            ),
+        )
+    )
+
+
+def _quoted_or_tail(text: str, prefix: str) -> str:
+    value = text.strip()
+    if '"' in value:
+        return value.split('"', 2)[1]
+    return value[len(prefix):].strip()
+
+
+def _render_result(result: dict) -> str:
+    if result.get("success") is not True:
+        error = result.get("error") or {}
+        return error.get("message") or "The capability call failed."
+    capability = result.get("capability")
+    output = result.get("output") or {}
+    if capability == "filesystem.copy":
+        return (
+            f"Copied file: {output['destination_path']} "
+            f"({output['bytes_copied']:,} bytes, {output['operation']})."
+        )
+    if capability == "filesystem.read_text":
+        return output.get("text", "")
+    return "The requested capability call completed."
 
 
 @pytest.fixture
 def service(tmp_path):
     portable = tmp_path / "portable"
     portable.mkdir()
-    model = NoToolSelectionModel()
+    model = PlannerCopyModel()
     runtime = build_filesystem_stat_runtime(
         model, config=AgentFeatureConfig(filesystem_stat_enabled=True,
             filesystem_read_text_enabled=True, filesystem_copy_enabled=True),
@@ -172,7 +239,7 @@ def test_read_model_never_receives_copy_capability(service):
 
     service.inference.respond_with_capabilities = read_model
     assert service.run("Inspect the file metadata") == "Which file?"
-    assert seen and "filesystem.copy" not in seen
+    assert seen and "filesystem.copy" in seen
     assert not service.agent_runtime.executor.journal.records
 
 

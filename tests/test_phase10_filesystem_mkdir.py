@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import re
 
 import pytest
 
@@ -9,28 +10,169 @@ from app.agent_bootstrap import build_filesystem_stat_runtime
 from app.agent_config import AgentFeatureConfig
 from app.capabilities.contracts import CapabilityExecutionError
 from app.capabilities.crash_journal import CapabilityCrashJournal, CallLifecycleState
+from app.capabilities.host_access import HostAccessPolicy
 from app.capabilities.write_policy import HostWritePolicy
 from app.conversation.service import ConversationService, _folder_creation_target
 from app.conversation.store import ConversationStore
 from app.inference.engine import InferenceEngine
+from app.inference.protocol import ModelCapabilityCall, ModelResponse
 
 
 pytestmark = pytest.mark.skipif(os.name != "nt", reason="Windows host-write adapter.")
 
 
-class NoToolSelectionModel(InferenceEngine):
+class PlannerMkdirModel(InferenceEngine):
     def respond(self, messages):
         return "Conversation only."
 
     def respond_with_capabilities(self, messages, capabilities):
-        raise AssertionError("An exact folder target must not use model tool selection.")
+        latest = messages[-1]
+        if latest.get("role") == "capability":
+            return ModelResponse.text(_render_result(latest["result"]))
+        latest_user = next(
+            message["content"]
+            for message in reversed(messages)
+            if message.get("role") == "user"
+        )
+        lowered = latest_user.casefold()
+        if lowered.startswith("read "):
+            target = _quoted_or_tail(latest_user, "read")
+            return _call("filesystem.read_text", {"path": target})
+        if "metadata" in lowered or "inspect" in lowered:
+            return ModelResponse.text("Which file?")
+        target = _mkdir_target(latest_user)
+        if target is None and _is_absolute_windows_path(latest_user):
+            previous_assistant = next(
+                (
+                    message["content"]
+                    for message in reversed(messages[:-1])
+                    if message.get("role") == "assistant"
+                    and isinstance(message.get("content"), str)
+                ),
+                "",
+            )
+            if "full absolute path" in previous_assistant.casefold():
+                target = latest_user.strip()
+        if target is not None:
+            return _call("filesystem.mkdir", {"path": target})
+        if "folder" in lowered or lowered.startswith("mkdir"):
+            return ModelResponse.text("What is the full absolute path of the new folder?")
+        return ModelResponse.text("Conversation only.")
+
+
+def _call(capability: str, arguments: dict) -> ModelResponse:
+    return ModelResponse.calls(
+        (
+            ModelCapabilityCall(
+                provider_call_id=f"planner-{capability.replace('.', '-')}",
+                capability=capability,
+                arguments=arguments,
+            ),
+        )
+    )
+
+
+def _quoted_or_tail(text: str, prefix: str) -> str:
+    value = text.strip()
+    if '"' in value:
+        return value.split('"', 2)[1]
+    return value[len(prefix):].strip()
+
+
+def _mkdir_target(text: str) -> str | None:
+    value = text.strip()
+    if '"' in value:
+        return value.split('"', 2)[1]
+    lowered = value.casefold()
+    for prefix in ("create a folder", "create folder", "mkdir"):
+        if lowered.startswith(prefix):
+            target = value[len(prefix):].strip()
+            return target or None
+    return None
+
+
+def _is_absolute_windows_path(text: str) -> bool:
+    return re.fullmatch(r"[A-Za-z]:[\\/].+", text.strip()) is not None
+
+
+def _render_result(result: dict) -> str:
+    if result.get("success") is not True:
+        error = result.get("error") or {}
+        return error.get("message") or "The capability call failed."
+    capability = result.get("capability")
+    output = result.get("output") or {}
+    if capability == "filesystem.mkdir":
+        return f"Created empty folder: {output['path']}"
+    if capability == "filesystem.read_text":
+        return output.get("text", "")
+        return "The requested capability call completed."
+
+
+class NaturalLanguageMkdirPlanner(InferenceEngine):
+    def __init__(self):
+        self.requests: list[list[dict]] = []
+        self.next_call = 1
+
+    def respond(self, messages):
+        return "Conversation only."
+
+    def respond_with_capabilities(self, messages, capabilities):
+        self.requests.append(messages)
+        latest = messages[-1]
+        if latest.get("role") == "capability":
+            result = latest["result"]
+            if result.get("success") is not True:
+                error = result.get("error") or {}
+                return ModelResponse.text(error.get("message") or "The capability failed.")
+            capability = result.get("capability")
+            output = result.get("output") or {}
+            if capability == "filesystem.find":
+                match = output["matches"][0]
+                return self._call(
+                    "filesystem.mkdir",
+                    {"path": str(Path(match["path"]) / "copy")},
+                )
+            if capability == "filesystem.stat":
+                return self._call(
+                    "filesystem.mkdir",
+                    {"path": str(Path(output["path"]) / "copy")},
+                )
+            if capability == "filesystem.mkdir":
+                return ModelResponse.text(f"Created empty folder: {output['path']}")
+        latest_user = next(
+            message["content"]
+            for message in reversed(messages)
+            if message.get("role") == "user"
+        )
+        lowered = latest_user.casefold()
+        if "inside" in lowered and "lab" in lowered and "copy" in lowered:
+            return self._call(
+                "filesystem.find",
+                {"path": "Desktop", "name": "lab", "kind": "directory"},
+            )
+        if "desktop" in lowered and "copy" in lowered:
+            return self._call("filesystem.stat", {"path": "Desktop"})
+        return ModelResponse.text("Conversation only.")
+
+    def _call(self, capability: str, arguments: dict) -> ModelResponse:
+        provider_call_id = f"natural-mkdir-{self.next_call}"
+        self.next_call += 1
+        return ModelResponse.calls(
+            (
+                ModelCapabilityCall(
+                    provider_call_id=provider_call_id,
+                    capability=capability,
+                    arguments=arguments,
+                ),
+            )
+        )
 
 
 @pytest.fixture
 def service(tmp_path):
     portable = tmp_path / "portable"
     portable.mkdir()
-    model = NoToolSelectionModel()
+    model = PlannerMkdirModel()
     runtime = build_filesystem_stat_runtime(
         model, config=AgentFeatureConfig(filesystem_stat_enabled=True,
             filesystem_read_text_enabled=True, filesystem_mkdir_enabled=True),
@@ -40,6 +182,40 @@ def service(tmp_path):
                                   agent_runtime=runtime, portable_root=portable)
     yield service
     service.shutdown()
+
+
+def build_full_local_mkdir_service(tmp_path: Path, model: InferenceEngine):
+    portable = tmp_path / "portable"
+    user_home = tmp_path / "user-home"
+    portable.mkdir()
+    user_home.mkdir()
+    state = tmp_path / "state"
+    policy = HostAccessPolicy.full_local(
+        application_root=portable,
+        user_home=user_home,
+        acknowledged=True,
+    )
+    runtime = build_filesystem_stat_runtime(
+        model,
+        config=AgentFeatureConfig(
+            filesystem_stat_enabled=True,
+            filesystem_find_enabled=True,
+            filesystem_mkdir_enabled=True,
+            full_local_read_enabled=True,
+        ),
+        portable_root=portable,
+        state_directory=state,
+        host_access_policy=policy,
+    )
+    service = ConversationService(
+        model,
+        ConversationStore(state / "conversation.json"),
+        agent_runtime=runtime,
+        portable_root=portable,
+        allowed_read_roots=policy.permission_roots(),
+        host_access_policy=policy,
+    )
+    return service, runtime, user_home
 
 
 def test_creates_verified_empty_folder_only_after_exact_approval(service, tmp_path):
@@ -65,6 +241,68 @@ def test_creates_verified_empty_folder_only_after_exact_approval(service, tmp_pa
     assert all("tool_calls" not in message for message in service._agent_history)
 
 
+def test_creates_folder_inside_named_desktop_folder_via_planner(tmp_path):
+    model = NaturalLanguageMkdirPlanner()
+    service, runtime, user_home = build_full_local_mkdir_service(tmp_path, model)
+    lab = user_home / "Desktop" / "lab"
+    target = lab / "copy"
+    lab.mkdir(parents=True)
+    approvals = []
+
+    def approve(record):
+        approvals.append(record)
+        assert record.capability == "filesystem.mkdir"
+        assert record.resource == str(target)
+        service.resolve_approval(record.approval_id, True)
+
+    service.set_approval_requester(approve)
+    try:
+        answer = service.run(
+            "i also have a folder on my desktop called lab create a new folder inside it called copy"
+        )
+
+        assert f"Created empty folder: {target}" == answer
+        assert target.is_dir()
+        assert sorted(record.capability for record in runtime.executor.journal.records) == [
+            "filesystem.find",
+            "filesystem.mkdir",
+        ]
+        assert len(approvals) == 1
+        assert len(model.requests) == 3
+    finally:
+        service.shutdown()
+
+
+def test_creates_folder_on_desktop_via_planner_resolved_parent(tmp_path):
+    model = NaturalLanguageMkdirPlanner()
+    service, runtime, user_home = build_full_local_mkdir_service(tmp_path, model)
+    desktop = user_home / "Desktop"
+    target = desktop / "copy"
+    desktop.mkdir(parents=True)
+    approvals = []
+
+    def approve(record):
+        approvals.append(record)
+        assert record.capability == "filesystem.mkdir"
+        assert record.resource == str(target)
+        service.resolve_approval(record.approval_id, True)
+
+    service.set_approval_requester(approve)
+    try:
+        answer = service.run("create a new folder on my desktop called copy")
+
+        assert f"Created empty folder: {target}" == answer
+        assert target.is_dir()
+        assert sorted(record.capability for record in runtime.executor.journal.records) == [
+            "filesystem.mkdir",
+            "filesystem.stat",
+        ]
+        assert len(approvals) == 1
+        assert len(model.requests) == 3
+    finally:
+        service.shutdown()
+
+
 def test_denial_never_creates_folder(service, tmp_path):
     target = tmp_path / "denied"
     service.set_approval_requester(lambda record: service.resolve_approval(record.approval_id, False))
@@ -84,7 +322,7 @@ def test_missing_approval_ui_never_creates_folder(service, tmp_path):
 def test_cancel_while_waiting_never_creates_folder(service, tmp_path):
     target = tmp_path / "cancelled"
     service.set_approval_requester(lambda record: service.cancel_current_task())
-    assert "cancelled before execution" in service.run(f"mkdir {target}")
+    assert service.run(f"mkdir {target}") == "The response was stopped."
     assert not target.exists()
 
 
@@ -199,7 +437,7 @@ def test_ambiguous_requests_require_an_exact_target(text):
     assert _folder_creation_target(text) is None
 
 
-def test_read_model_never_receives_write_capability(service):
+def test_planner_turn_receives_write_capability(service):
     from app.inference.protocol import ModelResponse, ModelResponseKind
     seen = []
 
@@ -209,7 +447,7 @@ def test_read_model_never_receives_write_capability(service):
 
     service.inference.respond_with_capabilities = read_model
     assert service.run("Inspect the file metadata") == "Which file?"
-    assert seen and "filesystem.mkdir" not in seen
+    assert seen and "filesystem.mkdir" in seen
     assert not service.agent_runtime.executor.journal.records
 
 

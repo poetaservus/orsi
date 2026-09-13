@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+import re
 
 import pytest
 
@@ -14,6 +15,7 @@ from app.capabilities.host_access import HostAccessPolicy, HostReadScope
 from app.conversation.service import ConversationService, _find_target
 from app.conversation.store import ConversationStore
 from app.inference.engine import InferenceEngine
+from app.inference.protocol import ModelCapabilityCall, ModelResponse
 
 
 pytestmark = pytest.mark.skipif(
@@ -27,6 +29,7 @@ class DeterministicFindModel(InferenceEngine):
         self.conversation_response = conversation_response
         self.text_requests: list[list[dict]] = []
         self.capability_requests: list[list[dict]] = []
+        self.host_policy: HostAccessPolicy | None = None
 
     def respond(self, messages):
         self.text_requests.append(messages)
@@ -34,7 +37,111 @@ class DeterministicFindModel(InferenceEngine):
 
     def respond_with_capabilities(self, messages, capabilities):
         self.capability_requests.append(messages)
-        raise AssertionError("The fake model intentionally refuses continuation.")
+        latest = messages[-1]
+        if latest.get("role") == "capability":
+            return ModelResponse.text(_render_capability_answer(latest["result"]))
+        latest_user = next(
+            message["content"]
+            for message in reversed(messages)
+            if message.get("role") == "user"
+        )
+        lowered = latest_user.casefold()
+        if "pancake" in lowered:
+            return ModelResponse.text(self.conversation_response)
+        if "needle" in lowered and " inside " in lowered:
+            path = latest_user.rsplit(" inside ", 1)[1]
+            query = latest_user.split(" inside ", 1)[0]
+            query = re.sub(r"\A(?:find|search\s+for)\s+", "", query, flags=re.I).strip()
+            return _call("filesystem.search", {"path": path, "query": query})
+        target = _find_target(latest_user, self.host_policy)
+        if target is not None:
+            containing_path, name, kind = target
+            if kind == "directory" and _asks_for_listing(lowered):
+                return _call("filesystem.list", {"path": str(Path(containing_path) / name)})
+            return _call(
+                "filesystem.find",
+                {"path": containing_path, "name": name, "kind": kind},
+            )
+        if re.fullmatch(r"(?:yes|yep|yeah|sure|ok|okay|please|please\s+do|do\s+it|proceed)", lowered) or "there" in lowered:
+            found = _last_found_directory(messages)
+            if found is not None:
+                return _call("filesystem.list", {"path": found})
+        return ModelResponse.text(self.conversation_response)
+
+
+def _call(capability: str, arguments: dict) -> ModelResponse:
+    return ModelResponse.calls(
+        (
+            ModelCapabilityCall(
+                provider_call_id=f"planner-{capability.replace('.', '-')}",
+                capability=capability,
+                arguments=arguments,
+            ),
+        )
+    )
+
+
+def _asks_for_listing(lowered: str) -> bool:
+    return re.search(
+        r"\b(?:what(?:'s|\s+is)\s+in|what\s+i\s+have\s+in|list|items?|files?|contents?)\b",
+        lowered,
+    ) is not None
+
+
+def _last_found_directory(messages: list[dict]) -> str | None:
+    for message in reversed(messages):
+        if message.get("role") != "capability":
+            continue
+        result = message.get("result") or {}
+        if result.get("capability") != "filesystem.find" or result.get("success") is not True:
+            continue
+        output = result.get("output") or {}
+        matches = output.get("matches") or []
+        directories = [
+            match.get("path")
+            for match in matches
+            if isinstance(match, dict) and match.get("type") == "directory"
+        ]
+        if len(directories) == 1 and isinstance(directories[0], str):
+            return directories[0]
+    return None
+
+
+def _render_capability_answer(result: dict) -> str:
+    if result.get("success") is not True:
+        error = result.get("error") or {}
+        return error.get("message") or "The capability call failed."
+    capability = result.get("capability")
+    output = result.get("output") or {}
+    if capability == "filesystem.find":
+        matches = output.get("matches") or []
+        name = output.get("name", "entry")
+        kind = output.get("kind", "any")
+        path = output.get("path", "the requested folder")
+        if not matches:
+            label = "entry" if kind == "any" else kind
+            return f"No {label} named {name} was found in {path}."
+        lines = [f"Found {len(matches)} matching entry:"]
+        for match in matches:
+            lines.append(f"- {match['type']}: {match['path']}")
+        return "\n".join(lines)
+    if capability == "filesystem.list":
+        entries = output.get("entries") or []
+        if not entries:
+            return "The directory is empty."
+        lines = ["Here are the entries in the requested directory:"]
+        for entry in entries:
+            lines.append(f"- {entry['name']} ({entry.get('type', 'unknown')})")
+        return "\n".join(lines)
+    if capability == "filesystem.search":
+        matches = output.get("matches") or []
+        if not matches:
+            return "No matches were found."
+        lines = ["Here are the search matches:"]
+        for match in matches:
+            lines.append(f"- {match.get('path', '')}: {match.get('snippet', '')}")
+        return "\n".join(lines)
+    return "The requested capability call completed."
 
 
 def build_service(tmp_path: Path, model: InferenceEngine):
@@ -48,6 +155,8 @@ def build_service(tmp_path: Path, model: InferenceEngine):
         user_home=user_home,
         acknowledged=True,
     )
+    if isinstance(model, DeterministicFindModel):
+        model.host_policy = policy
     runtime = build_filesystem_stat_runtime(
         model,
         config=AgentFeatureConfig(
@@ -146,7 +255,7 @@ def test_desktop_folder_request_finds_actual_directory_without_model_tool_select
 
         assert "directory:" in answer
         assert str(lab.resolve()) in answer
-        assert len(model.capability_requests) == 1
+        assert len(model.capability_requests) == 2
         assert model.text_requests == []
         records = runtime.executor.journal.records
         assert [record.capability for record in records] == ["filesystem.find"]
@@ -170,7 +279,7 @@ def test_named_desktop_folder_listing_routes_to_directory_contents(tmp_path: Pat
         assert "alpha.txt (file)" in answer
         assert "Subfolder (directory)" in answer
         assert "PRIVATE ALPHA CONTENT" not in answer
-        assert len(model.capability_requests) == 1
+        assert len(model.capability_requests) == 2
         assert model.text_requests == []
         records = runtime.executor.journal.records
         assert [record.capability for record in records] == ["filesystem.list"]
@@ -190,7 +299,7 @@ def test_whats_in_named_desktop_folder_lists_contents_in_one_turn(tmp_path: Path
 
         assert "note.txt (file)" in answer
         assert "PRIVATE NOTE CONTENT" not in answer
-        assert len(model.capability_requests) == 1
+        assert len(model.capability_requests) == 2
         assert model.text_requests == []
         assert [record.capability for record in runtime.executor.journal.records] == [
             "filesystem.list"
@@ -211,7 +320,7 @@ def test_found_directory_remains_active_for_there_followup(tmp_path: Path):
 
         assert "directory:" in found
         assert "followup.txt (file)" in answer
-        assert len(model.capability_requests) == 2
+        assert len(model.capability_requests) == 4
         assert model.text_requests == []
         capabilities = [record.capability for record in runtime.executor.journal.records]
         assert capabilities.count("filesystem.find") == 1
@@ -268,7 +377,7 @@ def test_find_reports_no_match_without_guessing(tmp_path: Path):
         assert answer == (
             f"No directory named missing was found in {(user_home / 'Desktop').resolve()}."
         )
-        assert len(model.capability_requests) == 1
+        assert len(model.capability_requests) == 2
         assert [record.capability for record in runtime.executor.journal.records] == [
             "filesystem.find"
         ]
@@ -289,7 +398,7 @@ def test_content_search_still_routes_to_filesystem_search(tmp_path: Path):
         assert [record.capability for record in runtime.executor.journal.records] == [
             "filesystem.search"
         ]
-        assert len(model.capability_requests) == 1
+        assert len(model.capability_requests) == 2
     finally:
         service.shutdown()
 
@@ -301,8 +410,8 @@ def test_find_enabled_agent_preserves_ordinary_conversation(tmp_path: Path):
         answer = service.run("Give me a pancake recipe without using a tool.")
 
         assert answer.startswith("Pancakes")
-        assert model.capability_requests == []
-        assert len(model.text_requests) == 1
+        assert len(model.capability_requests) == 1
+        assert model.text_requests == []
         assert runtime.executor.journal.records == ()
     finally:
         service.shutdown()

@@ -123,41 +123,8 @@ class ConversationService:
             self.store.append("user", text)
             if self.agent_enabled:
                 self._agent_history.append({"role": "user", "content": text})
-            folder_request = text
-            if self._awaiting_folder_path and _folder_creation_target(f"mkdir {text}"):
-                folder_request = f"mkdir {text}"
             self._awaiting_folder_path = False
-            if _is_folder_creation_request(folder_request):
-                answer = self._create_folder(folder_request, source, activity)
-                self.store.append("assistant", answer)
-                if self.agent_enabled:
-                    self._agent_history.append({"role": "assistant", "content": answer})
-                return answer
-            if _is_text_write_request(text):
-                answer = self._write_text(text, source, activity)
-                self.store.append("assistant", answer)
-                if self.agent_enabled:
-                    self._agent_history.append({"role": "assistant", "content": answer})
-                return answer
-            if _is_copy_request(text):
-                answer = self._copy_file(text, source, activity)
-                self.store.append("assistant", answer)
-                if self.agent_enabled:
-                    self._agent_history.append({"role": "assistant", "content": answer})
-                return answer
-            if _is_move_request(text):
-                answer = self._move_file(text, source, activity)
-                self.store.append("assistant", answer)
-                if self.agent_enabled:
-                    self._agent_history.append({"role": "assistant", "content": answer})
-                return answer
-            if _is_trash_request(text):
-                answer = self._trash_file(text, source, activity)
-                self.store.append("assistant", answer)
-                if self.agent_enabled:
-                    self._agent_history.append({"role": "assistant", "content": answer})
-                return answer
-            capability_turn = self.agent_enabled and self._requires_capabilities(text)
+            capability_turn = self.agent_enabled
             if activity:
                 activity("Working..." if capability_turn else "Thinking...")
             source.token.raise_if_cancelled()
@@ -172,7 +139,6 @@ class ConversationService:
                 turn_id = f"turn-{self._turn_number}"
                 turn_trace: list[dict] = []
                 turn_results: list[tuple] = []
-                required_calls: tuple[ModelCapabilityCall, ...] = ()
                 if capability_turn:
                     def retain_results(calls, results) -> None:
                         turn_trace.append(model_capability_calls_message(calls))
@@ -186,8 +152,7 @@ class ConversationService:
                         turn_results.extend(zip(calls, results, strict=True))
                         self._retain_filesystem_context(calls, results)
 
-                    required_calls = self._required_capability_calls(text)
-                    turn_capabilities = self._read_capabilities()
+                    turn_capabilities = self._planner_capabilities()
                     result = self.agent_runtime.run(
                         self._model_messages(
                             capability_turn=True,
@@ -200,9 +165,7 @@ class ConversationService:
                         host_access_policy=self.host_access_policy,
                         cancellation=source.token,
                         result_observer=retain_results,
-                        required_calls=required_calls,
                         capability_names=turn_capabilities,
-                        continue_after_required_calls=bool(required_calls),
                     )
                 else:
                     result = self.agent_runtime.run_conversation(
@@ -212,16 +175,9 @@ class ConversationService:
                 if result.status == AgentRunStatus.CANCELLED:
                     return "The response was stopped."
                 if result.status != AgentRunStatus.COMPLETED:
-                    fallback = self._fallback_required_answer(
-                        required_calls,
-                        turn_results,
+                    raise RuntimeError(
+                        result.message or "The bounded agent run did not complete."
                     )
-                    if fallback is not None:
-                        answer = fallback
-                    else:
-                        raise RuntimeError(
-                            result.message or "The bounded agent run did not complete."
-                        )
                 else:
                     answer = result.assistant_text.strip()
                 completed_capabilities = {
@@ -568,6 +524,11 @@ class ConversationService:
                 agent_system_prompt(
                     self.host_read_scope or HostReadScope.PORTABLE_ROOT,
                     planner_capabilities,
+                    user_home=(
+                        str(self.host_access_policy.user_home)
+                        if self.host_access_policy is not None
+                        else None
+                    ),
                 )
                 if capability_turn is not False
                 else AGENT_CONVERSATION_SYSTEM_PROMPT

@@ -14,6 +14,7 @@ from app.capabilities.host_access import HostAccessPolicy, HostReadScope
 from app.conversation.service import ConversationService
 from app.conversation.store import ConversationStore
 from app.inference.engine import InferenceEngine
+from app.inference.protocol import ModelCapabilityCall, ModelResponse
 
 
 pytestmark = pytest.mark.skipif(
@@ -34,7 +35,108 @@ class DeterministicReadModel(InferenceEngine):
 
     def respond_with_capabilities(self, messages, capabilities):
         self.capability_requests.append(messages)
-        raise AssertionError("The fake model intentionally refuses continuation.")
+        latest = messages[-1]
+        if latest.get("role") == "capability":
+            return ModelResponse.text(_render_capability_answer(latest["result"]))
+        latest_user = next(
+            message["content"]
+            for message in reversed(messages)
+            if message.get("role") == "user"
+        )
+        lowered = latest_user.casefold()
+        list_path = _list_path(latest_user)
+        if list_path is not None:
+            return _call("filesystem.list", {"path": list_path})
+        read_path = _read_path(latest_user, messages)
+        if read_path is not None:
+            return _call("filesystem.read_text", {"path": read_path})
+        return ModelResponse.text(self.conversation_response)
+
+
+_PROVIDER_CALL_COUNTER = 0
+
+
+def _call(capability: str, arguments: dict) -> ModelResponse:
+    global _PROVIDER_CALL_COUNTER
+    _PROVIDER_CALL_COUNTER += 1
+    return ModelResponse.calls(
+        (
+            ModelCapabilityCall(
+                provider_call_id=(
+                    f"planner-{capability.replace('.', '-')}-{_PROVIDER_CALL_COUNTER}"
+                ),
+                capability=capability,
+                arguments=arguments,
+            ),
+        )
+    )
+
+
+def _list_path(text: str) -> str | None:
+    lowered = text.casefold()
+    if not any(marker in lowered for marker in ("what files", "list the files")):
+        return None
+    for marker in (" at ", " in "):
+        if marker in lowered:
+            return text[lowered.rfind(marker) + len(marker):].strip().strip('"')
+    return None
+
+
+def _read_path(text: str, messages: list[dict]) -> str | None:
+    value = text.strip()
+    lowered = value.casefold()
+    if not lowered.startswith("read "):
+        return None
+    if '"' in value:
+        return value.split('"', 2)[1]
+    requested = value[5:].strip().split()[0]
+    if len(requested) >= 3 and requested[1] == ":" and requested[2] in "\\/":
+        return requested
+    listing = _last_listing(messages)
+    if listing is None:
+        return None
+    root, entries = listing
+    exact = [entry for entry in entries if entry["name"].casefold() == requested.casefold()]
+    if len(exact) == 1:
+        return str(Path(root) / exact[0]["name"])
+    stem_matches = [
+        entry for entry in entries
+        if Path(entry["name"]).stem.casefold() == requested.casefold()
+    ]
+    if len(stem_matches) == 1:
+        return str(Path(root) / stem_matches[0]["name"])
+    return None
+
+
+def _last_listing(messages: list[dict]) -> tuple[str, list[dict]] | None:
+    for message in reversed(messages):
+        if message.get("role") != "capability":
+            continue
+        result = message.get("result") or {}
+        if result.get("capability") != "filesystem.list" or result.get("success") is not True:
+            continue
+        output = result.get("output") or {}
+        return output.get("path", ""), list(output.get("entries") or [])
+    return None
+
+
+def _render_capability_answer(result: dict) -> str:
+    if result.get("success") is not True:
+        error = result.get("error") or {}
+        return error.get("message") or "The capability call failed."
+    capability = result.get("capability")
+    output = result.get("output") or {}
+    if capability == "filesystem.list":
+        entries = output.get("entries") or []
+        if not entries:
+            return "The directory is empty."
+        return "\n".join(entry["name"] for entry in entries)
+    if capability == "filesystem.read_text":
+        text = output.get("text", "")
+        if "```" in text:
+            return f"Here is the file content:\n````text\n{text}\n````"
+        return text
+    return "The requested capability call completed."
 
 
 def build_service(tmp_path: Path, model: InferenceEngine):
@@ -113,7 +215,7 @@ def test_list_then_read_unique_stem_returns_actual_file_content(tmp_path: Path):
         assert "fixed_v1.txt" in listing
         assert actual_content in answer
         assert "sample text content" not in answer.casefold()
-        assert len(model.capability_requests) == 2
+        assert len(model.capability_requests) == 4
         assert model.text_requests == []
         records = runtime.executor.journal.records
         assert sorted(record.capability for record in records) == [
@@ -139,7 +241,7 @@ def test_direct_exact_path_read_preserves_content_and_markdown_fences(tmp_path: 
         assert [record.capability for record in runtime.executor.journal.records] == [
             "filesystem.read_text"
         ]
-        assert len(model.capability_requests) == 1
+        assert len(model.capability_requests) == 2
     finally:
         service.shutdown()
 
@@ -164,7 +266,7 @@ def test_file_content_cannot_trigger_another_capability(tmp_path: Path):
             "filesystem.list",
             "filesystem.read_text",
         ]
-        assert len(model.capability_requests) == 2
+        assert len(model.capability_requests) == 4
     finally:
         service.shutdown()
 
@@ -184,7 +286,8 @@ def test_ambiguous_extensionless_listing_name_is_not_guessed(tmp_path: Path):
         assert [record.capability for record in runtime.executor.journal.records] == [
             "filesystem.list"
         ]
-        assert len(model.text_requests) == 1
+        assert len(model.capability_requests) == 3
+        assert model.text_requests == []
     finally:
         service.shutdown()
 

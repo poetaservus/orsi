@@ -67,6 +67,22 @@ def list_call(
     )
 
 
+def stat_call(
+    path: str,
+    *,
+    provider_call_id: str = "phase9-stat-1",
+) -> ModelResponse:
+    return ModelResponse.calls(
+        (
+            ModelCapabilityCall(
+                provider_call_id=provider_call_id,
+                capability="filesystem.stat",
+                arguments={"path": path},
+            ),
+        )
+    )
+
+
 class ScriptedListModel(InferenceEngine):
     def __init__(self, responses):
         self.responses = list(responses)
@@ -307,9 +323,8 @@ def test_list_enabled_agent_preserves_ordinary_conversation(tmp_path: Path):
         answer = service.run("Give me a pancake recipe without using a tool.")
 
         assert answer.startswith("Pancakes")
-        assert model.requests == []
-        assert len(model.text_requests) == 1
-        assert model.text_requests[0][0]["content"] == AGENT_CONVERSATION_SYSTEM_PROMPT
+        assert len(model.requests) == 1
+        assert model.text_requests == []
         assert runtime.executor.journal.records == ()
     finally:
         service.shutdown()
@@ -328,6 +343,10 @@ def test_listing_context_is_ephemeral_and_metadata_followup_is_deterministic(
         [
             list_call(str(host_directory.resolve())),
             ModelResponse.text("The folder contains first.txt and second.txt."),
+            stat_call(str(first.resolve()), provider_call_id="phase9-stat-first"),
+            ModelResponse.text("first.txt: 11 bytes"),
+            stat_call(str(second.resolve()), provider_call_id="phase9-stat-second"),
+            ModelResponse.text("second.txt: 22 bytes"),
         ]
     )
     service, runtime, _portable_root = build_service(tmp_path, model)
@@ -348,7 +367,7 @@ def test_listing_context_is_ephemeral_and_metadata_followup_is_deterministic(
         assert [record.capability for record in records].count("filesystem.list") == 1
         assert [record.capability for record in records].count("filesystem.stat") == 2
         assert all(record.state == CallLifecycleState.COMPLETED for record in records)
-        assert len(model.requests) == 4
+        assert len(model.requests) == 6
         assert any(message.get("capability_calls") for message in service._agent_history)
         assert any(message.get("role") == "capability" for message in service._agent_history)
         persisted = service.store.messages()

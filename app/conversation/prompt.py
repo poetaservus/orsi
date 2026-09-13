@@ -48,6 +48,7 @@ whether it exists and is allowed. Preserve a user-provided absolute path exactly
 drive letter, directories, separators, spelling, and capitalization; never shorten it or remove
 parent directories. {relative_path_instruction} Do not
 guess, normalize, rewrite, or pre-judge a path.
+{known_path_instruction}
 {find_instruction}
 {list_instruction}
 {read_instruction}
@@ -119,6 +120,7 @@ _COUNT_WORDS = {
 def agent_system_prompt(
     read_scope: HostReadScope,
     capability_names: tuple[str, ...] = ("filesystem.stat",),
+    user_home: str | None = None,
 ) -> str:
     if not isinstance(read_scope, HostReadScope):
         raise TypeError("Agent prompts require a HostReadScope.")
@@ -126,6 +128,8 @@ def agent_system_prompt(
         isinstance(name, str) for name in capability_names
     ):
         raise TypeError("Agent prompt capability names must be a tuple of strings.")
+    if user_home is not None and not isinstance(user_home, str):
+        raise TypeError("Agent prompt user-home context must be a string when supplied.")
     capability_set = frozenset(capability_names)
     if (
         len(capability_set) != len(capability_names)
@@ -152,12 +156,42 @@ def agent_system_prompt(
             "A relative path is relative to the current Windows user's home directory; pass it "
             "without inventing or prefixing directories."
         )
+        if user_home:
+            home = user_home.rstrip("\\/")
+            known_path_instruction = (
+                f"The current Windows user's home directory is {home}. Deterministic known-folder "
+                f"aliases resolve as follows: desktop is {home}\\Desktop, downloads is "
+                f"{home}\\Downloads, documents is {home}\\Documents, and home is {home}. "
+                "If the user asks what is inside a named folder on Desktop, list Desktop\\<name> "
+                "directly or find <name> inside Desktop first; do not merely list Desktop and "
+                "answer that the named folder exists. For a write request whose parent is a known "
+                "folder alias or a named folder, resolve the parent with filesystem.stat or "
+                "filesystem.find, then use the exact absolute path returned by that capability to "
+                "construct the write target. For example, creating a folder on Desktop called copy "
+                "requires filesystem.stat on Desktop followed by filesystem.mkdir for the returned "
+                "Desktop path joined with copy. Creating copy inside a Desktop folder called lab "
+                "requires filesystem.find for lab inside Desktop followed by filesystem.mkdir for "
+                "the returned lab path joined with copy. Do not ask for a full absolute path when "
+                "the available capabilities can resolve the parent safely."
+            )
+        else:
+            known_path_instruction = (
+                "For known-folder aliases such as Desktop, Downloads, Documents, or home, use the "
+                "documented full-local relative-path rule to resolve the parent through a read "
+                "capability before any write that requires an absolute target. Do not ask for a "
+                "full absolute path when the available capabilities can resolve the parent safely."
+            )
     else:
         scope = "inside O.R.S.I's explicitly allowed portable root"
         relative = (
             "A relative path is already relative to the portable root, so for a file directly "
             "inside that root pass only its filename and never prefix the portable root's "
             "directory name."
+        )
+        known_path_instruction = (
+            "When a write request names a relative parent inside the portable root, resolve the "
+            "parent with filesystem.stat or filesystem.find first, then use the exact path returned "
+            "by that capability to construct the absolute write target."
         )
     if capability_set != {"filesystem.stat"}:
         ordinary_names = ["filesystem.stat"]
@@ -442,6 +476,7 @@ def agent_system_prompt(
     return _AGENT_SYSTEM_PROMPT_TEMPLATE.format(
         ordinary_tool_instruction=ordinary_tool_instruction,
         relative_path_instruction=relative,
+        known_path_instruction=known_path_instruction,
         tool_choice_instruction=tool_choice,
         capability_boundary=boundary,
         find_instruction=find_instruction,

@@ -14,6 +14,7 @@ from app.capabilities.host_access import HostAccessPolicy, HostReadScope
 from app.conversation.service import ConversationService, _search_target_and_query
 from app.conversation.store import ConversationStore
 from app.inference.engine import InferenceEngine
+from app.inference.protocol import ModelCapabilityCall, ModelResponse
 
 
 pytestmark = pytest.mark.skipif(
@@ -34,7 +35,55 @@ class DeterministicSearchModel(InferenceEngine):
 
     def respond_with_capabilities(self, messages, capabilities):
         self.capability_requests.append(messages)
-        raise AssertionError("The fake model intentionally refuses continuation.")
+        latest = messages[-1]
+        if latest.get("role") == "capability":
+            return ModelResponse.text(_render_capability_answer(latest["result"]))
+        latest_user = next(
+            message["content"]
+            for message in reversed(messages)
+            if message.get("role") == "user"
+        )
+        target = _search_target_and_query(latest_user)
+        if target is not None:
+            path, query = target
+            return _call("filesystem.search", {"path": path, "query": query})
+        return ModelResponse.text(self.conversation_response)
+
+
+_PROVIDER_CALL_COUNTER = 0
+
+
+def _call(capability: str, arguments: dict) -> ModelResponse:
+    global _PROVIDER_CALL_COUNTER
+    _PROVIDER_CALL_COUNTER += 1
+    return ModelResponse.calls(
+        (
+            ModelCapabilityCall(
+                provider_call_id=(
+                    f"planner-{capability.replace('.', '-')}-{_PROVIDER_CALL_COUNTER}"
+                ),
+                capability=capability,
+                arguments=arguments,
+            ),
+        )
+    )
+
+
+def _render_capability_answer(result: dict) -> str:
+    if result.get("success") is not True:
+        error = result.get("error") or {}
+        return error.get("message") or "The capability call failed."
+    output = result.get("output") or {}
+    matches = output.get("matches") or []
+    if not matches:
+        return "No matches were found."
+    lines = []
+    for match in matches:
+        lines.append(
+            f"{match.get('relative_path') or match.get('path')}: "
+            f"{match.get('snippet', '')}"
+        )
+    return "\n".join(lines)
 
 
 def build_service(tmp_path: Path, model: InferenceEngine):
@@ -125,7 +174,7 @@ def test_exact_path_search_returns_actual_matches_without_model_tool_selection(t
         assert "alpha.txt" in answer
         assert "REAL-NEEDLE-123" in answer
         assert "beta.txt" not in answer
-        assert len(model.capability_requests) == 1
+        assert len(model.capability_requests) == 2
         assert model.text_requests == []
         records = runtime.executor.journal.records
         assert [record.capability for record in records] == ["filesystem.search"]
@@ -148,7 +197,7 @@ def test_search_content_cannot_trigger_another_capability(tmp_path: Path):
         assert [record.capability for record in runtime.executor.journal.records] == [
             "filesystem.search"
         ]
-        assert len(model.capability_requests) == 1
+        assert len(model.capability_requests) == 2
     finally:
         service.shutdown()
 
@@ -160,8 +209,8 @@ def test_search_enabled_agent_preserves_ordinary_conversation(tmp_path: Path):
         answer = service.run("Give me a pancake recipe without using a tool.")
 
         assert answer.startswith("Pancakes")
-        assert model.capability_requests == []
-        assert len(model.text_requests) == 1
+        assert len(model.capability_requests) == 1
+        assert model.text_requests == []
         assert runtime.executor.journal.records == ()
     finally:
         service.shutdown()
