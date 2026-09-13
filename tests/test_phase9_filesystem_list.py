@@ -348,7 +348,7 @@ def test_listing_context_is_ephemeral_and_metadata_followup_is_deterministic(
         assert [record.capability for record in records].count("filesystem.list") == 1
         assert [record.capability for record in records].count("filesystem.stat") == 2
         assert all(record.state == CallLifecycleState.COMPLETED for record in records)
-        assert len(model.requests) == 2
+        assert len(model.requests) == 4
         assert any(message.get("capability_calls") for message in service._agent_history)
         assert any(message.get("role") == "capability" for message in service._agent_history)
         persisted = service.store.messages()

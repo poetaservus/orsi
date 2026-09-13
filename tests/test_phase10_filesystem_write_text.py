@@ -150,6 +150,18 @@ def test_read_model_never_receives_write_text_capability(service):
     assert not service.agent_runtime.executor.journal.records
 
 
+def test_write_turn_prompt_exposes_write_planner_boundary(service):
+    prompt = service._model_messages(
+        capability_turn=True,
+        capability_names=service._planner_capabilities(),
+    )[0]["content"].casefold()
+
+    assert "filesystem.write_text creates or replaces one utf-8 text file" in prompt
+    assert "after explicit approval" in prompt
+    assert "use write capabilities only when" in prompt
+    assert "exact complete utf-8 text" in prompt
+
+
 def test_gate_is_separate_and_default_off():
     assert AgentFeatureConfig().filesystem_write_text_enabled is False
     with pytest.raises(ValueError, match="metadata"):

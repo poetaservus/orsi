@@ -272,6 +272,65 @@ def test_structured_result_is_persisted_and_appended_before_model_continuation(
     assert result.status == AgentRunStatus.COMPLETED
 
 
+def test_required_calls_default_to_one_shot_without_model_continuation(tmp_path: Path):
+    call = ModelCapabilityCall(
+        provider_call_id="required-provider-1",
+        capability="test.echo",
+        arguments={"value": "seeded"},
+    )
+    runtime, model, capability, journal, _ = build_runtime(tmp_path, [])
+
+    result = runtime.run(
+        [{"role": "user", "content": "Run the required call."}],
+        session_id="session-1",
+        turn_id="turn-1",
+        portable_root=tmp_path,
+        allowed_read_roots=(tmp_path,),
+        required_calls=(call,),
+    )
+
+    assert result.status == AgentRunStatus.COMPLETED
+    assert result.assistant_text == "The requested capability calls completed."
+    assert model.requests == []
+    assert capability.values == ["seeded"]
+    assert journal.get("internal-call-1").state == CallLifecycleState.COMPLETED
+
+
+def test_required_calls_can_seed_model_continuation(tmp_path: Path):
+    call = ModelCapabilityCall(
+        provider_call_id="required-provider-1",
+        capability="test.echo",
+        arguments={"value": "seeded"},
+    )
+    runtime, model, capability, journal, _ = build_runtime(
+        tmp_path,
+        [ModelResponse.text("continued from seeded result")],
+    )
+
+    result = runtime.run(
+        [{"role": "user", "content": "Run the required call, then answer."}],
+        session_id="session-1",
+        turn_id="turn-1",
+        portable_root=tmp_path,
+        allowed_read_roots=(tmp_path,),
+        required_calls=(call,),
+        continue_after_required_calls=True,
+    )
+
+    assert result.status == AgentRunStatus.COMPLETED
+    assert result.assistant_text == "continued from seeded result"
+    assert result.steps == 2
+    assert capability.values == ["seeded"]
+    assert len(model.requests) == 1
+    assert model.requests[0][-2]["role"] == "assistant"
+    assert model.requests[0][-2]["capability_calls"][0]["provider_call_id"] == (
+        "required-provider-1"
+    )
+    assert model.requests[0][-1]["role"] == "capability"
+    assert model.requests[0][-1]["result"]["output"] == {"echo": "seeded"}
+    assert journal.get("internal-call-1").state == CallLifecycleState.COMPLETED
+
+
 def test_invalid_arguments_return_to_model_without_execution_or_journaling(
     tmp_path: Path,
 ):

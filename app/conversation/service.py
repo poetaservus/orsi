@@ -187,8 +187,12 @@ class ConversationService:
                         self._retain_filesystem_context(calls, results)
 
                     required_calls = self._required_capability_calls(text)
+                    turn_capabilities = self._read_capabilities()
                     result = self.agent_runtime.run(
-                        self._model_messages(capability_turn=True),
+                        self._model_messages(
+                            capability_turn=True,
+                            capability_names=turn_capabilities,
+                        ),
                         session_id=self._session_id,
                         turn_id=turn_id,
                         portable_root=self.portable_root,
@@ -197,7 +201,8 @@ class ConversationService:
                         cancellation=source.token,
                         result_observer=retain_results,
                         required_calls=required_calls,
-                        capability_names=self._read_capabilities(),
+                        capability_names=turn_capabilities,
+                        continue_after_required_calls=bool(required_calls),
                     )
                 else:
                     result = self.agent_runtime.run_conversation(
@@ -207,30 +212,18 @@ class ConversationService:
                 if result.status == AgentRunStatus.CANCELLED:
                     return "The response was stopped."
                 if result.status != AgentRunStatus.COMPLETED:
-                    raise RuntimeError(
-                        result.message or "The bounded agent run did not complete."
+                    fallback = self._fallback_required_answer(
+                        required_calls,
+                        turn_results,
                     )
-                answer = result.assistant_text.strip()
-                if required_calls and all(
-                    call.capability == "filesystem.stat" for call in required_calls
-                ):
-                    answer = _render_metadata_results(required_calls, turn_results)
-                elif required_calls and all(
-                    call.capability == "filesystem.find" for call in required_calls
-                ):
-                    answer = _render_find_result(required_calls, turn_results)
-                elif required_calls and all(
-                    call.capability == "filesystem.list" for call in required_calls
-                ):
-                    answer = _render_listing_results(required_calls, turn_results)
-                elif required_calls and all(
-                    call.capability == "filesystem.read_text" for call in required_calls
-                ):
-                    answer = _render_text_result(required_calls, turn_results)
-                elif required_calls and all(
-                    call.capability == "filesystem.search" for call in required_calls
-                ):
-                    answer = _render_search_result(required_calls, turn_results)
+                    if fallback is not None:
+                        answer = fallback
+                    else:
+                        raise RuntimeError(
+                            result.message or "The bounded agent run did not complete."
+                        )
+                else:
+                    answer = result.assistant_text.strip()
                 completed_capabilities = {
                     call.capability for call, _result in turn_results
                 }
@@ -279,6 +272,31 @@ class ConversationService:
             if name not in {"filesystem.mkdir", "filesystem.write_text", "filesystem.copy", "filesystem.move", "filesystem.trash"}
         )
 
+    def _planner_capabilities(self) -> tuple[str, ...]:
+        return self.agent_capabilities
+
+    def _fallback_required_answer(
+        self,
+        required_calls: tuple[ModelCapabilityCall, ...],
+        turn_results: list[tuple],
+    ) -> str | None:
+        if not required_calls or not _observed_required_calls_complete(
+            required_calls,
+            turn_results,
+        ):
+            return None
+        if all(call.capability == "filesystem.stat" for call in required_calls):
+            return _render_metadata_results(required_calls, turn_results)
+        if all(call.capability == "filesystem.find" for call in required_calls):
+            return _render_find_result(required_calls, turn_results)
+        if all(call.capability == "filesystem.list" for call in required_calls):
+            return _render_listing_results(required_calls, turn_results)
+        if all(call.capability == "filesystem.read_text" for call in required_calls):
+            return _render_text_result(required_calls, turn_results)
+        if all(call.capability == "filesystem.search" for call in required_calls):
+            return _render_search_result(required_calls, turn_results)
+        return None
+
     def _create_folder(self, text, source, activity) -> str:
         self._last_filesystem_operation = None
         if "filesystem.mkdir" not in self.agent_capabilities:
@@ -296,24 +314,30 @@ class ConversationService:
         if activity:
             activity("Preparing folder approval...")
         result = self.agent_runtime.run(
-            [{"role": "user", "content": text}],
+            self._model_messages(
+                capability_turn=True,
+                capability_names=self._planner_capabilities(),
+            ),
             session_id=self._session_id, turn_id=f"turn-{self._turn_number}",
             portable_root=self.portable_root, allowed_read_roots=self.allowed_read_roots,
             host_access_policy=self.host_access_policy, cancellation=source.token,
-            required_calls=(call,), capability_names=("filesystem.mkdir",),
+            required_calls=(call,), capability_names=self._planner_capabilities(),
+            continue_after_required_calls=True,
             result_observer=lambda calls, results: observed.extend(results),
         )
         if result.status == AgentRunStatus.CANCELLED:
             return "Folder creation was cancelled before execution."
-        if result.status != AgentRunStatus.COMPLETED:
-            raise RuntimeError(result.message or "Folder creation did not complete.")
         if not observed:
+            if result.status != AgentRunStatus.COMPLETED:
+                raise RuntimeError(result.message or "Folder creation did not complete.")
             raise RuntimeError("The folder creation result was not returned.")
         outcome = observed[0]
         if not outcome.success:
-            return outcome.error.message if outcome.error else "The folder could not be created."
+            fallback = outcome.error.message if outcome.error else "The folder could not be created."
+            return result.assistant_text.strip() if result.status == AgentRunStatus.COMPLETED else fallback
         self._active_listing = None
-        return f"Created empty folder: {outcome.output['path']}"
+        fallback = f"Created empty folder: {outcome.output['path']}"
+        return result.assistant_text.strip() if result.status == AgentRunStatus.COMPLETED else fallback
 
     def _write_text(self, text, source, activity) -> str:
         self._last_filesystem_operation = None
@@ -332,25 +356,31 @@ class ConversationService:
         if activity:
             activity("Preparing file approval...")
         result = self.agent_runtime.run(
-            [{"role": "user", "content": text}],
+            self._model_messages(
+                capability_turn=True,
+                capability_names=self._planner_capabilities(),
+            ),
             session_id=self._session_id, turn_id=f"turn-{self._turn_number}",
             portable_root=self.portable_root, allowed_read_roots=self.allowed_read_roots,
             host_access_policy=self.host_access_policy, cancellation=source.token,
-            required_calls=(call,), capability_names=("filesystem.write_text",),
+            required_calls=(call,), capability_names=self._planner_capabilities(),
+            continue_after_required_calls=True,
             result_observer=lambda calls, results: observed.extend(results),
         )
         if result.status == AgentRunStatus.CANCELLED:
             return "Text-file writing was cancelled before execution."
-        if result.status != AgentRunStatus.COMPLETED:
-            raise RuntimeError(result.message or "Text-file writing did not complete.")
         if not observed:
+            if result.status != AgentRunStatus.COMPLETED:
+                raise RuntimeError(result.message or "Text-file writing did not complete.")
             raise RuntimeError("The text-file write result was not returned.")
         outcome = observed[0]
         if not outcome.success:
-            return outcome.error.message if outcome.error else "The text file could not be written."
+            fallback = outcome.error.message if outcome.error else "The text file could not be written."
+            return result.assistant_text.strip() if result.status == AgentRunStatus.COMPLETED else fallback
         self._active_listing = None
         output = outcome.output or {}
-        return f"Wrote text file: {output['path']} ({output['bytes_written']:,} bytes, {output['operation']})."
+        fallback = f"Wrote text file: {output['path']} ({output['bytes_written']:,} bytes, {output['operation']})."
+        return result.assistant_text.strip() if result.status == AgentRunStatus.COMPLETED else fallback
 
     def _copy_file(self, text, source, activity) -> str:
         self._last_filesystem_operation = None
@@ -371,26 +401,32 @@ class ConversationService:
         if activity:
             activity("Preparing copy approval...")
         result = self.agent_runtime.run(
-            [{"role": "user", "content": text}],
+            self._model_messages(
+                capability_turn=True,
+                capability_names=self._planner_capabilities(),
+            ),
             session_id=self._session_id, turn_id=f"turn-{self._turn_number}",
             portable_root=self.portable_root, allowed_read_roots=self.allowed_read_roots,
             host_access_policy=self.host_access_policy, cancellation=source.token,
-            required_calls=(call,), capability_names=("filesystem.copy",),
+            required_calls=(call,), capability_names=self._planner_capabilities(),
+            continue_after_required_calls=True,
             result_observer=lambda calls, results: observed.extend(results),
         )
         if result.status == AgentRunStatus.CANCELLED:
             return "File copying was cancelled before execution."
-        if result.status != AgentRunStatus.COMPLETED:
-            raise RuntimeError(result.message or "File copying did not complete.")
         if not observed:
+            if result.status != AgentRunStatus.COMPLETED:
+                raise RuntimeError(result.message or "File copying did not complete.")
             raise RuntimeError("The file-copy result was not returned.")
         outcome = observed[0]
         if not outcome.success:
-            return outcome.error.message if outcome.error else "The file could not be copied."
+            fallback = outcome.error.message if outcome.error else "The file could not be copied."
+            return result.assistant_text.strip() if result.status == AgentRunStatus.COMPLETED else fallback
         self._active_listing = None
         output = outcome.output or {}
-        return (f"Copied file: {output['destination_path']} "
-                f"({output['bytes_copied']:,} bytes, {output['operation']}).")
+        fallback = (f"Copied file: {output['destination_path']} "
+                    f"({output['bytes_copied']:,} bytes, {output['operation']}).")
+        return result.assistant_text.strip() if result.status == AgentRunStatus.COMPLETED else fallback
 
     def _move_file(self, text, source, activity) -> str:
         self._last_filesystem_operation = None
@@ -411,26 +447,32 @@ class ConversationService:
         if activity:
             activity("Preparing move approval...")
         result = self.agent_runtime.run(
-            [{"role": "user", "content": text}],
+            self._model_messages(
+                capability_turn=True,
+                capability_names=self._planner_capabilities(),
+            ),
             session_id=self._session_id, turn_id=f"turn-{self._turn_number}",
             portable_root=self.portable_root, allowed_read_roots=self.allowed_read_roots,
             host_access_policy=self.host_access_policy, cancellation=source.token,
-            required_calls=(call,), capability_names=("filesystem.move",),
+            required_calls=(call,), capability_names=self._planner_capabilities(),
+            continue_after_required_calls=True,
             result_observer=lambda calls, results: observed.extend(results),
         )
         if result.status == AgentRunStatus.CANCELLED:
             return "File moving was cancelled before execution."
-        if result.status != AgentRunStatus.COMPLETED:
-            raise RuntimeError(result.message or "File moving did not complete.")
         if not observed:
+            if result.status != AgentRunStatus.COMPLETED:
+                raise RuntimeError(result.message or "File moving did not complete.")
             raise RuntimeError("The file-move result was not returned.")
         outcome = observed[0]
         if not outcome.success:
-            return outcome.error.message if outcome.error else "The file could not be moved."
+            fallback = outcome.error.message if outcome.error else "The file could not be moved."
+            return result.assistant_text.strip() if result.status == AgentRunStatus.COMPLETED else fallback
         self._active_listing = None
         output = outcome.output or {}
-        return (f"Moved file: {output['destination_path']} "
-                f"({output['bytes_moved']:,} bytes, {output['operation']}).")
+        fallback = (f"Moved file: {output['destination_path']} "
+                    f"({output['bytes_moved']:,} bytes, {output['operation']}).")
+        return result.assistant_text.strip() if result.status == AgentRunStatus.COMPLETED else fallback
 
     def _trash_file(self, text, source, activity) -> str:
         self._last_filesystem_operation = None
@@ -448,25 +490,31 @@ class ConversationService:
         if activity:
             activity("Preparing trash approval...")
         result = self.agent_runtime.run(
-            [{"role": "user", "content": text}],
+            self._model_messages(
+                capability_turn=True,
+                capability_names=self._planner_capabilities(),
+            ),
             session_id=self._session_id, turn_id=f"turn-{self._turn_number}",
             portable_root=self.portable_root, allowed_read_roots=self.allowed_read_roots,
             host_access_policy=self.host_access_policy, cancellation=source.token,
-            required_calls=(call,), capability_names=("filesystem.trash",),
+            required_calls=(call,), capability_names=self._planner_capabilities(),
+            continue_after_required_calls=True,
             result_observer=lambda calls, results: observed.extend(results),
         )
         if result.status == AgentRunStatus.CANCELLED:
             return "File trashing was cancelled before execution."
-        if result.status != AgentRunStatus.COMPLETED:
-            raise RuntimeError(result.message or "File trashing did not complete.")
         if not observed:
+            if result.status != AgentRunStatus.COMPLETED:
+                raise RuntimeError(result.message or "File trashing did not complete.")
             raise RuntimeError("The file-trash result was not returned.")
         outcome = observed[0]
         if not outcome.success:
-            return outcome.error.message if outcome.error else "The file could not be sent to the Recycle Bin."
+            fallback = outcome.error.message if outcome.error else "The file could not be sent to the Recycle Bin."
+            return result.assistant_text.strip() if result.status == AgentRunStatus.COMPLETED else fallback
         self._active_listing = None
         output = outcome.output or {}
-        return f"Sent file to Recycle Bin: {output['path']} ({output['bytes_trashed']:,} bytes)."
+        fallback = f"Sent file to Recycle Bin: {output['path']} ({output['bytes_trashed']:,} bytes)."
+        return result.assistant_text.strip() if result.status == AgentRunStatus.COMPLETED else fallback
 
     def cancel_current_task(self) -> bool:
         with self._cancellation_lock:
@@ -510,12 +558,16 @@ class ConversationService:
         self,
         *,
         capability_turn: bool | None = None,
+        capability_names: tuple[str, ...] | None = None,
     ) -> list[dict]:
+        planner_capabilities = (
+            capability_names if capability_names is not None else self._read_capabilities()
+        )
         prompt = (
             (
                 agent_system_prompt(
                     self.host_read_scope or HostReadScope.PORTABLE_ROOT,
-                    self._read_capabilities(),
+                    planner_capabilities,
                 )
                 if capability_turn is not False
                 else AGENT_CONVERSATION_SYSTEM_PROMPT
@@ -1156,6 +1208,23 @@ def _same_path(left: str, right: str) -> bool:
     return os.path.normcase(os.path.normpath(left)) == os.path.normcase(
         os.path.normpath(right)
     )
+
+
+def _observed_required_calls_complete(
+    required_calls: tuple[ModelCapabilityCall, ...],
+    observed_results: list[tuple],
+) -> bool:
+    pending = list(required_calls)
+    for observed_call, _result in observed_results:
+        for index, required in enumerate(pending):
+            if _same_capability_call(observed_call, required):
+                pending.pop(index)
+                break
+    return not pending
+
+
+def _same_capability_call(left: ModelCapabilityCall, right: ModelCapabilityCall) -> bool:
+    return left.capability == right.capability and left.arguments == right.arguments
 
 
 def _mentions_filename(lowered_text: str, filename: str) -> bool:

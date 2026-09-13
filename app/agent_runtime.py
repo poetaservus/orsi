@@ -313,6 +313,7 @@ class AgentRuntime:
         | None = None,
         required_calls: tuple[ModelCapabilityCall, ...] = (),
         capability_names: tuple[str, ...] | None = None,
+        continue_after_required_calls: bool = False,
     ) -> AgentRunResult:
         if not _safe_identifier(session_id) or not _safe_identifier(turn_id):
             raise ValueError("Agent session and turn IDs must use bounded stable syntax.")
@@ -335,6 +336,8 @@ class AgentRuntime:
             or not all(isinstance(call, ModelCapabilityCall) for call in required_calls)
         ):
             raise TypeError("Required agent calls must be a tuple of model capability calls.")
+        if type(continue_after_required_calls) is not bool:
+            raise TypeError("Required-call continuation must be an explicit boolean.")
 
         definitions = self.registry.model_definitions()
         if capability_names is not None:
@@ -661,13 +664,16 @@ class AgentRuntime:
                     )
 
             if required_set and completed_required == required_set:
-                return AgentRunResult(
-                    status=AgentRunStatus.COMPLETED,
-                    assistant_text="The requested capability calls completed.",
-                    steps=steps,
-                    capability_calls=capability_calls,
-                    protocol_failures=protocol_failures,
-                )
+                if not continue_after_required_calls:
+                    return AgentRunResult(
+                        status=AgentRunStatus.COMPLETED,
+                        assistant_text="The requested capability calls completed.",
+                        steps=steps,
+                        capability_calls=capability_calls,
+                        protocol_failures=protocol_failures,
+                    )
+                required_set = set()
+                completed_required = set()
 
             try:
                 transcript.append(model_capability_calls_message(calls))

@@ -34,7 +34,7 @@ class DeterministicFindModel(InferenceEngine):
 
     def respond_with_capabilities(self, messages, capabilities):
         self.capability_requests.append(messages)
-        raise AssertionError("Exact resolver targets must bypass model tool selection.")
+        raise AssertionError("The fake model intentionally refuses continuation.")
 
 
 def build_service(tmp_path: Path, model: InferenceEngine):
@@ -146,7 +146,7 @@ def test_desktop_folder_request_finds_actual_directory_without_model_tool_select
 
         assert "directory:" in answer
         assert str(lab.resolve()) in answer
-        assert model.capability_requests == []
+        assert len(model.capability_requests) == 1
         assert model.text_requests == []
         records = runtime.executor.journal.records
         assert [record.capability for record in records] == ["filesystem.find"]
@@ -170,7 +170,7 @@ def test_named_desktop_folder_listing_routes_to_directory_contents(tmp_path: Pat
         assert "alpha.txt (file)" in answer
         assert "Subfolder (directory)" in answer
         assert "PRIVATE ALPHA CONTENT" not in answer
-        assert model.capability_requests == []
+        assert len(model.capability_requests) == 1
         assert model.text_requests == []
         records = runtime.executor.journal.records
         assert [record.capability for record in records] == ["filesystem.list"]
@@ -190,7 +190,7 @@ def test_whats_in_named_desktop_folder_lists_contents_in_one_turn(tmp_path: Path
 
         assert "note.txt (file)" in answer
         assert "PRIVATE NOTE CONTENT" not in answer
-        assert model.capability_requests == []
+        assert len(model.capability_requests) == 1
         assert model.text_requests == []
         assert [record.capability for record in runtime.executor.journal.records] == [
             "filesystem.list"
@@ -211,7 +211,7 @@ def test_found_directory_remains_active_for_there_followup(tmp_path: Path):
 
         assert "directory:" in found
         assert "followup.txt (file)" in answer
-        assert model.capability_requests == []
+        assert len(model.capability_requests) == 2
         assert model.text_requests == []
         capabilities = [record.capability for record in runtime.executor.journal.records]
         assert capabilities.count("filesystem.find") == 1
@@ -268,7 +268,7 @@ def test_find_reports_no_match_without_guessing(tmp_path: Path):
         assert answer == (
             f"No directory named missing was found in {(user_home / 'Desktop').resolve()}."
         )
-        assert model.capability_requests == []
+        assert len(model.capability_requests) == 1
         assert [record.capability for record in runtime.executor.journal.records] == [
             "filesystem.find"
         ]
@@ -289,7 +289,7 @@ def test_content_search_still_routes_to_filesystem_search(tmp_path: Path):
         assert [record.capability for record in runtime.executor.journal.records] == [
             "filesystem.search"
         ]
-        assert model.capability_requests == []
+        assert len(model.capability_requests) == 1
     finally:
         service.shutdown()
 

@@ -34,7 +34,7 @@ class DeterministicReadModel(InferenceEngine):
 
     def respond_with_capabilities(self, messages, capabilities):
         self.capability_requests.append(messages)
-        raise AssertionError("Exact list and text-read targets must bypass model tool selection.")
+        raise AssertionError("The fake model intentionally refuses continuation.")
 
 
 def build_service(tmp_path: Path, model: InferenceEngine):
@@ -113,7 +113,7 @@ def test_list_then_read_unique_stem_returns_actual_file_content(tmp_path: Path):
         assert "fixed_v1.txt" in listing
         assert actual_content in answer
         assert "sample text content" not in answer.casefold()
-        assert model.capability_requests == []
+        assert len(model.capability_requests) == 2
         assert model.text_requests == []
         records = runtime.executor.journal.records
         assert sorted(record.capability for record in records) == [
@@ -139,7 +139,7 @@ def test_direct_exact_path_read_preserves_content_and_markdown_fences(tmp_path: 
         assert [record.capability for record in runtime.executor.journal.records] == [
             "filesystem.read_text"
         ]
-        assert model.capability_requests == []
+        assert len(model.capability_requests) == 1
     finally:
         service.shutdown()
 
@@ -164,7 +164,7 @@ def test_file_content_cannot_trigger_another_capability(tmp_path: Path):
             "filesystem.list",
             "filesystem.read_text",
         ]
-        assert model.capability_requests == []
+        assert len(model.capability_requests) == 2
     finally:
         service.shutdown()
 

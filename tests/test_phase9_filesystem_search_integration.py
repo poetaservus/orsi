@@ -34,7 +34,7 @@ class DeterministicSearchModel(InferenceEngine):
 
     def respond_with_capabilities(self, messages, capabilities):
         self.capability_requests.append(messages)
-        raise AssertionError("Exact search targets must bypass model tool selection.")
+        raise AssertionError("The fake model intentionally refuses continuation.")
 
 
 def build_service(tmp_path: Path, model: InferenceEngine):
@@ -125,7 +125,7 @@ def test_exact_path_search_returns_actual_matches_without_model_tool_selection(t
         assert "alpha.txt" in answer
         assert "REAL-NEEDLE-123" in answer
         assert "beta.txt" not in answer
-        assert model.capability_requests == []
+        assert len(model.capability_requests) == 1
         assert model.text_requests == []
         records = runtime.executor.journal.records
         assert [record.capability for record in records] == ["filesystem.search"]
@@ -148,7 +148,7 @@ def test_search_content_cannot_trigger_another_capability(tmp_path: Path):
         assert [record.capability for record in runtime.executor.journal.records] == [
             "filesystem.search"
         ]
-        assert model.capability_requests == []
+        assert len(model.capability_requests) == 1
     finally:
         service.shutdown()
 
