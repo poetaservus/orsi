@@ -121,7 +121,7 @@ class UiTests(unittest.TestCase):
         window = MainWindow(None, "TEST-HOST")
         self.assertEqual(window.composer.height(), 74)
         self.assertEqual(window.input.height(), 58)
-        self.assertEqual(window.send.size().width(), 46)
+        self.assertEqual(window.send.size().width(), 42)
         self.assertIs(window.model_selector.parentWidget(), window.settings_panel)
         pasted = ("A full paragraph.\n\n" * 3000).rstrip()
         window.input.setPlainText(pasted)

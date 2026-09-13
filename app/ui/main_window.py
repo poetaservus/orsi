@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QObject, QRect, QSize, Qt, QThread, QTimer, Signal, Slot
+from PySide6.QtCore import QEvent, QObject, QRect, QRectF, QSize, Qt, QThread, QTimer, Signal, Slot
 from PySide6.QtGui import QColor, QIcon, QLinearGradient, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QComboBox,
@@ -73,20 +73,31 @@ class Worker(QObject):
 
 
 class ComposerFrame(QFrame):
-    """Paint the supplied v2 input-field asset behind the live composer controls."""
+    """Paint a clean v2 composer pill without baked-in image artifacts."""
 
-    def __init__(self, background: Path, parent: QWidget | None = None):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
-        self._background = QPixmap(str(background))
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAutoFillBackground(False)
 
     def paintEvent(self, event) -> None:  # noqa: N802 - Qt API name
-        if self._background.isNull():
-            super().paintEvent(event)
-            return
         del event
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-        painter.drawPixmap(self.rect(), self._background)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = QRectF(self.rect()).adjusted(1.0, 1.0, -1.0, -1.0)
+        radius = rect.height() / 2
+        fill = QLinearGradient(rect.topLeft(), rect.bottomLeft())
+        fill.setColorAt(0.0, QColor("#41444d"))
+        fill.setColorAt(0.45, QColor("#383b45"))
+        fill.setColorAt(1.0, QColor("#303340"))
+        painter.setPen(QColor(105, 109, 124, 190))
+        painter.setBrush(fill)
+        painter.drawRoundedRect(rect, radius, radius)
+
+        painter.setPen(QColor(255, 255, 255, 26))
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        inner = rect.adjusted(2.0, 2.0, -2.0, -2.0)
+        painter.drawRoundedRect(inner, max(1.0, radius - 2.0), max(1.0, radius - 2.0))
 
 
 class ChatSurface(QWidget):
@@ -251,12 +262,12 @@ class MainWindow(QMainWindow):
         settings_layout.addWidget(self.activity)
         self.settings_panel.hide()
 
-        self.composer = ComposerFrame(_ICON_DIRECTORY / "input_field_cropped.png", content)
+        self.composer = ComposerFrame(content)
         self.composer.setObjectName("composer")
         self.composer.setFixedHeight(_COMPOSER_HEIGHT)
         composer_layout = QHBoxLayout(self.composer)
-        composer_layout.setContentsMargins(30, 8, 16, 8)
-        composer_layout.setSpacing(10)
+        composer_layout.setContentsMargins(30, 8, 28, 8)
+        composer_layout.setSpacing(8)
 
         self.input = MessageInput()
         self.input.setObjectName("messageInput")
@@ -266,15 +277,15 @@ class MainWindow(QMainWindow):
 
         self.send = QPushButton()
         self.send.setObjectName("sendButton")
-        self.send.setFixedSize(46, 46)
+        self.send.setFixedSize(42, 42)
         self.send.setIcon(QIcon(str(_ICON_DIRECTORY / "input_button_cropped.png")))
-        self.send.setIconSize(QSize(36, 36))
+        self.send.setIconSize(QSize(38, 38))
         self.send.setToolTip("Send")
         self.send.setAccessibleName("Send")
 
         self.stop = QPushButton()
         self.stop.setObjectName("stopButton")
-        self.stop.setFixedSize(46, 46)
+        self.stop.setFixedSize(42, 42)
         self.stop.setIcon(QIcon(str(_ICON_DIRECTORY / "stop.svg")))
         self.stop.setIconSize(QSize(18, 18))
         self.stop.setToolTip("Stop")
@@ -1124,8 +1135,8 @@ QLabel#conversationStatus {
     font-size: 11px;
 }
 QFrame#composer {
-    background: rgba(57, 59, 70, 214);
-    border: 1px solid #575a66;
+    background: transparent;
+    border: none;
     border-radius: 36px;
 }
 QTextEdit#messageInput {
@@ -1142,7 +1153,7 @@ QTextEdit#messageInput:disabled { color: #777777; background: transparent; }
 QPushButton#sendButton, QPushButton#stopButton {
     background: transparent;
     border: none;
-    border-radius: 23px;
+    border-radius: 21px;
     padding: 0;
 }
 QPushButton#sendButton:hover, QPushButton#stopButton:hover { background: #454852; }
