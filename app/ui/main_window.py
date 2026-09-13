@@ -1156,15 +1156,12 @@ QTextEdit#messageInput {
 QTextEdit#messageInput:focus { border: none; }
 QTextEdit#messageInput:disabled { color: #777777; background: transparent; }
 QPushButton#sendButton, QPushButton#stopButton {
+    background: transparent;
     border: none;
-    background-color: transparent;
-    padding: 8px; /* Pulls hover boundary inward */
-    border-radius: 20px; /* Radius adjusted for the contracted area */
+    border-radius: 19px;
+    padding: 0;
 }
-QPushButton#sendButton:hover, QPushButton#stopButton:hover { 
-    background-color: #454852; 
-    border-radius: 20px;
-}
+QPushButton#sendButton:hover, QPushButton#stopButton:hover { background: #454852; }
 QPushButton#sendButton:pressed, QPushButton#stopButton:pressed { background: #2c2e35;  }
 QPushButton#sendButton:disabled, QPushButton#stopButton:disabled { background: transparent; }
 QComboBox#modelSelector {
