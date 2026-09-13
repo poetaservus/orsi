@@ -275,17 +275,23 @@ class MainWindow(QMainWindow):
         self.input.setAcceptRichText(False)
         self.input.setFixedHeight(58)
 
-        self.send = QPushButton()
+        self.action_slot = QWidget()
+        self.action_slot.setObjectName("composerActionSlot")
+        self.action_slot.setFixedSize(42, 46)
+
+        self.send = QPushButton(self.action_slot)
         self.send.setObjectName("sendButton")
         self.send.setFixedSize(42, 42)
+        self.send.move(0, 0)
         self.send.setIcon(QIcon(str(_ICON_DIRECTORY / "input_button_cropped.png")))
         self.send.setIconSize(QSize(38, 38))
         self.send.setToolTip("Send")
         self.send.setAccessibleName("Send")
 
-        self.stop = QPushButton()
+        self.stop = QPushButton(self.action_slot)
         self.stop.setObjectName("stopButton")
         self.stop.setFixedSize(42, 42)
+        self.stop.move(0, 0)
         self.stop.setIcon(QIcon(str(_ICON_DIRECTORY / "stop.svg")))
         self.stop.setIconSize(QSize(18, 18))
         self.stop.setToolTip("Stop")
@@ -294,8 +300,7 @@ class MainWindow(QMainWindow):
         self.stop.hide()
 
         composer_layout.addWidget(self.input, 1)
-        composer_layout.addWidget(self.send)
-        composer_layout.addWidget(self.stop)
+        composer_layout.addWidget(self.action_slot)
 
         self.setCentralWidget(root)
         self.setStyleSheet(_STYLE)
