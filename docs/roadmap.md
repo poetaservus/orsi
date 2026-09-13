@@ -57,19 +57,19 @@ time. The application must keep a safe chat fallback throughout development.
 
 The active development line is `codex/phase-9-target-resolver`. It carries the accepted Phase 10
 mutation checkpoints, Phase 9 search, the target resolver, the planner-loop repair, bounded filename
-disambiguation, and GUI v2 polish through local code checkpoint `76167c8`. The branch is still a
-development line: it is not merged, release-promoted, or ready to change the version beyond
-`v0.4.0-dev` until the remaining manual acceptance and packaging gates are closed.
+disambiguation, and GUI v2 polish through code checkpoint `2fb1363`. The branch is published to
+GitHub and tracks `origin/codex/phase-9-target-resolver`. It is still a development line: it is not
+merged, release-promoted, or ready to change the version beyond `v0.4.0-dev` until the remaining
+manual acceptance and packaging gates are closed.
 
 ## Next milestones
 
-1. Publish `codex/phase-9-target-resolver` to GitHub with upstream tracking after explicit approval.
-2. Manually accept the target-resolver / planner-loop workflows in the app, including follow-up reads,
+1. Manually accept the target-resolver / planner-loop workflows in the app, including follow-up reads,
    folder listing, filename disambiguation, writes, and GUI v2 composer behavior.
-3. Run a fresh-runtime packaging check before any release promotion.
-4. Keep `v0.4.0-dev` until Phase 9 resolver acceptance and packaging are recorded; advance the version
+2. Run a fresh-runtime packaging check before any release promotion.
+3. Keep `v0.4.0-dev` until Phase 9 resolver acceptance and packaging are recorded; advance the version
    only at the next accepted milestone.
-5. Improve interruption behavior and malformed conversation recovery after the current branch is
+4. Improve interruption behavior and malformed conversation recovery after the current branch is
    accepted.
 
 ## Release rule

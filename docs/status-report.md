@@ -6,14 +6,15 @@ Date: 2026-09-13
 
 The active development line is `codex/phase-9-target-resolver`. It builds on the accepted Phase 10
 trash checkpoint `e5a6092` and Phase 9 search, then adds the target resolver, planner-first
-capability loop, bounded filename disambiguation, and GUI v2 polish through local code checkpoint
-`76167c8`. Manual application acceptance is complete for Phase 10 trash and Phase 9 search. The
-current gate is manual acceptance for the resolver/planner follow-up workflows and GUI v2 behavior,
-followed by fresh-runtime packaging before any release promotion. The version remains `v0.4.0-dev`.
+capability loop, bounded filename disambiguation, and GUI v2 polish through code checkpoint
+`2fb1363`. The branch is published to GitHub and tracks `origin/codex/phase-9-target-resolver`.
+Manual application acceptance is complete for Phase 10 trash and Phase 9 search. The current gate is
+manual acceptance for the resolver/planner follow-up workflows and GUI v2 behavior, followed by
+fresh-runtime packaging before any release promotion. The version remains `v0.4.0-dev`.
 
-## GUI status: v2 integrated locally
+## GUI status: v2 integrated and published
 
-- GUI v2 is implemented on `codex/phase-9-target-resolver` through `76167c8`.
+- GUI v2 is implemented on `codex/phase-9-target-resolver` through `2fb1363`.
 - The v2 background and top instrumentation bar are in place, with left-side controls and persistent
   `O.R.S.I. v0.4.0-dev // Local // Context Window` status text.
 - The chat transcript is centered over the dark background with quiet assistant text, rounded user
@@ -21,6 +22,13 @@ followed by fresh-runtime packaging before any release promotion. The version re
 - The composer was rebuilt as the v2 bottom pill. The custom hover implementation from `75467d8`
   was reverted in `e0cf7a6`; `76167c8` keeps normal Qt send-button rendering while padding the hover
   state correctly.
+- `228295d` keeps the send/stop hover radius consistent with the normal button radius after the
+  restored hover-state tweak.
+- `ab8ab75` adjusts the restored hover boundary with explicit hover padding and radius styling.
+- `05576da` refines the hover padding to keep the normal button radius while widening the hover
+  highlight boundary.
+- `2fb1363` restores the send-button cropped asset and the normal 23px button radius for the final
+  pushed GUI v2 state.
 - The version remains `v0.4.0-dev`; GUI v2 is a development checkpoint, not a release-version bump.
 
 ## Runtime status
@@ -128,8 +136,11 @@ followed by fresh-runtime packaging before any release promotion. The version re
   affirmative follow-ups, and no-match reporting without guessing.
 - Planner-loop and filename-disambiguation checkpoints are committed at `54872cc`, `853480e`,
   `b39c7a5`, and `9ea55e2` on the active branch.
-- GUI v2 checkpoints are committed from `6967485` through `76167c8`; focused UI tests were rerun for
-  the composer and send-hover fixes.
+- GUI v2 checkpoints are committed from `6967485` through `2fb1363`; focused UI tests were rerun for
+  the composer and send-hover fixes through `76167c8`. For the final stylesheet-only hover tweaks at
+  `228295d`, `ab8ab75`, `05576da`, and the final asset/style restoration at `2fb1363`,
+  `python -m compileall app/ui/main_window.py` passed; the available local Python 3.14 runtimes did
+  not have `pytest`, so the focused UI suite was not rerun for those tweaks.
 - Manual Phase 9 workflow acceptance: user confirmed the enabled app works on 2026-09-12.
 - Manual Phase 10 text-write application acceptance: user reported it works on 2026-09-12.
 - Manual Phase 10 copy application acceptance: user reported it works on 2026-09-12.
@@ -163,8 +174,8 @@ followed by fresh-runtime packaging before any release promotion. The version re
   `phase9-search-threat-review.md` for protection scope.
 - Phase 9.5 target resolver, planner-loop repair, bounded filename disambiguation, and GUI v2 are
   development-only checkpoints on `codex/phase-9-target-resolver`. The latest recorded code commit is
-  `76167c8`. The branch still needs GitHub upstream publication, manual full-workflow app acceptance,
-  and fresh-runtime packaging before merge or release promotion. See
+  `2fb1363`. The branch is published to GitHub with upstream tracking. Manual full-workflow app
+  acceptance and fresh-runtime packaging remain before merge or release promotion. See
   `phase9-target-resolver-threat-review.md` for protection scope.
 
 ## Checkpoint scope
@@ -173,6 +184,6 @@ followed by fresh-runtime packaging before any release promotion. The version re
   checkpoint is committed at `076007f`; text writing at `6a8fcbb`; copy at `9376a7e`; move at
   `e1595bc`; trash at `e5a6092`; Phase 9 search at `a08aa32`; target resolver at `456376d` with
   follow-up fixes through `4e339be`; planner-loop repair through `54872cc` and `853480e`; bounded
-  filename disambiguation through `b39c7a5` and `9ea55e2`; GUI v2 through `76167c8`.
+  filename disambiguation through `b39c7a5` and `9ea55e2`; GUI v2 through `2fb1363`.
 - The private Desktop `statusreport.md`, `roadmap.md`, and `versioning.md` remain outside Git but
   have been updated for the same checkpoint state.
