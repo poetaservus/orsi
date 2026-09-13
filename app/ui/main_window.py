@@ -1158,7 +1158,7 @@ QTextEdit#messageInput:disabled { color: #777777; background: transparent; }
 QPushButton#sendButton, QPushButton#stopButton {
     background: transparent;
     border: none;
-    border-radius: 19px;
+    border-radius: 23px;
     padding: 0;
 }
 QPushButton#sendButton:hover, QPushButton#stopButton:hover { background: #454852; }
