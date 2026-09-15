@@ -1,20 +1,20 @@
 # O.R.S.I status report
 
-Date: 2026-09-13
+Date: 2026-09-15
 
 ## Overall status
 
 The active development line is `codex/phase-9-target-resolver`. It builds on the accepted Phase 10
 trash checkpoint `e5a6092` and Phase 9 search, then adds the target resolver, planner-first
 capability loop, bounded filename disambiguation, and GUI v2 polish through code checkpoint
-`2fb1363`. The branch is published to GitHub and tracks `origin/codex/phase-9-target-resolver`.
+`3ec7d0b`. The branch is published to GitHub and tracks `origin/codex/phase-9-target-resolver`.
 Manual application acceptance is complete for Phase 10 trash and Phase 9 search. The current gate is
-manual acceptance for the resolver/planner follow-up workflows and GUI v2 behavior, followed by
-fresh-runtime packaging before any release promotion. The version remains `v0.4.0-dev`.
+manual acceptance for the resolver/planner follow-up workflows, followed by fresh-runtime packaging
+and packaged GUI smoke checks before any release promotion. The version remains `v0.4.0-dev`.
 
-## GUI status: v2 integrated and published
+## GUI status: v2 integrated with September 15 polish
 
-- GUI v2 is implemented on `codex/phase-9-target-resolver` through `2fb1363`.
+- GUI v2 is implemented on `codex/phase-9-target-resolver` through `3ec7d0b`.
 - The v2 background and top instrumentation bar are in place, with left-side controls and persistent
   `O.R.S.I. v0.4.0-dev // Local // Context Window` status text.
 - The chat transcript is centered over the dark background with quiet assistant text, rounded user
@@ -28,7 +28,13 @@ fresh-runtime packaging before any release promotion. The version remains `v0.4.
 - `05576da` refines the hover padding to keep the normal button radius while widening the hover
   highlight boundary.
 - `2fb1363` restores the send-button cropped asset and the normal 23px button radius for the final
-  pushed GUI v2 state.
+  pushed 2026-09-13 GUI v2 state.
+- `3ec7d0b` applies the 2026-09-15 GUI polish pass: bundled Saira font assets, Saira Regular
+  typography, a smaller composer/input/send-button scale, clearer placeholder contrast, slimmer and
+  slightly darker user bubbles, and the cleaned composer/send-button asset state.
+- The transcript-under-input effect is now an invisible bottom lens rather than a visible panel. It
+  captures the scrolling transcript content, repaints the matching background, and blends back only
+  a high-quality Qt-blurred text layer with a feathered top edge aligned to the composer.
 - The version remains `v0.4.0-dev`; GUI v2 is a development checkpoint, not a release-version bump.
 
 ## Runtime status
@@ -141,6 +147,10 @@ fresh-runtime packaging before any release promotion. The version remains `v0.4.
   `228295d`, `ab8ab75`, `05576da`, and the final asset/style restoration at `2fb1363`,
   `python -m compileall app/ui/main_window.py` passed; the available local Python 3.14 runtimes did
   not have `pytest`, so the focused UI suite was not rerun for those tweaks.
+- GUI v2 polish checkpoint `3ec7d0b` was verified on 2026-09-15 with
+  `runtime\python\python.exe -m pytest tests\test_ui.py`: 22 passed, 1 cache-write warning. Rendered
+  previews were inspected during the session for composer scale, placeholder contrast, invisible
+  transcript blur, blur feathering, smooth blur quality, and user-bubble density.
 - Manual Phase 9 workflow acceptance: user confirmed the enabled app works on 2026-09-12.
 - Manual Phase 10 text-write application acceptance: user reported it works on 2026-09-12.
 - Manual Phase 10 copy application acceptance: user reported it works on 2026-09-12.
@@ -174,8 +184,8 @@ fresh-runtime packaging before any release promotion. The version remains `v0.4.
   `phase9-search-threat-review.md` for protection scope.
 - Phase 9.5 target resolver, planner-loop repair, bounded filename disambiguation, and GUI v2 are
   development-only checkpoints on `codex/phase-9-target-resolver`. The latest recorded code commit is
-  `2fb1363`. The branch is published to GitHub with upstream tracking. Manual full-workflow app
-  acceptance and fresh-runtime packaging remain before merge or release promotion. See
+  `3ec7d0b`. The branch is published to GitHub with upstream tracking. Manual resolver/planner
+  full-workflow app acceptance and fresh-runtime packaging remain before merge or release promotion. See
   `phase9-target-resolver-threat-review.md` for protection scope.
 
 ## Checkpoint scope
@@ -184,6 +194,6 @@ fresh-runtime packaging before any release promotion. The version remains `v0.4.
   checkpoint is committed at `076007f`; text writing at `6a8fcbb`; copy at `9376a7e`; move at
   `e1595bc`; trash at `e5a6092`; Phase 9 search at `a08aa32`; target resolver at `456376d` with
   follow-up fixes through `4e339be`; planner-loop repair through `54872cc` and `853480e`; bounded
-  filename disambiguation through `b39c7a5` and `9ea55e2`; GUI v2 through `2fb1363`.
+  filename disambiguation through `b39c7a5` and `9ea55e2`; GUI v2 through `3ec7d0b`.
 - The private Desktop `statusreport.md`, `roadmap.md`, and `versioning.md` remain outside Git but
   have been updated for the same checkpoint state.

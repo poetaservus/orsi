@@ -1,6 +1,6 @@
 # O.R.S.I roadmap
 
-Updated: 2026-09-13
+Updated: 2026-09-15
 
 ## Product direction
 
@@ -41,8 +41,11 @@ time. The application must keep a safe chat fallback throughout development.
   and retained stop/send states.
 - Bottom composer pill matched to the v2 mockup, with Qt-native send button rendering and padded hover
   behavior after reverting the custom hover artifact.
-- Responsive wide and compact layouts, with focused UI coverage and rendered previews for the new
-  composer and hover states.
+- September 15 polish adds bundled Saira Regular typography, a smaller composer/input/send-button
+  scale, clearer placeholder contrast, slimmer/darker user bubbles, and an invisible bottom blur
+  lens that softens transcript text behind the composer without drawing a visible panel.
+- Responsive wide and compact layouts, with focused UI coverage and rendered previews for the
+  composer, hover states, typography, blur, and user-bubble refinements.
 
 ### Natural-language resolver and planner loop
 
@@ -57,7 +60,7 @@ time. The application must keep a safe chat fallback throughout development.
 
 The active development line is `codex/phase-9-target-resolver`. It carries the accepted Phase 10
 mutation checkpoints, Phase 9 search, the target resolver, the planner-loop repair, bounded filename
-disambiguation, and GUI v2 polish through code checkpoint `2fb1363`. The branch is published to
+disambiguation, and GUI v2 polish through code checkpoint `3ec7d0b`. The branch is published to
 GitHub and tracks `origin/codex/phase-9-target-resolver`. It is still a development line: it is not
 merged, release-promoted, or ready to change the version beyond `v0.4.0-dev` until the remaining
 manual acceptance and packaging gates are closed.
@@ -65,8 +68,8 @@ manual acceptance and packaging gates are closed.
 ## Next milestones
 
 1. Manually accept the target-resolver / planner-loop workflows in the app, including follow-up reads,
-   folder listing, filename disambiguation, writes, and GUI v2 composer behavior.
-2. Run a fresh-runtime packaging check before any release promotion.
+   folder listing, filename disambiguation, and writes.
+2. Run a fresh-runtime packaging check and packaged GUI smoke check before any release promotion.
 3. Keep `v0.4.0-dev` until Phase 9 resolver acceptance and packaging are recorded; advance the version
    only at the next accepted milestone.
 4. Improve interruption behavior and malformed conversation recovery after the current branch is
