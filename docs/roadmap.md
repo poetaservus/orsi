@@ -60,7 +60,7 @@ time. The application must keep a safe chat fallback throughout development.
 
 The active development line is `codex/phase-9-target-resolver`. It carries the accepted Phase 10
 mutation checkpoints, Phase 9 search, the target resolver, the planner-loop repair, bounded filename
-disambiguation, and GUI v2 polish through code checkpoint `3ec7d0b`. The branch is published to
+disambiguation, and GUI v2 polish through code checkpoint `da7e7d9`. The branch is published to
 GitHub and tracks `origin/codex/phase-9-target-resolver`. It is still a development line: it is not
 merged, release-promoted, or ready to change the version beyond `v0.4.0-dev` until the remaining
 manual acceptance and packaging gates are closed.
