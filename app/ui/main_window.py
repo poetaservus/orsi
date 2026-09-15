@@ -2,13 +2,28 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QObject, QRect, QRectF, QSize, Qt, QThread, QTimer, Signal, Slot
-from PySide6.QtGui import QColor, QIcon, QLinearGradient, QPainter, QPixmap
+from PySide6.QtCore import QEvent, QObject, QPoint, QRect, QRectF, QSize, Qt, QThread, QTimer, Signal, Slot
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QFontDatabase,
+    QIcon,
+    QLinearGradient,
+    QPainter,
+    QPainterPath,
+    QPalette,
+    QPixmap,
+    QRegion,
+)
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QDialog,
     QDialogButtonBox,
     QFrame,
+    QGraphicsBlurEffect,
+    QGraphicsPixmapItem,
+    QGraphicsScene,
     QHBoxLayout,
     QInputDialog,
     QLabel,
@@ -30,14 +45,36 @@ from app.ui.status import ConversationStatus
 
 
 _ICON_DIRECTORY = Path(__file__).with_name("assets")
+_FONT_DIRECTORY = _ICON_DIRECTORY / "fonts"
 _TOP_BAR_HEIGHT = 68
 _TOP_BUTTON_SIZE = 42
 _TOP_ICON_SIZE = 30
-_COMPOSER_WIDTH = 1040
-_COMPOSER_HEIGHT = 74
-_COMPOSER_BOTTOM_MARGIN = 44
+_COMPOSER_WIDTH = 940
+_COMPOSER_HEIGHT = 64
+_COMPOSER_BOTTOM_MARGIN = 42
+_BOTTOM_GLASS_BLUR_RADIUS = 18.0
+_BOTTOM_GLASS_BLUR_PADDING = 80
+_BOTTOM_GLASS_TOP_FEATHER = 34
 _MIDDLE_PANEL_WIDTH = 1120
 _BACKGROUND_TOP_CROP = 68
+_FONT_LOADED = False
+
+
+def _load_ui_font() -> None:
+    global _FONT_LOADED
+    if _FONT_LOADED:
+        return
+    _FONT_LOADED = True
+    font_path = _FONT_DIRECTORY / "Saira.ttf"
+    if font_path.is_file():
+        font_id = QFontDatabase.addApplicationFont(str(font_path))
+        families = QFontDatabase.applicationFontFamilies(font_id)
+        if families:
+            font = QFont(families[0])
+            font.setWeight(QFont.Weight.Normal)
+            app = QApplication.instance()
+            if app is not None:
+                app.setFont(font)
 
 
 class MessageInput(QTextEdit):
@@ -86,18 +123,148 @@ class ComposerFrame(QFrame):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = QRectF(self.rect()).adjusted(1.0, 1.0, -1.0, -1.0)
         radius = rect.height() / 2
+        path = QPainterPath()
+        path.addRoundedRect(rect, radius, radius)
+
         fill = QLinearGradient(rect.topLeft(), rect.bottomLeft())
         fill.setColorAt(0.0, QColor("#41444d"))
         fill.setColorAt(0.45, QColor("#383b45"))
         fill.setColorAt(1.0, QColor("#303340"))
         painter.setPen(QColor(105, 109, 124, 190))
         painter.setBrush(fill)
-        painter.drawRoundedRect(rect, radius, radius)
+        painter.drawPath(path)
 
         painter.setPen(QColor(255, 255, 255, 26))
         painter.setBrush(Qt.BrushStyle.NoBrush)
         inner = rect.adjusted(2.0, 2.0, -2.0, -2.0)
         painter.drawRoundedRect(inner, max(1.0, radius - 2.0), max(1.0, radius - 2.0))
+
+
+class BottomGlassPane(QWidget):
+    """Invisible bottom lens that blurs transcript content behind it."""
+
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.setAutoFillBackground(False)
+        self._backdrop_surface = None
+        self._chat_view = None
+
+    def set_backdrop_widgets(self, surface: QWidget, chat_view: ChatView) -> None:
+        self._backdrop_surface = surface
+        self._chat_view = chat_view
+
+    def backdrop_widgets(self) -> tuple[QWidget | None, ChatView | None]:
+        return self._backdrop_surface, self._chat_view
+
+    def paintEvent(self, event) -> None:  # noqa: N802 - Qt API name
+        del event
+        backdrop = self._blurred_backdrop()
+        if backdrop.isNull():
+            return
+        painter = QPainter(self)
+        painter.drawPixmap(self.rect(), backdrop)
+
+    def _blurred_backdrop(self) -> QPixmap:
+        surface = self._backdrop_surface
+        chat_view = self._chat_view
+        if surface is None or chat_view is None or self.width() <= 0 or self.height() <= 0:
+            return QPixmap()
+
+        backdrop = QPixmap(self.size())
+        backdrop.fill(Qt.GlobalColor.transparent)
+        source_in_surface = self.geometry()
+        chat_content = chat_view.widget()
+        if chat_content is None:
+            return backdrop
+
+        content_top_left = chat_content.mapTo(surface, QPoint(0, 0))
+        content_rect = QRect(content_top_left, chat_content.size())
+        overlap = source_in_surface.intersected(content_rect)
+        if overlap.isEmpty():
+            return backdrop
+
+        target_rect = QRect(
+            overlap.topLeft() - source_in_surface.topLeft(),
+            overlap.size(),
+        )
+        render_background = getattr(surface, "paint_background_region", None)
+        if callable(render_background):
+            background_painter = QPainter(backdrop)
+            render_background(background_painter, QRectF(target_rect), QRectF(overlap))
+            background_painter.end()
+        else:
+            surface.render(
+                backdrop,
+                target_rect.topLeft() - overlap.topLeft(),
+                QRegion(overlap),
+                QWidget.RenderFlag.DrawWindowBackground,
+            )
+
+        chat_source = QRect(
+            overlap.x() - content_rect.x(),
+            overlap.y() - content_rect.y(),
+            overlap.width(),
+            overlap.height(),
+        )
+        blur_bounds = QRect(QPoint(0, 0), chat_content.size())
+        expanded_source = chat_source.adjusted(
+            -_BOTTOM_GLASS_BLUR_PADDING,
+            -_BOTTOM_GLASS_BLUR_PADDING,
+            _BOTTOM_GLASS_BLUR_PADDING,
+            _BOTTOM_GLASS_BLUR_PADDING,
+        ).intersected(blur_bounds)
+        blurred_fragment = self._soften(chat_content.grab(expanded_source))
+        fragment_offset = chat_source.topLeft() - expanded_source.topLeft()
+        chat_fragment = blurred_fragment.copy(QRect(fragment_offset, chat_source.size()))
+        text_painter = QPainter(backdrop)
+        text_painter.drawPixmap(target_rect.topLeft(), chat_fragment)
+        text_painter.end()
+        return self._feather_top(backdrop)
+
+    @staticmethod
+    def _feather_top(pixmap: QPixmap) -> QPixmap:
+        if pixmap.isNull():
+            return pixmap
+        fade_height = min(_BOTTOM_GLASS_TOP_FEATHER, pixmap.height())
+        if fade_height <= 1:
+            return pixmap
+        mask = QLinearGradient(0, 0, 0, fade_height)
+        mask.setColorAt(0.0, QColor(255, 255, 255, 0))
+        mask.setColorAt(0.38, QColor(255, 255, 255, 90))
+        mask.setColorAt(1.0, QColor(255, 255, 255, 255))
+        painter = QPainter(pixmap)
+        painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
+        painter.fillRect(QRectF(0, 0, pixmap.width(), fade_height), mask)
+        painter.fillRect(
+            QRectF(0, fade_height, pixmap.width(), pixmap.height() - fade_height),
+            QColor(255, 255, 255, 255),
+        )
+        painter.end()
+        return pixmap
+
+    @staticmethod
+    def _soften(pixmap: QPixmap) -> QPixmap:
+        if pixmap.isNull():
+            return pixmap
+
+        scene = QGraphicsScene()
+        scene.setSceneRect(QRectF(pixmap.rect()))
+
+        item = QGraphicsPixmapItem(pixmap)
+        blur = QGraphicsBlurEffect()
+        blur.setBlurRadius(_BOTTOM_GLASS_BLUR_RADIUS)
+        blur.setBlurHints(QGraphicsBlurEffect.BlurHint.QualityHint)
+        item.setGraphicsEffect(blur)
+        scene.addItem(item)
+
+        softened = QPixmap(pixmap.size())
+        softened.fill(Qt.GlobalColor.transparent)
+        painter = QPainter(softened)
+        scene.render(painter, QRectF(softened.rect()), QRectF(pixmap.rect()))
+        painter.end()
+        return softened
 
 
 class ChatSurface(QWidget):
@@ -113,24 +280,46 @@ class ChatSurface(QWidget):
         x = max(0, (self.width() - width) // 2)
         return QRect(x, 0, width, self.height())
 
-    def paintEvent(self, event) -> None:  # noqa: N802 - Qt API name
-        del event
-        painter = QPainter(self)
+    def paint_background_region(
+        self,
+        painter: QPainter,
+        target: QRectF,
+        source: QRectF,
+    ) -> None:
         if self._background.isNull():
-            gradient = QLinearGradient(0, 0, max(1, self.width()), 0)
+            gradient = QLinearGradient(
+                target.left() - source.left(),
+                target.top(),
+                target.left() - source.left() + max(1, self.width()),
+                target.top(),
+            )
             gradient.setColorAt(0.0, QColor("#131517"))
             gradient.setColorAt(0.55, QColor("#111315"))
             gradient.setColorAt(1.0, QColor("#101214"))
-            painter.fillRect(self.rect(), gradient)
-        else:
-            source_y = min(_BACKGROUND_TOP_CROP, max(0, self._background.height() - 1))
-            source = QRect(
-                0,
-                source_y,
-                self._background.width(),
-                max(1, self._background.height() - source_y),
-            )
-            painter.drawPixmap(self.rect(), self._background, source)
+            painter.fillRect(target, gradient)
+            return
+
+        source_y = min(_BACKGROUND_TOP_CROP, max(0, self._background.height() - 1))
+        full_background = QRectF(
+            0,
+            source_y,
+            self._background.width(),
+            max(1, self._background.height() - source_y),
+        )
+        width_ratio = full_background.width() / max(1, self.width())
+        height_ratio = full_background.height() / max(1, self.height())
+        background_source = QRectF(
+            full_background.left() + source.left() * width_ratio,
+            full_background.top() + source.top() * height_ratio,
+            source.width() * width_ratio,
+            source.height() * height_ratio,
+        )
+        painter.drawPixmap(target, self._background, background_source)
+
+    def paintEvent(self, event) -> None:  # noqa: N802 - Qt API name
+        del event
+        painter = QPainter(self)
+        self.paint_background_region(painter, QRectF(self.rect()), QRectF(self.rect()))
 
 
 class MainWindow(QMainWindow):
@@ -138,6 +327,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self, service, hostname: str, startup_error: str | None = None, inference=None):
         super().__init__()
+        _load_ui_font()
         del hostname
         self.service = service
         self.inference = inference
@@ -262,38 +452,47 @@ class MainWindow(QMainWindow):
         settings_layout.addWidget(self.activity)
         self.settings_panel.hide()
 
+        self.bottom_glass = BottomGlassPane(content)
+        self.bottom_glass.setObjectName("bottomGlass")
+        self.bottom_glass.set_backdrop_widgets(content, self.chat)
+
         self.composer = ComposerFrame(content)
         self.composer.setObjectName("composer")
         self.composer.setFixedHeight(_COMPOSER_HEIGHT)
         composer_layout = QHBoxLayout(self.composer)
-        composer_layout.setContentsMargins(30, 8, 28, 8)
-        composer_layout.setSpacing(8)
+        composer_layout.setContentsMargins(26, 8, 24, 8)
+        composer_layout.setSpacing(7)
 
         self.input = MessageInput()
         self.input.setObjectName("messageInput")
         self.input.setPlaceholderText("Ask O.R.S.I.")
         self.input.setAcceptRichText(False)
-        self.input.setFixedHeight(58)
+        self.input.setFixedHeight(48)
+        self.input.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.input.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        input_palette = self.input.palette()
+        input_palette.setColor(QPalette.ColorRole.PlaceholderText, QColor("#a2a8ba"))
+        self.input.setPalette(input_palette)
 
         self.action_slot = QWidget()
         self.action_slot.setObjectName("composerActionSlot")
-        self.action_slot.setFixedSize(46, 50)
+        self.action_slot.setFixedSize(40, 44)
 
         self.send = QPushButton(self.action_slot)
         self.send.setObjectName("sendButton")
-        self.send.setFixedSize(46, 46)
-        self.send.move(0, 0)
+        self.send.setFixedSize(40, 40)
+        self.send.move(0, 3)
         self.send.setIcon(QIcon(str(_ICON_DIRECTORY / "input_button_cropped.png")))
-        self.send.setIconSize(QSize(38, 38))
+        self.send.setIconSize(QSize(32, 32))
         self.send.setToolTip("Send")
         self.send.setAccessibleName("Send")
 
         self.stop = QPushButton(self.action_slot)
         self.stop.setObjectName("stopButton")
-        self.stop.setFixedSize(46, 46)
-        self.stop.move(0, 0)
+        self.stop.setFixedSize(40, 40)
+        self.stop.move(0, 3)
         self.stop.setIcon(QIcon(str(_ICON_DIRECTORY / "stop.svg")))
-        self.stop.setIconSize(QSize(18, 18))
+        self.stop.setIconSize(QSize(16, 16))
         self.stop.setToolTip("Stop")
         self.stop.setAccessibleName("Stop")
         self.stop.setEnabled(False)
@@ -309,6 +508,8 @@ class MainWindow(QMainWindow):
         self.new_session_button.clicked.connect(self.create_new_session)
         self.settings_button.clicked.connect(self._toggle_settings)
         self.input.submit_requested.connect(self.submit)
+        self.chat.verticalScrollBar().valueChanged.connect(self.bottom_glass.update)
+        self.chat.verticalScrollBar().rangeChanged.connect(lambda *_: self.bottom_glass.update())
         self._update_context_window()
         self._position_overlays()
         if startup_error:
@@ -332,7 +533,15 @@ class MainWindow(QMainWindow):
         width = min(_COMPOSER_WIDTH, max(320, content.width() - 32))
         x = max(16, (content.width() - width) // 2)
         y = max(16, content.height() - _COMPOSER_BOTTOM_MARGIN - _COMPOSER_HEIGHT)
+        glass_y = max(0, y)
+        self.bottom_glass.setGeometry(
+            0,
+            glass_y,
+            content.width(),
+            content.height() - glass_y,
+        )
         self.composer.setGeometry(x, y, width, _COMPOSER_HEIGHT)
+        self.bottom_glass.raise_()
         self.composer.raise_()
         self.settings_panel.move(162, _TOP_BAR_HEIGHT + 12)
         if self.settings_panel.isVisible():
@@ -995,8 +1204,9 @@ QDialog#folderApproval, QDialog#writeApproval, QDialog#copyApproval, QDialog#mov
 }
 QDialog#folderApproval QLabel, QDialog#writeApproval QLabel, QDialog#copyApproval QLabel, QDialog#moveApproval QLabel, QDialog#trashApproval QLabel {
     color: #dedede;
-    font-family: Arial;
-    font-size: 14px;
+    font-family: Saira;
+    font-size: 13px;
+    font-weight: 400;
 }
 QPlainTextEdit#approvalPath, QPlainTextEdit#approvalContent, QPlainTextEdit#approvalDetails {
     background: #151719;
@@ -1013,15 +1223,17 @@ QDialog#folderApproval QPushButton, QDialog#writeApproval QPushButton, QDialog#c
     border: 1px solid #64696d;
     border-radius: 4px;
     padding: 7px 15px;
-    font-family: Arial;
-    font-size: 14px;
+    font-family: Saira;
+    font-size: 13px;
+    font-weight: 400;
 }
 QDialog#folderApproval QPushButton:focus, QDialog#writeApproval QPushButton:focus, QDialog#copyApproval QPushButton:focus, QDialog#moveApproval QPushButton:focus, QDialog#trashApproval QPushButton:focus { border: 2px solid #91bfe0; }
 QDialog#folderApproval QPushButton:hover, QDialog#writeApproval QPushButton:hover, QDialog#copyApproval QPushButton:hover, QDialog#moveApproval QPushButton:hover, QDialog#trashApproval QPushButton:hover { background: #42484d; }
 QMainWindow#mainWindow, QWidget#root {
     background: #050506;
     color: #d7d7d9;
-    font-family: Arial;
+    font-family: Saira;
+    font-weight: 400;
 }
 QWidget#mainContent, QWidget#chatContent { background: transparent; }
 QWidget#topBar {
@@ -1051,21 +1263,23 @@ QLabel#settingsTitle {
     background: transparent;
     border: none;
     font-size: 16px;
-    font-weight: 600;
+    font-weight: 400;
 }
 QLabel#settingsLabel {
     color: #a8a8a8;
     background: transparent;
     border: none;
     font-size: 12px;
+    font-weight: 400;
 }
 QWidget#contextWindow { background: transparent; }
 QLabel#contextStatusLine {
     color: #d6d4d4;
     background: transparent;
     border: none;
-    font-family: Arial;
-    font-size: 17px;
+    font-family: Saira;
+    font-size: 15px;
+    font-weight: 400;
 }
 QLabel#contextWindowTitle, QLabel#contextWindowSize {
     color: #a8a8a8;
@@ -1092,12 +1306,17 @@ QFrame#userMessage {
 QFrame#orsiMessage, QFrame#errorMessage { background: transparent; border: none; }
 QFrame#userMessage QLabel, QFrame#orsiMessage QLabel {
     color: #e3e3e4;
-    font-family: Arial;
-    font-size: 22px;
+    font-family: Saira;
+    font-size: 18px;
     font-weight: 400;
 }
-QFrame#userMessage QLabel { font-size: 21px; }
-QFrame#errorMessage QLabel { color: #ff8d86; font-size: 16px; }
+QFrame#userMessage QLabel { font-size: 18px; }
+QFrame#errorMessage QLabel {
+    color: #ff8d86;
+    font-family: Saira;
+    font-size: 15px;
+    font-weight: 400;
+}
 QFrame#codeBlock {
     background: #202020;
     border: 1px solid #3b3b3b;
@@ -1113,6 +1332,8 @@ QLabel#codeLanguage {
     background: transparent;
     border: none;
     font-size: 11px;
+    font-family: Saira;
+    font-weight: 400;
 }
 QPushButton#copyCodeButton {
     color: #d8d8d8;
@@ -1121,6 +1342,8 @@ QPushButton#copyCodeButton {
     border-radius: 6px;
     padding: 0 7px;
     font-size: 11px;
+    font-family: Saira;
+    font-weight: 400;
 }
 QPushButton#copyCodeButton:hover { background: #383838; }
 QPushButton#copyCodeButton:pressed { background: #222222; }
@@ -1138,19 +1361,22 @@ QLabel#conversationStatus {
     min-height: 18px;
     padding: 0;
     font-size: 11px;
+    font-family: Saira;
+    font-weight: 400;
 }
 QFrame#composer {
     background: transparent;
     border: none;
-    border-radius: 36px;
+    border-radius: 32px;
 }
 QTextEdit#messageInput {
     color: #dedee0;
     background: transparent;
     border: none;
-    padding: 11px 0 4px 4px;
-    font-family: Arial;
-    font-size: 24px;
+    padding: 4px 0 3px 4px;
+    font-family: Saira;
+    font-size: 19px;
+    font-weight: 400;
     selection-background-color: #666666;
 }
 QTextEdit#messageInput:focus { border: none; }
@@ -1158,7 +1384,7 @@ QTextEdit#messageInput:disabled { color: #777777; background: transparent; }
 QPushButton#sendButton, QPushButton#stopButton {
     background: transparent;
     border: none;
-    border-radius: 23px;
+    border-radius: 20px;
     padding: 0;
 }
 QPushButton#sendButton:hover, QPushButton#stopButton:hover { background: #454852; }
@@ -1171,6 +1397,9 @@ QComboBox#modelSelector {
     border-radius: 12px;
     padding: 0 12px;
     min-width: 92px;
+    font-family: Saira;
+    font-size: 13px;
+    font-weight: 400;
 }
 QComboBox#modelSelector:hover, QComboBox#modelSelector:focus { border-color: #666666; }
 QComboBox#modelSelector::drop-down { border: none; width: 20px; }

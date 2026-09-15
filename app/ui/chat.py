@@ -118,8 +118,8 @@ class _Message(QFrame):
 
         self.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Minimum)
         layout = QVBoxLayout(self)
-        horizontal_margin = 30 if from_user else 0
-        vertical_margin = 18 if from_user and "\n" in content else (14 if from_user else 0)
+        horizontal_margin = 24 if from_user else 0
+        vertical_margin = 12 if from_user and "\n" in content else (9 if from_user else 0)
         layout.setContentsMargins(
             horizontal_margin,
             vertical_margin,
@@ -164,8 +164,8 @@ class _Message(QFrame):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor("#3c3e49"))
-        radius = min(27, max(1, self.height() // 2))
+        painter.setBrush(QColor("#373943"))
+        radius = min(22, max(1, self.height() // 2))
         painter.drawRoundedRect(self.rect(), radius, radius)
 
     def set_available_width(self, width: int) -> None:

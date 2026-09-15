@@ -8,6 +8,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 try:
     from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtGui import QPalette
     from PySide6.QtTest import QTest
     from PySide6.QtWidgets import QApplication, QLabel, QMessageBox, QWidget
 
@@ -119,9 +120,27 @@ class UiTests(unittest.TestCase):
 
     def test_composer_preserves_large_multiline_pastes_and_shift_enter(self):
         window = MainWindow(None, "TEST-HOST")
-        self.assertEqual(window.composer.height(), 74)
-        self.assertEqual(window.input.height(), 58)
-        self.assertEqual(window.send.size().width(), 46)
+        self.assertEqual(window.composer.height(), 64)
+        self.assertEqual(window.input.height(), 48)
+        self.assertEqual(window.send.size().width(), 40)
+        self.assertEqual(window.send.pos().y(), 3)
+        self.assertEqual(window.input.font().family(), "Saira")
+        self.assertEqual(window.input.font().weight(), 400)
+        self.assertEqual(
+            window.input.palette().color(QPalette.ColorRole.PlaceholderText).name(),
+            "#a2a8ba",
+        )
+        self.assertEqual(
+            window.input.verticalScrollBarPolicy(),
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff,
+        )
+        self.assertEqual(
+            window.input.horizontalScrollBarPolicy(),
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff,
+        )
+        surface, chat = window.bottom_glass.backdrop_widgets()
+        self.assertIs(surface, window._content)
+        self.assertIs(chat, window.chat)
         self.assertIs(window.model_selector.parentWidget(), window.settings_panel)
         pasted = ("A full paragraph.\n\n" * 3000).rstrip()
         window.input.setPlainText(pasted)
@@ -145,13 +164,20 @@ class UiTests(unittest.TestCase):
         QApplication.processEvents()
 
         self.assertEqual(window.topbar.height(), 68)
-        self.assertEqual(window.composer.width(), 1040)
-        self.assertEqual(window.composer.height(), 74)
-        self.assertEqual(window.composer.y(), window._content.height() - 118)
-        self.assertLessEqual(abs(window.composer.x() - 440), 1)
+        self.assertEqual(window.composer.width(), 940)
+        self.assertEqual(window.composer.height(), 64)
+        self.assertEqual(window.composer.y(), window._content.height() - 106)
+        self.assertLessEqual(abs(window.composer.x() - 490), 1)
         self.assertLessEqual(
-            abs(window._content.width() - window.composer.geometry().right() - 1 - 440),
+            abs(window._content.width() - window.composer.geometry().right() - 1 - 490),
             1,
+        )
+        self.assertEqual(window.bottom_glass.x(), 0)
+        self.assertEqual(window.bottom_glass.width(), window._content.width())
+        self.assertEqual(window.bottom_glass.y(), window.composer.y())
+        self.assertEqual(
+            window.bottom_glass.height(),
+            window._content.height() - window.bottom_glass.y(),
         )
         middle_panel = window._content.middle_panel_rect()
         self.assertFalse(window._content._background.isNull())
@@ -532,6 +558,8 @@ class UiTests(unittest.TestCase):
         self.assertEqual(chat._messages[1].objectName(), "orsiMessage")
         self.assertEqual(chat._messages[0].label.text(), "A user message")
         self.assertEqual(chat._messages[1].label.text(), "An O.R.S.I reply")
+        margins = chat._messages[0].layout().contentsMargins()
+        self.assertEqual((margins.left(), margins.top(), margins.right(), margins.bottom()), (24, 9, 24, 9))
         chat.close()
 
     def test_assistant_code_uses_readonly_box_and_working_copy_button(self):
