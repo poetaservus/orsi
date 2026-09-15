@@ -58,23 +58,34 @@ _BOTTOM_GLASS_TOP_FEATHER = 34
 _MIDDLE_PANEL_WIDTH = 1120
 _BACKGROUND_TOP_CROP = 68
 _FONT_LOADED = False
+_UI_FONT_FAMILY = ""
 
 
 def _load_ui_font() -> None:
-    global _FONT_LOADED
-    if _FONT_LOADED:
+    global _FONT_LOADED, _UI_FONT_FAMILY
+    if not _FONT_LOADED:
+        _FONT_LOADED = True
+        font_path = _FONT_DIRECTORY / "Saira.ttf"
+        if font_path.is_file():
+            font_id = QFontDatabase.addApplicationFont(str(font_path))
+            families = QFontDatabase.applicationFontFamilies(font_id)
+            if families:
+                _UI_FONT_FAMILY = families[0]
+    if _UI_FONT_FAMILY:
+        font = QFont(_UI_FONT_FAMILY)
+        font.setWeight(QFont.Weight.Normal)
+        app = QApplication.instance()
+        if app is not None:
+            app.setFont(font)
+
+
+def _apply_ui_font(widget: QWidget) -> None:
+    if not _UI_FONT_FAMILY:
         return
-    _FONT_LOADED = True
-    font_path = _FONT_DIRECTORY / "Saira.ttf"
-    if font_path.is_file():
-        font_id = QFontDatabase.addApplicationFont(str(font_path))
-        families = QFontDatabase.applicationFontFamilies(font_id)
-        if families:
-            font = QFont(families[0])
-            font.setWeight(QFont.Weight.Normal)
-            app = QApplication.instance()
-            if app is not None:
-                app.setFont(font)
+    font = widget.font()
+    font.setFamily(_UI_FONT_FAMILY)
+    font.setWeight(QFont.Weight.Normal)
+    widget.setFont(font)
 
 
 class MessageInput(QTextEdit):
@@ -503,6 +514,7 @@ class MainWindow(QMainWindow):
 
         self.setCentralWidget(root)
         self.setStyleSheet(_STYLE)
+        _apply_ui_font(self.input)
         self.send.clicked.connect(self.submit)
         self.stop.clicked.connect(self.cancel_current_task)
         self.new_session_button.clicked.connect(self.create_new_session)

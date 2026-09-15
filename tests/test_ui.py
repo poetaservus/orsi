@@ -8,7 +8,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 try:
     from PySide6.QtCore import QPoint, Qt
-    from PySide6.QtGui import QPalette
+    from PySide6.QtGui import QFont, QPalette
     from PySide6.QtTest import QTest
     from PySide6.QtWidgets import QApplication, QLabel, QMessageBox, QWidget
 
@@ -119,6 +119,7 @@ class UiTests(unittest.TestCase):
         window.close()
 
     def test_composer_preserves_large_multiline_pastes_and_shift_enter(self):
+        self.app.setFont(QFont("Arial", 10))
         window = MainWindow(None, "TEST-HOST")
         self.assertEqual(window.composer.height(), 64)
         self.assertEqual(window.input.height(), 48)
