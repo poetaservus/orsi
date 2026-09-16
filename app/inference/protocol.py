@@ -212,22 +212,26 @@ def model_capability_definitions(
 
 def native_function_tools(
     definitions: Iterable[ModelCapabilityDefinition],
+    *,
+    include_strict: bool = True,
 ) -> list[dict[str, Any]]:
     """Translate definitions to OpenAI/llama.cpp native function tools."""
     values = model_capability_definitions(definitions, require_nonempty=True)
     provider_names = _provider_function_names(values)
-    return [
-        {
-            "type": "function",
-            "function": {
-                "name": provider_name,
-                "description": definition.description,
-                "parameters": deepcopy(definition.input_schema),
-                "strict": True,
-            },
+    tools = []
+    for definition, provider_name in zip(values, provider_names, strict=True):
+        function = {
+            "name": provider_name,
+            "description": definition.description,
+            "parameters": deepcopy(definition.input_schema),
         }
-        for definition, provider_name in zip(values, provider_names, strict=True)
-    ]
+        if include_strict:
+            function["strict"] = True
+        tools.append({
+            "type": "function",
+            "function": function,
+        })
+    return tools
 
 
 def model_capability_calls_message(

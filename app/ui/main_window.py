@@ -49,8 +49,8 @@ _FONT_DIRECTORY = _ICON_DIRECTORY / "fonts"
 _TOP_BAR_HEIGHT = 68
 _TOP_BUTTON_SIZE = 42
 _TOP_ICON_SIZE = 30
-_COMPOSER_WIDTH = 940
-_COMPOSER_HEIGHT = 64
+_COMPOSER_WIDTH = 799
+_COMPOSER_HEIGHT = 54
 _COMPOSER_BOTTOM_MARGIN = 42
 _BOTTOM_GLASS_BLUR_RADIUS = 18.0
 _BOTTOM_GLASS_BLUR_PADDING = 80
@@ -452,7 +452,10 @@ class MainWindow(QMainWindow):
             self.model_selector.setEnabled(False)
         else:
             for mode in inference.available_modes:
-                self.model_selector.addItem("Local" if mode == "local" else "Cloud · Free", mode)
+                label = "Local"
+                if mode == "cloud":
+                    label = f"Cloud · {inference.cloud_provider_name}"
+                self.model_selector.addItem(label, mode)
             self._sync_inference_selector()
             self.model_selector.currentIndexChanged.connect(self._select_inference_mode)
         settings_layout.addWidget(self.model_selector)
@@ -471,14 +474,14 @@ class MainWindow(QMainWindow):
         self.composer.setObjectName("composer")
         self.composer.setFixedHeight(_COMPOSER_HEIGHT)
         composer_layout = QHBoxLayout(self.composer)
-        composer_layout.setContentsMargins(26, 8, 24, 8)
-        composer_layout.setSpacing(7)
+        composer_layout.setContentsMargins(22, 7, 20, 7)
+        composer_layout.setSpacing(6)
 
         self.input = MessageInput()
         self.input.setObjectName("messageInput")
         self.input.setPlaceholderText("Ask O.R.S.I.")
         self.input.setAcceptRichText(False)
-        self.input.setFixedHeight(48)
+        self.input.setFixedHeight(41)
         self.input.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.input.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         input_palette = self.input.palette()
@@ -487,23 +490,23 @@ class MainWindow(QMainWindow):
 
         self.action_slot = QWidget()
         self.action_slot.setObjectName("composerActionSlot")
-        self.action_slot.setFixedSize(40, 44)
+        self.action_slot.setFixedSize(34, 37)
 
         self.send = QPushButton(self.action_slot)
         self.send.setObjectName("sendButton")
-        self.send.setFixedSize(40, 40)
-        self.send.move(0, 3)
+        self.send.setFixedSize(34, 34)
+        self.send.move(0, 4)
         self.send.setIcon(QIcon(str(_ICON_DIRECTORY / "input_button_cropped.png")))
-        self.send.setIconSize(QSize(32, 32))
+        self.send.setIconSize(QSize(27, 27))
         self.send.setToolTip("Send")
         self.send.setAccessibleName("Send")
 
         self.stop = QPushButton(self.action_slot)
         self.stop.setObjectName("stopButton")
-        self.stop.setFixedSize(40, 40)
-        self.stop.move(0, 3)
+        self.stop.setFixedSize(34, 34)
+        self.stop.move(0, 4)
         self.stop.setIcon(QIcon(str(_ICON_DIRECTORY / "stop.svg")))
-        self.stop.setIconSize(QSize(16, 16))
+        self.stop.setIconSize(QSize(14, 14))
         self.stop.setToolTip("Stop")
         self.stop.setAccessibleName("Stop")
         self.stop.setEnabled(False)
@@ -1379,7 +1382,7 @@ QLabel#conversationStatus {
 QFrame#composer {
     background: transparent;
     border: none;
-    border-radius: 32px;
+    border-radius: 27px;
 }
 QTextEdit#messageInput {
     color: #dedee0;
@@ -1387,7 +1390,7 @@ QTextEdit#messageInput {
     border: none;
     padding: 4px 0 3px 4px;
     font-family: Saira;
-    font-size: 19px;
+    font-size: 17px;
     font-weight: 400;
     selection-background-color: #666666;
 }
@@ -1396,7 +1399,7 @@ QTextEdit#messageInput:disabled { color: #777777; background: transparent; }
 QPushButton#sendButton, QPushButton#stopButton {
     background: transparent;
     border: none;
-    border-radius: 20px;
+    border-radius: 17px;
     padding: 0;
 }
 QPushButton#sendButton:hover, QPushButton#stopButton:hover { background: #454852; }

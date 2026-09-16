@@ -96,16 +96,19 @@ class OpenAICompatibleInferenceEngine(InferenceEngine):
             capabilities,
             require_nonempty=True,
         )
-        completion = self._request_completion(
-            {
-                "model": self.config.model,
-                "messages": native_chat_messages(messages, definitions),
-                "temperature": self.config.temperature,
-                "max_tokens": self.config.max_tokens,
-                "tools": native_function_tools(definitions),
-                "tool_choice": "auto",
-            }
-        )
+        body: dict[str, Any] = {
+            "model": self.config.model,
+            "messages": native_chat_messages(messages, definitions),
+            "temperature": self.config.temperature,
+            "max_tokens": self.config.max_tokens,
+            "tools": native_function_tools(
+                definitions,
+                include_strict=self.config.include_tool_strict,
+            ),
+        }
+        if self.config.tool_choice is not None:
+            body["tool_choice"] = self.config.tool_choice
+        completion = self._request_completion(body)
         return normalize_native_chat_completion(completion, definitions)
 
     def _request_message(self, body: dict[str, Any]) -> dict[str, Any]:
@@ -127,15 +130,17 @@ class OpenAICompatibleInferenceEngine(InferenceEngine):
             raise CloudInferenceError(
                 f"Cloud mode needs a {self.config.provider_name} API key for this session."
             )
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "X-Title": "O.R.S.I Chat",
+        }
+        headers.update(self.config.extra_headers)
         request = Request(
             self.config.chat_completions_url,
             data=json.dumps(body, separators=(",", ":")).encode("utf-8"),
-            headers={
-                "Authorization": f"Bearer {self._api_key}",
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-                "X-Title": "O.R.S.I Chat",
-            },
+            headers=headers,
             method="POST",
         )
         try:

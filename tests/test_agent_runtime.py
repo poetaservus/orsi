@@ -33,7 +33,7 @@ from app.capabilities.permissions import (
     PermissionRule,
 )
 from app.capabilities.registry import CapabilityRegistration, CapabilityRegistry
-from app.inference.engine import InferenceEngine
+from app.inference.engine import InferenceEngine, InferenceUnavailable
 from app.inference.protocol import (
     ModelCapabilityCall,
     ModelProtocolFailureCode,
@@ -140,6 +140,14 @@ class BlockingModel(InferenceEngine):
 
     def cancel_current_request(self):
         self.cancelled.set()
+
+
+class ConversationUnavailableModel(InferenceEngine):
+    def respond(self, messages):
+        raise InferenceUnavailable("Cloud inference could not connect.")
+
+    def respond_with_capabilities(self, messages, capabilities):
+        raise AssertionError("Conversation runs must not use the structured model boundary.")
 
 
 def capability_call(index: int, value: str = "hello", *, arguments=None):
@@ -329,6 +337,40 @@ def test_required_calls_can_seed_model_continuation(tmp_path: Path):
     assert model.requests[0][-1]["role"] == "capability"
     assert model.requests[0][-1]["result"]["output"] == {"echo": "seeded"}
     assert journal.get("internal-call-1").state == CallLifecycleState.COMPLETED
+
+
+def test_model_unavailable_preserves_provider_detail(tmp_path: Path):
+    runtime, _model, _capability, journal, _ = build_runtime(
+        tmp_path,
+        [InferenceUnavailable("Cloud inference could not connect.")],
+    )
+
+    result = run(runtime, tmp_path)
+
+    assert result.status == AgentRunStatus.MODEL_UNAVAILABLE
+    assert result.message == (
+        "The selected model provider is unavailable: "
+        "Cloud inference could not connect."
+    )
+    assert journal.records == ()
+
+
+def test_conversation_model_unavailable_preserves_provider_detail(tmp_path: Path):
+    runtime, _model, _capability, _journal, _ = build_runtime(
+        tmp_path,
+        [],
+        model=ConversationUnavailableModel(),
+    )
+
+    result = runtime.run_conversation(
+        [{"role": "user", "content": "hello"}],
+    )
+
+    assert result.status == AgentRunStatus.MODEL_UNAVAILABLE
+    assert result.message == (
+        "The selected model provider is unavailable: "
+        "Cloud inference could not connect."
+    )
 
 
 def test_invalid_arguments_return_to_model_without_execution_or_journaling(

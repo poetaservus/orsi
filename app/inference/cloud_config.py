@@ -4,7 +4,7 @@ import re
 from typing import Literal
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.config import load_json
 from app.paths import PATHS
@@ -23,6 +23,9 @@ class CloudConfig(BaseModel):
     timeout_seconds: int = Field(90, ge=5, le=300)
     default_mode: Literal["local", "cloud"] = "local"
     fallback_to_local: bool = True
+    extra_headers: dict[str, str] = Field(default_factory=dict)
+    include_tool_strict: bool = True
+    tool_choice: Literal["auto", "none", "required"] | None = "auto"
 
     @field_validator("provider_name", "model", "api_key_environment")
     @classmethod
@@ -47,6 +50,33 @@ class CloudConfig(BaseModel):
         if parsed.scheme.casefold() != "https" or not parsed.netloc:
             raise ValueError("Cloud inference requires an HTTPS base_url.")
         return value
+
+    @model_validator(mode="after")
+    def validate_extra_headers(self):
+        cleaned: dict[str, str] = {}
+        forbidden = {
+            "authorization",
+            "proxy-authorization",
+            "cookie",
+            "set-cookie",
+            "x-api-key",
+            "api-key",
+        }
+        header_name = re.compile(r"^[!#$%&'*+.^_`|~0-9A-Za-z-]+$")
+        for raw_name, raw_value in self.extra_headers.items():
+            if not isinstance(raw_name, str) or not isinstance(raw_value, str):
+                raise ValueError("Cloud extra_headers must contain string names and values.")
+            name = raw_name.strip()
+            value = raw_value.strip()
+            if not name or header_name.fullmatch(name) is None:
+                raise ValueError("Cloud extra_headers contains an invalid header name.")
+            if name.casefold() in forbidden:
+                raise ValueError("Cloud extra_headers must not contain credentials.")
+            if not value or "\r" in value or "\n" in value:
+                raise ValueError("Cloud extra_headers contains an invalid header value.")
+            cleaned[name] = value
+        object.__setattr__(self, "extra_headers", cleaned)
+        return self
 
     @property
     def chat_completions_url(self) -> str:

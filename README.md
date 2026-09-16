@@ -82,6 +82,19 @@ python -m app.main
 Place a llama.cpp-compatible GGUF file under `models/` and configure it in `config/model.json`.
 Cloud settings live in `config/cloud.json`; credentials are not accepted in that file.
 
+### Cloud provider compatibility
+
+`config/cloud.json` targets OpenAI-compatible `/chat/completions` APIs. Set `provider_name`,
+`base_url`, `model`, and `api_key_environment` for the provider you want to test. API keys must
+still be entered at runtime or supplied through the configured environment variable; they are not
+stored in config.
+
+Some compatible providers need harmless attribution or routing headers. Put only non-secret values
+in `extra_headers`. If a provider accepts tools but rejects OpenAI's strict tool metadata, set
+`include_tool_strict` to `false`. If it rejects the `tool_choice` field, set `tool_choice` to `null`.
+The development config keeps `fallback_to_local` disabled so a Cloud-mode failure stays visible
+instead of silently switching the running session back to Local.
+
 ## Test
 
 ```powershell

@@ -121,10 +121,10 @@ class UiTests(unittest.TestCase):
     def test_composer_preserves_large_multiline_pastes_and_shift_enter(self):
         self.app.setFont(QFont("Arial", 10))
         window = MainWindow(None, "TEST-HOST")
-        self.assertEqual(window.composer.height(), 64)
-        self.assertEqual(window.input.height(), 48)
-        self.assertEqual(window.send.size().width(), 40)
-        self.assertEqual(window.send.pos().y(), 3)
+        self.assertEqual(window.composer.height(), 54)
+        self.assertEqual(window.input.height(), 41)
+        self.assertEqual(window.send.size().width(), 34)
+        self.assertEqual(window.send.pos().y(), 4)
         self.assertEqual(window.input.font().family(), "Saira")
         self.assertEqual(window.input.font().weight(), 400)
         self.assertEqual(
@@ -165,12 +165,12 @@ class UiTests(unittest.TestCase):
         QApplication.processEvents()
 
         self.assertEqual(window.topbar.height(), 68)
-        self.assertEqual(window.composer.width(), 940)
-        self.assertEqual(window.composer.height(), 64)
-        self.assertEqual(window.composer.y(), window._content.height() - 106)
-        self.assertLessEqual(abs(window.composer.x() - 490), 1)
+        self.assertEqual(window.composer.width(), 799)
+        self.assertEqual(window.composer.height(), 54)
+        self.assertEqual(window.composer.y(), window._content.height() - 96)
+        self.assertLessEqual(abs(window.composer.x() - 560), 1)
         self.assertLessEqual(
-            abs(window._content.width() - window.composer.geometry().right() - 1 - 490),
+            abs(window._content.width() - window.composer.geometry().right() - 1 - 561),
             1,
         )
         self.assertEqual(window.bottom_glass.x(), 0)
@@ -233,6 +233,7 @@ class UiTests(unittest.TestCase):
         inference = FakeInference()
         window = MainWindow(None, "TEST-HOST", inference=inference)
         cloud_index = window.model_selector.findData("cloud")
+        self.assertEqual(window.model_selector.itemText(cloud_index), "Cloud · Test Cloud")
 
         with patch(
             "app.ui.main_window.QMessageBox.question",

@@ -56,6 +56,11 @@ def test_cloud_config_rejects_insecure_api_urls():
         cloud_config(base_url="http://cloud.example/v1")
 
 
+def test_cloud_config_rejects_secret_extra_headers():
+    with pytest.raises(ValueError, match="credentials"):
+        cloud_config(extra_headers={"Authorization": "Bearer should-not-be-here"})
+
+
 def test_cloud_backend_requires_a_session_key(monkeypatch):
     monkeypatch.delenv("ORSI_TEST_CLOUD_KEY", raising=False)
     engine = OpenAICompatibleInferenceEngine(cloud_config())
@@ -171,6 +176,50 @@ def test_cloud_backend_sends_native_strict_tools_and_preserves_call_identity(
     assert result.capability_calls[0].provider_call_id == "provider_call_1"
     assert result.capability_calls[0].capability == "filesystem.stat"
     assert result.capability_calls[0].arguments == {"path": "sample.txt"}
+
+
+def test_cloud_backend_can_send_provider_headers_and_omit_strict_tools(
+    monkeypatch,
+):
+    monkeypatch.delenv("ORSI_TEST_CLOUD_KEY", raising=False)
+    engine = OpenAICompatibleInferenceEngine(
+        cloud_config(
+            extra_headers={
+                "HTTP-Referer": "https://example.invalid/orsi",
+                "X-OpenRouter-Title": "O.R.S.I Test",
+            },
+            include_tool_strict=False,
+            tool_choice=None,
+        ),
+        api_key="session-secret",
+    )
+    response = MagicMock()
+    response.__enter__.return_value.read.return_value = json.dumps(
+        {
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": "No tool needed.",
+                    }
+                }
+            ]
+        }
+    ).encode("utf-8")
+
+    with patch("app.inference.cloud_backend.urlopen", return_value=response) as mocked:
+        result = engine.respond_with_capabilities(
+            [{"role": "user", "content": "Hello"}],
+            (capability_definition(),),
+        )
+
+    request = mocked.call_args.args[0]
+    payload = json.loads(request.data.decode("utf-8"))
+    assert "tool_choice" not in payload
+    assert "strict" not in payload["tools"][0]["function"]
+    assert request.get_header("Http-referer") == "https://example.invalid/orsi"
+    assert request.get_header("X-openrouter-title") == "O.R.S.I Test"
+    assert result.assistant_text == "No tool needed."
 
 
 def test_cloud_backend_returns_malformed_native_call_as_protocol_result(monkeypatch):

@@ -100,6 +100,13 @@ def test_native_function_tools_are_strict_deep_copied_and_deterministic():
     assert "injected" not in first.input_schema["properties"]
 
 
+def test_native_function_tools_can_omit_strict_for_compatibility():
+    tools = native_function_tools((definition(),), include_strict=False)
+
+    assert "strict" not in tools[0]["function"]
+    assert tools[0]["function"]["parameters"]["additionalProperties"] is False
+
+
 def test_definition_snapshot_rejects_empty_duplicate_and_permissive_schemas():
     with pytest.raises(ValueError, match="at least one"):
         model_capability_definitions((), require_nonempty=True)

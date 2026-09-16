@@ -119,6 +119,13 @@ class AgentRunResult(BaseModel):
         return self
 
 
+def _model_unavailable_message(exc: InferenceUnavailable) -> str:
+    detail = str(exc).strip()
+    if not detail:
+        return "The selected model provider is unavailable."
+    return f"The selected model provider is unavailable: {detail}"[:500]
+
+
 @dataclass(frozen=True, slots=True)
 class _CallOutcome:
     result: CapabilityResult | None = None
@@ -984,10 +991,10 @@ class AgentRuntime:
                 )
             except FutureTimeoutError:
                 continue
-            except InferenceUnavailable:
+            except InferenceUnavailable as exc:
                 return None, (
                     AgentRunStatus.MODEL_UNAVAILABLE,
-                    "The selected model provider is unavailable.",
+                    _model_unavailable_message(exc),
                 )
             except Exception:
                 return None, (
@@ -1035,10 +1042,10 @@ class AgentRuntime:
                 )
             except FutureTimeoutError:
                 continue
-            except InferenceUnavailable:
+            except InferenceUnavailable as exc:
                 return None, (
                     AgentRunStatus.MODEL_UNAVAILABLE,
-                    "The selected model provider is unavailable.",
+                    _model_unavailable_message(exc),
                 )
             except Exception:
                 return None, (

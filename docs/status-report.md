@@ -43,6 +43,11 @@ release promotion. The version remains `v0.4.0-dev`.
 ## Runtime status
 
 - General conversation works through local or cloud inference.
+- Cloud provider compatibility was refined on 2026-09-16: `config/cloud.json` can now carry
+  non-secret provider headers, optionally omit strict tool metadata for providers that reject it,
+  and omit `tool_choice` when required. The cloud selector now names the configured provider instead
+  of always saying `Cloud · Free`. API keys remain session-only or environment-sourced and are still
+  rejected from config headers.
 - `filesystem.stat`, `filesystem.list`, `filesystem.read_text`, and `filesystem.search` are enabled in the checked-in
   development configuration at the user's explicit request. Missing configuration still defaults
   to disabled, and invalid configuration or native startup failures retain the chat-only fallback.
@@ -124,6 +129,29 @@ release promotion. The version remains `v0.4.0-dev`.
   all five `ORSI_TEST` workflows: named Desktop folder listing, `there` follow-up listing, creating a
   child folder inside the named Desktop folder, creating a folder directly on Desktop, and reading the
   extensionless `atiflix css` file request.
+- Cloud compatibility focused verification on 2026-09-16: cloud/protocol tests passed with 52
+  passed; GUI tests passed with 22 passed; the wider cloud/protocol/UI/conversation/Phase 8 sweep
+  passed with 94 passed using a writable temp root. Full-suite reruns were attempted but the sandbox
+  temp locations available in this session were intentionally rejected by Phase 10 write-path
+  protection as protected/unavailable targets; no cloud/protocol failures appeared in those runs.
+- Manual cloud smoke reported by the user on 2026-09-16: the cloud model handled a deliberately
+  vague request to organize files by extension, understood Hungarian, and planned/executed tool calls
+  from Hungarian user instructions.
+- GUI composer scale tweak on 2026-09-16: the bottom input/composer bar was scaled down by about
+  15% while preserving the centered v2 layout, send/stop controls, Saira Regular typography, and
+  invisible transcript blur lens. Focused UI verification passed with 22 tests.
+- Cloud fallback behavior changed on 2026-09-16: after manual testing showed Cloud mode switching
+  back to Local on every cloud-unavailable response, development `config/cloud.json` now sets
+  `fallback_to_local` to `false`. Cloud-mode failures should remain visible as cloud errors and
+  leave the selected mode on Cloud instead of silently answering through Local and changing the
+  selector.
+- Cloud-unavailable reporting was tightened on 2026-09-16: both agent/tool and chat-only runtime
+  paths now preserve the controlled provider failure detail instead of replacing it with only the
+  generic selected-provider message. Focused verification passed with 49 agent/cloud tests.
+- Cloud provider direction recorded on 2026-09-16: the current backend is OpenAI-compatible provider
+  support, not OpenRouter-specific support. The next cloud-side step is provider profiles for
+  multiple OpenAI-compatible APIs before native non-OpenAI adapter families. No version bump: this
+  remains `v0.4.0-dev` until a packaged/release milestone is explicitly approved.
 - Post-acceptance deterministic verification: resolver suite 27 passed; acceptance gate 79 passed; full suite 535 passed, 17 skipped.
 - Complete deterministic suite after Phase 9 search: 485 passed, 17 skipped on Windows on
   2026-09-13. The suite collected 502 tests; opt-in live gates remain skipped unless explicitly

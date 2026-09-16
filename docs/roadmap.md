@@ -16,6 +16,9 @@ time. The application must keep a safe chat fallback throughout development.
 - Text conversation persistence and a bounded model context.
 - General conversation that does not invoke filesystem tools unnecessarily.
 - In-memory-only cloud credentials and a safe chat fallback when agent startup fails.
+- Cloud provider compatibility now supports configurable safe headers, optional strict tool metadata,
+  optional `tool_choice`, provider naming in the selector, visible Cloud-mode failures without
+  forced local fallback, and detailed provider-unavailable messages.
 
 ### Capability runtime foundation
 
@@ -64,7 +67,8 @@ time. The application must keep a safe chat fallback throughout development.
 
 The active development line is `codex/phase-9-target-resolver`. It carries the accepted Phase 10
 mutation checkpoints, Phase 9 search, the target resolver, the planner-loop repair, bounded filename
-disambiguation, GUI v2 polish, and accepted manual resolver-workflow hardening. The branch is
+disambiguation, GUI v2 polish, accepted manual resolver-workflow hardening, and the first cloud
+provider-compatibility pass. The branch is
 published to GitHub and tracks `origin/codex/phase-9-target-resolver`. It is still a development
 line: it is not merged, release-promoted, or ready to change the version beyond `v0.4.0-dev` until
 fresh-runtime packaging and release gates are closed.
@@ -72,8 +76,8 @@ fresh-runtime packaging and release gates are closed.
 ## Next milestones
 
 1. Run a fresh-runtime packaging check and packaged GUI smoke check before any release promotion.
-2. Decide whether to push, merge, or prepare a release-promotion path from the accepted resolver
-   checkpoint.
+2. Stabilize cloud-side provider profiles for OpenAI-compatible APIs before adding native
+   non-OpenAI adapter families.
 3. Keep `v0.4.0-dev` until packaging/release evidence is recorded and the next version milestone is
    explicitly approved.
 4. Improve interruption behavior and malformed conversation recovery after the current branch is
