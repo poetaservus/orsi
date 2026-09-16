@@ -38,6 +38,12 @@ class _ActiveFoundDirectory:
     name: str
 
 
+@dataclass(slots=True)
+class _PendingTextRead:
+    path: str
+    name: str
+
+
 class ConversationService:
     """UI-facing private conversation with an optional bounded agent loop."""
 
@@ -89,10 +95,14 @@ class ConversationService:
         self._active_listing: _ActiveDirectoryListing | None = None
         self._active_found_directory: _ActiveFoundDirectory | None = None
         self._last_filesystem_operation: str | None = None
+        self._pending_text_read: _PendingTextRead | None = None
         self._awaiting_folder_path = False
         # Capability calls/results stay only in memory for coherent follow-ups.
         # ConversationStore intentionally persists user and final assistant text only.
         self._agent_history = self.store.messages()
+        self._restored_filesystem_context = False
+        if self.agent_enabled:
+            self._restore_filesystem_context_from_history()
 
     @property
     def agent_enabled(self) -> bool:
@@ -139,6 +149,7 @@ class ConversationService:
                 turn_id = f"turn-{self._turn_number}"
                 turn_trace: list[dict] = []
                 turn_results: list[tuple] = []
+                required_calls: tuple[ModelCapabilityCall, ...] = ()
                 if capability_turn:
                     def retain_results(calls, results) -> None:
                         turn_trace.append(model_capability_calls_message(calls))
@@ -153,33 +164,76 @@ class ConversationService:
                         self._retain_filesystem_context(calls, results)
 
                     turn_capabilities = self._planner_capabilities()
-                    result = self.agent_runtime.run(
-                        self._model_messages(
-                            capability_turn=True,
-                            capability_names=turn_capabilities,
-                        ),
-                        session_id=self._session_id,
-                        turn_id=turn_id,
-                        portable_root=self.portable_root,
-                        allowed_read_roots=self.allowed_read_roots,
-                        host_access_policy=self.host_access_policy,
-                        cancellation=source.token,
-                        result_observer=retain_results,
-                        capability_names=turn_capabilities,
+                    forced_answer = self._run_desktop_child_folder_creation(
+                        text,
+                        source,
+                        activity,
+                        turn_id,
+                        turn_capabilities,
+                        retain_results,
+                        turn_results,
                     )
+                    if forced_answer is not None:
+                        answer = forced_answer
+                        result = None
+                    else:
+                        required_calls = self._continuation_required_calls(text)
+                        if required_calls:
+                            self._restored_filesystem_context = False
+                        result = self.agent_runtime.run(
+                            self._model_messages(
+                                capability_turn=True,
+                                capability_names=turn_capabilities,
+                            ),
+                            session_id=self._session_id,
+                            turn_id=turn_id,
+                            portable_root=self.portable_root,
+                            allowed_read_roots=self.allowed_read_roots,
+                            host_access_policy=self.host_access_policy,
+                            cancellation=source.token,
+                            result_observer=retain_results,
+                            capability_names=turn_capabilities,
+                            required_calls=required_calls,
+                            continue_after_required_calls=False,
+                        )
                 else:
                     result = self.agent_runtime.run_conversation(
                         self._model_messages(capability_turn=False),
                         cancellation=source.token,
                     )
-                if result.status == AgentRunStatus.CANCELLED:
+                    forced_answer = None
+                if result is None:
+                    answer = forced_answer or ""
+                elif result.status == AgentRunStatus.CANCELLED:
                     return "The response was stopped."
-                if result.status != AgentRunStatus.COMPLETED:
+                elif result.status != AgentRunStatus.COMPLETED:
                     raise RuntimeError(
                         result.message or "The bounded agent run did not complete."
                     )
                 else:
                     answer = result.assistant_text.strip()
+                    recovered_read_answer = self._run_named_file_read_recovery(
+                        text,
+                        answer,
+                        source,
+                        activity,
+                        turn_id,
+                        turn_capabilities,
+                        retain_results,
+                        turn_results,
+                    )
+                    if recovered_read_answer is not None:
+                        answer = recovered_read_answer
+                    self._retain_pending_text_read_context(text, answer, turn_results)
+                    fallback_answer = self._fallback_required_answer(required_calls, turn_results)
+                    if forced_answer is not None:
+                        answer = forced_answer
+                    elif fallback_answer is not None:
+                        answer = fallback_answer
+                    else:
+                        grounded_answer = _grounded_text_read_answer(text, answer, turn_results)
+                        if grounded_answer is not None:
+                            answer = grounded_answer
                 completed_capabilities = {
                     call.capability for call, _result in turn_results
                 }
@@ -252,6 +306,409 @@ class ConversationService:
         if all(call.capability == "filesystem.search" for call in required_calls):
             return _render_search_result(required_calls, turn_results)
         return None
+
+    def _run_desktop_child_folder_creation(
+        self,
+        text: str,
+        source: CancellationSource,
+        activity,
+        turn_id: str,
+        turn_capabilities: tuple[str, ...],
+        retain_results,
+        turn_results: list[tuple],
+    ) -> str | None:
+        request = _desktop_child_folder_creation_request(text)
+        if request is None:
+            return None
+        if not {"filesystem.find", "filesystem.mkdir"}.issubset(self.agent_capabilities):
+            return None
+        parent_name, child_name = request
+        find_call = ModelCapabilityCall(
+            provider_call_id=f"required-{self._turn_number}-mkdir-parent",
+            capability="filesystem.find",
+            arguments={"path": "Desktop", "name": parent_name, "kind": "directory"},
+        )
+        if activity:
+            activity("Finding parent folder...")
+        find_start = len(turn_results)
+        result = self.agent_runtime.run(
+            self._model_messages(
+                capability_turn=True,
+                capability_names=turn_capabilities,
+            ),
+            session_id=self._session_id,
+            turn_id=turn_id,
+            portable_root=self.portable_root,
+            allowed_read_roots=self.allowed_read_roots,
+            host_access_policy=self.host_access_policy,
+            cancellation=source.token,
+            result_observer=retain_results,
+            capability_names=turn_capabilities,
+            required_calls=(find_call,),
+            continue_after_required_calls=False,
+        )
+        if result.status == AgentRunStatus.CANCELLED:
+            return "The response was stopped."
+        if result.status != AgentRunStatus.COMPLETED:
+            raise RuntimeError(result.message or "The parent folder lookup did not complete.")
+        find_results = turn_results[find_start:]
+        find_result = next(
+            (
+                observed
+                for call, observed in find_results
+                if call.capability == "filesystem.find"
+            ),
+            None,
+        )
+        if find_result is None:
+            raise RuntimeError("The parent folder lookup result was not returned.")
+        if not find_result.success:
+            return _render_find_result((find_call,), find_results)
+        output = find_result.output or {}
+        matches = output.get("matches")
+        if not isinstance(matches, list) or len(matches) != 1:
+            return _render_find_result((find_call,), find_results)
+        parent_path = matches[0].get("path") if isinstance(matches[0], dict) else None
+        if not isinstance(parent_path, str) or not parent_path:
+            return "The parent folder lookup did not return an exact folder path."
+        mkdir_call = ModelCapabilityCall(
+            provider_call_id=f"required-{self._turn_number}-mkdir-child",
+            capability="filesystem.mkdir",
+            arguments={"path": str(Path(parent_path) / child_name)},
+        )
+        if activity:
+            activity("Preparing folder approval...")
+        mkdir_start = len(turn_results)
+        result = self.agent_runtime.run(
+            self._model_messages(
+                capability_turn=True,
+                capability_names=turn_capabilities,
+            ),
+            session_id=self._session_id,
+            turn_id=turn_id,
+            portable_root=self.portable_root,
+            allowed_read_roots=self.allowed_read_roots,
+            host_access_policy=self.host_access_policy,
+            cancellation=source.token,
+            result_observer=retain_results,
+            capability_names=turn_capabilities,
+            required_calls=(mkdir_call,),
+            continue_after_required_calls=False,
+        )
+        if result.status == AgentRunStatus.CANCELLED:
+            return "The response was stopped."
+        if result.status != AgentRunStatus.COMPLETED:
+            raise RuntimeError(result.message or "Folder creation did not complete.")
+        mkdir_result = next(
+            (
+                observed
+                for call, observed in turn_results[mkdir_start:]
+                if call.capability == "filesystem.mkdir"
+            ),
+            None,
+        )
+        if mkdir_result is None:
+            raise RuntimeError("The folder creation result was not returned.")
+        if not mkdir_result.success:
+            return (
+                mkdir_result.error.message
+                if mkdir_result.error is not None
+                else "The folder could not be created."
+            )
+        output = mkdir_result.output or {}
+        return f"Created empty folder: {output['path']}"
+
+    def _run_named_file_read_recovery(
+        self,
+        text: str,
+        assistant_text: str,
+        source: CancellationSource,
+        activity,
+        turn_id: str,
+        turn_capabilities: tuple[str, ...],
+        retain_results,
+        turn_results: list[tuple],
+    ) -> str | None:
+        if not _assistant_requests_file_path_for_text_read(assistant_text):
+            return None
+        target = _find_target(text, self.host_access_policy)
+        if target is None or target[2] != "file":
+            return None
+        if not {"filesystem.find", "filesystem.read_text"}.issubset(self.agent_capabilities):
+            return None
+        directory, requested_name, _kind = target
+        find_call = ModelCapabilityCall(
+            provider_call_id=f"required-{self._turn_number}-read-find",
+            capability="filesystem.find",
+            arguments={"path": directory, "name": requested_name, "kind": "file"},
+        )
+        if activity:
+            activity("Finding file...")
+        find_start = len(turn_results)
+        result = self.agent_runtime.run(
+            self._model_messages(
+                capability_turn=True,
+                capability_names=turn_capabilities,
+            ),
+            session_id=self._session_id,
+            turn_id=turn_id,
+            portable_root=self.portable_root,
+            allowed_read_roots=self.allowed_read_roots,
+            host_access_policy=self.host_access_policy,
+            cancellation=source.token,
+            result_observer=retain_results,
+            capability_names=turn_capabilities,
+            required_calls=(find_call,),
+            continue_after_required_calls=False,
+        )
+        if result.status == AgentRunStatus.CANCELLED:
+            return "The response was stopped."
+        if result.status != AgentRunStatus.COMPLETED:
+            raise RuntimeError(result.message or "The file lookup did not complete.")
+        find_results = turn_results[find_start:]
+        find_result = next(
+            (
+                observed
+                for call, observed in find_results
+                if call.capability == "filesystem.find"
+            ),
+            None,
+        )
+        if find_result is None:
+            raise RuntimeError("The file lookup result was not returned.")
+        if not find_result.success:
+            return _render_find_result((find_call,), find_results)
+        output = find_result.output or {}
+        matches = output.get("matches")
+        if isinstance(matches, list):
+            file_matches = [
+                match
+                for match in matches
+                if isinstance(match, dict)
+                and match.get("type") == "file"
+                and isinstance(match.get("path"), str)
+            ]
+            if len(file_matches) == 1:
+                return self._run_required_text_read(
+                    file_matches[0]["path"],
+                    source,
+                    activity,
+                    turn_id,
+                    turn_capabilities,
+                    retain_results,
+                    turn_results,
+                )
+            if len(file_matches) > 1:
+                return _multiple_file_candidates_answer(
+                    requested_name,
+                    directory,
+                    tuple(match["path"] for match in file_matches),
+                )
+        if "filesystem.list" not in self.agent_capabilities:
+            return _render_find_result((find_call,), find_results)
+        list_call = ModelCapabilityCall(
+            provider_call_id=f"required-{self._turn_number}-read-list",
+            capability="filesystem.list",
+            arguments={"path": directory},
+        )
+        if activity:
+            activity("Checking folder...")
+        list_start = len(turn_results)
+        result = self.agent_runtime.run(
+            self._model_messages(
+                capability_turn=True,
+                capability_names=turn_capabilities,
+            ),
+            session_id=self._session_id,
+            turn_id=turn_id,
+            portable_root=self.portable_root,
+            allowed_read_roots=self.allowed_read_roots,
+            host_access_policy=self.host_access_policy,
+            cancellation=source.token,
+            result_observer=retain_results,
+            capability_names=turn_capabilities,
+            required_calls=(list_call,),
+            continue_after_required_calls=False,
+        )
+        if result.status == AgentRunStatus.CANCELLED:
+            return "The response was stopped."
+        if result.status != AgentRunStatus.COMPLETED:
+            raise RuntimeError(result.message or "The folder listing did not complete.")
+        list_results = turn_results[list_start:]
+        list_result = next(
+            (
+                observed
+                for call, observed in list_results
+                if call.capability == "filesystem.list"
+            ),
+            None,
+        )
+        if list_result is None:
+            raise RuntimeError("The folder listing result was not returned.")
+        if not list_result.success:
+            return _render_listing_results((list_call,), list_results)
+        output = list_result.output or {}
+        entries = output.get("entries")
+        candidates = (
+            _disambiguated_file_candidates(requested_name, entries)
+            if isinstance(entries, list)
+            else []
+        )
+        read_directory = output.get("path") if isinstance(output.get("path"), str) else directory
+        if len(candidates) == 1:
+            return self._run_required_text_read(
+                str(Path(read_directory) / candidates[0]),
+                source,
+                activity,
+                turn_id,
+                turn_capabilities,
+                retain_results,
+                turn_results,
+            )
+        if len(candidates) > 1:
+            return _multiple_file_candidates_answer(
+                requested_name,
+                read_directory,
+                tuple(str(Path(read_directory) / name) for name in candidates),
+            )
+        return _render_find_result((find_call,), find_results)
+
+    def _run_required_text_read(
+        self,
+        path: str,
+        source: CancellationSource,
+        activity,
+        turn_id: str,
+        turn_capabilities: tuple[str, ...],
+        retain_results,
+        turn_results: list[tuple],
+    ) -> str:
+        read_call = ModelCapabilityCall(
+            provider_call_id=f"required-{self._turn_number}-read-text",
+            capability="filesystem.read_text",
+            arguments={"path": path},
+        )
+        if activity:
+            activity("Reading file...")
+        read_start = len(turn_results)
+        result = self.agent_runtime.run(
+            self._model_messages(
+                capability_turn=True,
+                capability_names=turn_capabilities,
+            ),
+            session_id=self._session_id,
+            turn_id=turn_id,
+            portable_root=self.portable_root,
+            allowed_read_roots=self.allowed_read_roots,
+            host_access_policy=self.host_access_policy,
+            cancellation=source.token,
+            result_observer=retain_results,
+            capability_names=turn_capabilities,
+            required_calls=(read_call,),
+            continue_after_required_calls=False,
+        )
+        if result.status == AgentRunStatus.CANCELLED:
+            return "The response was stopped."
+        if result.status != AgentRunStatus.COMPLETED:
+            raise RuntimeError(result.message or "The text read did not complete.")
+        return _render_text_result((read_call,), turn_results[read_start:])
+
+    def _continuation_required_calls(
+        self,
+        text: str,
+    ) -> tuple[ModelCapabilityCall, ...]:
+        pending_text_read = self._pending_text_read_target(text)
+        if (
+            pending_text_read is not None
+            and "filesystem.read_text" in self.agent_capabilities
+        ):
+            return (
+                ModelCapabilityCall(
+                    provider_call_id=f"required-{self._turn_number}-1",
+                    capability="filesystem.read_text",
+                    arguments={"path": pending_text_read},
+                ),
+            )
+        if "filesystem.list" not in self.agent_capabilities:
+            return ()
+        active_directory = None
+        active_directory = self._active_directory_listing_target(
+            " ".join(str(text).casefold().split())
+        )
+        if active_directory is None:
+            return ()
+        return (
+            ModelCapabilityCall(
+                provider_call_id=f"required-{self._turn_number}-1",
+                capability="filesystem.list",
+                arguments={"path": active_directory},
+            ),
+        )
+
+    def _restore_filesystem_context_from_history(self) -> None:
+        if (
+            self.host_access_policy is None
+            or not self._agent_history
+            or not {"filesystem.list", "filesystem.read_text"} & set(self.agent_capabilities)
+        ):
+            return
+        restored_history: list[dict] = []
+        restored_any = False
+        trace_index = 0
+        for group in _conversation_turn_groups(self._agent_history):
+            if not group:
+                continue
+            first = group[0]
+            if first.get("role") != "user":
+                restored_history.extend(group)
+                continue
+            assistant = next(
+                (message for message in group[1:] if message.get("role") == "assistant"),
+                None,
+            )
+            context = None
+            if assistant is not None and "filesystem.list" in self.agent_capabilities:
+                context = _restored_listing_context(
+                    str(first.get("content", "")),
+                    str(assistant.get("content", "")),
+                    self.host_access_policy,
+                )
+            restored_history.append(first)
+            pending_text_read = None
+            if assistant is not None and "filesystem.read_text" in self.agent_capabilities:
+                pending_text_read = _restored_pending_text_read(
+                    str(first.get("content", "")),
+                    str(assistant.get("content", "")),
+                    self.host_access_policy,
+                )
+            if context is not None:
+                trace_index += 1
+                path, entries = context
+                call = ModelCapabilityCall(
+                    provider_call_id=f"restored-list-{trace_index}",
+                    capability="filesystem.list",
+                    arguments={"path": path},
+                )
+                result = _restored_listing_result(call.provider_call_id, path, entries)
+                restored_history.append(model_capability_calls_message((call,)))
+                restored_history.append(model_capability_result_message(call, result))
+                files = tuple(
+                    entry["name"]
+                    for entry in entries
+                    if entry.get("type") == "file" and isinstance(entry.get("name"), str)
+                )
+                self._active_found_directory = _ActiveFoundDirectory(path=path, name=Path(path).name)
+                self._active_listing = _ActiveDirectoryListing(path=path, files=files)
+                self._last_filesystem_operation = "listing"
+                restored_any = True
+            if pending_text_read is not None:
+                path, name = pending_text_read
+                self._pending_text_read = _PendingTextRead(path=path, name=name)
+                restored_any = True
+            restored_history.extend(group[1:])
+        if restored_any:
+            self._agent_history = restored_history
+            self._restored_filesystem_context = True
 
     def _create_folder(self, text, source, activity) -> str:
         self._last_filesystem_operation = None
@@ -490,7 +947,9 @@ class ConversationService:
             self._session_id = uuid4().hex
             self._turn_number = 0
             self._active_listing = None
+            self._active_found_directory = None
             self._last_filesystem_operation = None
+            self._pending_text_read = None
             self._awaiting_folder_path = False
             self._agent_history = []
         finally:
@@ -806,13 +1265,25 @@ class ConversationService:
             return str(Path(listing.path) / stem_matches[0])
         return None
 
+    def _pending_text_read_target(self, text: str) -> str | None:
+        pending = self._pending_text_read
+        if pending is None:
+            return None
+        lowered = " ".join(str(text).casefold().split())
+        if _is_affirmative(lowered):
+            return pending.path
+        if not _is_text_read_request(lowered):
+            return None
+        if re.search(r"\b(?:it|this|that|the\s+file|contents?)\b", lowered):
+            return pending.path
+        if _mentions_filename(lowered, pending.name) or _mentions_filename(lowered, Path(pending.name).stem):
+            return pending.path
+        return None
+
     def _active_directory_listing_target(self, lowered: str) -> str | None:
         if self._active_found_directory is None and self._active_listing is None:
             return None
-        affirmative = re.fullmatch(
-            r"(?:yes|yep|yeah|sure|ok|okay|please|please\s+do|do\s+it|proceed)",
-            lowered,
-        )
+        affirmative = _is_affirmative(lowered)
         if affirmative is None and not (
             _is_listing_request(lowered)
             and re.search(r"\b(?:it|there|that|this|inside|in\s+it|what(?:'s|\s+is)\s+in)\b", lowered)
@@ -842,6 +1313,8 @@ class ConversationService:
 
     def _retain_filesystem_context(self, calls, results) -> None:
         for call, result in zip(calls, results, strict=True):
+            if call.capability == "filesystem.read_text" and result.success:
+                self._pending_text_read = None
             if not result.success or not isinstance(result.output, dict):
                 continue
             output = result.output
@@ -902,6 +1375,25 @@ class ConversationService:
                 if name.casefold() == candidate.name.casefold():
                     self._active_listing.metadata_received.add(name)
                     break
+
+    def _retain_pending_text_read_context(
+        self,
+        user_text: str,
+        assistant_text: str,
+        turn_results: list[tuple],
+    ) -> None:
+        if _latest_successful_text_read(turn_results) is not None:
+            self._pending_text_read = None
+            return
+        lowered = " ".join(str(user_text).casefold().split())
+        if not (
+            _is_text_read_request(lowered)
+            or _assistant_requests_text_read_confirmation(assistant_text)
+        ):
+            return
+        path = _pending_text_read_path_from_results(turn_results)
+        if path is not None:
+            self._pending_text_read = _PendingTextRead(path=path, name=Path(path).name)
 
     def _largest_fitting_suffix(self, system, message, selected, budget):
         marker = "[Earlier content truncated]\n"
@@ -976,6 +1468,55 @@ def _folder_creation_target(text: str) -> str | None:
             or len(re.findall(r"[A-Za-z]:[\\/]", remainder)) != 1):
         return None
     return remainder
+
+
+def _desktop_child_folder_creation_request(text: str) -> tuple[str, str] | None:
+    value = str(text).strip()
+    lowered = " ".join(value.casefold().split())
+    if not re.search(r"\b(?:create|make)\b", lowered):
+        return None
+    if not re.search(r"\b(?:folder|directory)\b", lowered):
+        return None
+    if not re.search(r"\b(?:in|inside|under)\s+(?:it|that|this|the\s+(?:folder|directory))\b", lowered):
+        return None
+    parent_name = None
+    parent_patterns = (
+        r"(?is)\b(?:folder|directory)\s+(?:on|in|inside|under)\s+(?:my\s+|the\s+)?"
+        r"desktop(?:\s+(?:folder|directory))?\s+(?:called|named)\s+"
+        r"(?P<name>.+?)(?=(?:[.?!,;]\s*)?\b(?:create|make)\b|[.?!,;]|$)",
+        r"(?is)\b(?:folder|directory)\s+(?:called|named)\s+"
+        r"(?P<name>.+?)\s+\b(?:on|in|inside|under)\s+(?:my\s+|the\s+)?"
+        r"desktop(?:\s+(?:folder|directory))?\b",
+    )
+    for pattern in parent_patterns:
+        match = re.search(pattern, value)
+        if match is None:
+            continue
+        parent_name = _clean_local_entry_name(match.group("name"))
+        if parent_name:
+            break
+    if not parent_name:
+        return None
+    child_match = re.search(
+        r"(?is)\b(?:create|make)\s+(?:(?:a|an|new|empty)\s+)*"
+        r"(?:folder|directory)\s+(?:in|inside|under)\s+"
+        r"(?:it|that|this|the\s+(?:folder|directory))\s+"
+        r"(?:called|named)\s+(?P<name>[^,;?!\\/\r\n]+?)(?=\s*(?:[.?!,;]|$))",
+        value,
+    )
+    if child_match is None:
+        return None
+    child_name = _clean_local_entry_name(child_match.group("name"))
+    if not child_name:
+        return None
+    return parent_name, child_name
+
+
+def _clean_local_entry_name(value: str) -> str:
+    name = _clean_find_name(value)
+    if ":" in name or re.search(r"\b(?:and|then)\b", name, re.I):
+        return ""
+    return name
 
 
 _TEXT_WRITE_START = re.compile(
@@ -1165,6 +1706,282 @@ def _conversation_turn_groups(history: list[dict]) -> list[list[dict]]:
     return groups
 
 
+def _restored_listing_context(
+    user_text: str,
+    assistant_text: str,
+    host_access_policy: HostAccessPolicy,
+) -> tuple[str, tuple[dict, ...]] | None:
+    lowered_user = " ".join(str(user_text).casefold().split())
+    if not _is_listing_request(lowered_user):
+        return None
+    entries = _visible_listing_entries(assistant_text)
+    if entries is None:
+        return None
+    find_target = _find_target(user_text, host_access_policy)
+    if find_target is not None and find_target[2] == "directory":
+        containing_path, name, _kind = find_target
+        return str(Path(containing_path) / name), entries
+    requested_path = _explicit_windows_path(user_text)
+    if requested_path is not None:
+        return requested_path, entries
+    return None
+
+
+def _restored_pending_text_read(
+    user_text: str,
+    assistant_text: str,
+    host_access_policy: HostAccessPolicy,
+) -> tuple[str, str] | None:
+    lowered_user = " ".join(str(user_text).casefold().split())
+    if not _is_text_read_request(lowered_user):
+        return None
+    if not _assistant_requests_text_read_confirmation(assistant_text):
+        return None
+    base_path = _find_base_path(user_text, host_access_policy)
+    if base_path is None:
+        return None
+    name = _visible_file_name(assistant_text)
+    if name is None:
+        return None
+    return str(base_path / name), name
+
+
+def _visible_file_name(text: str) -> str | None:
+    for pattern in (
+        r"\bfile\s+name\s+is\s+[\"`'](?P<name>[^\"`'\r\n]{1,255})[\"`']",
+        r"\bfile\s+(?:is|named|called)\s+[\"`'](?P<name>[^\"`'\r\n]{1,255})[\"`']",
+    ):
+        match = re.search(pattern, str(text), re.I)
+        if match is not None:
+            return _restored_entry_name(match.group("name"))
+    return None
+
+
+def _visible_listing_entries(text: str) -> tuple[dict, ...] | None:
+    value = str(text)
+    lowered = " ".join(value.casefold().split())
+    if re.search(
+        r"\b(?:does\s+not\s+exist|could\s+not|couldn't|cannot|can't|permission|denied|specify\s+a\s+directory)\b",
+        lowered,
+    ):
+        return None
+    entries = tuple(
+        entry
+        for entry in (_visible_listing_entry(line) for line in value.splitlines())
+        if entry is not None
+    )
+    if entries:
+        return entries
+    if re.search(r"\b(?:directory|folder)\s+is\s+empty\b", lowered):
+        return ()
+    if re.search(r"\bcontains\s+no\s+(?:files?|folders?|directories|items|entries)\b", lowered):
+        return ()
+    return None
+
+
+def _visible_listing_entry(line: str) -> dict | None:
+    match = re.match(
+        r"\s*[-*]\s+`(?P<name>[^`\r\n]{1,255})`(?:\s+\((?P<type>[^()\r\n]+)\))?\s*$",
+        str(line),
+    )
+    if match is None:
+        match = re.match(
+            r"\s*[-*]\s+(?P<name>[^`()\r\n]{1,255}?)(?:\s+\((?P<type>[^()\r\n]+)\))?\s*$",
+            str(line),
+        )
+    if match is None:
+        return None
+    name = _restored_entry_name(match.group("name"))
+    if name is None:
+        return None
+    entry_type = _restored_entry_type(name, match.group("type"))
+    return {
+        "name": name,
+        "type": entry_type,
+        "is_symlink": entry_type == "symlink",
+        "is_reparse_point": False,
+    }
+
+
+def _restored_entry_name(raw_name: str) -> str | None:
+    name = str(raw_name).strip()
+    if (
+        not name
+        or name in {".", ".."}
+        or "\x00" in name
+        or any(separator in name for separator in ("\\", "/", ":"))
+    ):
+        return None
+    return name
+
+
+def _restored_entry_type(name: str, raw_type: str | None) -> str:
+    entry_type = " ".join(str(raw_type or "").casefold().split())
+    if entry_type in {"file", "directory", "symlink", "inaccessible", "other"}:
+        return entry_type
+    return "file" if Path(name).suffix else "directory"
+
+
+def _restored_listing_result(call_id: str, path: str, entries: tuple[dict, ...]) -> dict:
+    return {
+        "call_id": call_id,
+        "capability": "filesystem.list",
+        "success": True,
+        "output": {
+            "path": path,
+            "entries": [dict(entry) for entry in entries],
+            "returned_entries": len(entries),
+            "total_entries": len(entries),
+            "next_cursor": None,
+            "has_more": False,
+        },
+        "error": None,
+        "duration_ms": 0,
+        "metadata": {"permission": "read", "result_schema_version": 1},
+    }
+
+
+def _pending_text_read_path_from_results(
+    observed_results: list[tuple],
+) -> str | None:
+    found_file = _single_found_file_path(observed_results)
+    if found_file is not None:
+        return found_file
+    return _extensionless_read_candidate_path(observed_results)
+
+
+def _single_found_file_path(observed_results: list[tuple]) -> str | None:
+    for call, result in reversed(observed_results):
+        if call.capability != "filesystem.find" or not result.success:
+            continue
+        output = result.output or {}
+        matches = output.get("matches")
+        if not isinstance(matches, list):
+            continue
+        files = [
+            match
+            for match in matches
+            if isinstance(match, dict)
+            and match.get("type") == "file"
+            and isinstance(match.get("path"), str)
+        ]
+        if len(files) == 1:
+            return files[0]["path"]
+    return None
+
+
+def _extensionless_read_candidate_path(observed_results: list[tuple]) -> str | None:
+    for index in range(len(observed_results) - 1, -1, -1):
+        call, result = observed_results[index]
+        if call.capability != "filesystem.read_text" or result.success:
+            continue
+        error_code = getattr(result.error, "code", None) if result.error is not None else None
+        error_code_value = getattr(error_code, "value", str(error_code))
+        if error_code_value != "not_found":
+            continue
+        raw_path = call.arguments.get("path")
+        if not isinstance(raw_path, str):
+            continue
+        parsed = _extensionless_read_target(raw_path)
+        if parsed is None:
+            continue
+        directory, requested_name = parsed
+        for list_call, list_result in observed_results[index + 1:]:
+            if list_call.capability != "filesystem.list" or not list_result.success:
+                continue
+            output = list_result.output or {}
+            call_path = list_call.arguments.get("path")
+            output_path = output.get("path")
+            call_matches = isinstance(call_path, str) and _same_path(call_path, directory)
+            output_matches = isinstance(output_path, str) and _same_path(output_path, directory)
+            if not (call_matches or output_matches):
+                continue
+            entries = output.get("entries")
+            if not isinstance(entries, list):
+                continue
+            candidates = _disambiguated_file_candidates(requested_name, entries)
+            if len(candidates) != 1:
+                continue
+            read_directory = output_path if isinstance(output_path, str) else directory
+            return str(Path(read_directory) / candidates[0])
+    return None
+
+
+def _extensionless_read_target(path: str) -> tuple[str, str] | None:
+    target = Path(path)
+    requested_name = target.name
+    if (
+        not requested_name
+        or requested_name in {".", ".."}
+        or Path(requested_name).suffix
+    ):
+        return None
+    directory = str(target.parent)
+    if not directory or directory == ".":
+        return None
+    return directory, requested_name
+
+
+def _disambiguated_file_candidates(requested_name: str, entries: list[dict]) -> list[str]:
+    requested_keys = _filename_keys(requested_name)
+    candidates: list[str] = []
+    for entry in entries:
+        if not isinstance(entry, dict) or entry.get("type") != "file":
+            continue
+        name = entry.get("name")
+        if not isinstance(name, str):
+            continue
+        if requested_keys & _filename_keys(name):
+            candidates.append(name)
+    return candidates
+
+
+def _filename_keys(name: str) -> set[str]:
+    value = str(name).strip().casefold()
+    stem = Path(value).stem
+    return {value, stem, _filename_loose_key(value), _filename_loose_key(stem)} - {""}
+
+
+def _filename_loose_key(name: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", name.casefold())
+
+
+def _assistant_requests_text_read_confirmation(text: str) -> bool:
+    lowered = " ".join(str(text).casefold().split())
+    return (
+        re.search(r"\bwould\s+you\s+like\b.{0,120}\b(?:see|read|show|display)\b.{0,80}\b(?:contents?|text|file)\b", lowered)
+        is not None
+        or re.search(r"\bi\s+can\s+read\b.{0,120}\b(?:would\s+you\s+like|want)\b", lowered)
+        is not None
+    )
+
+
+def _assistant_requests_file_path_for_text_read(text: str) -> bool:
+    lowered = " ".join(str(text).casefold().split())
+    return (
+        re.search(r"\b(?:full|exact)\s+path\b", lowered) is not None
+        and re.search(r"\b(?:read|file|drive\s+letter|directory\s+structure)\b", lowered)
+        is not None
+    )
+
+
+def _multiple_file_candidates_answer(
+    requested_name: str,
+    directory: str,
+    candidates: tuple[str, ...],
+) -> str:
+    lines = [f"Multiple possible files match {requested_name} in {directory}. Choose one exact filename:"]
+    lines.extend(f"- {_safe_text(str(candidate))}" for candidate in candidates)
+    return "\n".join(lines)
+
+
+def _is_affirmative(lowered: str) -> re.Match[str] | None:
+    return re.fullmatch(
+        r"(?:yes|yep|yeah|sure|ok|okay|please|please\s+do|do\s+it|proceed)",
+        lowered,
+    )
+
+
 def _same_path(left: str, right: str) -> bool:
     return os.path.normcase(os.path.normpath(left)) == os.path.normcase(
         os.path.normpath(right)
@@ -1186,6 +2003,72 @@ def _observed_required_calls_complete(
 
 def _same_capability_call(left: ModelCapabilityCall, right: ModelCapabilityCall) -> bool:
     return left.capability == right.capability and left.arguments == right.arguments
+
+
+def _grounded_text_read_answer(
+    user_text: str,
+    assistant_text: str,
+    observed_results: list[tuple],
+) -> str | None:
+    call_and_result = _latest_successful_text_read(observed_results)
+    if call_and_result is None:
+        return None
+    _call, result = call_and_result
+    output = result.output or {}
+    file_text = output.get("text")
+    if not isinstance(file_text, str):
+        return None
+    if not _should_ground_text_read_answer(user_text, assistant_text, file_text):
+        return None
+    return _render_text_result((call_and_result[0],), [call_and_result])
+
+
+def _latest_successful_text_read(observed_results: list[tuple]) -> tuple | None:
+    for call, result in reversed(observed_results):
+        if call.capability != "filesystem.read_text" or not result.success:
+            continue
+        output = result.output or {}
+        if isinstance(output.get("text"), str):
+            return call, result
+    return None
+
+
+def _should_ground_text_read_answer(
+    user_text: str,
+    assistant_text: str,
+    file_text: str,
+) -> bool:
+    lowered_answer = " ".join(str(assistant_text).casefold().split())
+    if re.search(
+        r"\b(?:cannot|can't|can\s+not)\s+show\s+the\s+full\s+content\b",
+        lowered_answer,
+    ):
+        return True
+    if re.search(r"\bcapability restrictions?\b", lowered_answer):
+        return True
+    if file_text and file_text in assistant_text:
+        return False
+    return _is_direct_content_read_request(user_text)
+
+
+def _is_direct_content_read_request(text: str) -> bool:
+    lowered = " ".join(str(text).casefold().split())
+    if re.search(
+        r"\b(?:summari[sz]e|summary|analy[sz]e|explain|review|classify|compare|extract|parse)\b",
+        lowered,
+    ):
+        return False
+    if re.match(
+        r"(?:please\s+)?(?:(?:can|could|would)\s+you\s+)?(?:read|show|display|print|paste|open)\b",
+        lowered,
+    ):
+        return True
+    if re.search(
+        r"\b(?:read|show|display|print|paste)\b.{0,120}\b(?:contents?|content|file|it|this|that)\b",
+        lowered,
+    ):
+        return True
+    return re.search(r"\bwhat\s+does\s+(?:it|this|that|the\s+file)\s+say\b", lowered) is not None
 
 
 def _mentions_filename(lowered_text: str, filename: str) -> bool:

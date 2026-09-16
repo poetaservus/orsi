@@ -1193,25 +1193,29 @@ def _single_call_feedback() -> dict[str, str]:
 _FILENAME_DISAMBIGUATION_MARKER = "Bounded filename disambiguation is still pending."
 
 
+@dataclass(frozen=True)
+class _PendingFilenameDisambiguation:
+    directory: str
+    requested_name: str
+    source_capability: str
+
+
 def _filename_disambiguation_feedback(
     transcript: list[dict[str, Any]],
     advertised_names: set[str],
 ) -> dict[str, str] | None:
-    if not {
-        "filesystem.find",
-        "filesystem.list",
-        "filesystem.read_text",
-    }.issubset(advertised_names):
+    if not {"filesystem.list", "filesystem.read_text"}.issubset(advertised_names):
         return None
     if _disambiguation_feedback_already_sent(transcript):
         return None
     latest_user = _latest_user_text(transcript).casefold()
     if re.search(r"\b(?:read|show|explain|summari[sz]e|fix)\b", latest_user) is None:
         return None
-    pending = _pending_zero_match_file_find(transcript)
+    pending = _pending_filename_disambiguation(transcript)
     if pending is None:
         return None
-    directory, requested_name = pending
+    directory = pending.directory
+    requested_name = pending.requested_name
     last_result = _last_capability_result(transcript)
     if last_result is None:
         return None
@@ -1229,7 +1233,21 @@ def _filename_disambiguation_feedback(
                 "disambiguation has run. Do not search another folder."
             ),
         }
-    if capability == "filesystem.list" and _same_path(output.get("path"), directory):
+    if capability == "filesystem.read_text" and pending.source_capability == "filesystem.read_text":
+        if _has_following_capability_result(transcript, "filesystem.list", directory):
+            return None
+        return {
+            "role": "system",
+            "content": (
+                f"{_FILENAME_DISAMBIGUATION_MARKER} The direct text read failed for an "
+                f"extensionless path. Return exactly one native filesystem.list call for the "
+                f"same containing directory: {directory}. Do not answer that the file is missing "
+                "until this bounded same-folder disambiguation has run. Do not search another folder."
+            ),
+        }
+    if capability == "filesystem.list" and _result_path_matches_directory(
+        transcript, last_result, "filesystem.list", directory
+    ):
         if _has_following_capability_result(transcript, "filesystem.read_text", directory):
             return None
         candidates = _disambiguated_file_candidates(
@@ -1238,12 +1256,13 @@ def _filename_disambiguation_feedback(
         )
         if len(candidates) != 1:
             return None
+        read_directory = output.get("path") if isinstance(output.get("path"), str) else directory
         return {
             "role": "system",
             "content": (
                 f"{_FILENAME_DISAMBIGUATION_MARKER} The same-folder list has exactly one obvious "
                 f"file match for {requested_name}: {candidates[0]}. Return exactly one native "
-                f"filesystem.read_text call for {str(Path(directory) / candidates[0])}. Do not "
+                f"filesystem.read_text call for {str(Path(read_directory) / candidates[0])}. Do not "
                 "return assistant text before reading it."
             ),
         }
@@ -1281,20 +1300,105 @@ def _last_capability_result(transcript: list[dict[str, Any]]) -> dict[str, Any] 
     return None
 
 
-def _pending_zero_match_file_find(transcript: list[dict[str, Any]]) -> tuple[str, str] | None:
+def _pending_filename_disambiguation(
+    transcript: list[dict[str, Any]],
+) -> _PendingFilenameDisambiguation | None:
     for message in reversed(transcript):
-        if message.get("role") != "capability" or message.get("capability") != "filesystem.find":
+        pending = _pending_disambiguation_from_result(transcript, message)
+        if pending is not None:
+            return pending
+    return None
+
+
+def _pending_disambiguation_from_result(
+    transcript: list[dict[str, Any]],
+    message: dict[str, Any],
+) -> _PendingFilenameDisambiguation | None:
+    if message.get("role") != "capability":
+        return None
+    result = message.get("result") or {}
+    output = result.get("output") or {}
+    capability = message.get("capability")
+    if (
+        capability == "filesystem.find"
+        and result.get("success") is True
+        and output.get("kind") == "file"
+        and not output.get("matches")
+        and isinstance(output.get("path"), str)
+        and isinstance(output.get("name"), str)
+    ):
+        return _PendingFilenameDisambiguation(
+            directory=output["path"],
+            requested_name=output["name"],
+            source_capability="filesystem.find",
+        )
+    if (
+        capability == "filesystem.read_text"
+        and result.get("success") is False
+        and isinstance(result.get("error"), dict)
+        and result["error"].get("code") == CapabilityErrorCode.NOT_FOUND.value
+    ):
+        arguments = _result_call_arguments(transcript, message)
+        path = arguments.get("path") if isinstance(arguments, dict) else None
+        if not isinstance(path, str):
+            return None
+        parsed = _extensionless_read_target(path)
+        if parsed is None:
+            return None
+        directory, requested_name = parsed
+        return _PendingFilenameDisambiguation(
+            directory=directory,
+            requested_name=requested_name,
+            source_capability="filesystem.read_text",
+        )
+    return None
+
+
+def _pending_zero_match_file_find(transcript: list[dict[str, Any]]) -> tuple[str, str] | None:
+    pending = _pending_filename_disambiguation(transcript)
+    if pending is not None and pending.source_capability == "filesystem.find":
+        return pending.directory, pending.requested_name
+    return None
+
+
+def _extensionless_read_target(path: str) -> tuple[str, str] | None:
+    target = Path(path)
+    requested_name = target.name
+    if (
+        not requested_name
+        or requested_name in {".", ".."}
+        or Path(requested_name).suffix
+    ):
+        return None
+    directory = str(target.parent)
+    if not directory or directory == ".":
+        return None
+    return directory, requested_name
+
+
+def _result_call_arguments(
+    transcript: list[dict[str, Any]],
+    result_message: dict[str, Any],
+) -> dict[str, Any] | None:
+    provider_call_id = result_message.get("provider_call_id")
+    capability = result_message.get("capability")
+    if not isinstance(provider_call_id, str) or not isinstance(capability, str):
+        return None
+    for message in reversed(transcript):
+        if message.get("role") != "assistant":
             continue
-        result = message.get("result") or {}
-        output = result.get("output") or {}
-        if (
-            result.get("success") is True
-            and output.get("kind") == "file"
-            and not output.get("matches")
-            and isinstance(output.get("path"), str)
-            and isinstance(output.get("name"), str)
-        ):
-            return output["path"], output["name"]
+        calls = message.get("capability_calls")
+        if not isinstance(calls, list):
+            continue
+        for call in calls:
+            if not isinstance(call, dict):
+                continue
+            if (
+                call.get("provider_call_id") == provider_call_id
+                and call.get("capability") == capability
+                and isinstance(call.get("arguments"), dict)
+            ):
+                return call["arguments"]
     return None
 
 
@@ -1305,34 +1409,45 @@ def _has_following_capability_result(
 ) -> bool:
     pending_index = None
     for index, message in enumerate(transcript):
-        if message.get("role") != "capability" or message.get("capability") != "filesystem.find":
+        pending = _pending_disambiguation_from_result(transcript, message)
+        if pending is None or not _same_path(pending.directory, directory):
             continue
-        result = message.get("result") or {}
-        output = result.get("output") or {}
-        if (
-            result.get("success") is True
-            and output.get("kind") == "file"
-            and not output.get("matches")
-            and _same_path(output.get("path"), directory)
-        ):
-            pending_index = index
+        pending_index = index
     if pending_index is None:
         return False
     for message in transcript[pending_index + 1:]:
-        if message.get("role") != "capability" or message.get("capability") != capability:
-            continue
-        result = message.get("result") or {}
-        output = result.get("output") or {}
-        path = output.get("path") or output.get("destination_path")
-        if capability == "filesystem.read_text":
-            try:
-                if _same_path(str(Path(path).parent), directory):
-                    return True
-            except TypeError:
-                continue
-        elif _same_path(path, directory):
+        if _result_path_matches_directory(transcript, message, capability, directory):
             return True
     return False
+
+
+def _result_path_matches_directory(
+    transcript: list[dict[str, Any]],
+    message: dict[str, Any],
+    capability: str,
+    directory: str,
+) -> bool:
+    if message.get("role") != "capability" or message.get("capability") != capability:
+        return False
+    result = message.get("result") or {}
+    output = result.get("output") or {}
+    output_path = output.get("path") or output.get("destination_path")
+    if _path_value_matches_directory(output_path, capability, directory):
+        return True
+    arguments = _result_call_arguments(transcript, message)
+    argument_path = arguments.get("path") if isinstance(arguments, dict) else None
+    return _path_value_matches_directory(argument_path, capability, directory)
+
+
+def _path_value_matches_directory(path: Any, capability: str, directory: str) -> bool:
+    if not isinstance(path, str):
+        return False
+    if capability == "filesystem.read_text":
+        try:
+            return _same_path(str(Path(path).parent), directory)
+        except TypeError:
+            return False
+    return _same_path(path, directory)
 
 
 def _disambiguated_file_candidates(requested_name: str, entries: list[dict[str, Any]]) -> list[str]:

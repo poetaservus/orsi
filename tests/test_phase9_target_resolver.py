@@ -72,6 +72,93 @@ class DeterministicFindModel(InferenceEngine):
         return ModelResponse.text(self.conversation_response)
 
 
+class ReluctantThereListingModel(DeterministicFindModel):
+    def respond_with_capabilities(self, messages, capabilities):
+        latest_user = next(
+            message["content"]
+            for message in reversed(messages)
+            if message.get("role") == "user"
+        )
+        if "what files" in latest_user.casefold() and "there" in latest_user.casefold():
+            self.capability_requests.append(messages)
+            return ModelResponse.text("Could you please specify a directory path?")
+        return super().respond_with_capabilities(messages, capabilities)
+
+
+class PathClarifyingReadModel(InferenceEngine):
+    def __init__(self):
+        self.requests: list[list[dict]] = []
+        self.host_policy: HostAccessPolicy | None = None
+
+    def respond(self, messages):
+        raise AssertionError("Agent mode must use the native capability boundary.")
+
+    def respond_with_capabilities(self, messages, capabilities):
+        del capabilities
+        self.requests.append(messages)
+        return ModelResponse.text(
+            "Please specify the full path to the file, including the drive letter and directory structure."
+        )
+
+
+class DirectExtensionlessReadModel(InferenceEngine):
+    def __init__(self, final_text: str | None = None):
+        self.requests: list[list[dict]] = []
+        self.final_text = final_text
+        self.confirm_before_read = False
+        self.host_policy: HostAccessPolicy | None = None
+        self.next_call = 1
+
+    def respond(self, messages):
+        raise AssertionError("Agent mode must use the native capability boundary.")
+
+    def respond_with_capabilities(self, messages, capabilities):
+        del capabilities
+        self.requests.append(messages)
+        latest = messages[-1]
+        if self.confirm_before_read and latest.get("role") == "system" and "filesystem.read_text" in latest.get("content", ""):
+            return ModelResponse.text('I found the file "atiflix css.txt". Would you like to see the contents now?')
+        if latest.get("role") == "system" and "filesystem.list" in latest.get("content", ""):
+            return self._call("filesystem.list", {"path": "Desktop"})
+        if latest.get("role") == "system" and "filesystem.read_text" in latest.get("content", ""):
+            listing = next(
+                message["result"]["output"]
+                for message in reversed(messages)
+                if message.get("role") == "capability"
+                and message.get("capability") == "filesystem.list"
+            )
+            candidates = _disambiguated_file_candidates(
+                "atiflix css",
+                list(listing.get("entries") or []),
+            )
+            assert len(candidates) == 1
+            return self._call(
+                "filesystem.read_text",
+                {"path": str(Path(listing["path"]) / candidates[0])},
+            )
+        if latest.get("role") == "capability":
+            result = latest["result"]
+            if result.get("capability") == "filesystem.read_text" and result.get("success") is True:
+                if self.final_text is not None:
+                    return ModelResponse.text(self.final_text)
+                return ModelResponse.text(result["output"]["text"])
+            return ModelResponse.text("I could not find that file on your desktop.")
+        return self._call("filesystem.read_text", {"path": "Desktop\\atiflix css"})
+
+    def _call(self, capability: str, arguments: dict) -> ModelResponse:
+        call_id = f"direct-extensionless-read-{self.next_call}"
+        self.next_call += 1
+        return ModelResponse.calls(
+            (
+                ModelCapabilityCall(
+                    provider_call_id=call_id,
+                    capability=capability,
+                    arguments=arguments,
+                ),
+            )
+        )
+
+
 class ReluctantFilenameDisambiguationModel(InferenceEngine):
     def __init__(self):
         self.requests: list[list[dict]] = []
@@ -329,7 +416,14 @@ def build_service(tmp_path: Path, model: InferenceEngine):
         user_home=user_home,
         acknowledged=True,
     )
-    if isinstance(model, (DeterministicFindModel, ReluctantFilenameDisambiguationModel)):
+    if isinstance(
+        model,
+        (
+            DeterministicFindModel,
+            DirectExtensionlessReadModel,
+            ReluctantFilenameDisambiguationModel,
+        ),
+    ):
         model.host_policy = policy
     runtime = build_filesystem_stat_runtime(
         model,
@@ -496,11 +590,203 @@ def test_found_directory_remains_active_for_there_followup(tmp_path: Path):
 
         assert "directory:" in found
         assert "followup.txt (file)" in answer
-        assert len(model.capability_requests) == 4
+        assert len(model.capability_requests) == 2
         assert model.text_requests == []
         capabilities = [record.capability for record in runtime.executor.journal.records]
         assert capabilities.count("filesystem.find") == 1
         assert capabilities.count("filesystem.list") == 1
+    finally:
+        service.shutdown()
+
+
+def test_visible_listing_context_survives_restart_for_there_followup(tmp_path: Path):
+    portable_root = tmp_path / "portable"
+    user_home = tmp_path / "user-home"
+    state = tmp_path / "state"
+    portable_root.mkdir()
+    user_home.mkdir()
+    target = user_home / "Desktop" / "orsi_acceptance_gate_20260915-173736"
+    target.mkdir(parents=True)
+    (target / "atiflix css.txt").write_text("PRIVATE CSS", encoding="utf-8")
+    (target / "copy").mkdir()
+    (target / "lab").mkdir()
+    (target / "notes.md").write_text("PRIVATE NOTES", encoding="utf-8")
+    policy = HostAccessPolicy.full_local(
+        application_root=portable_root,
+        user_home=user_home,
+        acknowledged=True,
+    )
+    store = ConversationStore(state / "conversation.json")
+    store.append(
+        "user",
+        "there is a folder called orsi_acceptance_gate_20260915-173736 on my desktop, "
+        "can you list me the items in it?",
+    )
+    store.append(
+        "assistant",
+        "The folder `orsi_acceptance_gate_20260915-173736` on your desktop contains "
+        "the following items:\n\n"
+        "- `atiflix css.txt`\n"
+        "- `copy`\n"
+        "- `lab`\n"
+        "- `notes.md`\n\n"
+        "There are no other files or directories in this folder.",
+    )
+    store.append("user", "what files i have there?")
+    store.append("assistant", "Could you please specify a directory path?")
+    model = DeterministicFindModel()
+    model.host_policy = policy
+    runtime = build_filesystem_stat_runtime(
+        model,
+        config=AgentFeatureConfig(
+            filesystem_stat_enabled=True,
+            filesystem_find_enabled=True,
+            filesystem_list_enabled=True,
+            filesystem_read_text_enabled=True,
+            filesystem_search_enabled=True,
+            full_local_read_enabled=True,
+        ),
+        portable_root=portable_root,
+        state_directory=state,
+        host_access_policy=policy,
+    )
+    service = ConversationService(
+        model,
+        ConversationStore(state / "conversation.json"),
+        agent_runtime=runtime,
+        portable_root=portable_root,
+        allowed_read_roots=policy.permission_roots(),
+        host_access_policy=policy,
+    )
+    try:
+        answer = service.run("what files i have there?")
+
+        assert "atiflix css.txt (file)" in answer
+        assert "copy (directory)" in answer
+        assert "lab (directory)" in answer
+        assert "notes.md (file)" in answer
+        assert "specify a directory" not in answer.casefold()
+        assert model.capability_requests == []
+    finally:
+        service.shutdown()
+
+
+def test_yes_after_extensionless_read_confirmation_reads_pending_file(
+    tmp_path: Path,
+):
+    model = DirectExtensionlessReadModel()
+    model.confirm_before_read = True
+    service, runtime, user_home, _policy = build_service(tmp_path, model)
+    desktop = user_home / "Desktop"
+    target = desktop / "atiflix css.txt"
+    desktop.mkdir()
+    target.write_text("REAL CSS CONTENT", encoding="utf-8")
+    try:
+        first_answer = service.run(
+            "i have a file on my desktop called atiflix can you read it please"
+        )
+        requests_after_first_turn = len(model.requests)
+        answer = service.run("yes")
+
+        assert "Would you like to see the contents now?" in first_answer
+        assert answer == (
+            "Here is the content of atiflix css.txt:\n\n"
+            "```text\nREAL CSS CONTENT\n```"
+        )
+        assert len(model.requests) == requests_after_first_turn
+        journaled_capabilities = [record.capability for record in runtime.executor.journal.records]
+        assert journaled_capabilities.count("filesystem.read_text") == 2
+        assert journaled_capabilities.count("filesystem.list") == 1
+    finally:
+        service.shutdown()
+
+
+def test_pending_read_confirmation_survives_restart_for_yes(tmp_path: Path):
+    portable_root = tmp_path / "portable"
+    user_home = tmp_path / "user-home"
+    state = tmp_path / "state"
+    portable_root.mkdir()
+    user_home.mkdir()
+    desktop = user_home / "Desktop"
+    target = desktop / "atiflix css.txt"
+    desktop.mkdir()
+    target.write_text("REAL CSS CONTENT", encoding="utf-8")
+    policy = HostAccessPolicy.full_local(
+        application_root=portable_root,
+        user_home=user_home,
+        acknowledged=True,
+    )
+    store = ConversationStore(state / "conversation.json")
+    store.append(
+        "user",
+        "i have a file on my desktop called atiflix can you read it please",
+    )
+    store.append(
+        "assistant",
+        'I found the file you are looking for on your desktop. The file name is "atiflix css.txt". '
+        "I can read the first 65,536 bytes of this file for you. Would you like to see the contents now?",
+    )
+    store.append("user", "yes")
+    store.append("assistant", "Of course! What would you like to know or discuss?")
+    model = DeterministicFindModel()
+    model.host_policy = policy
+    runtime = build_filesystem_stat_runtime(
+        model,
+        config=AgentFeatureConfig(
+            filesystem_stat_enabled=True,
+            filesystem_find_enabled=True,
+            filesystem_list_enabled=True,
+            filesystem_read_text_enabled=True,
+            filesystem_search_enabled=True,
+            full_local_read_enabled=True,
+        ),
+        portable_root=portable_root,
+        state_directory=state,
+        host_access_policy=policy,
+    )
+    service = ConversationService(
+        model,
+        ConversationStore(state / "conversation.json"),
+        agent_runtime=runtime,
+        portable_root=portable_root,
+        allowed_read_roots=policy.permission_roots(),
+        host_access_policy=policy,
+    )
+    try:
+        answer = service.run("yes")
+
+        assert "REAL CSS CONTENT" in answer
+        assert "what would you like to know" not in answer.casefold()
+        assert model.capability_requests == []
+    finally:
+        service.shutdown()
+
+
+def test_active_listing_there_followup_forces_listing_when_model_clarifies(tmp_path: Path):
+    model = ReluctantThereListingModel()
+    service, runtime, user_home, _policy = build_service(tmp_path, model)
+    target = user_home / "Desktop" / "orsi_acceptance_gate_20260915-173736"
+    target.mkdir(parents=True)
+    (target / "atiflix css.txt").write_text("REAL CSS CONTENT", encoding="utf-8")
+    (target / "notes.md").write_text("notes", encoding="utf-8")
+    (target / "lab").mkdir()
+    try:
+        first = service.run(
+            "there is a folder called orsi_acceptance_gate_20260915-173736 on my desktop, "
+            "can you list me the items in it?"
+        )
+        before_requests = len(model.capability_requests)
+        answer = service.run("what files i have there?")
+
+        assert "atiflix css.txt (file)" in answer
+        assert "notes.md (file)" in answer
+        assert "specify a directory" not in answer.casefold()
+        assert len(model.capability_requests) == before_requests
+        assert [record.capability for record in runtime.executor.journal.records] == [
+            "filesystem.list",
+            "filesystem.list",
+        ]
+        assert "atiflix css.txt" in first
     finally:
         service.shutdown()
 
@@ -538,6 +824,32 @@ def test_downloads_file_request_finds_actual_file(tmp_path: Path):
         assert "PRIVATE REPORT CONTENT" not in answer
         assert [record.capability for record in runtime.executor.journal.records] == [
             "filesystem.find"
+        ]
+    finally:
+        service.shutdown()
+
+
+def test_named_desktop_file_read_recovers_when_model_asks_for_full_path(
+    tmp_path: Path,
+):
+    model = PathClarifyingReadModel()
+    service, runtime, user_home, _policy = build_service(tmp_path, model)
+    desktop = user_home / "Desktop"
+    target = desktop / "atiflix css.txt"
+    desktop.mkdir()
+    target.write_text("REAL CSS CONTENT", encoding="utf-8")
+    try:
+        answer = service.run("there is a file on my desktop called atiflix css, can you read it?")
+
+        assert answer == (
+            "Here is the content of atiflix css.txt:\n\n"
+            "```text\nREAL CSS CONTENT\n```"
+        )
+        assert len(model.requests) == 1
+        assert sorted(record.capability for record in runtime.executor.journal.records) == [
+            "filesystem.find",
+            "filesystem.list",
+            "filesystem.read_text",
         ]
     finally:
         service.shutdown()
@@ -615,6 +927,67 @@ def test_runtime_feedback_recovers_when_model_answers_after_failed_filename_look
         ]
         assert any("filesystem.list" in message for message in feedback_messages)
         assert any("filesystem.read_text" in message for message in feedback_messages)
+    finally:
+        service.shutdown()
+
+
+def test_runtime_feedback_recovers_when_model_directly_reads_extensionless_name(
+    tmp_path: Path,
+):
+    model = DirectExtensionlessReadModel()
+    service, runtime, user_home, _policy = build_service(tmp_path, model)
+    desktop = user_home / "Desktop"
+    target = desktop / "atiflix css.txt"
+    desktop.mkdir()
+    target.write_text("REAL CSS CONTENT", encoding="utf-8")
+    try:
+        answer = service.run("there is a file on my desktop called atiflix css, can you read it?")
+
+        assert answer == "REAL CSS CONTENT"
+        model_observations = [
+            request[-1]["capability"]
+            for request in model.requests
+            if request[-1].get("role") == "capability"
+        ]
+        assert model_observations == [
+            "filesystem.read_text",
+            "filesystem.list",
+            "filesystem.read_text",
+        ]
+        journaled_capabilities = [record.capability for record in runtime.executor.journal.records]
+        assert journaled_capabilities.count("filesystem.read_text") == 2
+        assert journaled_capabilities.count("filesystem.list") == 1
+    finally:
+        service.shutdown()
+
+
+def test_successful_read_answer_replaces_model_snippet_claim(
+    tmp_path: Path,
+):
+    model = DirectExtensionlessReadModel(
+        final_text=(
+            'I have read the first 43 bytes of the file "atiflix css.txt" on your '
+            "desktop. Here is a snippet of the content:\n\n"
+            "```css\n"
+            "body { color: #f4f4f4; }\n"
+            "```\n\n"
+            "The file contains real CSS content. However, I cannot show the full "
+            "content as per the capability restrictions."
+        )
+    )
+    service, _runtime, user_home, _policy = build_service(tmp_path, model)
+    desktop = user_home / "Desktop"
+    target = desktop / "atiflix css.txt"
+    desktop.mkdir()
+    target.write_bytes(b"REAL CSS CONTENT\nbody { color: #f4f4f4; }")
+    try:
+        answer = service.run("there is a file on my desktop called atiflix css, can you read it?")
+
+        assert answer == (
+            "Here is the content of atiflix css.txt:\n\n"
+            "```text\nREAL CSS CONTENT\nbody { color: #f4f4f4; }\n```"
+        )
+        assert "cannot show the full content" not in answer.casefold()
     finally:
         service.shutdown()
 

@@ -241,12 +241,12 @@ def test_creates_verified_empty_folder_only_after_exact_approval(service, tmp_pa
     assert all("tool_calls" not in message for message in service._agent_history)
 
 
-def test_creates_folder_inside_named_desktop_folder_via_planner(tmp_path):
+def test_creates_folder_inside_named_desktop_folder_without_model_planner(tmp_path):
     model = NaturalLanguageMkdirPlanner()
     service, runtime, user_home = build_full_local_mkdir_service(tmp_path, model)
-    lab = user_home / "Desktop" / "lab"
-    target = lab / "copy"
-    lab.mkdir(parents=True)
+    parent = user_home / "Desktop" / "orsi_acceptance_gate_20260915-173736"
+    target = parent / "copy"
+    parent.mkdir(parents=True)
     approvals = []
 
     def approve(record):
@@ -258,7 +258,8 @@ def test_creates_folder_inside_named_desktop_folder_via_planner(tmp_path):
     service.set_approval_requester(approve)
     try:
         answer = service.run(
-            "i also have a folder on my desktop called lab create a new folder inside it called copy"
+            "i have a folder on my desktop called orsi_acceptance_gate_20260915-173736. "
+            "create a new folder inside it called copy"
         )
 
         assert f"Created empty folder: {target}" == answer
@@ -268,7 +269,7 @@ def test_creates_folder_inside_named_desktop_folder_via_planner(tmp_path):
             "filesystem.mkdir",
         ]
         assert len(approvals) == 1
-        assert len(model.requests) == 3
+        assert model.requests == []
     finally:
         service.shutdown()
 

@@ -1,6 +1,6 @@
 # O.R.S.I roadmap
 
-Updated: 2026-09-15
+Updated: 2026-09-16
 
 ## Product direction
 
@@ -55,23 +55,27 @@ time. The application must keep a safe chat fallback throughout development.
   confirming an action, or fixing a previously read file.
 - Bounded filename disambiguation handles exact-name/stem/extension variants inside the requested
   directory only; it does not fuzzy-match, recurse, index, or search the whole host.
+- Manual resolver/planner acceptance is complete for the five `ORSI_TEST` workflows: named Desktop
+  folder listing, `there` follow-up listing, creating a folder inside the named Desktop folder,
+  creating a folder directly on Desktop, and reading the extensionless `atiflix css` request as the
+  exact same-folder text file.
 
 ## Current release lane
 
 The active development line is `codex/phase-9-target-resolver`. It carries the accepted Phase 10
 mutation checkpoints, Phase 9 search, the target resolver, the planner-loop repair, bounded filename
-disambiguation, and GUI v2 polish through code checkpoint `da7e7d9`. The branch is published to
-GitHub and tracks `origin/codex/phase-9-target-resolver`. It is still a development line: it is not
-merged, release-promoted, or ready to change the version beyond `v0.4.0-dev` until the remaining
-manual acceptance and packaging gates are closed.
+disambiguation, GUI v2 polish, and accepted manual resolver-workflow hardening. The branch is
+published to GitHub and tracks `origin/codex/phase-9-target-resolver`. It is still a development
+line: it is not merged, release-promoted, or ready to change the version beyond `v0.4.0-dev` until
+fresh-runtime packaging and release gates are closed.
 
 ## Next milestones
 
-1. Manually accept the target-resolver / planner-loop workflows in the app, including follow-up reads,
-   folder listing, filename disambiguation, and writes.
-2. Run a fresh-runtime packaging check and packaged GUI smoke check before any release promotion.
-3. Keep `v0.4.0-dev` until Phase 9 resolver acceptance and packaging are recorded; advance the version
-   only at the next accepted milestone.
+1. Run a fresh-runtime packaging check and packaged GUI smoke check before any release promotion.
+2. Decide whether to push, merge, or prepare a release-promotion path from the accepted resolver
+   checkpoint.
+3. Keep `v0.4.0-dev` until packaging/release evidence is recorded and the next version milestone is
+   explicitly approved.
 4. Improve interruption behavior and malformed conversation recovery after the current branch is
    accepted.
 

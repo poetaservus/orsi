@@ -1,16 +1,17 @@
 # O.R.S.I status report
 
-Date: 2026-09-15
+Date: 2026-09-16
 
 ## Overall status
 
 The active development line is `codex/phase-9-target-resolver`. It builds on the accepted Phase 10
 trash checkpoint `e5a6092` and Phase 9 search, then adds the target resolver, planner-first
 capability loop, bounded filename disambiguation, and GUI v2 polish through code checkpoint
-`da7e7d9`. The branch is published to GitHub and tracks `origin/codex/phase-9-target-resolver`.
-Manual application acceptance is complete for Phase 10 trash and Phase 9 search. The current gate is
-manual acceptance for the resolver/planner follow-up workflows, followed by fresh-runtime packaging
-and packaged GUI smoke checks before any release promotion. The version remains `v0.4.0-dev`.
+`da7e7d9`, plus the accepted resolver-workflow hardening in the current checkpoint. The branch is
+published to GitHub and tracks `origin/codex/phase-9-target-resolver`. Manual application acceptance
+is complete for Phase 10 trash, Phase 9 search, and the five resolver/planner workflows tested in
+`ORSI_TEST`. The current gate is fresh-runtime packaging and packaged GUI smoke checks before any
+release promotion. The version remains `v0.4.0-dev`.
 
 ## GUI status: v2 integrated with September 15 polish
 
@@ -70,6 +71,12 @@ and packaged GUI smoke checks before any release promotion. The version remains 
 - Bounded filename disambiguation is limited to the requested directory and exact filename/stem/
   extension variants. It is designed for cases such as a spoken or typed name missing its extension,
   while still refusing fuzzy, recursive, indexed, or host-wide guesses.
+- Resolver-workflow hardening now deterministically recovers from real-model misses in the accepted
+  `ORSI_TEST` suite: same-session `there` listing follow-ups no longer depend on the model asking
+  for the right directory again; named Desktop-folder child creation resolves the parent before
+  `filesystem.mkdir`; direct Desktop folder creation resolves Desktop before `filesystem.mkdir`; and
+  extensionless file-read requests recover when the model asks for a full path by using the bounded
+  same-folder `filesystem.find` / `filesystem.list` / `filesystem.read_text` path.
 - `filesystem.mkdir` has a separate enabled development gate, disabled when configuration is absent.
   An explicit create-folder request with an absolute path opens an exact-path approval dialog.
   Cancel is the default; approval is single-use and expires after 60 seconds. Read acknowledgement
@@ -113,6 +120,11 @@ and packaged GUI smoke checks before any release promotion. The version remains 
 
 ## Verification
 
+- Manual resolver/planner application acceptance was reported green by the user on 2026-09-16 for
+  all five `ORSI_TEST` workflows: named Desktop folder listing, `there` follow-up listing, creating a
+  child folder inside the named Desktop folder, creating a folder directly on Desktop, and reading the
+  extensionless `atiflix css` file request.
+- Post-acceptance deterministic verification: resolver suite 27 passed; acceptance gate 79 passed; full suite 535 passed, 17 skipped.
 - Complete deterministic suite after Phase 9 search: 485 passed, 17 skipped on Windows on
   2026-09-13. The suite collected 502 tests; opt-in live gates remain skipped unless explicitly
   enabled.
@@ -162,7 +174,8 @@ and packaged GUI smoke checks before any release promotion. The version remains 
 - Manual Phase 10 move application acceptance: user reported it works on 2026-09-12.
 - Manual Phase 10 trash application acceptance: user reported it works on 2026-09-13.
 - Manual Phase 9 search application acceptance: user reported it works on 2026-09-13.
-- Manual Phase 9.5 exact-name resolver application acceptance remains pending.
+- Manual Phase 9.5 resolver/planner application acceptance: user reported all five `ORSI_TEST`
+  workflows green on 2026-09-16.
 - Folder create/cancel manual acceptance if not already tested and real-model follow-up conversation
   after writes remain pending.
 - Historical GUI baseline visual checks passed at 1920-pixel and 1280-pixel window widths.
@@ -175,9 +188,8 @@ and packaged GUI smoke checks before any release promotion. The version remains 
   application launch currently starts a fresh private session.
 - Phase 9 search is manually accepted for Phase 11 planning. Fresh-runtime packaging and release
   promotion remain separate gates.
-- Phase 9.5 target resolver, planner-loop follow-ups, and bounded filename disambiguation are
-  implemented and committed on `codex/phase-9-target-resolver`; manual app acceptance for the full
-  workflow remains the current gate.
+- Phase 9.5 target resolver, planner-loop follow-ups, bounded filename disambiguation, and the five
+  accepted manual resolver workflows are implemented on `codex/phase-9-target-resolver`.
 - Fresh-runtime packaging and real-model/UI acceptance remain before portable release promotion.
 - Phase 10 is a development-only feature-branch checkpoint. Trash preview/approve/cancel workflows
   were manually accepted before the next roadmap decision. See `phase10-mkdir-threat-review.md`,
@@ -188,10 +200,10 @@ and packaged GUI smoke checks before any release promotion. The version remains 
   10 line. It is manually app-accepted but not merged or release-promoted. See
   `phase9-search-threat-review.md` for protection scope.
 - Phase 9.5 target resolver, planner-loop repair, bounded filename disambiguation, and GUI v2 are
-  development-only checkpoints on `codex/phase-9-target-resolver`. The latest recorded code commit is
-  `da7e7d9`. The branch is published to GitHub with upstream tracking. Manual resolver/planner
-  full-workflow app acceptance and fresh-runtime packaging remain before merge or release promotion. See
-  `phase9-target-resolver-threat-review.md` for protection scope.
+  development-only checkpoints on `codex/phase-9-target-resolver`. The branch is published to GitHub
+  with upstream tracking. Manual resolver/planner full-workflow app acceptance is complete; fresh-runtime
+  packaging remains before merge or release promotion. See `phase9-target-resolver-threat-review.md`
+  for protection scope.
 
 ## Checkpoint scope
 
@@ -199,6 +211,7 @@ and packaged GUI smoke checks before any release promotion. The version remains 
   checkpoint is committed at `076007f`; text writing at `6a8fcbb`; copy at `9376a7e`; move at
   `e1595bc`; trash at `e5a6092`; Phase 9 search at `a08aa32`; target resolver at `456376d` with
   follow-up fixes through `4e339be`; planner-loop repair through `54872cc` and `853480e`; bounded
-  filename disambiguation through `b39c7a5` and `9ea55e2`; GUI v2 through `da7e7d9`.
+  filename disambiguation through `b39c7a5` and `9ea55e2`; GUI v2 through `da7e7d9`; accepted
+  resolver-workflow hardening is recorded in the current checkpoint.
 - The private Desktop `statusreport.md`, `roadmap.md`, and `versioning.md` remain outside Git but
   have been updated for the same checkpoint state.
