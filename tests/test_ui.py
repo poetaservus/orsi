@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
+import tempfile
 import unittest
 from unittest.mock import patch
 
@@ -14,7 +16,8 @@ try:
 
     from app.ui.chat import ChatView
     from app.ui.main_window import MainWindow
-    from app.main import request_full_local_read_acknowledgement
+    from app.startup import request_full_local_read_acknowledgement
+    from app.state.storage import JsonStore
 except ImportError:
     QApplication = None
 
@@ -113,6 +116,8 @@ class UiTests(unittest.TestCase):
         self.assertEqual(service.reset_count, 1)
         self.assertEqual(window.chat._messages, [])
         self.assertEqual(window.context_window.bar.value(), 0)
+        self.assertFalse(window.startup_greeting.isHidden())
+        self.assertEqual(window.composer.y(), (window._content.height() - 54) // 2)
         self.assertEqual(window.new_session_button.accessibleName(), "New session")
         self.assertEqual(window.settings_button.accessibleName(), "Settings")
         self.assertTrue(window.settings_button.isEnabled())
@@ -167,12 +172,16 @@ class UiTests(unittest.TestCase):
         self.assertEqual(window.topbar.height(), 68)
         self.assertEqual(window.composer.width(), 799)
         self.assertEqual(window.composer.height(), 54)
-        self.assertEqual(window.composer.y(), window._content.height() - 96)
+        self.assertEqual(window.composer.y(), (window._content.height() - 54) // 2)
         self.assertLessEqual(abs(window.composer.x() - 560), 1)
         self.assertLessEqual(
             abs(window._content.width() - window.composer.geometry().right() - 1 - 561),
             1,
         )
+        self.assertEqual(window.startup_greeting.text(), "Lets Roll.")
+        self.assertEqual(window.startup_greeting.font().weight(), QFont.Weight.Light)
+        self.assertTrue(window.startup_greeting.isVisible())
+        self.assertLess(window.startup_greeting.geometry().bottom(), window.composer.y())
         self.assertEqual(window.bottom_glass.x(), 0)
         self.assertEqual(window.bottom_glass.width(), window._content.width())
         self.assertEqual(window.bottom_glass.y(), window.composer.y())
@@ -190,6 +199,95 @@ class UiTests(unittest.TestCase):
         )
         self.assertIn("O.R.S.I. v0.4.0-dev // Local", window.context_window.status.text())
         self.assertTrue(window.settings_panel.isHidden())
+        window.close()
+
+    def test_greeting_setting_updates_and_persists_intro_message(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = JsonStore(Path(directory) / "ui_preferences_v1.json")
+            window = MainWindow(None, "TEST-HOST", preferences_store=store)
+            window.show()
+            QApplication.processEvents()
+
+            self.assertEqual(window.startup_greeting.text(), "Lets Roll.")
+            self.assertEqual(window.greeting_input.text(), "Lets Roll.")
+
+            window.settings_button.click()
+            window.greeting_input.setText("Ready?")
+            QApplication.processEvents()
+
+            self.assertEqual(window.startup_greeting.text(), "Ready?")
+            window.greeting_input.editingFinished.emit()
+            window.close()
+
+            restored = MainWindow(None, "TEST-HOST", preferences_store=store)
+            restored.show()
+            QApplication.processEvents()
+
+            self.assertEqual(restored.startup_greeting.text(), "Ready?")
+            self.assertEqual(restored.greeting_input.text(), "Ready?")
+            restored.close()
+
+    def test_first_message_transitions_composer_to_chat_layout(self):
+        class FakeService:
+            reset_count = 0
+
+            @staticmethod
+            def run(message, activity):
+                del activity
+                return f"Reply to {message}"
+
+            def new_session(self):
+                self.reset_count += 1
+
+        window = MainWindow(FakeService(), "TEST-HOST")
+        window.resize(1280, 800)
+        window.show()
+        QApplication.processEvents()
+
+        intro_y = (window._content.height() - 54) // 2
+        normal_y = window._content.height() - 96
+        self.assertEqual(window.composer.y(), intro_y)
+        self.assertTrue(window.startup_greeting.isVisible())
+
+        window.input.setText("hello")
+        window.submit()
+        QApplication.processEvents()
+
+        self.assertEqual(window.chat._messages[0].label.text(), "hello")
+        self.assertFalse(window._intro_active)
+        self.assertIsNotNone(window._intro_transition)
+        self.assertTrue(window.startup_greeting.isVisible())
+
+        QTest.qWait(120)
+        QApplication.processEvents()
+        self.assertGreater(window.startup_greeting_opacity.opacity(), 0.0)
+        self.assertLess(window.startup_greeting_opacity.opacity(), 1.0)
+
+        for _ in range(100):
+            QApplication.processEvents()
+            if window.thread is None:
+                break
+            QTest.qWait(10)
+        QTest.qWait(380)
+        QApplication.processEvents()
+
+        self.assertEqual(window.composer.y(), normal_y)
+        self.assertFalse(window.startup_greeting.isVisible())
+        self.assertEqual(window.chat._messages[1].label.text(), "Reply to hello")
+
+        window.new_session_button.click()
+        QApplication.processEvents()
+        self.assertTrue(window._intro_active)
+        self.assertIsNotNone(window._intro_transition)
+        self.assertTrue(window.startup_greeting.isVisible())
+        self.assertEqual(window.chat._messages, [])
+        self.assertLess(window.startup_greeting_opacity.opacity(), 1.0)
+
+        QTest.qWait(380)
+        QApplication.processEvents()
+        self.assertEqual(window.composer.y(), intro_y)
+        self.assertTrue(window.startup_greeting.isVisible())
+        self.assertAlmostEqual(window.startup_greeting_opacity.opacity(), 1.0)
         window.close()
 
     def test_compact_window_reserves_a_non_overlapping_context_header(self):

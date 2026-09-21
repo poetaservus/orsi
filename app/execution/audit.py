@@ -16,8 +16,8 @@ from app.capabilities.contracts import (
     CapabilityResult,
     PermissionClass,
 )
-from app.capabilities.executor import CapabilityExecutor
-from app.capabilities.permissions import (
+from app.execution.executor import CapabilityExecutor
+from app.security.permissions import (
     AuthorizationCode,
     PermissionAuthorization,
     PreparedCapabilityCall,

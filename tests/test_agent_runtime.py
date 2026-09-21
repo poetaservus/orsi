@@ -9,7 +9,7 @@ from threading import Event, Timer
 import pytest
 from pydantic import BaseModel, ConfigDict
 
-from app.agent_runtime import (
+from app.agent.runtime import (
     AgentRunStatus,
     AgentRuntime,
     AgentRuntimeLimits,
@@ -19,13 +19,13 @@ from app.capabilities.contracts import (
     ExecutionIsolation,
     PermissionClass,
 )
-from app.capabilities.crash_journal import (
+from app.execution.audit import (
     CallLifecycleState,
     CapabilityCrashJournal,
     JournaledCapabilityExecutor,
 )
-from app.capabilities.executor import CapabilityExecutor
-from app.capabilities.permissions import (
+from app.execution.executor import CapabilityExecutor
+from app.security.permissions import (
     ApprovalManager,
     ApprovalStatus,
     PermissionDecision,
@@ -831,11 +831,11 @@ def test_cancellation_stops_blocked_generation_and_capability_execution(
     assert journal.records[0].state == CallLifecycleState.CANCELLED
 
 
-def test_agent_runtime_is_connected_only_through_the_phase8_feature_gate():
+def test_agent_runtime_is_connected_only_through_the_startup_feature_gate():
     root = Path(__file__).resolve().parents[1]
     config = json.loads((root / "config" / "agent.json").read_text(encoding="utf-8"))
-    main = (root / "app" / "main.py").read_text(encoding="utf-8")
-    service = (root / "app" / "conversation" / "service.py").read_text(
+    startup = (root / "app" / "startup.py").read_text(encoding="utf-8")
+    service = (root / "app" / "conversation" / "orchestrator.py").read_text(
         encoding="utf-8"
     )
 
@@ -850,10 +850,12 @@ def test_agent_runtime_is_connected_only_through_the_phase8_feature_gate():
         "filesystem_copy_enabled": True,
         "filesystem_move_enabled": True,
         "filesystem_trash_enabled": True,
+        "application_launch_enabled": True,
         "full_local_read_enabled": True,
     }
-    assert "load_agent_feature_config" in main
-    assert "agent_config.filesystem_stat_enabled" in main
+    assert "load_agent_feature_config" in startup
+    assert "agent_config.filesystem_stat_enabled" in startup
+    assert "build_agent_runtime" in startup
     assert "agent_runtime: AgentRuntime | None = None" in service
 
 

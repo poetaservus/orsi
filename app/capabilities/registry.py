@@ -17,7 +17,7 @@ from app.capabilities.contracts import (
     ExecutionIsolation,
     PermissionClass,
 )
-from app.model_contracts import ModelCapabilityDefinition
+from app.inference.contracts import ModelCapabilityDefinition
 
 
 _CAPABILITY_NAME = re.compile(

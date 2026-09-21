@@ -5,17 +5,19 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel, ConfigDict
 
-from app.capabilities import (
+from app.capabilities.contracts import (
     Capability,
     CapabilityContext,
     CapabilityErrorCode,
+    ExecutionIsolation,
+    PermissionClass,
+)
+from app.capabilities.filesystem_stat import FilesystemStatCapability
+from app.capabilities.registry import (
     CapabilityLookupError,
     CapabilityRegistration,
     CapabilityRegistry,
     CapabilityRegistryConfigurationError,
-    ExecutionIsolation,
-    FilesystemStatCapability,
-    PermissionClass,
     RegistryConfigurationCode,
 )
 
@@ -211,7 +213,7 @@ def test_production_startup_remains_disconnected_from_capabilities():
     root = Path(__file__).resolve().parents[1]
     production_entrypoints = [
         root / "app" / "main.py",
-        root / "app" / "conversation" / "service.py",
+        root / "app" / "conversation" / "orchestrator.py",
         root / "app" / "conversation" / "prompt.py",
     ]
 

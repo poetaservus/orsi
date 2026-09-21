@@ -7,8 +7,8 @@
     "HTTP-Referer": "https://github.com/poetaservus/orsi",
     "X-OpenRouter-Title": "O.R.S.I"
   },
-  "include_tool_strict": true,
-  "tool_choice": "auto",
+  "include_tool_strict": false,
+  "tool_choice": null,
   "context_length": 32768,
   "temperature": 0.1,
   "max_tokens": 1536,

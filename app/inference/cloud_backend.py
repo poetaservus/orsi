@@ -6,7 +6,7 @@ from typing import Any, Iterable
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from app.inference.cloud_config import CloudConfig
+from app.settings.cloud import CloudConfig
 from app.inference.engine import InferenceEngine, InferenceUnavailable
 from app.inference.protocol import (
     ModelCapabilityDefinition,

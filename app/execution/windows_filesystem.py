@@ -82,6 +82,18 @@ def file_identity(path: Path) -> str:
         kernel.CloseHandle(handle)
 
 
+def directory_identity_for_path(path: Path) -> str:
+    """Inspect one existing directory without following reparse-point targets."""
+    kernel = _kernel()
+    handle = kernel.CreateFileW(str(path), 0x80, 0x1, None, 3, 0x02000000 | 0x00200000, None)
+    if handle == ctypes.c_void_p(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    try:
+        return directory_identity(handle)
+    finally:
+        kernel.CloseHandle(handle)
+
+
 @contextmanager
 def pinned_parent(path: Path, cancellation):
     """Hold every ancestor without write/delete sharing during the filesystem operation."""

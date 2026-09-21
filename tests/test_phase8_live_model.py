@@ -6,14 +6,14 @@ from threading import Thread
 
 import pytest
 
-from app.agent_bootstrap import build_filesystem_stat_runtime
-from app.agent_config import AgentFeatureConfig
-from app.capabilities.crash_journal import CallLifecycleState
-from app.capabilities.host_access import HostAccessPolicy
-from app.conversation.service import ConversationService
+from app.agent.bootstrap import build_agent_runtime
+from app.settings.agent import AgentFeatureConfig
+from app.execution.audit import CallLifecycleState
+from app.security.host_access import HostAccessPolicy
+from app.conversation.orchestrator import ConversationService
 from app.conversation.store import ConversationStore
 from app.inference.llama_server_backend import LlamaServerInferenceEngine
-from app.inference.model_config import load_model_config
+from app.settings.model import load_model_config
 
 
 class RecordingLlamaServerInferenceEngine(LlamaServerInferenceEngine):
@@ -41,7 +41,7 @@ def test_bundled_model_completes_a_filesystem_stat_round_trip(tmp_path: Path):
     probe.write_text("metadata-only live smoke", encoding="utf-8")
     state = tmp_path / "state"
     model = LlamaServerInferenceEngine(load_model_config())
-    runtime = build_filesystem_stat_runtime(
+    runtime = build_agent_runtime(
         model,
         config=AgentFeatureConfig(filesystem_stat_enabled=True),
         portable_root=portable_root,
@@ -78,7 +78,7 @@ def test_bundled_model_preserves_absolute_in_root_paths(tmp_path: Path):
     portable_root.mkdir()
     state = tmp_path / "state"
     model = LlamaServerInferenceEngine(load_model_config())
-    runtime = build_filesystem_stat_runtime(
+    runtime = build_agent_runtime(
         model,
         config=AgentFeatureConfig(filesystem_stat_enabled=True),
         portable_root=portable_root,
@@ -127,7 +127,7 @@ def test_bundled_model_keeps_general_conversation_after_metadata(tmp_path: Path)
     portable_root.mkdir()
     state = tmp_path / "state"
     model = LlamaServerInferenceEngine(load_model_config())
-    runtime = build_filesystem_stat_runtime(
+    runtime = build_agent_runtime(
         model,
         config=AgentFeatureConfig(filesystem_stat_enabled=True),
         portable_root=portable_root,
@@ -190,7 +190,7 @@ def test_bundled_model_native_tool_call_acceptance_matrix(tmp_path: Path):
     outside.write_text("outside private body", encoding="utf-8")
     state = tmp_path / "state"
     model = LlamaServerInferenceEngine(load_model_config())
-    runtime = build_filesystem_stat_runtime(
+    runtime = build_agent_runtime(
         model,
         config=AgentFeatureConfig(filesystem_stat_enabled=True),
         portable_root=portable_root,
@@ -289,7 +289,7 @@ def test_bundled_model_full_local_metadata_acceptance(tmp_path: Path):
         acknowledged=True,
     )
     model = LlamaServerInferenceEngine(load_model_config())
-    runtime = build_filesystem_stat_runtime(
+    runtime = build_agent_runtime(
         model,
         config=AgentFeatureConfig(
             filesystem_stat_enabled=True,
@@ -359,7 +359,7 @@ def test_bundled_model_full_local_directory_listing_acceptance(tmp_path: Path):
         acknowledged=True,
     )
     model = LlamaServerInferenceEngine(load_model_config())
-    runtime = build_filesystem_stat_runtime(
+    runtime = build_agent_runtime(
         model,
         config=AgentFeatureConfig(
             filesystem_stat_enabled=True,
@@ -439,7 +439,7 @@ def test_bundled_model_full_local_text_read_acceptance(tmp_path: Path):
         acknowledged=True,
     )
     model = LlamaServerInferenceEngine(load_model_config())
-    runtime = build_filesystem_stat_runtime(
+    runtime = build_agent_runtime(
         model,
         config=AgentFeatureConfig(
             filesystem_stat_enabled=True,
@@ -513,7 +513,7 @@ def test_bundled_model_full_local_search_acceptance(tmp_path: Path):
         acknowledged=True,
     )
     model = LlamaServerInferenceEngine(load_model_config())
-    runtime = build_filesystem_stat_runtime(
+    runtime = build_agent_runtime(
         model,
         config=AgentFeatureConfig(
             filesystem_stat_enabled=True,
@@ -605,7 +605,7 @@ def test_bundled_model_uses_stat_after_a_directory_listing(tmp_path: Path):
         acknowledged=True,
     )
     model = LlamaServerInferenceEngine(load_model_config())
-    runtime = build_filesystem_stat_runtime(
+    runtime = build_agent_runtime(
         model,
         config=AgentFeatureConfig(
             filesystem_stat_enabled=True,
@@ -683,7 +683,7 @@ def test_bundled_model_switches_naturally_between_chat_and_filesystem_tasks(
         acknowledged=True,
     )
     model = RecordingLlamaServerInferenceEngine(load_model_config())
-    runtime = build_filesystem_stat_runtime(
+    runtime = build_agent_runtime(
         model,
         config=AgentFeatureConfig(
             filesystem_stat_enabled=True,

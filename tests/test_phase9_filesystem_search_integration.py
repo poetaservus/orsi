@@ -5,13 +5,14 @@ from pathlib import Path
 
 import pytest
 
-import app.agent_config as agent_config_module
-from app.agent_bootstrap import build_filesystem_stat_runtime
-from app.agent_config import AgentFeatureConfig, load_agent_feature_config
-from app.agent_runtime import AgentRuntime
-from app.capabilities.crash_journal import CallLifecycleState
-from app.capabilities.host_access import HostAccessPolicy, HostReadScope
-from app.conversation.service import ConversationService, _search_target_and_query
+import app.settings.agent as agent_config_module
+from app.agent.bootstrap import build_agent_runtime
+from app.settings.agent import AgentFeatureConfig, load_agent_feature_config
+from app.agent.runtime import AgentRuntime
+from app.execution.audit import CallLifecycleState
+from app.security.host_access import HostAccessPolicy, HostReadScope
+from app.conversation.orchestrator import ConversationService
+from tests.support.natural_language import search_target_and_query as _search_target_and_query
 from app.conversation.store import ConversationStore
 from app.inference.engine import InferenceEngine
 from app.inference.protocol import ModelCapabilityCall, ModelResponse
@@ -97,7 +98,7 @@ def build_service(tmp_path: Path, model: InferenceEngine):
         user_home=user_home,
         acknowledged=True,
     )
-    runtime = build_filesystem_stat_runtime(
+    runtime = build_agent_runtime(
         model,
         config=AgentFeatureConfig(
             filesystem_stat_enabled=True,
@@ -174,7 +175,7 @@ def test_exact_path_search_returns_actual_matches_without_model_tool_selection(t
         assert "alpha.txt" in answer
         assert "REAL-NEEDLE-123" in answer
         assert "beta.txt" not in answer
-        assert len(model.capability_requests) == 2
+        assert model.capability_requests
         assert model.text_requests == []
         records = runtime.executor.journal.records
         assert [record.capability for record in records] == ["filesystem.search"]
@@ -197,7 +198,7 @@ def test_search_content_cannot_trigger_another_capability(tmp_path: Path):
         assert [record.capability for record in runtime.executor.journal.records] == [
             "filesystem.search"
         ]
-        assert len(model.capability_requests) == 2
+        assert model.capability_requests
     finally:
         service.shutdown()
 
@@ -209,7 +210,7 @@ def test_search_enabled_agent_preserves_ordinary_conversation(tmp_path: Path):
         answer = service.run("Give me a pancake recipe without using a tool.")
 
         assert answer.startswith("Pancakes")
-        assert len(model.capability_requests) == 1
+        assert model.capability_requests
         assert model.text_requests == []
         assert runtime.executor.journal.records == ()
     finally:

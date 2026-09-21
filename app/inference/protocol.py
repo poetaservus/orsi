@@ -9,7 +9,8 @@ from typing import Any, Iterable
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.model_contracts import ModelCapabilityDefinition
+from app.inference.contracts import ModelCapabilityDefinition
+from app.inference.tool_repair import StructuredCallDecodeError, decode_json_object
 
 
 _CAPABILITY_NAME = re.compile(
@@ -414,6 +415,11 @@ def normalize_native_chat_message(
     provider_names = dict(
         zip(_provider_function_names(values), (item.name for item in values), strict=True)
     )
+    repaired_names = {
+        provider_name.casefold(): capability
+        for provider_name, capability in provider_names.items()
+    }
+    repaired_names.update({item.name.casefold(): item.name for item in values})
     if not isinstance(message, dict):
         return _malformed_response()
     role = message.get("role")
@@ -479,10 +485,7 @@ def normalize_native_chat_message(
                 provider_call_id=provider_call_id,
             )
         provider_name = function.get("name")
-        if (
-            not isinstance(provider_name, str)
-            or _PROVIDER_FUNCTION_NAME.fullmatch(provider_name) is None
-        ):
+        if not isinstance(provider_name, str) or not 1 <= len(provider_name) <= 128:
             return ModelResponse.failure(
                 ModelProtocolFailureCode.MALFORMED_CAPABILITY_NAME,
                 "The model returned a malformed capability name.",
@@ -490,6 +493,14 @@ def normalize_native_chat_message(
             )
         capability = provider_names.get(provider_name)
         if capability is None:
+            capability = repaired_names.get(provider_name.casefold())
+        if capability is None:
+            if _PROVIDER_FUNCTION_NAME.fullmatch(provider_name) is None:
+                return ModelResponse.failure(
+                    ModelProtocolFailureCode.MALFORMED_CAPABILITY_NAME,
+                    "The model returned a malformed capability name.",
+                    provider_call_id=provider_call_id,
+                )
             return ModelResponse.failure(
                 ModelProtocolFailureCode.UNKNOWN_CAPABILITY,
                 "The model requested a capability that was not advertised.",
@@ -554,22 +565,12 @@ def _provider_function_names(
 
 
 def _decode_arguments(raw: Any) -> dict[str, Any] | None:
-    if not isinstance(raw, str):
-        return None
     try:
-        if len(raw.encode("utf-8")) > _MAX_ARGUMENT_BYTES:
-            return None
-        value = json.loads(
-            raw,
-            object_pairs_hook=_unique_object,
-            parse_constant=lambda _: (_ for _ in ()).throw(
-                ValueError("non-finite JSON number")
-            ),
-        )
-        if not isinstance(value, dict) or _json_size(value) > _MAX_ARGUMENT_BYTES:
+        value, _repaired = decode_json_object(raw)
+        if _json_size(value) > _MAX_ARGUMENT_BYTES:
             return None
         return value
-    except (json.JSONDecodeError, UnicodeError, TypeError, ValueError, RecursionError):
+    except (StructuredCallDecodeError, UnicodeError, TypeError, ValueError, RecursionError):
         return None
 
 

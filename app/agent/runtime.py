@@ -1,21 +1,40 @@
+"""Bounded agent loop with behavior adapted from OpenCode's session processor.
+
+Portions of this file are substantially derived from OpenCode's tool-call
+continuation and invalid-tool feedback patterns: https://github.com/anomalyco/opencode
+(MIT License, Copyright (c) 2025 opencode). See THIRD_PARTY_NOTICES.md.
+"""
+
 from __future__ import annotations
 
-import hashlib
-import json
+import logging
 import math
-import re
 from concurrent.futures import Future, TimeoutError as FutureTimeoutError
 from copy import deepcopy
 from dataclasses import dataclass
-from enum import StrEnum
 from pathlib import Path
 from threading import Event, Thread
 from time import monotonic
 from typing import Any, Callable, Iterable
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
-
+from app.agent.contracts import (
+    AgentRunResult,
+    AgentRunStatus,
+    AgentRuntimeLimits,
+    model_unavailable_message,
+)
+from app.agent.feedback import (
+    call_fingerprint,
+    constrained_fallback_messages,
+    failure_result,
+    json_size,
+    protocol_feedback,
+    required_calls_feedback,
+    safe_identifier,
+    single_call_feedback,
+)
+from app.agent.file_resolution import filename_disambiguation_feedback
 from app.capabilities.contracts import (
     CapabilityArgumentError,
     CapabilityContext,
@@ -24,9 +43,9 @@ from app.capabilities.contracts import (
     CapabilityFailure,
     CapabilityResult,
 )
-from app.capabilities.host_access import HostAccessPolicy
-from app.capabilities.crash_journal import JournaledCapabilityExecutor
-from app.capabilities.permissions import (
+from app.security.host_access import HostAccessPolicy
+from app.execution.audit import JournaledCapabilityExecutor
+from app.security.permissions import (
     ApprovalManager,
     ApprovalRecord,
     ApprovalStatus,
@@ -42,12 +61,17 @@ from app.capabilities.registry import CapabilityLookupError, CapabilityRegistry
 from app.inference.engine import InferenceEngine, InferenceUnavailable
 from app.inference.protocol import (
     ModelCapabilityCall,
+    ModelCapabilityDefinition,
     ModelProtocolFailureCode,
     ModelResponse,
     ModelResponseKind,
     model_capability_calls_message,
     model_capability_result_message,
     native_chat_messages,
+)
+from app.inference.tool_repair import (
+    StructuredCallDecodeError,
+    decode_constrained_decision,
 )
 from app.runtime.cancellation import (
     CancellationToken,
@@ -56,74 +80,7 @@ from app.runtime.cancellation import (
 )
 
 
-_STABLE_IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
-
-
-class AgentRunStatus(StrEnum):
-    COMPLETED = "completed"
-    CANCELLED = "cancelled"
-    TIMED_OUT = "timed_out"
-    STEP_LIMIT = "step_limit"
-    CAPABILITY_CALL_LIMIT = "capability_call_limit"
-    REPEATED_CALL = "repeated_call"
-    PROTOCOL_FAILURE_LIMIT = "protocol_failure_limit"
-    APPROVAL_REQUIRED = "approval_required"
-    TRANSCRIPT_LIMIT = "transcript_limit"
-    MODEL_UNAVAILABLE = "model_unavailable"
-    INTERNAL_FAILURE = "internal_failure"
-
-
-class AgentRuntimeLimits(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
-
-    max_steps: int = Field(default=8, ge=1, le=32)
-    max_capability_calls: int = Field(default=16, ge=1, le=32)
-    max_identical_calls: int = Field(default=2, ge=1, le=8)
-    max_protocol_failures: int = Field(default=2, ge=1, le=8)
-    overall_timeout_seconds: float = Field(default=120.0, gt=0, le=3_600)
-    poll_interval_seconds: float = Field(default=0.01, gt=0, le=1.0)
-    max_transcript_bytes: int = Field(
-        default=4 * 1024 * 1024,
-        ge=1_024,
-        le=16 * 1024 * 1024,
-    )
-
-    @model_validator(mode="after")
-    def validate_finite_durations(self):
-        if not math.isfinite(self.overall_timeout_seconds):
-            raise ValueError("The runtime timeout must be finite.")
-        if not math.isfinite(self.poll_interval_seconds):
-            raise ValueError("The runtime polling interval must be finite.")
-        return self
-
-
-class AgentRunResult(BaseModel):
-    """One bounded terminal outcome from an AgentRuntime invocation."""
-
-    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
-
-    status: AgentRunStatus
-    assistant_text: str | None = Field(default=None, min_length=1, max_length=1_000_000)
-    message: str | None = Field(default=None, min_length=1, max_length=500)
-    steps: int = Field(ge=0, le=32)
-    capability_calls: int = Field(ge=0, le=32)
-    protocol_failures: int = Field(ge=0, le=32)
-
-    @model_validator(mode="after")
-    def validate_terminal_outcome(self):
-        if self.status == AgentRunStatus.COMPLETED:
-            if self.assistant_text is None or self.message is not None:
-                raise ValueError("Completed agent runs require assistant text only.")
-        elif self.assistant_text is not None or self.message is None:
-            raise ValueError("Stopped agent runs require one bounded status message.")
-        return self
-
-
-def _model_unavailable_message(exc: InferenceUnavailable) -> str:
-    detail = str(exc).strip()
-    if not detail:
-        return "The selected model provider is unavailable."
-    return f"The selected model provider is unavailable: {detail}"[:500]
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -180,6 +137,7 @@ class AgentRuntime:
         limits: AgentRuntimeLimits | None = None,
         clock: Callable[[], float] = monotonic,
         call_id_factory: Callable[[], str] = lambda: uuid4().hex,
+        fallback_call_id_factory: Callable[[], str] = lambda: f"fallback-{uuid4().hex}",
         approval_requester: Callable[[ApprovalRecord], None] | None = None,
     ):
         if not isinstance(model, InferenceEngine):
@@ -192,7 +150,11 @@ class AgentRuntime:
             raise TypeError("AgentRuntime requires an ApprovalManager.")
         if not isinstance(executor, JournaledCapabilityExecutor):
             raise TypeError("AgentRuntime requires a JournaledCapabilityExecutor.")
-        if not callable(clock) or not callable(call_id_factory):
+        if (
+            not callable(clock)
+            or not callable(call_id_factory)
+            or not callable(fallback_call_id_factory)
+        ):
             raise TypeError("AgentRuntime clocks and ID factories must be callable.")
         if approval_requester is not None and not callable(approval_requester):
             raise TypeError("The approval requester must be callable when supplied.")
@@ -204,6 +166,7 @@ class AgentRuntime:
         self.limits = limits or AgentRuntimeLimits()
         self._clock = clock
         self._call_id_factory = call_id_factory
+        self._fallback_call_id_factory = fallback_call_id_factory
         self._approval_requester = approval_requester
 
     def purge_terminal_records(self) -> tuple[str, ...]:
@@ -322,7 +285,7 @@ class AgentRuntime:
         capability_names: tuple[str, ...] | None = None,
         continue_after_required_calls: bool = False,
     ) -> AgentRunResult:
-        if not _safe_identifier(session_id) or not _safe_identifier(turn_id):
+        if not safe_identifier(session_id) or not safe_identifier(turn_id):
             raise ValueError("Agent session and turn IDs must use bounded stable syntax.")
         if not isinstance(portable_root, Path):
             raise TypeError("The portable root must be a pathlib.Path.")
@@ -393,7 +356,7 @@ class AgentRuntime:
         used_call_ids: set[str] = set()
         used_provider_call_ids: set[str] = set()
         advertised_names = {item.name for item in definitions}
-        required_fingerprints = tuple(_call_fingerprint(call) for call in required_calls)
+        required_fingerprints = tuple(call_fingerprint(call) for call in required_calls)
         if (
             len(required_calls) > self.limits.max_capability_calls
             or len(set(required_fingerprints)) != len(required_fingerprints)
@@ -409,6 +372,7 @@ class AgentRuntime:
         required_set = set(required_fingerprints)
         completed_required: set[str] = set()
         planned_response = ModelResponse.calls(required_calls) if required_calls else None
+        structured_fallback = False
 
         while True:
             stop = self._stop_status(started, user_cancellation, deadline_cancellation)
@@ -434,6 +398,14 @@ class AgentRuntime:
                 response = planned_response
                 planned_response = None
                 model_stop = None
+            elif structured_fallback:
+                response, model_stop = self._fallback_model_step(
+                    transcript,
+                    definitions,
+                    started,
+                    user_cancellation,
+                    deadline_cancellation,
+                )
             else:
                 response, model_stop = self._model_step(
                     transcript,
@@ -442,6 +414,21 @@ class AgentRuntime:
                     user_cancellation,
                     deadline_cancellation,
                 )
+                if (
+                    model_stop is None
+                    and response is not None
+                    and response.kind == ModelResponseKind.PROTOCOL_FAILURE
+                    and response.protocol_failure.code
+                    == ModelProtocolFailureCode.UNSUPPORTED_CAPABILITY_CALLS
+                ):
+                    structured_fallback = True
+                    response, model_stop = self._fallback_model_step(
+                        transcript,
+                        definitions,
+                        started,
+                        user_cancellation,
+                        deadline_cancellation,
+                    )
             if model_stop is not None:
                 status, message = model_stop
                 return self._stopped(
@@ -461,7 +448,7 @@ class AgentRuntime:
                     protocol_failures=protocol_failures,
                 )
             if response.kind == ModelResponseKind.ASSISTANT_TEXT:
-                filename_feedback = _filename_disambiguation_feedback(
+                filename_feedback = filename_disambiguation_feedback(
                     transcript,
                     advertised_names,
                 )
@@ -475,7 +462,7 @@ class AgentRuntime:
                         )
                     continue
                 if required_set - completed_required:
-                    transcript.append(_required_calls_feedback())
+                    transcript.append(required_calls_feedback())
                     if not self._transcript_within_limit(transcript):
                         return self._transcript_limited(
                             steps,
@@ -502,18 +489,18 @@ class AgentRuntime:
                         protocol_failures=protocol_failures,
                     )
                 code = response.protocol_failure.code
-                transcript.append(_protocol_feedback(code.value))
+                transcript.append(protocol_feedback(code.value))
                 if not self._transcript_within_limit(transcript):
                     return self._transcript_limited(steps, capability_calls, protocol_failures)
                 continue
 
             calls = response.capability_calls
-            call_fingerprints = [_call_fingerprint(call) for call in calls]
+            call_fingerprints = [call_fingerprint(call) for call in calls]
             if required_set and any(
                 fingerprint not in required_set or fingerprint in completed_required
                 for fingerprint in call_fingerprints
             ):
-                transcript.append(_required_calls_feedback())
+                transcript.append(required_calls_feedback())
                 if not self._transcript_within_limit(transcript):
                     return self._transcript_limited(
                         steps,
@@ -532,6 +519,7 @@ class AgentRuntime:
                     except CapabilityLookupError:
                         batch_allowed = False
                     except Exception:
+                        log.exception("Capability batch lookup failed unexpectedly.")
                         return self._stopped(
                             AgentRunStatus.INTERNAL_FAILURE,
                             "The capability registry failed unexpectedly.",
@@ -553,7 +541,7 @@ class AgentRuntime:
                         capability_calls=capability_calls,
                         protocol_failures=protocol_failures,
                     )
-                transcript.append(_single_call_feedback())
+                transcript.append(single_call_feedback())
                 if not self._transcript_within_limit(transcript):
                     return self._transcript_limited(steps, capability_calls, protocol_failures)
                 continue
@@ -583,7 +571,7 @@ class AgentRuntime:
                         protocol_failures=protocol_failures,
                     )
                 transcript.append(
-                    _protocol_feedback(
+                    protocol_feedback(
                         ModelProtocolFailureCode.DUPLICATE_CALL_ID.value
                     )
                 )
@@ -675,6 +663,7 @@ class AgentRuntime:
                 try:
                     result_observer(tuple(calls), tuple(results))
                 except Exception:
+                    log.exception("Capability result observation failed unexpectedly.")
                     return self._stopped(
                         AgentRunStatus.INTERNAL_FAILURE,
                         "The capability context could not be retained safely.",
@@ -734,7 +723,7 @@ class AgentRuntime:
                 stop_message="A previous write outcome requires review before another operation can run.")
         if call.capability not in advertised_names:
             return _CallOutcome(
-                result=_failure_result(
+                result=failure_result(
                     internal_call_id,
                     call.capability,
                     CapabilityFailure(
@@ -747,9 +736,10 @@ class AgentRuntime:
             capability = self.registry.resolve(call.capability)
         except CapabilityLookupError as exc:
             return _CallOutcome(
-                result=_failure_result(internal_call_id, call.capability, exc.failure)
+                result=failure_result(internal_call_id, call.capability, exc.failure)
             )
         except Exception:
+            log.exception("Capability lookup failed unexpectedly.")
             return _CallOutcome(
                 stop_status=AgentRunStatus.INTERNAL_FAILURE,
                 stop_message="The capability registry failed unexpectedly.",
@@ -768,7 +758,7 @@ class AgentRuntime:
             prepared = prepare_capability_call(capability, call.arguments, context)
         except CapabilityArgumentError as exc:
             return _CallOutcome(
-                result=_failure_result(internal_call_id, call.capability, exc.failure)
+                result=failure_result(internal_call_id, call.capability, exc.failure)
             )
         except TaskCancelled:
             return _CallOutcome(
@@ -777,13 +767,14 @@ class AgentRuntime:
             )
         except CapabilityExecutionError as exc:
             return _CallOutcome(
-                result=_failure_result(
+                result=failure_result(
                     internal_call_id,
                     call.capability,
                     CapabilityFailure(code=exc.code, message=str(exc)),
                 )
             )
         except Exception:
+            log.exception("Capability call preparation failed unexpectedly.")
             return _CallOutcome(
                 stop_status=AgentRunStatus.INTERNAL_FAILURE,
                 stop_message="The capability call could not be prepared safely.",
@@ -809,6 +800,7 @@ class AgentRuntime:
             if authorization_outcome.record_final_authorization:
                 self.executor.journal.record_authorization(prepared, authorization)
         except Exception:
+            log.exception("Capability lifecycle persistence failed unexpectedly.")
             return _CallOutcome(
                 stop_status=AgentRunStatus.INTERNAL_FAILURE,
                 stop_message="The capability lifecycle could not be persisted safely.",
@@ -837,7 +829,7 @@ class AgentRuntime:
                     stop_message="The capability approval expired before execution.",
                 )
             return _CallOutcome(
-                result=_failure_result(
+                result=failure_result(
                     internal_call_id,
                     call.capability,
                     CapabilityFailure(
@@ -850,6 +842,7 @@ class AgentRuntime:
         try:
             result = self.executor.execute(prepared, authorization)
         except Exception:
+            log.exception("Capability result persistence failed unexpectedly.")
             return _CallOutcome(
                 stop_status=AgentRunStatus.INTERNAL_FAILURE,
                 stop_message="The capability result could not be persisted safely. Review its outcome before retrying.",
@@ -920,6 +913,7 @@ class AgentRuntime:
         try:
             self._approval_requester(record)
         except Exception:
+            log.exception("The approval UI failed while presenting a request.")
             self.approval_manager.resolve(
                 record.approval_id,
                 status=ApprovalStatus.CANCELLED,
@@ -982,7 +976,7 @@ class AgentRuntime:
                         try:
                             cancel()
                         except Exception:
-                            pass
+                            log.debug("Model cancellation cleanup failed.", exc_info=True)
                 return None, stop
             remaining = self._remaining(started)
             try:
@@ -994,9 +988,10 @@ class AgentRuntime:
             except InferenceUnavailable as exc:
                 return None, (
                     AgentRunStatus.MODEL_UNAVAILABLE,
-                    _model_unavailable_message(exc),
+                    model_unavailable_message(exc),
                 )
             except Exception:
+                log.exception("Text model request failed unexpectedly.")
                 return None, (
                     AgentRunStatus.INTERNAL_FAILURE,
                     "The model provider failed unexpectedly.",
@@ -1033,7 +1028,7 @@ class AgentRuntime:
                         try:
                             cancel()
                         except Exception:
-                            pass
+                            log.debug("Model cancellation cleanup failed.", exc_info=True)
                 return None, stop
             remaining = self._remaining(started)
             try:
@@ -1045,14 +1040,64 @@ class AgentRuntime:
             except InferenceUnavailable as exc:
                 return None, (
                     AgentRunStatus.MODEL_UNAVAILABLE,
-                    _model_unavailable_message(exc),
+                    model_unavailable_message(exc),
                 )
             except Exception:
+                log.exception("Native capability-model request failed unexpectedly.")
                 return None, (
                     AgentRunStatus.INTERNAL_FAILURE,
                     "The model provider failed unexpectedly.",
                 )
             return response, None
+
+    def _fallback_model_step(
+        self,
+        transcript: list[dict[str, Any]],
+        definitions: tuple[ModelCapabilityDefinition, ...],
+        started: float,
+        user_cancellation: CancellationToken,
+        deadline_cancellation: _DeadlineCancellationToken,
+    ) -> tuple[ModelResponse | None, tuple[AgentRunStatus, str] | None]:
+        fallback_messages = constrained_fallback_messages(transcript, definitions)
+        raw, stop = self._text_model_step(
+            fallback_messages,
+            started,
+            user_cancellation,
+            deadline_cancellation,
+        )
+        if stop is not None:
+            return None, stop
+        try:
+            decision = decode_constrained_decision(raw)
+        except StructuredCallDecodeError:
+            return ModelResponse.failure(
+                ModelProtocolFailureCode.MALFORMED_RESPONSE,
+                "The constrained fallback did not return one valid JSON decision.",
+            ), None
+
+        requested_name = decision["tool"]
+        if requested_name is None:
+            return ModelResponse.text(decision["response"]), None
+        names = {definition.name.casefold(): definition.name for definition in definitions}
+        capability = names.get(requested_name.casefold())
+        if capability is None:
+            return ModelResponse.failure(
+                ModelProtocolFailureCode.UNKNOWN_CAPABILITY,
+                "The constrained fallback requested a capability that was not advertised.",
+            ), None
+        provider_call_id = str(self._fallback_call_id_factory())
+        try:
+            call = ModelCapabilityCall(
+                provider_call_id=provider_call_id,
+                capability=capability,
+                arguments=deepcopy(decision["arguments"]),
+            )
+        except (TypeError, ValueError):
+            return ModelResponse.failure(
+                ModelProtocolFailureCode.MALFORMED_CALL_ID,
+                "The constrained fallback could not create a safe call identity.",
+            ), None
+        return ModelResponse.calls((call,)), None
 
     def _stop_status(
         self,
@@ -1081,13 +1126,13 @@ class AgentRuntime:
     def _new_call_id(self, used: set[str]) -> str | None:
         for _ in range(8):
             candidate = str(self._call_id_factory())
-            if _safe_identifier(candidate) and candidate not in used:
+            if safe_identifier(candidate) and candidate not in used:
                 used.add(candidate)
                 return candidate
         return None
 
     def _check_transcript_size(self, transcript: list[dict[str, Any]]) -> None:
-        if _json_size(transcript) > self.limits.max_transcript_bytes:
+        if json_size(transcript) > self.limits.max_transcript_bytes:
             raise ValueError("The agent transcript exceeds its safe size limit.")
 
     def _transcript_within_limit(self, transcript: list[dict[str, Any]]) -> bool:
@@ -1127,387 +1172,3 @@ class AgentRuntime:
             capability_calls=capability_calls,
             protocol_failures=protocol_failures,
         )
-
-
-def _failure_result(
-    call_id: str,
-    capability: str,
-    failure: CapabilityFailure,
-) -> CapabilityResult:
-    return CapabilityResult(
-        call_id=call_id,
-        capability=capability,
-        success=False,
-        error=failure,
-        duration_ms=0,
-        metadata={"result_schema_version": 1},
-    )
-
-
-def _call_fingerprint(call: ModelCapabilityCall) -> str:
-    return hashlib.sha256(
-        _canonical_json(
-            {
-                "arguments": call.arguments,
-                "capability": call.capability,
-            }
-        ).encode("utf-8")
-    ).hexdigest()
-
-
-def _protocol_feedback(code: str) -> dict[str, str]:
-    if code == ModelProtocolFailureCode.MIXED_RESPONSE.value:
-        instruction = (
-            "If the task still has an unprocessed item, return only one native capability call "
-            "for that next item with no assistant text. If the task is complete, return only final "
-            "assistant text with no capability call. Never combine text and a call."
-        )
-    else:
-        instruction = "Return either assistant text or exactly one valid native capability call."
-    return {
-        "role": "system",
-        "content": (
-            f"The prior structured response was rejected ({code}). "
-            f"No call from it was executed. {instruction}"
-        ),
-    }
-
-
-def _required_calls_feedback() -> dict[str, str]:
-    return {
-        "role": "system",
-        "content": (
-            "The latest user request has a bounded, exact filesystem.stat target set from the "
-            "active directory listing. Do not return final text yet. Call filesystem.stat once "
-            "for every requested target that has not received a capability result. Do not call "
-            "filesystem.list and do not repeat a completed target."
-        ),
-    }
-
-
-def _single_call_feedback() -> dict[str, str]:
-    return {
-        "role": "system",
-        "content": (
-            "The prior structured response requested multiple capability calls. "
-            "No call was executed. Return exactly one native capability call for only the next "
-            "required item, wait for its result, and request any later item in a separate step. "
-            "Never return multiple calls together."
-        ),
-    }
-
-
-_FILENAME_DISAMBIGUATION_MARKER = "Bounded filename disambiguation is still pending."
-
-
-@dataclass(frozen=True)
-class _PendingFilenameDisambiguation:
-    directory: str
-    requested_name: str
-    source_capability: str
-
-
-def _filename_disambiguation_feedback(
-    transcript: list[dict[str, Any]],
-    advertised_names: set[str],
-) -> dict[str, str] | None:
-    if not {"filesystem.list", "filesystem.read_text"}.issubset(advertised_names):
-        return None
-    if _disambiguation_feedback_already_sent(transcript):
-        return None
-    latest_user = _latest_user_text(transcript).casefold()
-    if re.search(r"\b(?:read|show|explain|summari[sz]e|fix)\b", latest_user) is None:
-        return None
-    pending = _pending_filename_disambiguation(transcript)
-    if pending is None:
-        return None
-    directory = pending.directory
-    requested_name = pending.requested_name
-    last_result = _last_capability_result(transcript)
-    if last_result is None:
-        return None
-    capability = last_result.get("capability")
-    output = last_result.get("result", {}).get("output", {})
-    if capability == "filesystem.find":
-        if _has_following_capability_result(transcript, "filesystem.list", directory):
-            return None
-        return {
-            "role": "system",
-            "content": (
-                f"{_FILENAME_DISAMBIGUATION_MARKER} The exact file lookup returned no matches. "
-                f"Return exactly one native filesystem.list call for the same containing directory: "
-                f"{directory}. Do not answer that the file is missing until this bounded same-folder "
-                "disambiguation has run. Do not search another folder."
-            ),
-        }
-    if capability == "filesystem.read_text" and pending.source_capability == "filesystem.read_text":
-        if _has_following_capability_result(transcript, "filesystem.list", directory):
-            return None
-        return {
-            "role": "system",
-            "content": (
-                f"{_FILENAME_DISAMBIGUATION_MARKER} The direct text read failed for an "
-                f"extensionless path. Return exactly one native filesystem.list call for the "
-                f"same containing directory: {directory}. Do not answer that the file is missing "
-                "until this bounded same-folder disambiguation has run. Do not search another folder."
-            ),
-        }
-    if capability == "filesystem.list" and _result_path_matches_directory(
-        transcript, last_result, "filesystem.list", directory
-    ):
-        if _has_following_capability_result(transcript, "filesystem.read_text", directory):
-            return None
-        candidates = _disambiguated_file_candidates(
-            requested_name,
-            list(output.get("entries") or []),
-        )
-        if len(candidates) != 1:
-            return None
-        read_directory = output.get("path") if isinstance(output.get("path"), str) else directory
-        return {
-            "role": "system",
-            "content": (
-                f"{_FILENAME_DISAMBIGUATION_MARKER} The same-folder list has exactly one obvious "
-                f"file match for {requested_name}: {candidates[0]}. Return exactly one native "
-                f"filesystem.read_text call for {str(Path(read_directory) / candidates[0])}. Do not "
-                "return assistant text before reading it."
-            ),
-        }
-    return None
-
-
-def _disambiguation_feedback_already_sent(transcript: list[dict[str, Any]]) -> bool:
-    last_result_index = None
-    for index, message in enumerate(transcript):
-        if message.get("role") == "capability":
-            last_result_index = index
-    if last_result_index is None:
-        return False
-    return any(
-        index > last_result_index
-        and
-        message.get("role") == "system"
-        and isinstance(message.get("content"), str)
-        and _FILENAME_DISAMBIGUATION_MARKER in message["content"]
-        for index, message in enumerate(transcript)
-    )
-
-
-def _latest_user_text(transcript: list[dict[str, Any]]) -> str:
-    for message in reversed(transcript):
-        if message.get("role") == "user" and isinstance(message.get("content"), str):
-            return message["content"]
-    return ""
-
-
-def _last_capability_result(transcript: list[dict[str, Any]]) -> dict[str, Any] | None:
-    for message in reversed(transcript):
-        if message.get("role") == "capability":
-            return message
-    return None
-
-
-def _pending_filename_disambiguation(
-    transcript: list[dict[str, Any]],
-) -> _PendingFilenameDisambiguation | None:
-    for message in reversed(transcript):
-        pending = _pending_disambiguation_from_result(transcript, message)
-        if pending is not None:
-            return pending
-    return None
-
-
-def _pending_disambiguation_from_result(
-    transcript: list[dict[str, Any]],
-    message: dict[str, Any],
-) -> _PendingFilenameDisambiguation | None:
-    if message.get("role") != "capability":
-        return None
-    result = message.get("result") or {}
-    output = result.get("output") or {}
-    capability = message.get("capability")
-    if (
-        capability == "filesystem.find"
-        and result.get("success") is True
-        and output.get("kind") == "file"
-        and not output.get("matches")
-        and isinstance(output.get("path"), str)
-        and isinstance(output.get("name"), str)
-    ):
-        return _PendingFilenameDisambiguation(
-            directory=output["path"],
-            requested_name=output["name"],
-            source_capability="filesystem.find",
-        )
-    if (
-        capability == "filesystem.read_text"
-        and result.get("success") is False
-        and isinstance(result.get("error"), dict)
-        and result["error"].get("code") == CapabilityErrorCode.NOT_FOUND.value
-    ):
-        arguments = _result_call_arguments(transcript, message)
-        path = arguments.get("path") if isinstance(arguments, dict) else None
-        if not isinstance(path, str):
-            return None
-        parsed = _extensionless_read_target(path)
-        if parsed is None:
-            return None
-        directory, requested_name = parsed
-        return _PendingFilenameDisambiguation(
-            directory=directory,
-            requested_name=requested_name,
-            source_capability="filesystem.read_text",
-        )
-    return None
-
-
-def _pending_zero_match_file_find(transcript: list[dict[str, Any]]) -> tuple[str, str] | None:
-    pending = _pending_filename_disambiguation(transcript)
-    if pending is not None and pending.source_capability == "filesystem.find":
-        return pending.directory, pending.requested_name
-    return None
-
-
-def _extensionless_read_target(path: str) -> tuple[str, str] | None:
-    target = Path(path)
-    requested_name = target.name
-    if (
-        not requested_name
-        or requested_name in {".", ".."}
-        or Path(requested_name).suffix
-    ):
-        return None
-    directory = str(target.parent)
-    if not directory or directory == ".":
-        return None
-    return directory, requested_name
-
-
-def _result_call_arguments(
-    transcript: list[dict[str, Any]],
-    result_message: dict[str, Any],
-) -> dict[str, Any] | None:
-    provider_call_id = result_message.get("provider_call_id")
-    capability = result_message.get("capability")
-    if not isinstance(provider_call_id, str) or not isinstance(capability, str):
-        return None
-    for message in reversed(transcript):
-        if message.get("role") != "assistant":
-            continue
-        calls = message.get("capability_calls")
-        if not isinstance(calls, list):
-            continue
-        for call in calls:
-            if not isinstance(call, dict):
-                continue
-            if (
-                call.get("provider_call_id") == provider_call_id
-                and call.get("capability") == capability
-                and isinstance(call.get("arguments"), dict)
-            ):
-                return call["arguments"]
-    return None
-
-
-def _has_following_capability_result(
-    transcript: list[dict[str, Any]],
-    capability: str,
-    directory: str,
-) -> bool:
-    pending_index = None
-    for index, message in enumerate(transcript):
-        pending = _pending_disambiguation_from_result(transcript, message)
-        if pending is None or not _same_path(pending.directory, directory):
-            continue
-        pending_index = index
-    if pending_index is None:
-        return False
-    for message in transcript[pending_index + 1:]:
-        if _result_path_matches_directory(transcript, message, capability, directory):
-            return True
-    return False
-
-
-def _result_path_matches_directory(
-    transcript: list[dict[str, Any]],
-    message: dict[str, Any],
-    capability: str,
-    directory: str,
-) -> bool:
-    if message.get("role") != "capability" or message.get("capability") != capability:
-        return False
-    result = message.get("result") or {}
-    output = result.get("output") or {}
-    output_path = output.get("path") or output.get("destination_path")
-    if _path_value_matches_directory(output_path, capability, directory):
-        return True
-    arguments = _result_call_arguments(transcript, message)
-    argument_path = arguments.get("path") if isinstance(arguments, dict) else None
-    return _path_value_matches_directory(argument_path, capability, directory)
-
-
-def _path_value_matches_directory(path: Any, capability: str, directory: str) -> bool:
-    if not isinstance(path, str):
-        return False
-    if capability == "filesystem.read_text":
-        try:
-            return _same_path(str(Path(path).parent), directory)
-        except TypeError:
-            return False
-    return _same_path(path, directory)
-
-
-def _disambiguated_file_candidates(requested_name: str, entries: list[dict[str, Any]]) -> list[str]:
-    requested_keys = _filename_keys(requested_name)
-    candidates: list[str] = []
-    for entry in entries:
-        if not isinstance(entry, dict) or entry.get("type") != "file":
-            continue
-        name = entry.get("name")
-        if not isinstance(name, str):
-            continue
-        if requested_keys & _filename_keys(name):
-            candidates.append(name)
-    return candidates
-
-
-def _filename_keys(name: str) -> set[str]:
-    value = str(name).strip().casefold()
-    stem = Path(value).stem
-    return {
-        value,
-        stem,
-        _filename_loose_key(value),
-        _filename_loose_key(stem),
-    } - {""}
-
-
-def _filename_loose_key(name: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "", name.casefold())
-
-
-def _same_path(left: Any, right: Any) -> bool:
-    if not isinstance(left, str) or not isinstance(right, str):
-        return False
-    return str(Path(left)).casefold() == str(Path(right)).casefold()
-
-
-def _canonical_json(value: Any) -> str:
-    return json.dumps(
-        value,
-        allow_nan=False,
-        ensure_ascii=False,
-        separators=(",", ":"),
-        sort_keys=True,
-    )
-
-
-def _json_size(value: Any) -> int:
-    try:
-        return len(_canonical_json(value).encode("utf-8"))
-    except (TypeError, ValueError, UnicodeError, RecursionError) as exc:
-        raise ValueError("Agent runtime values must contain bounded JSON data.") from exc
-
-
-def _safe_identifier(value: object) -> bool:
-    return isinstance(value, str) and _STABLE_IDENTIFIER.fullmatch(value) is not None

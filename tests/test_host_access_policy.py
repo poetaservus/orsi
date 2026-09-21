@@ -5,9 +5,9 @@ from pathlib import Path
 
 import pytest
 
-import app.capabilities.host_access as host_access
+import app.security.host_access as host_access
 from app.capabilities.contracts import CapabilityErrorCode, CapabilityExecutionError
-from app.capabilities.host_access import (
+from app.security.host_access import (
     CLOUD_FILE_CONTENT_WARNING,
     FULL_LOCAL_READ_WARNING,
     HostAccessPolicy,
@@ -178,9 +178,11 @@ def test_phase9_policy_exposes_separately_gated_content_and_search():
     production = "\n".join(
         (root / path).read_text(encoding="utf-8")
         for path in (
-            "app/agent_bootstrap.py",
-            "app/agent_config.py",
-            "app/main.py",
+            "app/agent/bootstrap.py",
+            "app/capabilities/catalog.py",
+            "app/security/default_permissions.py",
+            "app/settings/agent.py",
+            "app/startup.py",
             "config/agent.json",
         )
     )

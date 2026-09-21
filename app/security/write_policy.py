@@ -6,8 +6,8 @@ from pathlib import Path, PureWindowsPath
 import re
 
 from app.capabilities.contracts import CapabilityErrorCode, CapabilityExecutionError
-from app.capabilities.host_access import _windows_local_drive_roots
-from app.capabilities.path_policy import is_path_within
+from app.security.host_access import windows_local_drive_roots
+from app.security.path_policy import is_path_within
 
 
 _PROTECTED_NAMES = {
@@ -106,7 +106,7 @@ class HostWritePolicy:
                 "The write path could not be resolved safely.") from exc
         if os.path.normcase(str(candidate)) != os.path.normcase(str(canonical)):
             self._deny("Aliases and redirected folder paths are not allowed for writes.")
-        if not any(is_path_within(canonical, root) for root in _windows_local_drive_roots()):
+        if not any(is_path_within(canonical, root) for root in windows_local_drive_roots()):
             self._deny("The target is not on an enabled local filesystem drive.")
         if (path.parts[1].casefold() in _PROTECTED_NAMES
                 or any(part.casefold() == "appdata" for part in path.parts[1:])

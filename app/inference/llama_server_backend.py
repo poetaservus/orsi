@@ -15,7 +15,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from app.inference.engine import InferenceEngine, InferenceUnavailable
-from app.inference.model_config import ModelConfig, detect_nvidia_memory_mib
+from app.settings.model import ModelConfig, detect_nvidia_memory_mib
 from app.inference.protocol import (
     ModelCapabilityDefinition,
     ModelResponse,
@@ -25,7 +25,7 @@ from app.inference.protocol import (
     native_function_tools,
     normalize_native_chat_completion,
 )
-from app.paths import PATHS
+from app.settings.paths import PATHS
 
 
 log = logging.getLogger(__name__)
@@ -119,7 +119,7 @@ class LlamaServerInferenceEngine(InferenceEngine):
             len(str(message.get("content", "")).encode("utf-8", errors="replace"))
             for message in messages
         )
-        return max(1, encoded_bytes + 16 * len(messages) + 256)
+        return max(1, (encoded_bytes + 3) // 4 + 16 * len(messages) + 256)
 
     def respond(self, messages: list[dict[str, str]]) -> str:
         if not messages:

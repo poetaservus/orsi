@@ -8,18 +8,18 @@ from types import SimpleNamespace
 
 import pytest
 
-import app.agent_config as agent_config_module
-from app.agent_bootstrap import AgentBootstrapError, build_filesystem_stat_runtime
-from app.agent_config import AgentFeatureConfig, load_agent_feature_config
-from app.agent_runtime import AgentRuntime
-from app.capabilities.crash_journal import CallLifecycleState
-from app.capabilities.host_access import (
+import app.settings.agent as agent_config_module
+from app.agent.bootstrap import AgentBootstrapError, build_agent_runtime
+from app.settings.agent import AgentFeatureConfig, load_agent_feature_config
+from app.agent.runtime import AgentRuntime
+from app.execution.audit import CallLifecycleState
+from app.security.host_access import (
     HostAccessPolicy,
     HostReadScope,
     WindowsDriveType,
     _windows_drive_type,
 )
-from app.conversation.service import ConversationService
+from app.conversation.orchestrator import ConversationService
 from app.conversation.store import ConversationStore
 from app.inference.engine import InferenceEngine
 from app.inference.protocol import ModelCapabilityCall, ModelResponse
@@ -76,7 +76,7 @@ def _full_local_service(tmp_path: Path, model: InferenceEngine):
         filesystem_stat_enabled=True,
         full_local_read_enabled=True,
     )
-    runtime = build_filesystem_stat_runtime(
+    runtime = build_agent_runtime(
         model,
         config=config,
         portable_root=portable_root,
@@ -165,7 +165,7 @@ def test_full_local_config_without_acknowledged_policy_fails_closed(tmp_path: Pa
     portable_root.mkdir()
 
     with pytest.raises(AgentBootstrapError, match="do not match"):
-        build_filesystem_stat_runtime(
+        build_agent_runtime(
             model,
             config=AgentFeatureConfig(
                 filesystem_stat_enabled=True,
@@ -259,7 +259,21 @@ def test_full_local_mode_preserves_ordinary_conversation_without_calls(tmp_path:
     try:
         answer = service.run("Give me a pancake recipe")
         assert answer.startswith("Pancakes")
-        assert len(model.requests) == 1
+        assert model.requests
+        assert model.text_requests == []
+        assert runtime.executor.journal.records == ()
+    finally:
+        service.shutdown()
+
+
+def test_greeting_never_receives_filesystem_capabilities(tmp_path: Path):
+    model = ScriptedModel([ModelResponse.text("Hey! How can I help?")])
+    service, runtime, _policy, _portable_root, _user_home = _full_local_service(
+        tmp_path, model
+    )
+    try:
+        assert service.run("hey") == "Hey! How can I help?"
+        assert model.requests
         assert model.text_requests == []
         assert runtime.executor.journal.records == ()
     finally:

@@ -1,120 +1,98 @@
-# O.R.S.I — gated read-only filesystem agent
+# O.R.S.I
 
-O.R.S.I is a local-first Windows desktop assistant using the bundled local GGUF model or an
-OpenAI-compatible cloud model. This development copy enables Phase 9 metadata, bounded directory
-listing, and bounded text-file reading with the approved dark GUI.
+O.R.S.I is a local-first Windows desktop assistant with a Qt GUI, local GGUF inference, optional
+OpenAI-compatible cloud inference, and a schema-driven capability system. Tool requests are
+validated, authorized, journaled, and executed by application code; the model and GUI cannot bypass
+those boundaries.
 
-## Current interface
+The architectural guide is [ARCHITECTURE.md](ARCHITECTURE.md). Current milestone information is in
+[docs/status-report.md](docs/status-report.md) and [docs/roadmap.md](docs/roadmap.md).
 
-The approved GUI baseline includes:
+## Run the current development build
 
-- A fixed left navigation rail with new-session and settings controls.
-- A subtle image-backed background with a solid, opaque conversation panel.
-- A context-window meter in the main chat header.
-- Responsive wide and compact layouts that keep the conversation panel, messages, and composer
-  centered with balanced gutters.
-- Separate assistant text and user message bubbles, selectable text, fenced-code panels with a
-  copy action, and a compact dark composer.
-- Local/Cloud model selection and runtime status in the settings popover.
+Use the current repository at:
 
-See the [roadmap](docs/roadmap.md) and [current status report](docs/status-report.md) for the
-implementation state and next milestones.
+```text
+C:\Users\yaboy\Desktop\orsi_test
+```
+
+Launch [ORSI_TEST.cmd](ORSI_TEST.cmd) to exercise the feature-enabled development build. The
+portable runtime must already exist under `runtime/python`, and a compatible GGUF model must match
+`config/model.json`. [ORSI.cmd](ORSI.cmd) is the base portable launcher.
+
+For development:
+
+```powershell
+runtime\python\python.exe -m app.main
+```
 
 ## Current capabilities
 
-- Sends ordinary text conversation history to the selected model.
-- Stores one text-only conversation under `state/conversation_v1/conversation.json`.
-- Supports Local and Cloud model selection and keeps a cloud API key in memory for the current
-  application run only.
-- When explicitly enabled, can return bounded metadata through `filesystem.stat` and deterministic,
-  paginated names and types from one requested directory through `filesystem.list`.
-- Returns bounded UTF text from one requested file through `filesystem.read_text`.
-- A follow-up may request metadata for up to seven files from the active listing. O.R.S.I validates,
-  authorizes, executes, and journals those read-only stat calls one at a time.
-- Can use acknowledged full-local read access across enabled local drives under the current Windows
-  account without elevation.
+- Ordinary local or cloud conversation with bounded context.
+- `filesystem.stat`, `filesystem.find`, `filesystem.list`,
+  `filesystem.read_text`, and bounded literal `filesystem.search`.
+- Approval-controlled `filesystem.mkdir`, `filesystem.write_text`,
+  `filesystem.copy`, `filesystem.move`, and Recycle-Bin `filesystem.trash`.
+- Approval-controlled `application.launch` for explicitly allowlisted applications. The current
+  implementation recognizes Blender and resolves only verified local executables.
+- Portable-root read scope by default, or full-local read on supported Windows drives only after an
+  explicit warning is accepted for that launch.
+- Crash-journaled tool lifecycle, cancellation, bounded retries/steps, strict schemas, and
+  single-use expiring approvals.
 
-O.R.S.I cannot search directories, launch or close applications, run commands,
-use the clipboard, automate windows, write or delete files, or make any operating-system change.
-Directory listing is limited to one explicitly requested directory, 50 returned entries per call,
-and a 4,096-entry bounded snapshot. Only `filesystem.stat` opts into same-response batching, with a
-seven-call limit; all other capabilities default to one call, and mixed capability batches fail.
-Text reads default to 16,384 bytes and 200 lines, with hard limits of 65,536 bytes and 1,000 lines.
+O.R.S.I has no shell tool, arbitrary process execution, permanent-delete tool, clipboard/window
+automation, background indexing, plugin loader, or skills runtime. Network shares and device paths
+are denied. Writes to application/state, AppData, operating-system, recovery, installed-application,
+redirected, reparse, or ambiguous paths are denied.
 
-When asked to do anything outside that boundary, the model is instructed to state the limitation
-honestly. It can still discuss a task, review text pasted into the conversation, or explain steps
-a person can perform manually.
+## How tool requests work
 
-## Enable the read-only capabilities
+The active model receives the complete enabled capability catalog and can return ordinary text or
+one native tool call. O.R.S.I validates the tool name and arguments, applies deterministic
+permissions, asks for approval when required, journals the lifecycle, executes the tool once, and
+returns its structured result to the model.
 
-The read-only capabilities are enabled in this development copy's `config/agent.json`.
-Environment overrides are also supported:
+There is no production regex command router. A narrow same-folder filename recovery can resolve one
+obvious extension/stem variant after an extensionless file read misses. See
+[ARCHITECTURE.md](ARCHITECTURE.md#10-natural-language-resolution).
 
-```powershell
-$env:ORSI_ENABLE_FILESYSTEM_STAT = "1"
-$env:ORSI_ENABLE_FILESYSTEM_LIST = "1"
-$env:ORSI_ENABLE_FILESYSTEM_READ_TEXT = "1"
-$env:ORSI_ENABLE_FULL_LOCAL_READ = "1"
-python -m app.main
-```
+## Configuration
 
-Full-local read is not constructed until the user accepts its warning for that application launch.
-Declining keeps the enabled capabilities confined to the portable O.R.S.I root. Network and device
-paths remain denied. In Cloud mode, the conversation, metadata, returned directory names/types,
-and requested text-file content may be sent to the selected provider after an additional disclosure.
+- `config/agent.json`: feature gates and full-local read selection.
+- `config/model.json`: local GGUF path, context policy, and generation limits.
+- `config/cloud.json`: OpenAI-compatible endpoint, provider model, safe headers, and API-key
+  environment-variable name.
 
-When this gate is enabled, local capability requests use the bundled loopback-only
-`llama-server.exe`. The server is pinned to llama.cpp build `b9976` (`e3546c794`), matching the
-llama.cpp revision in `llama-cpp-python 0.3.34`, and reuses the same portable CUDA 13 runtime. It
-runs hidden with bounded startup and shutdown. The server only decodes Qwen's native tool envelope;
-every returned call still passes O.R.S.I's strict allowlisted normalizer, permission gate, executor,
-and crash journal before anything can run. Missing or invalid configuration fails closed.
+Feature flags can be overridden with explicit `ORSI_ENABLE_...` environment variables. Full-local
+read authority is still not created until the launch warning is accepted.
 
-## Run
-
-The portable copy starts with `ORSI.cmd`. For development with Python 3.12 and the dependencies
-installed:
-
-```powershell
-python -m app.main
-```
-
-Place a llama.cpp-compatible GGUF file under `models/` and configure it in `config/model.json`.
-Cloud settings live in `config/cloud.json`; credentials are not accepted in that file.
-
-### Cloud provider compatibility
-
-`config/cloud.json` targets OpenAI-compatible `/chat/completions` APIs. Set `provider_name`,
-`base_url`, `model`, and `api_key_environment` for the provider you want to test. API keys must
-still be entered at runtime or supplied through the configured environment variable; they are not
-stored in config.
-
-Some compatible providers need harmless attribution or routing headers. Put only non-secret values
-in `extra_headers`. If a provider accepts tools but rejects OpenAI's strict tool metadata, set
-`include_tool_strict` to `false`. If it rejects the `tool_choice` field, set `tool_choice` to `null`.
-The development config keeps `fallback_to_local` disabled so a Cloud-mode failure stays visible
-instead of silently switching the running session back to Local.
+Cloud credentials are accepted only from the configured environment variable or the in-memory GUI
+prompt. Do not place API keys in JSON or headers. Cloud mode may send conversation text and requested
+tool results—including file names or file content—to the configured provider after the GUI
+disclosure.
 
 ## Test
 
 ```powershell
-python -m pytest
+runtime\python\python.exe -m pytest --basetemp .pytest-tmp
 ```
 
-The suite covers the chat-only fallback, provider adapters, capability contracts and
-permissions, path denials, cursor pagination, crash-journaled execution, bounded model round trips,
-cancellation, list-to-metadata follow-ups, conversation privacy boundaries, and responsive GUI
-geometry.
+The repository-local test base is important on Windows: the real write policy intentionally rejects
+the normal AppData temp directory. The suite covers provider adapters, schemas, registration,
+permissions, denials, approval flows, executor routing, crash recovery, conversation/context
+behavior, natural-language tool use, and off-screen Qt integration.
+
+Opt-in live-model tests remain skipped unless their documented environment gates and model runtime
+are available.
 
 ## Portable runtime
 
-Build the application-local Python runtime once on Windows x64:
+Build an application-local Python 3.12 runtime on Windows x64:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\packaging\build-portable-runtime.ps1 -Backend cuda
 ```
 
-Use `-Backend cpu` for a broadly compatible CPU-only copy. The portable application requires
-Python 3.12 because the bundled llama.cpp wheels target that runtime. The builder also downloads
-the matching pinned llama-server archive, verifies its SHA-256 digest, packages only the server and
-required llama.cpp libraries, and checks the executable's build identity before completing.
+Use `-Backend cpu` for the CPU-only build. The packaging scripts pin and verify the matching
+llama-server archive and install the declared runtime dependencies without changing application
+configuration or credentials.

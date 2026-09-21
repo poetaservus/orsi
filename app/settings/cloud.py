@@ -6,8 +6,8 @@ from urllib.parse import urlparse
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from app.config import load_json
-from app.paths import PATHS
+from app.settings.loader import load_json
+from app.settings.paths import PATHS
 
 
 class CloudConfig(BaseModel):

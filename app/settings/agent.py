@@ -4,8 +4,8 @@ import os
 
 from pydantic import BaseModel, ConfigDict, model_validator
 
-from app.config import load_json
-from app.paths import PATHS
+from app.settings.loader import load_json
+from app.settings.paths import PATHS
 
 
 _FILESYSTEM_STAT_GATE = "ORSI_ENABLE_FILESYSTEM_STAT"
@@ -18,13 +18,14 @@ _FILESYSTEM_WRITE_TEXT_GATE = "ORSI_ENABLE_FILESYSTEM_WRITE_TEXT"
 _FILESYSTEM_COPY_GATE = "ORSI_ENABLE_FILESYSTEM_COPY"
 _FILESYSTEM_MOVE_GATE = "ORSI_ENABLE_FILESYSTEM_MOVE"
 _FILESYSTEM_TRASH_GATE = "ORSI_ENABLE_FILESYSTEM_TRASH"
+_APPLICATION_LAUNCH_GATE = "ORSI_ENABLE_APPLICATION_LAUNCH"
 _FULL_LOCAL_READ_GATE = "ORSI_ENABLE_FULL_LOCAL_READ"
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 _FALSE_VALUES = {"0", "false", "no", "off"}
 
 
 class AgentFeatureConfig(BaseModel):
-    """Fail-closed gates for the current production capability and its read scope."""
+    """Fail-closed gates for built-in capabilities and acknowledged read scope."""
 
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
 
@@ -38,6 +39,7 @@ class AgentFeatureConfig(BaseModel):
     filesystem_copy_enabled: bool = False
     filesystem_move_enabled: bool = False
     filesystem_trash_enabled: bool = False
+    application_launch_enabled: bool = False
     full_local_read_enabled: bool = False
 
     @model_validator(mode="after")
@@ -56,6 +58,8 @@ class AgentFeatureConfig(BaseModel):
             raise ValueError("File moving requires the filesystem metadata agent.")
         if self.filesystem_trash_enabled and not self.filesystem_stat_enabled:
             raise ValueError("File trashing requires the filesystem metadata agent.")
+        if self.application_launch_enabled and not self.filesystem_stat_enabled:
+            raise ValueError("Application launch requires the structured capability agent.")
         if self.filesystem_list_enabled and not self.filesystem_stat_enabled:
             raise ValueError(
                 "Directory listing requires the filesystem metadata agent."
@@ -91,6 +95,7 @@ def load_agent_feature_config() -> AgentFeatureConfig:
         (_FILESYSTEM_COPY_GATE, "filesystem_copy_enabled"),
         (_FILESYSTEM_MOVE_GATE, "filesystem_move_enabled"),
         (_FILESYSTEM_TRASH_GATE, "filesystem_trash_enabled"),
+        (_APPLICATION_LAUNCH_GATE, "application_launch_enabled"),
         (_FULL_LOCAL_READ_GATE, "full_local_read_enabled"),
     ):
         override = os.environ.get(name)

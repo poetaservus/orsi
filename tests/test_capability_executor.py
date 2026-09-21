@@ -9,18 +9,19 @@ from time import monotonic
 import pytest
 from pydantic import BaseModel, ConfigDict
 
-from app.capabilities import (
-    ApprovalManager,
-    ApprovalStatus,
-    AuthorizationCode,
+from app.capabilities.contracts import (
     Capability,
     CapabilityContext,
     CapabilityErrorCode,
     CapabilityExecutionError,
-    CapabilityExecutor,
     ExecutionIsolation,
-    ExecutorLimits,
     PermissionClass,
+)
+from app.execution.executor import CapabilityExecutor, ExecutorLimits
+from app.security.permissions import (
+    ApprovalManager,
+    ApprovalStatus,
+    AuthorizationCode,
     PermissionDecision,
     PermissionGate,
     PermissionRule,
@@ -441,7 +442,7 @@ def test_production_entrypoints_remain_disconnected_from_executor():
     root = Path(__file__).resolve().parents[1]
     for relative in (
         "app/main.py",
-        "app/conversation/service.py",
+        "app/conversation/orchestrator.py",
         "app/conversation/prompt.py",
     ):
         text = (root / relative).read_text(encoding="utf-8")

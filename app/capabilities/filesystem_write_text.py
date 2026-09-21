@@ -9,8 +9,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.capabilities.contracts import (Capability, CapabilityContext, CapabilityErrorCode,
     CapabilityExecutionError, ExecutionIsolation, PermissionClass)
-from app.capabilities.windows_directory import file_identity, pinned_parent
-from app.capabilities.write_policy import HostWritePolicy
+from app.execution.windows_filesystem import file_identity, pinned_parent
+from app.security.write_policy import HostWritePolicy
 
 
 _MAX_TEXT_BYTES = 65_536

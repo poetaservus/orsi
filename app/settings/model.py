@@ -8,8 +8,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.config import load_json
-from app.paths import PATHS
+from app.settings.loader import load_json
+from app.settings.paths import PATHS
 
 
 @dataclass(frozen=True)

@@ -15,8 +15,8 @@ from app.capabilities.contracts import (
     ExecutionIsolation,
     PermissionClass,
 )
-from app.capabilities.path_policy import resolve_candidate_path, resolve_read_path
-from app.capabilities.host_access import HostReadScope
+from app.security.path_policy import resolve_candidate_path, resolve_read_path
+from app.security.host_access import HostReadScope
 
 
 class FilesystemStatArguments(BaseModel):

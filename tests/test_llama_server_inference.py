@@ -10,9 +10,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.inference.llama_server_backend import LlamaServerInferenceEngine
-from app.inference.llama_server_backend import _llama_server_function_tools
-from app.inference.model_config import ModelConfig
+from app.inference.llama_server_backend import (
+    LlamaServerInferenceEngine,
+    _llama_server_function_tools,
+)
+from app.settings.model import ModelConfig
 from app.inference.protocol import (
     ModelCapabilityCall,
     ModelCapabilityDefinition,
@@ -178,6 +180,19 @@ def test_ordinary_conversation_with_advertised_tool_returns_zero_calls():
     assert result.kind == ModelResponseKind.ASSISTANT_TEXT
     assert result.assistant_text == "Hello there."
     assert result.capability_calls == ()
+
+
+def test_server_token_estimate_is_not_byte_for_token_saturated():
+    engine = object.__new__(LlamaServerInferenceEngine)
+
+    estimate = engine.count_message_tokens(
+        [
+            {"role": "system", "content": "A" * 4000},
+            {"role": "user", "content": "hello"},
+        ]
+    )
+
+    assert 1200 <= estimate < 1400
 
 
 def test_structured_result_continuation_preserves_exact_native_call_identity():

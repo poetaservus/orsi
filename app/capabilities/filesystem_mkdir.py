@@ -7,8 +7,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.capabilities.contracts import (Capability, CapabilityContext, CapabilityErrorCode,
     CapabilityExecutionError, ExecutionIsolation, PermissionClass)
-from app.capabilities.windows_directory import create_child_directory, pinned_parent
-from app.capabilities.write_policy import HostWritePolicy
+from app.execution.windows_filesystem import create_child_directory, pinned_parent
+from app.security.write_policy import HostWritePolicy
 
 
 class FilesystemMkdirArguments(BaseModel):

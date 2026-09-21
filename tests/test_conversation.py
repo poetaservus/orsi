@@ -5,7 +5,7 @@ import json
 from types import SimpleNamespace
 
 from app.conversation.prompt import SYSTEM_PROMPT
-from app.conversation.service import ConversationService
+from app.conversation.orchestrator import ConversationService
 from app.conversation.store import ConversationStore
 
 
@@ -84,7 +84,7 @@ def test_system_prompt_explicitly_denies_computer_access():
 
 
 def test_bootstrap_uses_fresh_conversation_state(monkeypatch, tmp_path: Path):
-    import app.main as main
+    import app.startup as main
     from app.inference.engine import InferenceUnavailable
 
     state_path = tmp_path / "conversation_v1" / "conversation.json"
@@ -125,7 +125,7 @@ def test_bootstrap_uses_fresh_conversation_state(monkeypatch, tmp_path: Path):
     assert not (tmp_path / "runtime_v4").exists()
 
 
-def test_removed_action_packages_are_absent():
+def test_abandoned_action_packages_are_absent():
     root = Path(__file__).resolve().parents[1] / "app"
-    for name in ("agent", "tools", "policy", "platform", "fingerprint", "skills"):
+    for name in ("tools", "policy", "platform", "fingerprint", "skills"):
         assert not any((root / name).glob("*.py"))

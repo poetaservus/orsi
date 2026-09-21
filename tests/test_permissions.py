@@ -6,17 +6,19 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel, ConfigDict
 
-from app.capabilities import (
+from app.capabilities.contracts import (
+    Capability,
+    CapabilityArgumentError,
+    CapabilityContext,
+    ExecutionIsolation,
+    PermissionClass,
+)
+from app.capabilities.filesystem_stat import FilesystemStatCapability
+from app.security.permissions import (
     ApprovalManager,
     ApprovalNotFoundError,
     ApprovalStatus,
     AuthorizationCode,
-    Capability,
-    CapabilityArgumentError,
-    CapabilityContext,
-    FilesystemStatCapability,
-    ExecutionIsolation,
-    PermissionClass,
     PermissionDecision,
     PermissionGate,
     PermissionRule,

@@ -424,14 +424,13 @@ def test_non_string_assistant_content_is_not_coerced_into_prose():
     assert result.protocol_failure.code == ModelProtocolFailureCode.MALFORMED_RESPONSE
 
 
-def test_production_conversation_path_remains_text_only_and_disconnected():
+def test_ui_entry_point_remains_disconnected_from_tool_protocol():
     from pathlib import Path
 
     root = Path(__file__).resolve().parents[1]
     for relative in (
         "app/main.py",
-        "app/conversation/service.py",
-        "app/conversation/prompt.py",
+        "app/ui/main_window.py",
     ):
         text = (root / relative).read_text(encoding="utf-8")
         assert "respond_with_capabilities" not in text

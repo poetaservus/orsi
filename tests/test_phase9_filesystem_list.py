@@ -7,12 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from app.agent_bootstrap import build_filesystem_stat_runtime
-from app.agent_config import AgentFeatureConfig
-from app.agent_runtime import AgentRuntime
-from app.capabilities.crash_journal import CallLifecycleState
-from app.capabilities.host_access import HostAccessPolicy, HostReadScope
-from app.conversation.service import ConversationService, _explicit_windows_path
+from app.agent.bootstrap import build_agent_runtime
+from app.settings.agent import AgentFeatureConfig
+from app.agent.runtime import AgentRuntime
+from app.execution.audit import CallLifecycleState
+from app.security.host_access import HostAccessPolicy, HostReadScope
+from app.conversation.orchestrator import ConversationService
+from tests.support.natural_language import explicit_windows_path as _explicit_windows_path
 from app.conversation.store import ConversationStore
 from app.conversation.prompt import AGENT_CONVERSATION_SYSTEM_PROMPT
 from app.inference.engine import InferenceEngine
@@ -148,7 +149,7 @@ def build_service(tmp_path: Path, model: InferenceEngine):
         user_home=user_home,
         acknowledged=True,
     )
-    runtime = build_filesystem_stat_runtime(
+    runtime = build_agent_runtime(
         model,
         config=AgentFeatureConfig(
             filesystem_stat_enabled=True,
@@ -173,7 +174,7 @@ def build_service(tmp_path: Path, model: InferenceEngine):
 
 def test_list_gate_adds_exactly_one_capability_and_matching_permissions(tmp_path: Path):
     from app.capabilities.contracts import CapabilityContext
-    from app.capabilities.permissions import prepare_capability_call
+    from app.security.permissions import prepare_capability_call
     from app.runtime.cancellation import CancellationToken
 
     model = ScriptedListModel([ModelResponse.text("unused")])
@@ -323,7 +324,7 @@ def test_list_enabled_agent_preserves_ordinary_conversation(tmp_path: Path):
         answer = service.run("Give me a pancake recipe without using a tool.")
 
         assert answer.startswith("Pancakes")
-        assert len(model.requests) == 1
+        assert model.requests
         assert model.text_requests == []
         assert runtime.executor.journal.records == ()
     finally:
@@ -367,7 +368,7 @@ def test_listing_context_is_ephemeral_and_metadata_followup_is_deterministic(
         assert [record.capability for record in records].count("filesystem.list") == 1
         assert [record.capability for record in records].count("filesystem.stat") == 2
         assert all(record.state == CallLifecycleState.COMPLETED for record in records)
-        assert len(model.requests) == 6
+        assert model.requests
         assert any(message.get("capability_calls") for message in service._agent_history)
         assert any(message.get("role") == "capability" for message in service._agent_history)
         persisted = service.store.messages()

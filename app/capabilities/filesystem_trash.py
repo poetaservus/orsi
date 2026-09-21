@@ -12,8 +12,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.capabilities.contracts import (Capability, CapabilityContext, CapabilityErrorCode,
     CapabilityExecutionError, ExecutionIsolation, PermissionClass)
-from app.capabilities.windows_directory import file_identity, pinned_parent
-from app.capabilities.write_policy import HostWritePolicy
+from app.execution.windows_filesystem import (
+    directory_identity_for_path,
+    file_identity,
+    pinned_parent,
+)
+from app.security.write_policy import HostWritePolicy
 
 
 _MAX_TRASH_BYTES = 16 * 1024 * 1024
@@ -22,12 +26,12 @@ _MAX_TRASH_BYTES = 16 * 1024 * 1024
 class FilesystemTrashArguments(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     path: str = Field(min_length=1, max_length=32767,
-                      description="Exact absolute local-drive path of the regular file to send to trash.")
+                      description="Exact absolute local-drive path of the regular file or empty directory to send to trash.")
 
 
 class FilesystemTrashCapability(Capability[FilesystemTrashArguments]):
     name = "filesystem.trash"
-    description = "Send one bounded regular file to the Windows Recycle Bin after approval."
+    description = "Send one bounded regular file or empty directory to the Windows Recycle Bin after approval."
     arguments_model = FilesystemTrashArguments
     permission = PermissionClass.WRITE
     execution_isolation = ExecutionIsolation.IN_PROCESS_COOPERATIVE
@@ -54,10 +58,11 @@ class FilesystemTrashCapability(Capability[FilesystemTrashArguments]):
     def approval_preview(self, arguments, context) -> str:
         del context
         target = self._path(arguments)
+        entry_type = "empty directory" if target.is_dir() else "regular file"
         return "\n".join((
             f"Path: {target}",
-            "Type: regular file",
-            "The file will be sent to the Windows Recycle Bin.",
+            f"Type: {entry_type}",
+            "The entry will be sent to the Windows Recycle Bin.",
         ))
 
     def execute(self, arguments: FilesystemTrashArguments, context: CapabilityContext) -> dict:
@@ -80,10 +85,11 @@ class FilesystemTrashCapability(Capability[FilesystemTrashArguments]):
             context.cancellation.raise_if_cancelled()
             if os.path.lexists(target):
                 raise CapabilityExecutionError(CapabilityErrorCode.INACCESSIBLE,
-                    "The file was not moved to the Recycle Bin.")
+                    "The entry was not moved to the Recycle Bin.")
             return {"path": str(target), "trashed": True, "placement": "recycle_bin",
+                    "type": snapshot["type"],
                     "bytes_trashed": snapshot["size_bytes"],
-                    "sha256": snapshot["sha256"], "identity": snapshot["identity"]}
+                    "sha256": snapshot.get("sha256"), "identity": snapshot["identity"]}
         except OSError as exc:
             if trashed:
                 raise RuntimeError("The trashed file state could not be verified after placement.") from exc
@@ -105,7 +111,7 @@ def trash_file(path: Path, cancellation) -> None:
 
 def _target_snapshot(path: Path, cancellation) -> dict[str, object]:
     if path.is_dir():
-        raise IsADirectoryError("Only regular files can be sent to trash in this checkpoint.")
+        return _empty_directory_snapshot(path, cancellation)
     identity = file_identity(path)
     digest = hashlib.sha256()
     total = 0
@@ -123,7 +129,24 @@ def _target_snapshot(path: Path, cancellation) -> dict[str, object]:
     if file_identity(path) != identity:
         raise CapabilityExecutionError(CapabilityErrorCode.PERMISSION_DENIED,
             "The file changed while it was being inspected.")
-    return {"identity": identity, "size_bytes": total, "sha256": digest.hexdigest()}
+    return {"identity": identity, "size_bytes": total, "sha256": digest.hexdigest(), "type": "file"}
+
+
+def _empty_directory_snapshot(path: Path, cancellation) -> dict[str, object]:
+    identity = directory_identity_for_path(path)
+    cancellation.raise_if_cancelled()
+    with os.scandir(path) as entries:
+        for _entry in entries:
+            raise CapabilityExecutionError(
+                CapabilityErrorCode.INVALID_ARGUMENTS,
+                "Only empty directories can be sent to trash in this checkpoint.",
+            )
+    if directory_identity_for_path(path) != identity:
+        raise CapabilityExecutionError(
+            CapabilityErrorCode.PERMISSION_DENIED,
+            "The directory changed while it was being inspected.",
+        )
+    return {"identity": identity, "size_bytes": 0, "type": "directory"}
 
 
 def _precondition_digest(snapshot: dict[str, object], parent_identity: str) -> str:
@@ -229,9 +252,9 @@ def _check_hresult(hr: int) -> None:
 
 def _raise_path_error(exc: OSError, *, target: Path):
     if isinstance(exc, FileNotFoundError):
-        code, message = CapabilityErrorCode.NOT_FOUND, "The file does not exist."
-    elif isinstance(exc, IsADirectoryError) or target.is_dir():
-        code, message = CapabilityErrorCode.INVALID_ARGUMENTS, "Only regular files can be sent to trash in this checkpoint."
+        code, message = CapabilityErrorCode.NOT_FOUND, "The file or directory does not exist."
+    elif isinstance(exc, IsADirectoryError):
+        code, message = CapabilityErrorCode.INVALID_ARGUMENTS, "Only regular files and empty directories can be sent to trash in this checkpoint."
     else:
-        code, message = CapabilityErrorCode.INACCESSIBLE, "The file path is protected, redirected, unavailable, or could not be sent to the Recycle Bin."
+        code, message = CapabilityErrorCode.INACCESSIBLE, "The path is protected, redirected, unavailable, or could not be sent to the Recycle Bin."
     raise CapabilityExecutionError(code, message) from exc

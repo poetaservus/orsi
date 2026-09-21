@@ -10,14 +10,14 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication
 
-from app.agent_bootstrap import build_filesystem_stat_runtime
-from app.agent_config import AgentFeatureConfig
-from app.capabilities.crash_journal import CallLifecycleState
-from app.conversation.service import ConversationService
+from app.agent.bootstrap import build_agent_runtime
+from app.settings.agent import AgentFeatureConfig
+from app.execution.audit import CallLifecycleState
+from app.conversation.orchestrator import ConversationService
 from app.conversation.store import ConversationStore
 from app.inference.hybrid import HybridInferenceEngine
 from app.inference.llama_server_backend import LlamaServerInferenceEngine
-from app.inference.model_config import load_model_config
+from app.settings.model import load_model_config
 from app.ui.main_window import MainWindow
 
 
@@ -54,7 +54,7 @@ def test_real_local_agent_ui_workflow(tmp_path: Path):
 
     local = LlamaServerInferenceEngine(load_model_config())
     inference = HybridInferenceEngine(local=local, cloud=None)
-    runtime = build_filesystem_stat_runtime(
+    runtime = build_agent_runtime(
         inference,
         config=AgentFeatureConfig(filesystem_stat_enabled=True),
         portable_root=portable_root,

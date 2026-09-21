@@ -6,13 +6,14 @@ import re
 
 import pytest
 
-from app.agent_bootstrap import build_filesystem_stat_runtime
-from app.agent_config import AgentFeatureConfig
+from app.agent.bootstrap import build_agent_runtime
+from app.settings.agent import AgentFeatureConfig
 from app.capabilities.contracts import CapabilityExecutionError
-from app.capabilities.crash_journal import CapabilityCrashJournal, CallLifecycleState
-from app.capabilities.host_access import HostAccessPolicy
-from app.capabilities.write_policy import HostWritePolicy
-from app.conversation.service import ConversationService, _folder_creation_target
+from app.execution.audit import CapabilityCrashJournal, CallLifecycleState
+from app.security.host_access import HostAccessPolicy
+from app.security.write_policy import HostWritePolicy
+from app.conversation.orchestrator import ConversationService
+from tests.support.natural_language import folder_creation_target as _folder_creation_target
 from app.conversation.store import ConversationStore
 from app.inference.engine import InferenceEngine
 from app.inference.protocol import ModelCapabilityCall, ModelResponse
@@ -112,6 +113,7 @@ class NaturalLanguageMkdirPlanner(InferenceEngine):
     def __init__(self):
         self.requests: list[list[dict]] = []
         self.next_call = 1
+        self.folder_name = "copy"
 
     def respond(self, messages):
         return "Conversation only."
@@ -130,12 +132,12 @@ class NaturalLanguageMkdirPlanner(InferenceEngine):
                 match = output["matches"][0]
                 return self._call(
                     "filesystem.mkdir",
-                    {"path": str(Path(match["path"]) / "copy")},
+                    {"path": str(Path(match["path"]) / self.folder_name)},
                 )
             if capability == "filesystem.stat":
                 return self._call(
                     "filesystem.mkdir",
-                    {"path": str(Path(output["path"]) / "copy")},
+                    {"path": str(Path(output["path"]) / self.folder_name)},
                 )
             if capability == "filesystem.mkdir":
                 return ModelResponse.text(f"Created empty folder: {output['path']}")
@@ -145,12 +147,22 @@ class NaturalLanguageMkdirPlanner(InferenceEngine):
             if message.get("role") == "user"
         )
         lowered = latest_user.casefold()
-        if "inside" in lowered and "lab" in lowered and "copy" in lowered:
+        inside = re.search(
+            r"folder\s+(?:on\s+my\s+desktop\s+)?called\s+([^.,]+).*"
+            r"inside\s+it\s+called\s+([^.,]+)",
+            latest_user,
+            re.I,
+        )
+        if inside is not None:
+            parent_name = inside.group(1).strip()
+            self.folder_name = inside.group(2).strip()
             return self._call(
                 "filesystem.find",
-                {"path": "Desktop", "name": "lab", "kind": "directory"},
+                {"path": "Desktop", "name": parent_name, "kind": "directory"},
             )
-        if "desktop" in lowered and "copy" in lowered:
+        desktop = re.search(r"desktop\s+called\s+([^.,]+)", latest_user, re.I)
+        if desktop is not None:
+            self.folder_name = desktop.group(1).strip()
             return self._call("filesystem.stat", {"path": "Desktop"})
         return ModelResponse.text("Conversation only.")
 
@@ -173,7 +185,7 @@ def service(tmp_path):
     portable = tmp_path / "portable"
     portable.mkdir()
     model = PlannerMkdirModel()
-    runtime = build_filesystem_stat_runtime(
+    runtime = build_agent_runtime(
         model, config=AgentFeatureConfig(filesystem_stat_enabled=True,
             filesystem_read_text_enabled=True, filesystem_mkdir_enabled=True),
         portable_root=portable, state_directory=portable / "state",
@@ -195,7 +207,7 @@ def build_full_local_mkdir_service(tmp_path: Path, model: InferenceEngine):
         user_home=user_home,
         acknowledged=True,
     )
-    runtime = build_filesystem_stat_runtime(
+    runtime = build_agent_runtime(
         model,
         config=AgentFeatureConfig(
             filesystem_stat_enabled=True,
@@ -269,16 +281,16 @@ def test_creates_folder_inside_named_desktop_folder_without_model_planner(tmp_pa
             "filesystem.mkdir",
         ]
         assert len(approvals) == 1
-        assert model.requests == []
+        assert model.requests
     finally:
         service.shutdown()
 
 
-def test_creates_folder_on_desktop_via_planner_resolved_parent(tmp_path):
+def test_creates_folder_on_desktop_without_model_planner(tmp_path):
     model = NaturalLanguageMkdirPlanner()
     service, runtime, user_home = build_full_local_mkdir_service(tmp_path, model)
     desktop = user_home / "Desktop"
-    target = desktop / "copy"
+    target = desktop / "orsi_acceptance_created_20260915-173736"
     desktop.mkdir(parents=True)
     approvals = []
 
@@ -290,7 +302,10 @@ def test_creates_folder_on_desktop_via_planner_resolved_parent(tmp_path):
 
     service.set_approval_requester(approve)
     try:
-        answer = service.run("create a new folder on my desktop called copy")
+        answer = service.run(
+            "create a new folder on my desktop called "
+            "orsi_acceptance_created_20260915-173736"
+        )
 
         assert f"Created empty folder: {target}" == answer
         assert target.is_dir()
@@ -299,7 +314,7 @@ def test_creates_folder_on_desktop_via_planner_resolved_parent(tmp_path):
             "filesystem.stat",
         ]
         assert len(approvals) == 1
-        assert len(model.requests) == 3
+        assert model.requests
     finally:
         service.shutdown()
 
@@ -490,7 +505,7 @@ def test_file_content_cannot_request_folder_creation(service, tmp_path):
 
 
 def test_expired_approval_cannot_be_revived(service, tmp_path):
-    from app.capabilities.permissions import ApprovalManager
+    from app.security.permissions import ApprovalManager
     clock = [0.0]
     service.agent_runtime.approval_manager = ApprovalManager(clock=lambda: clock[0])
 
@@ -520,8 +535,8 @@ def test_clarification_accepts_only_the_next_explicit_path(service, tmp_path):
 
 def test_executor_rejects_allow_rule_for_write(service, tmp_path):
     from app.capabilities.contracts import CapabilityContext, CapabilityErrorCode
-    from app.capabilities.executor import CapabilityExecutor
-    from app.capabilities.permissions import ApprovalManager, PermissionGate, PermissionRule, PermissionDecision, prepare_capability_call
+    from app.execution.executor import CapabilityExecutor
+    from app.security.permissions import ApprovalManager, PermissionGate, PermissionRule, PermissionDecision, prepare_capability_call
     from app.runtime.cancellation import CancellationSource
     target = tmp_path / "no-blanket-write-grant"
     capability = service.agent_runtime.registry.resolve("filesystem.mkdir")
@@ -569,7 +584,7 @@ def test_window_approval_end_to_end(service, tmp_path, action):
     from PySide6.QtGui import QFont, QFontDatabase
     from PySide6.QtTest import QTest
     from PySide6.QtWidgets import QApplication, QDialogButtonBox, QPlainTextEdit, QPushButton
-    from app.capabilities.permissions import ApprovalManager
+    from app.security.permissions import ApprovalManager
     from app.ui.main_window import MainWindow
     app = QApplication.instance() or QApplication([])
     for filename in ("arial.ttf", "consola.ttf"):

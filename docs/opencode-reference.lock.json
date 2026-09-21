@@ -1,7 +1,7 @@
 {
   "repository": "https://github.com/anomalyco/opencode",
   "branch": "dev",
-  "commit": "1f94d8a3c86b67f4f49a0e341de74e9188381b3a",
-  "pinned_on": "2026-08-12",
-  "purpose": "Architectural guidance only; O.R.S.I remains an independent Python implementation."
+  "commit": "d870e22c70f27103016dcd479edcfebf86136d93",
+  "pinned_on": "2026-09-20",
+  "purpose": "MIT-licensed reference for O.R.S.I's model-first capability routing, structured repair, invalid-call feedback, and continuation flow."
 }

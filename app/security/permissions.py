@@ -21,7 +21,7 @@ from app.capabilities.contracts import (
     CapabilityExecutionError,
     PermissionClass,
 )
-from app.capabilities.path_policy import is_path_within
+from app.security.path_policy import is_path_within
 from app.runtime.cancellation import CancellationToken
 
 

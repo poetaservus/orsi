@@ -5,12 +5,13 @@ from pathlib import Path
 
 import pytest
 
-from app.agent_bootstrap import build_filesystem_stat_runtime
-from app.agent_config import AgentFeatureConfig
+from app.agent.bootstrap import build_agent_runtime
+from app.settings.agent import AgentFeatureConfig
 from app.capabilities.contracts import CapabilityExecutionError
-from app.capabilities.crash_journal import CapabilityCrashJournal, CallLifecycleState
-from app.capabilities.write_policy import HostWritePolicy
-from app.conversation.service import ConversationService, _text_write_request
+from app.execution.audit import CapabilityCrashJournal, CallLifecycleState
+from app.security.write_policy import HostWritePolicy
+from app.conversation.orchestrator import ConversationService
+from tests.support.natural_language import text_write_request as _text_write_request
 from app.conversation.store import ConversationStore
 from app.inference.engine import InferenceEngine
 from app.inference.protocol import ModelCapabilityCall, ModelResponse
@@ -88,7 +89,7 @@ def service(tmp_path):
     portable = tmp_path / "portable"
     portable.mkdir()
     model = PlannerWriteTextModel()
-    runtime = build_filesystem_stat_runtime(
+    runtime = build_agent_runtime(
         model, config=AgentFeatureConfig(filesystem_stat_enabled=True,
             filesystem_read_text_enabled=True, filesystem_write_text_enabled=True),
         portable_root=portable, state_directory=portable / "state",

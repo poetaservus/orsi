@@ -6,17 +6,19 @@ from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
 from time import perf_counter
-from typing import TYPE_CHECKING, Any, ClassVar, Generic, TypeVar
+from typing import Any, ClassVar, Generic, Protocol, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from app.runtime.cancellation import CancellationToken, TaskCancelled
 
-if TYPE_CHECKING:
-    from app.capabilities.host_access import HostAccessPolicy
-
-
 log = logging.getLogger(__name__)
+
+
+class HostAccessPolicyProtocol(Protocol):
+    """Narrow tool-facing view of host path resolution authority."""
+
+    def resolve_read(self, raw: str) -> Any: ...
 
 
 class PermissionClass(StrEnum):
@@ -86,7 +88,7 @@ class CapabilityContext:
     portable_root: Path
     allowed_read_roots: tuple[Path, ...]
     cancellation: CancellationToken
-    host_access_policy: HostAccessPolicy | None = None
+    host_access_policy: HostAccessPolicyProtocol | None = None
     authorized_resource: str | None = None
     authorized_resource_identity: str | None = None
 

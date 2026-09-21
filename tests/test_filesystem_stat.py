@@ -5,12 +5,12 @@ from pathlib import Path
 
 import pytest
 
-from app.capabilities import (
+from app.capabilities.contracts import (
     CapabilityContext,
     CapabilityErrorCode,
-    FilesystemStatCapability,
     PermissionClass,
 )
+from app.capabilities.filesystem_stat import FilesystemStatCapability
 from app.runtime.cancellation import CancellationSource
 
 

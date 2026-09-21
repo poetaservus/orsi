@@ -5,12 +5,14 @@ from pathlib import Path
 
 import pytest
 
-from app.agent_bootstrap import build_filesystem_stat_runtime
-from app.agent_config import AgentFeatureConfig
+from app.agent.bootstrap import build_agent_runtime
+from app.settings.agent import AgentFeatureConfig
 from app.capabilities.contracts import CapabilityExecutionError
-from app.capabilities.crash_journal import CapabilityCrashJournal, CallLifecycleState
-from app.capabilities.write_policy import HostWritePolicy
-from app.conversation.service import ConversationService, _trash_target
+from app.execution.audit import CapabilityCrashJournal, CallLifecycleState
+from app.security.host_access import HostAccessPolicy
+from app.security.write_policy import HostWritePolicy
+from app.conversation.orchestrator import ConversationService
+from tests.support.natural_language import trash_target as _trash_target
 from app.conversation.store import ConversationStore
 from app.inference.engine import InferenceEngine
 from app.inference.protocol import ModelCapabilityCall, ModelResponse
@@ -23,12 +25,18 @@ _PROVIDER_CALL_COUNTER = 0
 
 
 class PlannerTrashModel(InferenceEngine):
+    def __init__(self):
+        self.active_listing_path: str | None = None
+
     def respond(self, messages):
         return "Conversation only."
 
     def respond_with_capabilities(self, messages, capabilities):
         latest = messages[-1]
         if latest.get("role") == "capability":
+            result = latest["result"]
+            if result.get("success") and result.get("capability") == "filesystem.list":
+                self.active_listing_path = result["output"]["path"]
             return ModelResponse.text(_render_result(latest["result"]))
         latest_user = next(
             message["content"]
@@ -41,6 +49,15 @@ class PlannerTrashModel(InferenceEngine):
         target = _trash_target(latest_user)
         if target is not None:
             return _call("filesystem.trash", {"path": target})
+        if "folder called" in lowered and "desktop" in lowered and "list" in lowered:
+            name = lowered.split("folder called", 1)[1].split("on my desktop", 1)[0].strip()
+            return _call("filesystem.list", {"path": str(Path("Desktop") / name)})
+        if self.active_listing_path is not None and "delete" in lowered and "named" in lowered:
+            name = lowered.split("named", 1)[1].strip().rstrip(".?!")
+            return _call(
+                "filesystem.trash",
+                {"path": str(Path(self.active_listing_path) / name)},
+            )
         if "metadata" in lowered or "inspect" in lowered:
             return ModelResponse.text("Which file?")
         if "permanent" in lowered:
@@ -78,9 +95,15 @@ def _render_result(result: dict) -> str:
     capability = result.get("capability")
     output = result.get("output") or {}
     if capability == "filesystem.trash":
+        if output.get("type") == "directory":
+            return f"Sent directory to Recycle Bin: {output['path']}."
         return f"Sent file to Recycle Bin: {output['path']} ({output['bytes_trashed']:,} bytes)."
     if capability == "filesystem.read_text":
         return output.get("text", "")
+    if capability == "filesystem.list":
+        return "\n".join(
+            f"{entry['name']} ({entry['type']})" for entry in output.get("entries", [])
+        )
     return "The requested capability call completed."
 
 
@@ -89,7 +112,7 @@ def service(tmp_path):
     portable = tmp_path / "portable"
     portable.mkdir()
     model = PlannerTrashModel()
-    runtime = build_filesystem_stat_runtime(
+    runtime = build_agent_runtime(
         model, config=AgentFeatureConfig(filesystem_stat_enabled=True,
             filesystem_read_text_enabled=True, filesystem_trash_enabled=True),
         portable_root=portable, state_directory=portable / "state",
@@ -102,7 +125,45 @@ def service(tmp_path):
 
 def _fake_trash(path: Path, cancellation) -> None:
     cancellation.raise_if_cancelled()
-    path.unlink()
+    if path.is_dir():
+        path.rmdir()
+    else:
+        path.unlink()
+
+
+def build_full_local_trash_service(tmp_path: Path, model: InferenceEngine):
+    portable = tmp_path / "portable"
+    user_home = tmp_path / "user-home"
+    portable.mkdir()
+    user_home.mkdir()
+    state = tmp_path / "state"
+    policy = HostAccessPolicy.full_local(
+        application_root=portable,
+        user_home=user_home,
+        acknowledged=True,
+    )
+    runtime = build_agent_runtime(
+        model,
+        config=AgentFeatureConfig(
+            filesystem_stat_enabled=True,
+            filesystem_find_enabled=True,
+            filesystem_list_enabled=True,
+            filesystem_trash_enabled=True,
+            full_local_read_enabled=True,
+        ),
+        portable_root=portable,
+        state_directory=state,
+        host_access_policy=policy,
+    )
+    service = ConversationService(
+        model,
+        ConversationStore(state / "conversation.json"),
+        agent_runtime=runtime,
+        portable_root=portable,
+        allowed_read_roots=policy.permission_roots(),
+        host_access_policy=policy,
+    )
+    return service, runtime, user_home
 
 
 def test_trashes_file_only_after_exact_approval(service, tmp_path, monkeypatch):
@@ -143,6 +204,69 @@ def test_delete_word_routes_to_recycle_bin_trash(service, tmp_path, monkeypatch)
     assert not target.exists()
 
 
+def test_trashes_empty_directory_after_exact_approval(service, tmp_path, monkeypatch):
+    import app.capabilities.filesystem_trash as trash_module
+    monkeypatch.setattr(trash_module, "trash_file", _fake_trash)
+    target = tmp_path / "empty-folder"
+    target.mkdir()
+    previews = []
+
+    def approve(record):
+        previews.append(record)
+        assert record.capability == "filesystem.trash"
+        assert record.resource == str(target)
+        assert f"Path: {target}" in record.approval_preview
+        assert "Type: empty directory" in record.approval_preview
+        service.resolve_approval(record.approval_id, True)
+
+    service.set_approval_requester(approve)
+    answer = service.run(f'delete "{target}"')
+    assert answer == f"Sent directory to Recycle Bin: {target}."
+    assert not target.exists()
+    assert len(previews) == 1
+
+
+def test_deletes_listed_folder_without_model_planner(tmp_path, monkeypatch):
+    import app.capabilities.filesystem_trash as trash_module
+    monkeypatch.setattr(trash_module, "trash_file", _fake_trash)
+    model = PlannerTrashModel()
+    service, runtime, user_home = build_full_local_trash_service(tmp_path, model)
+    parent = user_home / "Desktop" / "orsi_acceptance_gate_20260915-173736"
+    target = parent / "copy"
+    parent.mkdir(parents=True)
+    target.mkdir()
+    (parent / "notes.md").write_text("hello", encoding="utf-8")
+    approvals = []
+
+    def approve(record):
+        approvals.append(record)
+        assert record.capability == "filesystem.trash"
+        assert record.resource == str(target)
+        assert "Type: empty directory" in record.approval_preview
+        service.resolve_approval(record.approval_id, True)
+
+    service.set_approval_requester(approve)
+    try:
+        listing = service.run(
+            "there is a folder called orsi_acceptance_gate_20260915-173736 "
+            "on my desktop, can you list me the items in it?"
+        )
+        assert "copy (directory)" in listing
+
+        answer = service.run("you can delete a folder named copy")
+
+        assert answer == f"Sent directory to Recycle Bin: {target}."
+        assert not target.exists()
+        assert parent.is_dir()
+        assert sorted(record.capability for record in runtime.executor.journal.records) == [
+            "filesystem.list",
+            "filesystem.trash",
+        ]
+        assert len(approvals) == 1
+    finally:
+        service.shutdown()
+
+
 def test_denial_does_not_trash(service, tmp_path, monkeypatch):
     import app.capabilities.filesystem_trash as trash_module
     monkeypatch.setattr(trash_module, "trash_file", _fake_trash)
@@ -173,8 +297,8 @@ def test_missing_and_directory_paths_are_rejected_before_approval(service, tmp_p
     target.write_text("x", encoding="utf-8")
     calls = []
     service.set_approval_requester(calls.append)
-    assert "file does not exist" in service.run(f'trash "{tmp_path / "missing.txt"}"')
-    assert "Only regular files" in service.run(f'trash "{tmp_path}"')
+    assert "file or directory does not exist" in service.run(f'trash "{tmp_path / "missing.txt"}"')
+    assert "Only empty directories" in service.run(f'trash "{tmp_path}"')
     assert calls == []
 
 

@@ -8,13 +8,13 @@ from types import SimpleNamespace
 
 import pytest
 
-import app.agent_config as agent_config_module
-from app.agent_bootstrap import build_filesystem_stat_runtime
-from app.agent_config import AgentFeatureConfig, load_agent_feature_config
-from app.agent_runtime import AgentRuntime
-from app.capabilities.crash_journal import CallLifecycleState
+import app.settings.agent as agent_config_module
+from app.agent.bootstrap import build_agent_runtime
+from app.settings.agent import AgentFeatureConfig, load_agent_feature_config
+from app.agent.runtime import AgentRuntime
+from app.execution.audit import CallLifecycleState
 from app.conversation.prompt import AGENT_SYSTEM_PROMPT, SYSTEM_PROMPT
-from app.conversation.service import ConversationService
+from app.conversation.orchestrator import ConversationService
 from app.conversation.store import ConversationStore
 from app.inference.engine import InferenceEngine, InferenceUnavailable
 from app.inference.protocol import ModelCapabilityCall, ModelResponse
@@ -69,7 +69,7 @@ def build_service(tmp_path: Path, model: InferenceEngine):
     portable_root = tmp_path / "portable"
     portable_root.mkdir()
     state = tmp_path / "state"
-    runtime = build_filesystem_stat_runtime(
+    runtime = build_agent_runtime(
         model,
         config=AgentFeatureConfig(filesystem_stat_enabled=True),
         portable_root=portable_root,
@@ -98,8 +98,9 @@ def test_checked_in_config_enables_requested_read_capabilities(monkeypatch):
         "ORSI_ENABLE_FILESYSTEM_WRITE_TEXT",
         "ORSI_ENABLE_FILESYSTEM_COPY",
         "ORSI_ENABLE_FILESYSTEM_MOVE",
-        "ORSI_ENABLE_FILESYSTEM_TRASH",
-        "ORSI_ENABLE_FULL_LOCAL_READ",
+            "ORSI_ENABLE_FILESYSTEM_TRASH",
+            "ORSI_ENABLE_APPLICATION_LAUNCH",
+            "ORSI_ENABLE_FULL_LOCAL_READ",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -114,6 +115,7 @@ def test_checked_in_config_enables_requested_read_capabilities(monkeypatch):
         filesystem_copy_enabled=True,
         filesystem_move_enabled=True,
         filesystem_trash_enabled=True,
+        application_launch_enabled=True,
         full_local_read_enabled=True,
     )
 
@@ -144,7 +146,7 @@ def test_feature_gate_supports_explicit_file_and_environment_values(
 
 
 def test_disabled_gate_builds_nothing(tmp_path: Path):
-    runtime = build_filesystem_stat_runtime(
+    runtime = build_agent_runtime(
         object(),
         config=AgentFeatureConfig(filesystem_stat_enabled=False),
         portable_root=tmp_path,
@@ -175,7 +177,7 @@ def test_enabled_bootstrap_exposes_exactly_filesystem_stat(tmp_path: Path):
 
 def _prepared_call(runtime: AgentRuntime, portable_root: Path):
     from app.capabilities.contracts import CapabilityContext
-    from app.capabilities.permissions import prepare_capability_call
+    from app.security.permissions import prepare_capability_call
     from app.runtime.cancellation import CancellationToken
 
     capability = runtime.registry.resolve("filesystem.stat")
@@ -323,7 +325,7 @@ def test_agent_prompt_describes_the_exact_metadata_boundary():
 
 
 def test_application_bootstrap_wires_agent_only_when_enabled(monkeypatch, tmp_path: Path):
-    import app.main as main
+    import app.startup as main
 
     model = ScriptedStatModel([ModelResponse.text("ready")])
     server = tmp_path / "runtime" / "llama-server" / "llama-server.exe"
@@ -364,7 +366,7 @@ def test_application_bootstrap_wires_agent_only_when_enabled(monkeypatch, tmp_pa
 def test_application_bootstrap_fails_closed_to_chat_when_agent_start_fails(
     monkeypatch, tmp_path: Path
 ):
-    import app.main as main
+    import app.startup as main
 
     model = ScriptedStatModel([ModelResponse.text("ready")])
     server = tmp_path / "runtime" / "llama-server" / "llama-server.exe"
@@ -393,7 +395,7 @@ def test_application_bootstrap_fails_closed_to_chat_when_agent_start_fails(
     )
     monkeypatch.setattr(
         main,
-        "build_filesystem_stat_runtime",
+        "build_agent_runtime",
         lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("unsafe state")),
     )
 
@@ -410,8 +412,8 @@ def test_application_uses_native_server_factory_for_enabled_local_agent(
     monkeypatch,
     tmp_path: Path,
 ):
-    import app.main as main
-    from app.inference.model_config import ModelConfig
+    import app.startup as main
+    from app.settings.model import ModelConfig
 
     model_path = tmp_path / "model.gguf"
     model_path.touch()
@@ -471,8 +473,8 @@ def test_application_falls_back_to_chat_when_native_server_is_missing(
     monkeypatch,
     tmp_path: Path,
 ):
-    import app.main as main
-    from app.inference.model_config import ModelConfig
+    import app.startup as main
+    from app.settings.model import ModelConfig
 
     model_path = tmp_path / "model.gguf"
     model_path.touch()

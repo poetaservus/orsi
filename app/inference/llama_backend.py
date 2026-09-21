@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Iterable
 
 from app.inference.engine import InferenceEngine, InferenceUnavailable
-from app.inference.model_config import ModelConfig
+from app.settings.model import ModelConfig
 from app.inference.protocol import (
     ModelCapabilityDefinition,
     ModelResponse,

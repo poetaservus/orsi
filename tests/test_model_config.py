@@ -1,4 +1,4 @@
-from app.inference.model_config import ModelConfig
+from app.settings.model import ModelConfig
 
 
 def config(tmp_path, **overrides):

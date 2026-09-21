@@ -7,7 +7,7 @@ from enum import IntEnum, StrEnum
 from pathlib import Path
 
 from app.capabilities.contracts import CapabilityErrorCode, CapabilityExecutionError
-from app.capabilities.path_policy import ResolvedPath, resolve_read_path
+from app.security.path_policy import ResolvedPath, resolve_read_path
 
 
 FULL_LOCAL_READ_WARNING = (
@@ -138,7 +138,7 @@ class HostAccessPolicy:
                 raise ValueError(
                     "Full local read access is available only on the Windows host adapter."
                 )
-            configured_roots = self.local_read_roots or _windows_local_drive_roots()
+            configured_roots = self.local_read_roots or windows_local_drive_roots()
             if not configured_roots:
                 raise ValueError("No enabled local filesystem drives are available.")
             if not all(isinstance(root, Path) for root in configured_roots):
@@ -296,7 +296,7 @@ def _windows_drive_type(root: Path) -> WindowsDriveType:
         return WindowsDriveType.UNKNOWN
 
 
-def _windows_local_drive_roots() -> tuple[Path, ...]:
+def windows_local_drive_roots() -> tuple[Path, ...]:
     if os.name != "nt":
         return ()
     try:

@@ -6,13 +6,13 @@ from pathlib import Path
 import pytest
 
 import app.capabilities.filesystem_search as search_module
-from app.capabilities import (
+from app.capabilities.contracts import (
     CapabilityContext,
     CapabilityErrorCode,
-    FilesystemSearchCapability,
     PermissionClass,
 )
-from app.capabilities.host_access import HostAccessPolicy
+from app.capabilities.filesystem_search import FilesystemSearchCapability
+from app.security.host_access import HostAccessPolicy
 from app.runtime.cancellation import CancellationSource
 
 

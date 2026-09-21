@@ -1,9 +1,9 @@
 {
   "model_path": "models/model.gguf",
-  "context_length": "auto",
+  "context_length": 4096,
   "minimum_context_length": 4096,
   "maximum_context_length": 32768,
-  "cpu_context_length": 8192,
+  "cpu_context_length": 4096,
   "context_vram_fraction": 0.8,
   "context_free_vram_fraction": 0.9,
   "context_model_size_multiplier": 1.2,

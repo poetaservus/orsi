@@ -20,7 +20,7 @@ from app.capabilities.contracts import (
     ExecutionIsolation,
     PermissionClass,
 )
-from app.capabilities.permissions import (
+from app.security.permissions import (
     ApprovalStatus,
     AuthorizationCode,
     PermissionAuthorization,
@@ -212,9 +212,9 @@ class CapabilityExecutor:
                 worker.join(self._limits.cancellation_grace_seconds)
                 if worker.is_alive():
                     poisoned = True
-                if prepared.request.permission == PermissionClass.WRITE:
+                if _has_external_side_effect(prepared.request.permission):
                     stop_code = CapabilityErrorCode.OUTCOME_UNKNOWN
-                    stop_message = "The write was interrupted; its outcome needs review before any retry."
+                    stop_message = "The action was interrupted; its outcome needs review before any retry."
                 return self._failure(
                     prepared,
                     started,
@@ -329,9 +329,11 @@ class CapabilityExecutor:
             return "The permission decision cannot authorize execution."
         if authorization.request_sha256 != prepared.request.request_sha256:
             return "The authorization does not match the prepared capability call."
-        if (prepared.request.permission == PermissionClass.WRITE
-                and authorization.decision != PermissionDecision.ASK):
-            return "Host writes require explicit approval for each exact call."
+        if (
+            _has_external_side_effect(prepared.request.permission)
+            and authorization.decision != PermissionDecision.ASK
+        ):
+            return "State-changing and execution capabilities require explicit approval for each exact call."
         if authorization.decision == PermissionDecision.ASK and (
             authorization.approval_id is None
             or authorization.approval_status != ApprovalStatus.CONSUMED
@@ -371,9 +373,9 @@ class CapabilityExecutor:
         error: BaseException,
     ) -> CapabilityResult:
         if isinstance(error, TaskCancelled):
-            if prepared.request.permission == PermissionClass.WRITE:
+            if _has_external_side_effect(prepared.request.permission):
                 return self._failure(prepared, started, CapabilityErrorCode.OUTCOME_UNKNOWN,
-                    "The write was interrupted; its outcome needs review before any retry.")
+                    "The action was interrupted; its outcome needs review before any retry.")
             return self._failure(
                 prepared,
                 started,
@@ -383,9 +385,9 @@ class CapabilityExecutor:
         if isinstance(error, CapabilityExecutionError):
             return self._failure(prepared, started, error.code, str(error))
         if isinstance(error, _InvalidCapabilityOutput):
-            if prepared.request.permission == PermissionClass.WRITE:
+            if _has_external_side_effect(prepared.request.permission):
                 return self._failure(prepared, started, CapabilityErrorCode.OUTCOME_UNKNOWN,
-                    "The write result could not be verified. Review the target before any retry.")
+                    "The action result could not be verified. Review the target before any retry.")
             return self._failure(
                 prepared,
                 started,
@@ -400,10 +402,10 @@ class CapabilityExecutor:
         return self._failure(
             prepared,
             started,
-            (CapabilityErrorCode.OUTCOME_UNKNOWN if prepared.request.permission == PermissionClass.WRITE
+            (CapabilityErrorCode.OUTCOME_UNKNOWN if _has_external_side_effect(prepared.request.permission)
              else CapabilityErrorCode.INTERNAL_ERROR),
-            ("The write result could not be verified. Review the target before any retry."
-             if prepared.request.permission == PermissionClass.WRITE
+            ("The action result could not be verified. Review the target before any retry."
+             if _has_external_side_effect(prepared.request.permission)
              else "The capability failed unexpectedly."),
         )
 
@@ -529,3 +531,11 @@ class CapabilityExecutor:
     @staticmethod
     def _duration_ms(started: float) -> int:
         return max(0, int((perf_counter() - started) * 1000))
+
+
+def _has_external_side_effect(permission: PermissionClass) -> bool:
+    return permission in {
+        PermissionClass.WRITE,
+        PermissionClass.EXECUTE,
+        PermissionClass.SYSTEM,
+    }

@@ -5,12 +5,14 @@ from pathlib import Path
 
 import pytest
 
-from app.agent_bootstrap import build_filesystem_stat_runtime
-from app.agent_config import AgentFeatureConfig
+from app.agent.bootstrap import build_agent_runtime
+from app.settings.agent import AgentFeatureConfig
+from app.security.host_access import HostAccessPolicy
 from app.capabilities.contracts import CapabilityExecutionError
-from app.capabilities.crash_journal import CapabilityCrashJournal, CallLifecycleState
-from app.capabilities.write_policy import HostWritePolicy
-from app.conversation.service import ConversationService, _move_request
+from app.execution.audit import CapabilityCrashJournal, CallLifecycleState
+from app.security.write_policy import HostWritePolicy
+from app.conversation.orchestrator import ConversationService
+from tests.support.natural_language import move_request as _move_request
 from app.conversation.store import ConversationStore
 from app.inference.engine import InferenceEngine
 from app.inference.protocol import ModelCapabilityCall, ModelResponse
@@ -23,12 +25,18 @@ _PROVIDER_CALL_COUNTER = 0
 
 
 class PlannerMoveModel(InferenceEngine):
+    def __init__(self):
+        self.active_listing_path: str | None = None
+
     def respond(self, messages):
         return "Conversation only."
 
     def respond_with_capabilities(self, messages, capabilities):
         latest = messages[-1]
         if latest.get("role") == "capability":
+            result = latest["result"]
+            if result.get("success") and result.get("capability") == "filesystem.list":
+                self.active_listing_path = result["output"]["path"]
             return ModelResponse.text(_render_result(latest["result"]))
         latest_user = next(
             message["content"]
@@ -47,6 +55,20 @@ class PlannerMoveModel(InferenceEngine):
                     "source_path": source_path,
                     "destination_path": destination_path,
                     "on_collision": on_collision,
+                },
+            )
+        if "folder on my desktop called" in lowered and "what's in it" in lowered:
+            name = lowered.split("folder on my desktop called", 1)[1].split("can you", 1)[0].strip()
+            return _call("filesystem.list", {"path": str(Path("Desktop") / name)})
+        if self.active_listing_path is not None and "move " in lowered and " to " in lowered:
+            name = lowered.split("move ", 1)[1].split(" to ", 1)[0].strip()
+            home = Path(self.active_listing_path).parents[1]
+            return _call(
+                "filesystem.move",
+                {
+                    "source_path": str(Path(self.active_listing_path) / name),
+                    "destination_path": str(home / "Documents" / name),
+                    "on_collision": "fail",
                 },
             )
         if "metadata" in lowered or "inspect" in lowered:
@@ -90,6 +112,10 @@ def _render_result(result: dict) -> str:
         )
     if capability == "filesystem.read_text":
         return output.get("text", "")
+    if capability == "filesystem.list":
+        return "\n".join(
+            f"{entry['name']} ({entry['type']})" for entry in output.get("entries", [])
+        )
     return "The requested capability call completed."
 
 
@@ -98,7 +124,7 @@ def service(tmp_path):
     portable = tmp_path / "portable"
     portable.mkdir()
     model = PlannerMoveModel()
-    runtime = build_filesystem_stat_runtime(
+    runtime = build_agent_runtime(
         model, config=AgentFeatureConfig(filesystem_stat_enabled=True,
             filesystem_read_text_enabled=True, filesystem_move_enabled=True),
         portable_root=portable, state_directory=portable / "state",
@@ -107,6 +133,41 @@ def service(tmp_path):
                                   agent_runtime=runtime, portable_root=portable)
     yield service
     service.shutdown()
+
+
+def build_full_local_move_service(tmp_path: Path, model: InferenceEngine):
+    portable = tmp_path / "portable"
+    user_home = tmp_path / "user-home"
+    portable.mkdir()
+    user_home.mkdir()
+    state = tmp_path / "state"
+    policy = HostAccessPolicy.full_local(
+        application_root=portable,
+        user_home=user_home,
+        acknowledged=True,
+    )
+    runtime = build_agent_runtime(
+        model,
+        config=AgentFeatureConfig(
+            filesystem_stat_enabled=True,
+            filesystem_find_enabled=True,
+            filesystem_list_enabled=True,
+            filesystem_move_enabled=True,
+            full_local_read_enabled=True,
+        ),
+        portable_root=portable,
+        state_directory=state,
+        host_access_policy=policy,
+    )
+    service = ConversationService(
+        model,
+        ConversationStore(state / "conversation.json"),
+        agent_runtime=runtime,
+        portable_root=portable,
+        allowed_read_roots=policy.permission_roots(),
+        host_access_policy=policy,
+    )
+    return service, runtime, user_home
 
 
 def test_moves_new_file_only_after_exact_approval(service, tmp_path):
@@ -137,6 +198,45 @@ def test_moves_new_file_only_after_exact_approval(service, tmp_path):
     records = service.agent_runtime.executor.journal.records
     assert len(records) == 1 and records[0].state == CallLifecycleState.COMPLETED
     assert all("tool_calls" not in message for message in service._agent_history)
+
+
+def test_moves_active_listing_file_to_documents_without_model_planner(tmp_path):
+    model = PlannerMoveModel()
+    service, runtime, user_home = build_full_local_move_service(tmp_path, model)
+    lab = user_home / "Desktop" / "lab"
+    documents = user_home / "Documents"
+    source = lab / "work_css"
+    destination = documents / "work_css"
+    lab.mkdir(parents=True)
+    documents.mkdir(parents=True)
+    source.write_text("move me", encoding="utf-8")
+    approvals = []
+
+    def approve(record):
+        approvals.append(record)
+        assert record.capability == "filesystem.move"
+        assert record.resource == str(destination)
+        service.resolve_approval(record.approval_id, True)
+
+    service.set_approval_requester(approve)
+    try:
+        listing = service.run(
+            "there is a folder on my desktop called lab can you check what's in it?"
+        )
+        assert "work_css (file)" in listing
+
+        answer = service.run("can you move work_css to the documents?")
+
+        assert answer == f"Moved file: {destination} (7 bytes, created)."
+        assert not source.exists()
+        assert destination.read_text(encoding="utf-8") == "move me"
+        assert sorted(record.capability for record in runtime.executor.journal.records) == [
+            "filesystem.list",
+            "filesystem.move",
+        ]
+        assert len(approvals) == 1
+    finally:
+        service.shutdown()
 
 
 def test_denial_does_not_move(service, tmp_path):

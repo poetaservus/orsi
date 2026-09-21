@@ -6,27 +6,31 @@ from pathlib import Path
 import pytest
 from pydantic import BaseModel, ConfigDict
 
-import app.capabilities.crash_journal as crash_journal_module
-from app.capabilities import (
-    ApprovalManager,
-    ApprovalStatus,
-    CallLifecycleState,
+import app.execution.audit as crash_journal_module
+from app.capabilities.contracts import (
     Capability,
     CapabilityContext,
-    CapabilityCrashJournal,
     CapabilityErrorCode,
-    CapabilityExecutor,
     CapabilityFailure,
     CapabilityResult,
+    ExecutionIsolation,
+    PermissionClass,
+)
+from app.capabilities.filesystem_stat import FilesystemStatCapability
+from app.execution.audit import (
+    CallLifecycleState,
+    CapabilityCrashJournal,
     CrashJournalCorruptionError,
     CrashJournalPersistenceError,
     DuplicateCallIdError,
-    ExecutionIsolation,
-    FilesystemStatCapability,
     JournaledCapabilityExecutor,
     JournalRetentionPolicy,
     LifecycleTransitionError,
-    PermissionClass,
+)
+from app.execution.executor import CapabilityExecutor
+from app.security.permissions import (
+    ApprovalManager,
+    ApprovalStatus,
     PermissionDecision,
     PermissionGate,
     PermissionRule,
@@ -479,7 +483,7 @@ def test_production_entrypoints_remain_disconnected_from_crash_journal():
     root = Path(__file__).resolve().parents[1]
     for relative in (
         "app/main.py",
-        "app/conversation/service.py",
+        "app/conversation/orchestrator.py",
         "app/conversation/prompt.py",
     ):
         text = (root / relative).read_text(encoding="utf-8")

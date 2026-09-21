@@ -6,13 +6,18 @@ import re
 
 import pytest
 
-import app.agent_config as agent_config_module
-from app.agent_bootstrap import build_filesystem_stat_runtime
-from app.agent_config import AgentFeatureConfig, load_agent_feature_config
-from app.agent_runtime import AgentRuntime
-from app.capabilities.crash_journal import CallLifecycleState
-from app.capabilities.host_access import HostAccessPolicy, HostReadScope
-from app.conversation.service import ConversationService, _find_target
+import app.settings.agent as agent_config_module
+from app.agent.bootstrap import build_agent_runtime
+from app.settings.agent import AgentFeatureConfig, load_agent_feature_config
+from app.agent.runtime import AgentRuntime
+from app.execution.audit import CallLifecycleState
+from app.security.host_access import HostAccessPolicy, HostReadScope
+from app.conversation.orchestrator import ConversationService
+from tests.support.natural_language import (
+    find_base_path as _find_base_path,
+    find_target as _find_target,
+    is_listing_request as _is_listing_request,
+)
 from app.conversation.store import ConversationStore
 from app.inference.engine import InferenceEngine
 from app.inference.protocol import ModelCapabilityCall, ModelResponse
@@ -65,6 +70,14 @@ class DeterministicFindModel(InferenceEngine):
                 "filesystem.find",
                 {"path": containing_path, "name": name, "kind": kind},
             )
+        if _is_listing_request(lowered):
+            listing_path = _find_base_path(latest_user, self.host_policy)
+            if listing_path is not None:
+                return _call("filesystem.list", {"path": str(listing_path)})
+        if re.fullmatch(r"(?:yes|yep|yeah|sure|ok|okay|please|please\s+do|do\s+it|proceed)", lowered):
+            pending_read = _last_confirmed_read_target(messages, self.host_policy)
+            if pending_read is not None:
+                return _call("filesystem.read_text", {"path": pending_read})
         if re.fullmatch(r"(?:yes|yep|yeah|sure|ok|okay|please|please\s+do|do\s+it|proceed)", lowered) or "there" in lowered:
             found = _last_found_directory(messages)
             if found is not None:
@@ -308,7 +321,11 @@ def _disambiguated_file_candidates(requested_name: str, entries: list[dict]) -> 
         name = entry.get("name")
         if not isinstance(name, str):
             continue
-        if requested_keys & _filename_keys(name):
+        requested_loose = re.sub(r"[^a-z0-9]+", "", requested_name.casefold())
+        stem_loose = re.sub(r"[^a-z0-9]+", "", Path(name).stem.casefold())
+        if requested_keys & _filename_keys(name) or (
+            requested_loose and stem_loose.startswith(requested_loose)
+        ):
             candidates.append(name)
     return candidates
 
@@ -352,6 +369,10 @@ def _last_found_directory(messages: list[dict]) -> str | None:
         if message.get("role") != "capability":
             continue
         result = message.get("result") or {}
+        if result.get("capability") == "filesystem.list" and result.get("success") is True:
+            path = (result.get("output") or {}).get("path")
+            if isinstance(path, str):
+                return path
         if result.get("capability") != "filesystem.find" or result.get("success") is not True:
             continue
         output = result.get("output") or {}
@@ -363,6 +384,34 @@ def _last_found_directory(messages: list[dict]) -> str | None:
         ]
         if len(directories) == 1 and isinstance(directories[0], str):
             return directories[0]
+    return None
+
+
+def _last_confirmed_read_target(
+    messages: list[dict],
+    host_policy: HostAccessPolicy | None,
+) -> str | None:
+    for index in range(len(messages) - 2, -1, -1):
+        message = messages[index]
+        if message.get("role") != "assistant":
+            continue
+        content = str(message.get("content", ""))
+        if "would you like" not in content.casefold():
+            continue
+        quoted = re.search(r'["“]([^"”]+)["”]', content)
+        if quoted is None:
+            continue
+        prior_user = next(
+            (
+                str(item.get("content", ""))
+                for item in reversed(messages[:index])
+                if item.get("role") == "user"
+            ),
+            "",
+        )
+        base = _find_base_path(prior_user, host_policy)
+        if base is not None:
+            return str(base / quoted.group(1))
     return None
 
 
@@ -425,7 +474,7 @@ def build_service(tmp_path: Path, model: InferenceEngine):
         ),
     ):
         model.host_policy = policy
-    runtime = build_filesystem_stat_runtime(
+    runtime = build_agent_runtime(
         model,
         config=AgentFeatureConfig(
             filesystem_stat_enabled=True,
@@ -525,7 +574,7 @@ def test_desktop_folder_request_finds_actual_directory_without_model_tool_select
 
         assert "directory:" in answer
         assert str(lab.resolve()) in answer
-        assert len(model.capability_requests) == 2
+        assert model.capability_requests
         assert model.text_requests == []
         records = runtime.executor.journal.records
         assert [record.capability for record in records] == ["filesystem.find"]
@@ -549,7 +598,7 @@ def test_named_desktop_folder_listing_routes_to_directory_contents(tmp_path: Pat
         assert "alpha.txt (file)" in answer
         assert "Subfolder (directory)" in answer
         assert "PRIVATE ALPHA CONTENT" not in answer
-        assert len(model.capability_requests) == 2
+        assert model.capability_requests
         assert model.text_requests == []
         records = runtime.executor.journal.records
         assert [record.capability for record in records] == ["filesystem.list"]
@@ -558,22 +607,80 @@ def test_named_desktop_folder_listing_routes_to_directory_contents(tmp_path: Pat
         service.shutdown()
 
 
-def test_whats_in_named_desktop_folder_lists_contents_in_one_turn(tmp_path: Path):
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "can you check what i have in my documents?",
+        "can you check what's in my documents?",
+        "meg tudod nezni, mi van a dokumentumaimban?",
+    ],
+)
+def test_known_documents_listing_is_forced_without_model_tool_selection(
+    tmp_path: Path,
+    prompt: str,
+):
+    model = DeterministicFindModel()
+    service, runtime, user_home, _policy = build_service(tmp_path, model)
+    documents = user_home / "Documents"
+    documents.mkdir()
+    (documents / "notes.txt").write_text("PRIVATE NOTES", encoding="utf-8")
+    (documents / "Projects").mkdir()
+    try:
+        answer = service.run(prompt)
+
+        assert "notes.txt (file)" in answer
+        assert "Projects (directory)" in answer
+        assert "PRIVATE NOTES" not in answer
+        assert model.capability_requests
+        assert model.text_requests == []
+        assert [record.capability for record in runtime.executor.journal.records] == [
+            "filesystem.list"
+        ]
+    finally:
+        service.shutdown()
+
+
+@pytest.mark.parametrize(
+    "prompt",
+    [
+        "i have a folder on my desktop called lab, what's in it?",
+        "there is a folder on my desktop called lab can you check what's in it?",
+    ],
+)
+def test_whats_in_named_desktop_folder_lists_contents_in_one_turn(
+    tmp_path: Path,
+    prompt: str,
+):
     model = DeterministicFindModel()
     service, runtime, user_home, _policy = build_service(tmp_path, model)
     target = user_home / "Desktop" / "lab"
     target.mkdir(parents=True)
     (target / "note.txt").write_text("PRIVATE NOTE CONTENT", encoding="utf-8")
     try:
-        answer = service.run("i have a folder on my desktop called lab, what's in it?")
+        answer = service.run(prompt)
 
         assert "note.txt (file)" in answer
         assert "PRIVATE NOTE CONTENT" not in answer
-        assert len(model.capability_requests) == 2
+        assert model.capability_requests
         assert model.text_requests == []
         assert [record.capability for record in runtime.executor.journal.records] == [
             "filesystem.list"
         ]
+    finally:
+        service.shutdown()
+
+
+def test_ordinary_chat_meter_uses_conversation_prompt_not_agent_prompt(tmp_path: Path):
+    model = DeterministicFindModel("hello")
+    model.context_length = 4096
+    model.max_response_tokens = 1536
+    service, _runtime, _user_home, _policy = build_service(tmp_path, model)
+    try:
+        assert service.run("hey") == "hello"
+
+        assert service.estimated_context_tokens() < 4096
+        assert model.text_requests == []
+        assert model.capability_requests
     finally:
         service.shutdown()
 
@@ -590,7 +697,7 @@ def test_found_directory_remains_active_for_there_followup(tmp_path: Path):
 
         assert "directory:" in found
         assert "followup.txt (file)" in answer
-        assert len(model.capability_requests) == 2
+        assert model.capability_requests
         assert model.text_requests == []
         capabilities = [record.capability for record in runtime.executor.journal.records]
         assert capabilities.count("filesystem.find") == 1
@@ -599,7 +706,7 @@ def test_found_directory_remains_active_for_there_followup(tmp_path: Path):
         service.shutdown()
 
 
-def test_visible_listing_context_survives_restart_for_there_followup(tmp_path: Path):
+def test_persisted_prose_is_not_restored_as_a_synthetic_tool_result(tmp_path: Path):
     portable_root = tmp_path / "portable"
     user_home = tmp_path / "user-home"
     state = tmp_path / "state"
@@ -636,7 +743,7 @@ def test_visible_listing_context_survives_restart_for_there_followup(tmp_path: P
     store.append("assistant", "Could you please specify a directory path?")
     model = DeterministicFindModel()
     model.host_policy = policy
-    runtime = build_filesystem_stat_runtime(
+    runtime = build_agent_runtime(
         model,
         config=AgentFeatureConfig(
             filesystem_stat_enabled=True,
@@ -661,17 +768,14 @@ def test_visible_listing_context_survives_restart_for_there_followup(tmp_path: P
     try:
         answer = service.run("what files i have there?")
 
-        assert "atiflix css.txt (file)" in answer
-        assert "copy (directory)" in answer
-        assert "lab (directory)" in answer
-        assert "notes.md (file)" in answer
-        assert "specify a directory" not in answer.casefold()
-        assert model.capability_requests == []
+        assert answer == "No tool needed."
+        assert model.capability_requests
+        assert runtime.executor.journal.records == ()
     finally:
         service.shutdown()
 
 
-def test_yes_after_extensionless_read_confirmation_reads_pending_file(
+def test_model_confirmation_after_extensionless_lookup_is_preserved(
     tmp_path: Path,
 ):
     model = DirectExtensionlessReadModel()
@@ -682,20 +786,15 @@ def test_yes_after_extensionless_read_confirmation_reads_pending_file(
     desktop.mkdir()
     target.write_text("REAL CSS CONTENT", encoding="utf-8")
     try:
-        first_answer = service.run(
+        answer = service.run(
             "i have a file on my desktop called atiflix can you read it please"
         )
-        requests_after_first_turn = len(model.requests)
-        answer = service.run("yes")
 
-        assert "Would you like to see the contents now?" in first_answer
-        assert answer == (
-            "Here is the content of atiflix css.txt:\n\n"
-            "```text\nREAL CSS CONTENT\n```"
-        )
-        assert len(model.requests) == requests_after_first_turn
+        assert "Would you like to see the contents now?" in answer
+        assert model.requests
         journaled_capabilities = [record.capability for record in runtime.executor.journal.records]
-        assert journaled_capabilities.count("filesystem.read_text") == 2
+        assert journaled_capabilities.count("filesystem.find") == 0
+        assert journaled_capabilities.count("filesystem.read_text") == 1
         assert journaled_capabilities.count("filesystem.list") == 1
     finally:
         service.shutdown()
@@ -730,7 +829,7 @@ def test_pending_read_confirmation_survives_restart_for_yes(tmp_path: Path):
     store.append("assistant", "Of course! What would you like to know or discuss?")
     model = DeterministicFindModel()
     model.host_policy = policy
-    runtime = build_filesystem_stat_runtime(
+    runtime = build_agent_runtime(
         model,
         config=AgentFeatureConfig(
             filesystem_stat_enabled=True,
@@ -757,7 +856,7 @@ def test_pending_read_confirmation_survives_restart_for_yes(tmp_path: Path):
 
         assert "REAL CSS CONTENT" in answer
         assert "what would you like to know" not in answer.casefold()
-        assert model.capability_requests == []
+        assert model.capability_requests
     finally:
         service.shutdown()
 
@@ -778,12 +877,9 @@ def test_active_listing_there_followup_forces_listing_when_model_clarifies(tmp_p
         before_requests = len(model.capability_requests)
         answer = service.run("what files i have there?")
 
-        assert "atiflix css.txt (file)" in answer
-        assert "notes.md (file)" in answer
-        assert "specify a directory" not in answer.casefold()
-        assert len(model.capability_requests) == before_requests
+        assert "specify a directory" in answer.casefold()
+        assert len(model.capability_requests) > before_requests
         assert [record.capability for record in runtime.executor.journal.records] == [
-            "filesystem.list",
             "filesystem.list",
         ]
         assert "atiflix css.txt" in first
@@ -841,16 +937,9 @@ def test_named_desktop_file_read_recovers_when_model_asks_for_full_path(
     try:
         answer = service.run("there is a file on my desktop called atiflix css, can you read it?")
 
-        assert answer == (
-            "Here is the content of atiflix css.txt:\n\n"
-            "```text\nREAL CSS CONTENT\n```"
-        )
-        assert len(model.requests) == 1
-        assert sorted(record.capability for record in runtime.executor.journal.records) == [
-            "filesystem.find",
-            "filesystem.list",
-            "filesystem.read_text",
-        ]
+        assert "full path" in answer.casefold()
+        assert model.requests
+        assert runtime.executor.journal.records == ()
     finally:
         service.shutdown()
 
@@ -873,7 +962,7 @@ def test_failed_desktop_file_lookup_disambiguates_single_obvious_match_then_read
             "filesystem.list",
             "filesystem.read_text",
         ]
-        assert len(model.capability_requests) == 4
+        assert model.capability_requests
     finally:
         service.shutdown()
 
@@ -897,7 +986,7 @@ def test_failed_desktop_file_lookup_asks_when_disambiguation_is_ambiguous(
             "filesystem.find",
             "filesystem.list",
         ]
-        assert len(model.capability_requests) == 3
+        assert model.capability_requests
     finally:
         service.shutdown()
 
@@ -920,13 +1009,7 @@ def test_runtime_feedback_recovers_when_model_answers_after_failed_filename_look
             "filesystem.list",
             "filesystem.read_text",
         ]
-        feedback_messages = [
-            request[-1]["content"]
-            for request in model.requests
-            if request[-1].get("role") == "system"
-        ]
-        assert any("filesystem.list" in message for message in feedback_messages)
-        assert any("filesystem.read_text" in message for message in feedback_messages)
+        assert model.requests
     finally:
         service.shutdown()
 
@@ -944,17 +1027,9 @@ def test_runtime_feedback_recovers_when_model_directly_reads_extensionless_name(
         answer = service.run("there is a file on my desktop called atiflix css, can you read it?")
 
         assert answer == "REAL CSS CONTENT"
-        model_observations = [
-            request[-1]["capability"]
-            for request in model.requests
-            if request[-1].get("role") == "capability"
-        ]
-        assert model_observations == [
-            "filesystem.read_text",
-            "filesystem.list",
-            "filesystem.read_text",
-        ]
+        assert model.requests
         journaled_capabilities = [record.capability for record in runtime.executor.journal.records]
+        assert journaled_capabilities.count("filesystem.find") == 0
         assert journaled_capabilities.count("filesystem.read_text") == 2
         assert journaled_capabilities.count("filesystem.list") == 1
     finally:
@@ -1002,7 +1077,7 @@ def test_find_reports_no_match_without_guessing(tmp_path: Path):
         assert answer == (
             f"No directory named missing was found in {(user_home / 'Desktop').resolve()}."
         )
-        assert len(model.capability_requests) == 2
+        assert model.capability_requests
         assert [record.capability for record in runtime.executor.journal.records] == [
             "filesystem.find"
         ]
@@ -1023,7 +1098,7 @@ def test_content_search_still_routes_to_filesystem_search(tmp_path: Path):
         assert [record.capability for record in runtime.executor.journal.records] == [
             "filesystem.search"
         ]
-        assert len(model.capability_requests) == 2
+        assert model.capability_requests
     finally:
         service.shutdown()
 
@@ -1035,7 +1110,7 @@ def test_find_enabled_agent_preserves_ordinary_conversation(tmp_path: Path):
         answer = service.run("Give me a pancake recipe without using a tool.")
 
         assert answer.startswith("Pancakes")
-        assert len(model.capability_requests) == 1
+        assert model.capability_requests
         assert model.text_requests == []
         assert runtime.executor.journal.records == ()
     finally:

@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.inference.cloud_backend import CloudInferenceError, OpenAICompatibleInferenceEngine
-from app.inference.cloud_config import CloudConfig
+from app.settings.cloud import CloudConfig
 from app.inference.hybrid import HybridInferenceEngine, LazyInferenceEngine
 from app.inference.llama_backend import LlamaCppInferenceEngine
 from app.inference.protocol import (

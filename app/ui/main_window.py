@@ -1,8 +1,23 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QObject, QPoint, QRect, QRectF, QSize, Qt, QThread, QTimer, Signal, Slot
+from PySide6.QtCore import (
+    QEasingCurve,
+    QEvent,
+    QPoint,
+    QParallelAnimationGroup,
+    QPropertyAnimation,
+    QRect,
+    QRectF,
+    QSize,
+    Qt,
+    QThread,
+    QTimer,
+    Signal,
+    Slot,
+)
 from PySide6.QtGui import (
     QColor,
     QFont,
@@ -18,10 +33,9 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
-    QDialog,
-    QDialogButtonBox,
     QFrame,
     QGraphicsBlurEffect,
+    QGraphicsOpacityEffect,
     QGraphicsPixmapItem,
     QGraphicsScene,
     QHBoxLayout,
@@ -31,17 +45,21 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
-    QPlainTextEdit,
     QTextEdit,
     QVBoxLayout,
     QWidget,
 )
 
-from app.host_access import HostReadScope
+from app.security.host_access import HostReadScope
 from app.inference.engine import InferenceUnavailable
+from app.ui.approvals import open_approval_dialog
 from app.ui.chat import ChatView
 from app.ui.context_window import ContextWindowBar
 from app.ui.status import ConversationStatus
+from app.ui.worker import ConversationWorker
+
+
+log = logging.getLogger(__name__)
 
 
 _ICON_DIRECTORY = Path(__file__).with_name("assets")
@@ -52,6 +70,11 @@ _TOP_ICON_SIZE = 30
 _COMPOSER_WIDTH = 799
 _COMPOSER_HEIGHT = 54
 _COMPOSER_BOTTOM_MARGIN = 42
+_DEFAULT_GREETING_TEXT = "Lets Roll."
+_GREETING_MAX_LENGTH = 80
+_STARTUP_GREETING_HEIGHT = 64
+_STARTUP_GREETING_GAP = 24
+_STARTUP_TRANSITION_MS = 340
 _BOTTOM_GLASS_BLUR_RADIUS = 18.0
 _BOTTOM_GLASS_BLUR_PADDING = 80
 _BOTTOM_GLASS_TOP_FEATHER = 34
@@ -59,6 +82,15 @@ _MIDDLE_PANEL_WIDTH = 1120
 _BACKGROUND_TOP_CROP = 68
 _FONT_LOADED = False
 _UI_FONT_FAMILY = ""
+
+
+def _normalize_greeting_message(value: object) -> str:
+    if not isinstance(value, str):
+        return _DEFAULT_GREETING_TEXT
+    message = " ".join(value.split())
+    if not message:
+        return _DEFAULT_GREETING_TEXT
+    return message[:_GREETING_MAX_LENGTH]
 
 
 def _load_ui_font() -> None:
@@ -88,6 +120,13 @@ def _apply_ui_font(widget: QWidget) -> None:
     widget.setFont(font)
 
 
+def _apply_greeting_font(widget: QWidget) -> None:
+    _apply_ui_font(widget)
+    font = widget.font()
+    font.setWeight(QFont.Weight.Light)
+    widget.setFont(font)
+
+
 class MessageInput(QTextEdit):
     submit_requested = Signal()
 
@@ -98,26 +137,6 @@ class MessageInput(QTextEdit):
             event.accept()
             return
         super().keyPressEvent(event)
-
-
-class Worker(QObject):
-    finished = Signal(str)
-    failed = Signal(str)
-    activity = Signal(str)
-
-    def __init__(self, service, message: str):
-        super().__init__()
-        self.service = service
-        self.message = message
-
-    def run(self) -> None:
-        try:
-            response = self.service.run(self.message, self.activity.emit)
-            if response is None or not str(response).strip():
-                raise RuntimeError("O.R.S.I finished processing, but returned an empty response.")
-            self.finished.emit(str(response))
-        except Exception as exc:
-            self.failed.emit(str(exc))
 
 
 class ComposerFrame(QFrame):
@@ -336,13 +355,22 @@ class ChatSurface(QWidget):
 class MainWindow(QMainWindow):
     approval_requested = Signal(object)
 
-    def __init__(self, service, hostname: str, startup_error: str | None = None, inference=None):
+    def __init__(
+        self,
+        service,
+        hostname: str,
+        startup_error: str | None = None,
+        inference=None,
+        preferences_store=None,
+    ):
         super().__init__()
         _load_ui_font()
         del hostname
         self.service = service
         self.inference = inference
         self.startup_error = startup_error
+        self._preferences_store = preferences_store
+        self._greeting_message = self._load_greeting_message()
         self._cloud_privacy_accepted = False
         self.thread = None
         self.worker = None
@@ -431,10 +459,10 @@ class MainWindow(QMainWindow):
 
         self.settings_panel = QFrame(root)
         self.settings_panel.setObjectName("settingsPanel")
-        self.settings_panel.setFixedSize(314, 168)
+        self.settings_panel.setFixedSize(314, 226)
         settings_layout = QVBoxLayout(self.settings_panel)
         settings_layout.setContentsMargins(18, 16, 18, 16)
-        settings_layout.setSpacing(10)
+        settings_layout.setSpacing(8)
 
         settings_title = QLabel("Settings")
         settings_title.setObjectName("settingsTitle")
@@ -460,6 +488,17 @@ class MainWindow(QMainWindow):
             self.model_selector.currentIndexChanged.connect(self._select_inference_mode)
         settings_layout.addWidget(self.model_selector)
 
+        greeting_label = QLabel("Greeting")
+        greeting_label.setObjectName("settingsLabel")
+        settings_layout.addWidget(greeting_label)
+
+        self.greeting_input = QLineEdit()
+        self.greeting_input.setObjectName("greetingInput")
+        self.greeting_input.setFixedHeight(38)
+        self.greeting_input.setMaxLength(_GREETING_MAX_LENGTH)
+        self.greeting_input.setText(self._greeting_message)
+        settings_layout.addWidget(self.greeting_input)
+
         self.activity = ConversationStatus(
             self._ready_status() if not startup_error else "Model unavailable"
         )
@@ -469,6 +508,14 @@ class MainWindow(QMainWindow):
         self.bottom_glass = BottomGlassPane(content)
         self.bottom_glass.setObjectName("bottomGlass")
         self.bottom_glass.set_backdrop_widgets(content, self.chat)
+
+        self.startup_greeting = QLabel(self._greeting_message, content)
+        self.startup_greeting.setObjectName("startupGreeting")
+        self.startup_greeting.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.startup_greeting.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.startup_greeting_opacity = QGraphicsOpacityEffect(self.startup_greeting)
+        self.startup_greeting_opacity.setOpacity(1.0)
+        self.startup_greeting.setGraphicsEffect(self.startup_greeting_opacity)
 
         self.composer = ComposerFrame(content)
         self.composer.setObjectName("composer")
@@ -525,6 +572,14 @@ class MainWindow(QMainWindow):
         self.input.submit_requested.connect(self.submit)
         self.chat.verticalScrollBar().valueChanged.connect(self.bottom_glass.update)
         self.chat.verticalScrollBar().rangeChanged.connect(lambda *_: self.bottom_glass.update())
+        self._greeting_save_timer = QTimer(self)
+        self._greeting_save_timer.setSingleShot(True)
+        self._greeting_save_timer.timeout.connect(self._save_greeting_message)
+        self.greeting_input.textChanged.connect(self._greeting_text_changed)
+        self.greeting_input.editingFinished.connect(self._finish_greeting_edit)
+        self._intro_active = not startup_error and not self._agent_error()
+        self._intro_transition = None
+        _apply_greeting_font(self.startup_greeting)
         self._update_context_window()
         self._position_overlays()
         if startup_error:
@@ -536,31 +591,195 @@ class MainWindow(QMainWindow):
         super().resizeEvent(event)
         self._position_overlays()
 
+    def closeEvent(self, event) -> None:  # noqa: N802 - Qt API name
+        if hasattr(self, "_greeting_save_timer") and self._greeting_save_timer.isActive():
+            self._greeting_save_timer.stop()
+            self._save_greeting_message()
+        super().closeEvent(event)
+
     def eventFilter(self, watched, event) -> bool:  # noqa: N802 - Qt API name
         if watched is getattr(self, "_content", None) and event.type() == QEvent.Type.Resize:
             self._position_overlays()
         return super().eventFilter(watched, event)
 
+    def _load_greeting_message(self) -> str:
+        store = self._preferences_store
+        if store is None:
+            return _DEFAULT_GREETING_TEXT
+        try:
+            payload = store.load({})
+        except Exception:
+            log.warning("UI preferences could not be loaded.", exc_info=True)
+            return _DEFAULT_GREETING_TEXT
+        if not isinstance(payload, dict):
+            return _DEFAULT_GREETING_TEXT
+        return _normalize_greeting_message(payload.get("greeting_message"))
+
+    def _save_greeting_message(self) -> None:
+        store = self._preferences_store
+        if store is None:
+            return
+        try:
+            payload = store.load({})
+        except Exception:
+            log.warning("UI preferences could not be loaded before saving.", exc_info=True)
+            payload = {}
+        if not isinstance(payload, dict):
+            payload = {}
+        payload["greeting_message"] = self._greeting_message
+        try:
+            store.save(payload)
+        except Exception:
+            log.warning("UI preferences could not be saved.", exc_info=True)
+
+    def _greeting_text_changed(self, text: str) -> None:
+        self._greeting_message = _normalize_greeting_message(text)
+        self.startup_greeting.setText(self._greeting_message)
+        if self._preferences_store is not None:
+            self._greeting_save_timer.start(450)
+
+    def _finish_greeting_edit(self) -> None:
+        normalized = _normalize_greeting_message(self.greeting_input.text())
+        if self.greeting_input.text() != normalized:
+            self.greeting_input.setText(normalized)
+        self._greeting_message = normalized
+        self.startup_greeting.setText(normalized)
+        if self._greeting_save_timer.isActive():
+            self._greeting_save_timer.stop()
+        self._save_greeting_message()
+
     def _position_overlays(self) -> None:
         if not hasattr(self, "composer"):
             return
         content = self.composer.parentWidget()
-        width = min(_COMPOSER_WIDTH, max(320, content.width() - 32))
-        x = max(16, (content.width() - width) // 2)
-        y = max(16, content.height() - _COMPOSER_BOTTOM_MARGIN - _COMPOSER_HEIGHT)
-        glass_y = max(0, y)
+        target = self._composer_target_geometry()
+        glass_y = max(0, target.y())
         self.bottom_glass.setGeometry(
             0,
             glass_y,
             content.width(),
             content.height() - glass_y,
         )
-        self.composer.setGeometry(x, y, width, _COMPOSER_HEIGHT)
+        if self._intro_transition is None:
+            self.composer.setGeometry(target)
+        self._position_startup_greeting(target)
         self.bottom_glass.raise_()
+        self.startup_greeting.raise_()
         self.composer.raise_()
         self.settings_panel.move(162, _TOP_BAR_HEIGHT + 12)
         if self.settings_panel.isVisible():
             self.settings_panel.raise_()
+
+    def _composer_target_geometry(self) -> QRect:
+        content = self.composer.parentWidget()
+        width = min(_COMPOSER_WIDTH, max(320, content.width() - 32))
+        x = max(16, (content.width() - width) // 2)
+        if self._intro_active:
+            y = max(24, (content.height() - _COMPOSER_HEIGHT) // 2)
+        else:
+            y = max(16, content.height() - _COMPOSER_BOTTOM_MARGIN - _COMPOSER_HEIGHT)
+        return QRect(x, y, width, _COMPOSER_HEIGHT)
+
+    def _position_startup_greeting(self, composer_geometry: QRect) -> None:
+        content = self.composer.parentWidget()
+        width = min(760, max(320, content.width() - 64))
+        x = max(16, (content.width() - width) // 2)
+        y = max(24, composer_geometry.y() - _STARTUP_GREETING_GAP - _STARTUP_GREETING_HEIGHT)
+        self.startup_greeting.setGeometry(x, y, width, _STARTUP_GREETING_HEIGHT)
+        self.startup_greeting.setVisible(self._intro_active or self._intro_transition is not None)
+
+    def _leave_intro_mode(self) -> None:
+        if not self._intro_active:
+            return
+        if self._intro_transition is not None:
+            self._intro_transition.stop()
+            self._intro_transition.deleteLater()
+            self._intro_transition = None
+        self._intro_active = False
+        target = self._composer_target_geometry()
+        self._position_startup_greeting(self.composer.geometry())
+        self.startup_greeting.show()
+        self.bottom_glass.setGeometry(
+            0,
+            max(0, target.y()),
+            self._content.width(),
+            self._content.height() - max(0, target.y()),
+        )
+
+        group = QParallelAnimationGroup(self)
+        geometry = QPropertyAnimation(self.composer, b"geometry", group)
+        geometry.setDuration(_STARTUP_TRANSITION_MS)
+        geometry.setStartValue(self.composer.geometry())
+        geometry.setEndValue(target)
+        geometry.setEasingCurve(QEasingCurve.Type.InOutCubic)
+        group.addAnimation(geometry)
+
+        opacity = QPropertyAnimation(self.startup_greeting_opacity, b"opacity", group)
+        opacity.setDuration(max(180, _STARTUP_TRANSITION_MS - 70))
+        opacity.setStartValue(self.startup_greeting_opacity.opacity())
+        opacity.setEndValue(0.0)
+        opacity.setEasingCurve(QEasingCurve.Type.OutCubic)
+        group.addAnimation(opacity)
+
+        def finish() -> None:
+            self._intro_transition = None
+            self.composer.setGeometry(self._composer_target_geometry())
+            self.startup_greeting.hide()
+            self.startup_greeting_opacity.setOpacity(0.0)
+            group.deleteLater()
+
+        group.finished.connect(finish)
+        self._intro_transition = group
+        group.start()
+
+    def _activate_intro_mode(self) -> None:
+        if self._intro_transition is not None:
+            self._intro_transition.stop()
+            self._intro_transition.deleteLater()
+            self._intro_transition = None
+        self._intro_active = True
+        target = self._composer_target_geometry()
+        self._position_startup_greeting(target)
+        self.startup_greeting.show()
+        self.startup_greeting.raise_()
+        self.composer.raise_()
+        if not self.isVisible():
+            self.startup_greeting_opacity.setOpacity(1.0)
+            self._position_overlays()
+            return
+
+        self.bottom_glass.setGeometry(
+            0,
+            max(0, target.y()),
+            self._content.width(),
+            self._content.height() - max(0, target.y()),
+        )
+        group = QParallelAnimationGroup(self)
+        geometry = QPropertyAnimation(self.composer, b"geometry", group)
+        geometry.setDuration(_STARTUP_TRANSITION_MS)
+        geometry.setStartValue(self.composer.geometry())
+        geometry.setEndValue(target)
+        geometry.setEasingCurve(QEasingCurve.Type.InOutCubic)
+        group.addAnimation(geometry)
+
+        opacity = QPropertyAnimation(self.startup_greeting_opacity, b"opacity", group)
+        opacity.setDuration(_STARTUP_TRANSITION_MS)
+        opacity.setStartValue(0.0)
+        opacity.setEndValue(1.0)
+        opacity.setEasingCurve(QEasingCurve.Type.OutCubic)
+        group.addAnimation(opacity)
+
+        def finish() -> None:
+            self._intro_transition = None
+            self.composer.setGeometry(self._composer_target_geometry())
+            self._position_startup_greeting(self.composer.geometry())
+            self.startup_greeting_opacity.setOpacity(1.0)
+            group.deleteLater()
+
+        self.startup_greeting_opacity.setOpacity(0.0)
+        group.finished.connect(finish)
+        self._intro_transition = group
+        group.start()
 
     @Slot()
     def _toggle_settings(self) -> None:
@@ -580,10 +799,11 @@ class MainWindow(QMainWindow):
             return
 
         self.input.clear()
+        self._leave_intro_mode()
         self.chat.add_message("User", message)
         self._set_busy(True)
         self.thread = QThread()
-        self.worker = Worker(self.service, message)
+        self.worker = ConversationWorker(self.service, message)
         self.worker.moveToThread(self.thread)
         self.thread.started.connect(self.worker.run)
         self.worker.finished.connect(self._worker_succeeded)
@@ -599,303 +819,19 @@ class MainWindow(QMainWindow):
         if self._approval_dialog is not None:
             self.service.resolve_approval(record.approval_id, False)
             return
-        if record.capability == "filesystem.mkdir":
-            self._show_folder_approval(record)
+        opened = open_approval_dialog(
+            self,
+            self.service,
+            record,
+            self._approval_finished,
+        )
+        if opened is None:
             return
-        if record.capability == "filesystem.write_text":
-            self._show_text_write_approval(record)
-            return
-        if record.capability == "filesystem.copy":
-            self._show_copy_approval(record)
-            return
-        if record.capability == "filesystem.move":
-            self._show_move_approval(record)
-            return
-        if record.capability == "filesystem.trash":
-            self._show_trash_approval(record)
-            return
-        self.service.resolve_approval(record.approval_id, False)
+        self._approval_dialog, activity = opened
+        self.activity.set_activity(activity)
 
-    def _show_folder_approval(self, record) -> None:
-        if record.capability != "filesystem.mkdir" or not record.resource:
-            self.service.resolve_approval(record.approval_id, False)
-            return
-        if self.service.approval_status(record.approval_id) != "pending":
-            return
-        dialog = QDialog(self)
-        dialog.setObjectName("folderApproval")
-        dialog.setWindowTitle("Create folder?")
-        dialog.setWindowModality(Qt.WindowModality.WindowModal)
-        dialog.resize(560, 240)
-        layout = QVBoxLayout(dialog)
-        layout.addWidget(QLabel("Create one empty folder at:", dialog))
-        path = QPlainTextEdit(dialog)
-        path.setObjectName("approvalPath")
-        path.setPlainText(record.resource)
-        path.setReadOnly(True)
-        layout.addWidget(path)
-        notice = QLabel("Existing entries will not be replaced. Approval is for this folder only.", dialog)
-        notice.setWordWrap(True)
-        layout.addWidget(notice)
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel, dialog)
-        create = buttons.addButton("Create folder", QDialogButtonBox.ButtonRole.AcceptRole)
-        create.setObjectName("approveFolder")
-        create.setAutoDefault(False)
-        cancel = buttons.button(QDialogButtonBox.StandardButton.Cancel)
-        cancel.setDefault(True)
-        buttons.accepted.connect(dialog.accept)
-        buttons.rejected.connect(dialog.reject)
-        layout.addWidget(buttons)
-        timer = QTimer(dialog)
-
-        def refresh():
-            try:
-                pending = self.service.approval_status(record.approval_id) == "pending"
-            except (LookupError, ValueError):
-                pending = False
-            if not pending:
-                dialog.reject()
-
-        def finish(code):
-            timer.stop()
-            self.service.resolve_approval(record.approval_id, code == QDialog.DialogCode.Accepted)
-            self._approval_dialog = None
-            dialog.deleteLater()
-
-        timer.timeout.connect(refresh)
-        dialog.finished.connect(finish)
-        self._approval_dialog = dialog
-        self.activity.set_activity("Waiting for folder approval...")
-        timer.start(100)
-        dialog.open()
-        cancel.setFocus()
-
-    def _show_copy_approval(self, record) -> None:
-        preview = getattr(record, "approval_preview", None)
-        if record.capability != "filesystem.copy" or not record.resource or not isinstance(preview, str):
-            self.service.resolve_approval(record.approval_id, False)
-            return
-        if self.service.approval_status(record.approval_id) != "pending":
-            return
-        dialog = QDialog(self)
-        dialog.setObjectName("copyApproval")
-        dialog.setWindowTitle("Copy file?")
-        dialog.setWindowModality(Qt.WindowModality.WindowModal)
-        dialog.resize(640, 340)
-        layout = QVBoxLayout(dialog)
-        layout.addWidget(QLabel("Copy file with these exact details:", dialog))
-        details = QPlainTextEdit(dialog)
-        details.setObjectName("approvalDetails")
-        details.setPlainText(preview)
-        details.setReadOnly(True)
-        layout.addWidget(details, 1)
-        notice = QLabel("Approval is for this source, destination, and collision policy only.", dialog)
-        notice.setWordWrap(True)
-        layout.addWidget(notice)
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel, dialog)
-        copy = buttons.addButton("Copy file", QDialogButtonBox.ButtonRole.AcceptRole)
-        copy.setObjectName("approveCopy")
-        copy.setAutoDefault(False)
-        cancel = buttons.button(QDialogButtonBox.StandardButton.Cancel)
-        cancel.setDefault(True)
-        buttons.accepted.connect(dialog.accept)
-        buttons.rejected.connect(dialog.reject)
-        layout.addWidget(buttons)
-        timer = QTimer(dialog)
-
-        def refresh():
-            try:
-                pending = self.service.approval_status(record.approval_id) == "pending"
-            except (LookupError, ValueError):
-                pending = False
-            if not pending:
-                dialog.reject()
-
-        def finish(code):
-            timer.stop()
-            self.service.resolve_approval(record.approval_id, code == QDialog.DialogCode.Accepted)
-            self._approval_dialog = None
-            dialog.deleteLater()
-
-        timer.timeout.connect(refresh)
-        dialog.finished.connect(finish)
-        self._approval_dialog = dialog
-        self.activity.set_activity("Waiting for copy approval...")
-        timer.start(100)
-        dialog.open()
-        cancel.setFocus()
-
-    def _show_move_approval(self, record) -> None:
-        preview = getattr(record, "approval_preview", None)
-        if record.capability != "filesystem.move" or not record.resource or not isinstance(preview, str):
-            self.service.resolve_approval(record.approval_id, False)
-            return
-        if self.service.approval_status(record.approval_id) != "pending":
-            return
-        dialog = QDialog(self)
-        dialog.setObjectName("moveApproval")
-        dialog.setWindowTitle("Move file?")
-        dialog.setWindowModality(Qt.WindowModality.WindowModal)
-        dialog.resize(640, 360)
-        layout = QVBoxLayout(dialog)
-        layout.addWidget(QLabel("Move file with these exact details:", dialog))
-        details = QPlainTextEdit(dialog)
-        details.setObjectName("approvalDetails")
-        details.setPlainText(preview)
-        details.setReadOnly(True)
-        layout.addWidget(details, 1)
-        notice = QLabel("Approval is for this source, destination, and collision policy only. The source is removed after verification.", dialog)
-        notice.setWordWrap(True)
-        layout.addWidget(notice)
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel, dialog)
-        move = buttons.addButton("Move file", QDialogButtonBox.ButtonRole.AcceptRole)
-        move.setObjectName("approveMove")
-        move.setAutoDefault(False)
-        cancel = buttons.button(QDialogButtonBox.StandardButton.Cancel)
-        cancel.setDefault(True)
-        buttons.accepted.connect(dialog.accept)
-        buttons.rejected.connect(dialog.reject)
-        layout.addWidget(buttons)
-        timer = QTimer(dialog)
-
-        def refresh():
-            try:
-                pending = self.service.approval_status(record.approval_id) == "pending"
-            except (LookupError, ValueError):
-                pending = False
-            if not pending:
-                dialog.reject()
-
-        def finish(code):
-            timer.stop()
-            self.service.resolve_approval(record.approval_id, code == QDialog.DialogCode.Accepted)
-            self._approval_dialog = None
-            dialog.deleteLater()
-
-        timer.timeout.connect(refresh)
-        dialog.finished.connect(finish)
-        self._approval_dialog = dialog
-        self.activity.set_activity("Waiting for move approval...")
-        timer.start(100)
-        dialog.open()
-        cancel.setFocus()
-
-    def _show_trash_approval(self, record) -> None:
-        preview = getattr(record, "approval_preview", None)
-        if record.capability != "filesystem.trash" or not record.resource or not isinstance(preview, str):
-            self.service.resolve_approval(record.approval_id, False)
-            return
-        if self.service.approval_status(record.approval_id) != "pending":
-            return
-        dialog = QDialog(self)
-        dialog.setObjectName("trashApproval")
-        dialog.setWindowTitle("Send file to Recycle Bin?")
-        dialog.setWindowModality(Qt.WindowModality.WindowModal)
-        dialog.resize(640, 320)
-        layout = QVBoxLayout(dialog)
-        layout.addWidget(QLabel("Send this file to the Windows Recycle Bin:", dialog))
-        details = QPlainTextEdit(dialog)
-        details.setObjectName("approvalDetails")
-        details.setPlainText(preview)
-        details.setReadOnly(True)
-        layout.addWidget(details, 1)
-        notice = QLabel("Approval is for this exact file only. Directories and permanent deletion are not part of this checkpoint.", dialog)
-        notice.setWordWrap(True)
-        layout.addWidget(notice)
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel, dialog)
-        trash = buttons.addButton("Send to Recycle Bin", QDialogButtonBox.ButtonRole.AcceptRole)
-        trash.setObjectName("approveTrash")
-        trash.setAutoDefault(False)
-        cancel = buttons.button(QDialogButtonBox.StandardButton.Cancel)
-        cancel.setDefault(True)
-        buttons.accepted.connect(dialog.accept)
-        buttons.rejected.connect(dialog.reject)
-        layout.addWidget(buttons)
-        timer = QTimer(dialog)
-
-        def refresh():
-            try:
-                pending = self.service.approval_status(record.approval_id) == "pending"
-            except (LookupError, ValueError):
-                pending = False
-            if not pending:
-                dialog.reject()
-
-        def finish(code):
-            timer.stop()
-            self.service.resolve_approval(record.approval_id, code == QDialog.DialogCode.Accepted)
-            self._approval_dialog = None
-            dialog.deleteLater()
-
-        timer.timeout.connect(refresh)
-        dialog.finished.connect(finish)
-        self._approval_dialog = dialog
-        self.activity.set_activity("Waiting for trash approval...")
-        timer.start(100)
-        dialog.open()
-        cancel.setFocus()
-
-    def _show_text_write_approval(self, record) -> None:
-        preview = getattr(record, "approval_preview", None)
-        if record.capability != "filesystem.write_text" or not record.resource or not isinstance(preview, str):
-            self.service.resolve_approval(record.approval_id, False)
-            return
-        if self.service.approval_status(record.approval_id) != "pending":
-            return
-        dialog = QDialog(self)
-        dialog.setObjectName("writeApproval")
-        dialog.setWindowTitle("Write text file?")
-        dialog.setWindowModality(Qt.WindowModality.WindowModal)
-        dialog.resize(640, 420)
-        layout = QVBoxLayout(dialog)
-        layout.addWidget(QLabel("Write text to:", dialog))
-        path = QPlainTextEdit(dialog)
-        path.setObjectName("approvalPath")
-        path.setPlainText(record.resource)
-        path.setReadOnly(True)
-        path.setMaximumHeight(92)
-        layout.addWidget(path)
-        layout.addWidget(QLabel("New file content:", dialog))
-        content = QPlainTextEdit(dialog)
-        content.setObjectName("approvalContent")
-        content.setPlainText(preview)
-        content.setReadOnly(True)
-        layout.addWidget(content, 1)
-        notice = QLabel("This creates the file or replaces the entire existing file. Approval is for this path and content only.", dialog)
-        notice.setWordWrap(True)
-        layout.addWidget(notice)
-        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel, dialog)
-        write = buttons.addButton("Write file", QDialogButtonBox.ButtonRole.AcceptRole)
-        write.setObjectName("approveTextWrite")
-        write.setAutoDefault(False)
-        cancel = buttons.button(QDialogButtonBox.StandardButton.Cancel)
-        cancel.setDefault(True)
-        buttons.accepted.connect(dialog.accept)
-        buttons.rejected.connect(dialog.reject)
-        layout.addWidget(buttons)
-        timer = QTimer(dialog)
-
-        def refresh():
-            try:
-                pending = self.service.approval_status(record.approval_id) == "pending"
-            except (LookupError, ValueError):
-                pending = False
-            if not pending:
-                dialog.reject()
-
-        def finish(code):
-            timer.stop()
-            self.service.resolve_approval(record.approval_id, code == QDialog.DialogCode.Accepted)
-            self._approval_dialog = None
-            dialog.deleteLater()
-
-        timer.timeout.connect(refresh)
-        dialog.finished.connect(finish)
-        self._approval_dialog = dialog
-        self.activity.set_activity("Waiting for file approval...")
-        timer.start(100)
-        dialog.open()
-        cancel.setFocus()
+    def _approval_finished(self) -> None:
+        self._approval_dialog = None
 
     @Slot(str)
     def _worker_succeeded(self, text: str) -> None:
@@ -952,6 +888,7 @@ class MainWindow(QMainWindow):
             return
         self.chat.clear_messages()
         self.input.clear()
+        self._activate_intro_mode()
         self._update_context_window()
         self.activity.set_activity(self._ready_status())
         self.input.setFocus()
@@ -1311,6 +1248,14 @@ QProgressBar#contextWindowBar::chunk {
     background: #d4d4d4;
     border-radius: 2px;
 }
+QLabel#startupGreeting {
+    color: #e7e8ed;
+    background: transparent;
+    border: none;
+    font-family: Saira;
+    font-size: 34px;
+    font-weight: 300;
+}
 QScrollArea#chatView { background: transparent; border: none; }
 QScrollArea#chatView QWidget#qt_scrollarea_viewport { background: transparent; }
 QFrame#userMessage {
@@ -1424,6 +1369,18 @@ QComboBox#modelSelector QAbstractItemView {
     border: 1px solid #424242;
     selection-background-color: #3b3b3b;
 }
+QLineEdit#greetingInput {
+    color: #ededed;
+    background: #262626;
+    border: 1px solid #3c3c3c;
+    border-radius: 12px;
+    padding: 0 12px;
+    font-family: Saira;
+    font-size: 13px;
+    font-weight: 400;
+    selection-background-color: #3b3b3b;
+}
+QLineEdit#greetingInput:hover, QLineEdit#greetingInput:focus { border-color: #666666; }
 QScrollBar:vertical { background: transparent; width: 14px; margin: 0; }
 QScrollBar::handle:vertical {
     background: #3f4149;
