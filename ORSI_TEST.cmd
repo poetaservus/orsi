@@ -1,0 +1,8 @@
+@echo off
+setlocal
+set "ORSI_ENABLE_FILESYSTEM_STAT=1"
+set "ORSI_ENABLE_FILESYSTEM_LIST=1"
+set "ORSI_ENABLE_APPLICATION_LAUNCH=1"
+set "ORSI_ENABLE_FULL_LOCAL_READ=1"
+call "%~dp0ORSI.cmd"
+exit /b %errorlevel%
