@@ -68,7 +68,6 @@ _TOP_BAR_HEIGHT = 68
 _TOP_BAR_REVEAL_HEIGHT = 6
 _TOP_BAR_ANIMATION_MS = 220
 _TOP_BAR_HIDE_DELAY_MS = 450
-_TOP_BAR_INITIAL_DELAY_MS = 1100
 _TOP_BUTTON_SIZE = 42
 _TOP_ICON_SIZE = 30
 _COMPOSER_WIDTH = 799
@@ -437,7 +436,7 @@ class MainWindow(QMainWindow):
         )
         topbar_layout.addWidget(self.context_window, 0, Qt.AlignmentFlag.AlignVCenter)
 
-        self._topbar_expanded = True
+        self._topbar_expanded = False
         self._topbar_animation = QPropertyAnimation(topbar, b"pos", self)
         self._topbar_hide_timer = QTimer(self)
         self._topbar_hide_timer.setSingleShot(True)
@@ -580,7 +579,6 @@ class MainWindow(QMainWindow):
         _apply_greeting_font(self.startup_greeting)
         self._update_context_window()
         self._position_overlays()
-        self._topbar_hide_timer.start(_TOP_BAR_INITIAL_DELAY_MS)
         if startup_error:
             self.chat.add_message("Agent", startup_error, True)
         elif self._agent_error():
@@ -1335,7 +1333,10 @@ QFrame#errorMessage QLabel {
     font-size: 15px;
     font-weight: 400;
 }
-QWidget#messageMetaRow { background: transparent; border: none; }
+QWidget#messageMetaRow, QWidget#messageActionRow {
+    background: transparent;
+    border: none;
+}
 QLabel#responseTiming {
     color: #858791;
     background: transparent;

@@ -214,7 +214,10 @@ class _Message(QFrame):
                 int(Qt.TextFlag.TextWordWrap | Qt.TextFlag.TextExpandTabs),
                 label.text(),
             )
-            label.setFixedHeight(max(label.fontMetrics().lineSpacing(), bounds.height()))
+            height_padding = max(2, label.fontMetrics().descent())
+            label.setFixedHeight(
+                max(label.fontMetrics().lineSpacing(), bounds.height()) + height_padding
+            )
         for block in self._code_blocks:
             block.setFixedWidth(content_width)
         self.updateGeometry()
@@ -262,8 +265,12 @@ class _MessageBand(QWidget):
         self.copy_button.setAccessibleName("Copy message")
         self.copy_button.setFixedSize(52, 23)
         self.copy_button.hide()
-        meta_layout.addWidget(self.copy_button)
-        layout.addWidget(self.meta_row)
+        if from_user:
+            meta_layout.addWidget(self.copy_button)
+        if from_user or duration_seconds is not None:
+            layout.addWidget(self.meta_row)
+        else:
+            self.meta_row.hide()
 
         body = QWidget()
         body.setObjectName("messageBodyRow")
@@ -277,6 +284,19 @@ class _MessageBand(QWidget):
             body_layout.addWidget(message, 0, Qt.AlignmentFlag.AlignLeft)
             body_layout.addStretch(1)
         layout.addWidget(body)
+
+        self.action_row = QWidget()
+        self.action_row.setObjectName("messageActionRow")
+        self.action_row.setFixedHeight(25)
+        action_layout = QHBoxLayout(self.action_row)
+        action_layout.setContentsMargins(2, 0, 2, 0)
+        action_layout.setSpacing(8)
+        if from_user:
+            self.action_row.hide()
+        else:
+            action_layout.addWidget(self.copy_button)
+            action_layout.addStretch(1)
+            layout.addWidget(self.action_row)
 
         self._copy_timer = QTimer(self)
         self._copy_timer.setSingleShot(True)
@@ -339,15 +359,22 @@ class ChatView(QScrollArea):
         self._message_bands: list[_MessageBand] = []
 
         self._thinking_row = QWidget()
-        self._thinking_layout = QHBoxLayout(self._thinking_row)
+        self._thinking_layout = QVBoxLayout(self._thinking_row)
         self._thinking_layout.setContentsMargins(4, 0, 0, 0)
-        self._thinking_layout.setSpacing(8)
+        self._thinking_layout.setSpacing(1)
         self.working_label = QLabel("Working for 0.0s")
         self.working_label.setObjectName("responseTiming")
         self.thinking_dots = ThinkingDots()
-        self._thinking_layout.addWidget(self.working_label)
-        self._thinking_layout.addWidget(self.thinking_dots)
-        self._thinking_layout.addStretch(1)
+        self._thinking_layout.addWidget(
+            self.working_label,
+            0,
+            Qt.AlignmentFlag.AlignLeft,
+        )
+        self._thinking_layout.addWidget(
+            self.thinking_dots,
+            0,
+            Qt.AlignmentFlag.AlignLeft,
+        )
         self._thinking_row.hide()
         self._response_elapsed = QElapsedTimer()
         self._response_timer = QTimer(self)
@@ -390,7 +417,6 @@ class ChatView(QScrollArea):
             from_user=from_user,
             duration_seconds=duration_seconds,
         )
-        band.set_available_width(band_width)
         row_layout.addStretch(1)
         row_layout.addWidget(band)
         row_layout.addStretch(1)
@@ -400,6 +426,7 @@ class ChatView(QScrollArea):
         message.ensurePolished()
         for label in message._text_labels:
             label.ensurePolished()
+        band.set_available_width(band_width)
         self._messages.append(message)
         self._message_rows.append(row)
         self._message_bands.append(band)

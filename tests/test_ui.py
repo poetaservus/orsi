@@ -76,7 +76,7 @@ class UiTests(unittest.TestCase):
             [button.accessibleName() for button in window.topbar.findChildren(QWidget)],
         )
 
-        window._set_topbar_expanded(False, animate=False)
+        self.assertFalse(window._topbar_expanded)
         self.assertEqual(window.topbar.y(), -62)
         self.assertEqual(window.topbar.geometry().bottom() + 1, 6)
 
@@ -709,6 +709,20 @@ class UiTests(unittest.TestCase):
             self.assertEqual(QApplication.clipboard().text(), expected)
             self.assertEqual(band.copy_button.text(), "Copied")
 
+        user_band, assistant_band = chat._message_bands
+        user_copy_y = user_band.copy_button.mapTo(user_band, QPoint()).y()
+        user_message_y = user_band.message.mapTo(user_band, QPoint()).y()
+        self.assertLess(user_copy_y, user_message_y)
+        assistant_copy_y = assistant_band.copy_button.mapTo(
+            assistant_band,
+            QPoint(),
+        ).y()
+        assistant_message_bottom = (
+            assistant_band.message.mapTo(assistant_band, QPoint()).y()
+            + assistant_band.message.height()
+        )
+        self.assertGreater(assistant_copy_y, assistant_message_bottom)
+
         chat.close()
 
     def test_response_counter_changes_from_working_to_worked(self):
@@ -719,6 +733,12 @@ class UiTests(unittest.TestCase):
         QTest.qWait(140)
         QApplication.processEvents()
         self.assertTrue(chat.working_label.text().startswith("Working for "))
+        working_bottom = (
+            chat.working_label.mapTo(chat._thinking_row, QPoint()).y()
+            + chat.working_label.height()
+        )
+        dots_y = chat.thinking_dots.mapTo(chat._thinking_row, QPoint()).y()
+        self.assertGreaterEqual(dots_y, working_bottom)
 
         duration = chat.set_thinking(False)
         self.assertIsNotNone(duration)
@@ -729,6 +749,33 @@ class UiTests(unittest.TestCase):
         )
         self.assertTrue(chat._thinking_row.isHidden())
         chat.close()
+
+    def test_wrapped_assistant_response_reserves_every_rendered_line(self):
+        window = MainWindow(None, "TEST-HOST")
+        window.resize(1229, 543)
+        window.show()
+        content = (
+            "The concept of redemption can vary widely depending on cultural, religious, "
+            "or personal beliefs. Generally, it involves the act of making amends for past "
+            "wrongs, turning away from harmful behaviors, and striving to become a better "
+            "person. However, the true measure of redemption is subjective and can be "
+            "deeply personal. What aspect of redemption are you considering?"
+        )
+        window.chat.add_message("Agent", content, duration_seconds=0.7)
+        QApplication.processEvents()
+
+        label = window.chat._messages[-1].label
+        bounds = label.fontMetrics().boundingRect(
+            label.rect().adjusted(0, 0, 0, 100_000),
+            int(Qt.TextFlag.TextWordWrap | Qt.TextFlag.TextExpandTabs),
+            label.text(),
+        )
+        self.assertGreaterEqual(
+            label.height(),
+            bounds.height() + max(2, label.fontMetrics().descent()),
+        )
+        self.assertGreater(window.chat._message_bands[-1].height(), label.height())
+        window.close()
 
     def test_assistant_code_uses_readonly_box_and_working_copy_button(self):
         chat = ChatView()
