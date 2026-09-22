@@ -98,8 +98,11 @@ are available.
 To re-certify every configured OpenRouter pool member independently, set
 `ORSI_RUN_LIVE_CLOUD_MODEL_ACCEPTANCE=1` and `OPENROUTER_API_KEY`, then run
 `runtime\python\python.exe -m pytest tests\test_cloud_live_model.py --basetemp .pytest-tmp`.
-The gate disables pool failover for each candidate and requires both a complete filesystem tool
-round-trip and a no-tool conversational response.
+The gate disables pool failover for each candidate and independently exercises listing, reading,
+multiline writing, searching, copying, moving, folder creation, trashing, metadata inspection, and
+a no-tool conversational response. Every mutating case uses a temporary workspace and automatic
+test-only approval; the trash case moves its fixture into temporary holding instead of adding an
+entry to the real Windows Recycle Bin.
 
 ## Portable runtime
 
