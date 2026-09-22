@@ -22,6 +22,8 @@ class CloudConfig(BaseModel):
     temperature: float = Field(0.1, ge=0, le=2)
     max_tokens: int = Field(512, ge=32)
     timeout_seconds: int = Field(90, ge=5, le=300)
+    model_step_timeout_seconds: int = Field(300, ge=5, le=900)
+    max_retries: int = Field(2, ge=0, le=5)
     default_mode: Literal["local", "cloud"] = "local"
     fallback_to_local: bool = True
     extra_headers: dict[str, str] = Field(default_factory=dict)
@@ -97,6 +99,10 @@ class CloudConfig(BaseModel):
             raise ValueError("Cloud model IDs must not contain whitespace.")
         if self.model in self.fallback_models:
             raise ValueError("The primary cloud model cannot also be a fallback model.")
+        if self.model_step_timeout_seconds < self.timeout_seconds:
+            raise ValueError(
+                "model_step_timeout_seconds must allow at least one cloud model attempt."
+            )
         return self
 
     @property

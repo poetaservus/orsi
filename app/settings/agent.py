@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import math
 import os
 
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.settings.loader import load_json
 from app.settings.paths import PATHS
@@ -24,8 +25,37 @@ _TRUE_VALUES = {"1", "true", "yes", "on"}
 _FALSE_VALUES = {"0", "false", "no", "off"}
 
 
+class AgentRuntimeLimits(BaseModel):
+    """Serializable limits for the bounded agent loop."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+
+    max_steps: int = Field(default=24, ge=1, le=32)
+    max_capability_calls: int = Field(default=32, ge=1, le=32)
+    max_identical_calls: int = Field(default=2, ge=1, le=8)
+    max_protocol_failures: int = Field(default=2, ge=1, le=8)
+    overall_timeout_seconds: float | None = Field(default=None, gt=0, le=3_600)
+    poll_interval_seconds: float = Field(default=0.01, gt=0, le=1.0)
+    max_transcript_bytes: int = Field(
+        default=4 * 1024 * 1024,
+        ge=1_024,
+        le=16 * 1024 * 1024,
+    )
+
+    @model_validator(mode="after")
+    def validate_finite_durations(self):
+        if (
+            self.overall_timeout_seconds is not None
+            and not math.isfinite(self.overall_timeout_seconds)
+        ):
+            raise ValueError("The runtime timeout must be finite.")
+        if not math.isfinite(self.poll_interval_seconds):
+            raise ValueError("The runtime polling interval must be finite.")
+        return self
+
+
 class AgentFeatureConfig(BaseModel):
-    """Fail-closed gates for built-in capabilities and acknowledged read scope."""
+    """Fail-closed capability gates plus bounded agent-loop configuration."""
 
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
 
@@ -41,6 +71,7 @@ class AgentFeatureConfig(BaseModel):
     filesystem_trash_enabled: bool = False
     application_launch_enabled: bool = False
     full_local_read_enabled: bool = False
+    runtime_limits: AgentRuntimeLimits = Field(default_factory=AgentRuntimeLimits)
 
     @model_validator(mode="after")
     def validate_feature_dependencies(self):

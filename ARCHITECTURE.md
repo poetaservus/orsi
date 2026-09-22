@@ -139,11 +139,16 @@ grants write or execute authority.
 
 ## 7. Configuration
 
-- `config/agent.json`: capability feature flags and read scope.
+- `config/agent.json`: capability feature flags, read scope, and agent-loop limits. Normal sessions
+  are bounded by individual model/tool deadlines and finite step/call/repetition/transcript limits,
+  not a short universal wall-clock deadline. An optional absolute deadline remains available for
+  deployments that require one.
 - `config/model.json`: local model path and generation/context limits.
 - `config/cloud.json`: provider endpoint, ordered model pool, safe headers, and the name of the
   API-key environment variable. Cloud pool failover is bounded by the configured candidates;
   malformed native tool responses never execute, and the first successful model remains sticky.
+  Retryable provider failures use a configured attempt cap with exponential backoff. Candidate
+  requests and the complete pool/retry step have separate configured time budgets.
 - `app/settings/`: strict loaders and models. Environment overrides are applied here, not in tools.
 
 Secrets are never accepted in checked-in headers or JSON. Cloud keys come from the configured

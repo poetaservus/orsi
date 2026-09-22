@@ -10,7 +10,11 @@ import pytest
 
 import app.settings.agent as agent_config_module
 from app.agent.bootstrap import build_agent_runtime
-from app.settings.agent import AgentFeatureConfig, load_agent_feature_config
+from app.settings.agent import (
+    AgentFeatureConfig,
+    AgentRuntimeLimits,
+    load_agent_feature_config,
+)
 from app.agent.runtime import AgentRuntime
 from app.execution.audit import CallLifecycleState
 from app.conversation.prompt import AGENT_SYSTEM_PROMPT, SYSTEM_PROMPT
@@ -173,6 +177,29 @@ def test_enabled_bootstrap_exposes_exactly_filesystem_stat(tmp_path: Path):
         ).decision.value == "allow"
     finally:
         service.shutdown()
+
+
+def test_bootstrap_applies_configured_runtime_limits(tmp_path: Path):
+    runtime = build_agent_runtime(
+        ScriptedStatModel([ModelResponse.text("done")]),
+        config=AgentFeatureConfig(
+            filesystem_stat_enabled=True,
+            runtime_limits=AgentRuntimeLimits(
+                max_steps=12,
+                max_capability_calls=20,
+                overall_timeout_seconds=600.0,
+            ),
+        ),
+        portable_root=tmp_path,
+        state_directory=tmp_path / "state",
+    )
+    assert isinstance(runtime, AgentRuntime)
+    try:
+        assert runtime.limits.max_steps == 12
+        assert runtime.limits.max_capability_calls == 20
+        assert runtime.limits.overall_timeout_seconds == 600.0
+    finally:
+        runtime.shutdown()
 
 
 def _prepared_call(runtime: AgentRuntime, portable_root: Path):

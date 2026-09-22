@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 import logging
 import os
+from random import random
 from threading import Lock
+from time import monotonic, sleep
 from typing import Any, Iterable
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -24,9 +26,16 @@ log = logging.getLogger(__name__)
 
 
 class CloudInferenceError(InferenceUnavailable):
-    def __init__(self, message: str, *, allow_local_fallback: bool = False):
+    def __init__(
+        self,
+        message: str,
+        *,
+        allow_local_fallback: bool = False,
+        retryable: bool = False,
+    ):
         super().__init__(message)
         self.allow_local_fallback = allow_local_fallback
+        self.retryable = retryable
 
 
 def _response_text(message: dict) -> str | None:
@@ -84,31 +93,45 @@ class OpenAICompatibleInferenceEngine(InferenceEngine):
         if not messages:
             raise CloudInferenceError("Cloud inference received an empty conversation.")
         last_error: CloudInferenceError | None = None
-        for model in self._candidate_models():
-            try:
-                message = self._request_message({
-                    "model": model,
-                    "messages": messages,
-                    "temperature": self.config.temperature,
-                    "max_tokens": self.config.max_tokens,
-                })
-                content = _response_text(message)
-                if not content or not content.strip():
-                    raise CloudInferenceError(
-                        "The cloud model returned an empty response. Try again or switch to Local.",
-                        allow_local_fallback=True,
+        deadline = monotonic() + self.config.model_step_timeout_seconds
+        retry_models = self._candidate_models()
+        for retry_index in range(self.config.max_retries + 1):
+            next_retry: list[str] = []
+            for model in retry_models:
+                try:
+                    message = self._request_message(
+                        {
+                            "model": model,
+                            "messages": messages,
+                            "temperature": self.config.temperature,
+                            "max_tokens": self.config.max_tokens,
+                        },
+                        timeout_seconds=self._candidate_timeout(deadline),
                     )
-            except CloudInferenceError as exc:
-                if not exc.allow_local_fallback:
-                    raise
-                last_error = exc
-                log.warning(
-                    "Cloud model %s was unavailable; trying the next configured model.",
-                    model,
-                )
-                continue
-            self._pin_model(model)
-            return content
+                    content = _response_text(message)
+                    if not content or not content.strip():
+                        raise CloudInferenceError(
+                            "The cloud model returned an empty response. "
+                            "Try again or switch to Local.",
+                            allow_local_fallback=True,
+                        )
+                except CloudInferenceError as exc:
+                    if not exc.allow_local_fallback:
+                        raise
+                    last_error = exc
+                    if exc.retryable:
+                        next_retry.append(model)
+                    log.warning(
+                        "Cloud model %s was unavailable; trying the next configured model.",
+                        model,
+                    )
+                    continue
+                self._pin_model(model)
+                return content
+            if not next_retry or retry_index >= self.config.max_retries:
+                break
+            self._wait_before_retry(retry_index + 1, tuple(next_retry), deadline)
+            retry_models = tuple(next_retry)
         if last_error is None:
             raise CloudInferenceError("The cloud model pool is empty.")
         raise last_error
@@ -137,31 +160,44 @@ class OpenAICompatibleInferenceEngine(InferenceEngine):
             body["tool_choice"] = self.config.tool_choice
         last_error: CloudInferenceError | None = None
         last_protocol_response: ModelResponse | None = None
-        for model in self._candidate_models():
-            request_body = dict(body, model=model)
-            try:
-                completion = self._request_completion(request_body)
-            except CloudInferenceError as exc:
-                if not exc.allow_local_fallback:
-                    raise
-                last_error = exc
-                log.warning(
-                    "Cloud model %s was unavailable; trying the next configured model.",
-                    model,
-                )
-                continue
-            response = normalize_native_chat_completion(completion, definitions)
-            if response.protocol_failure is not None:
-                last_protocol_response = response
-                log.warning(
-                    "Cloud model %s returned protocol failure %s; "
-                    "trying the next configured model.",
-                    model,
-                    response.protocol_failure.code.value,
-                )
-                continue
-            self._pin_model(model)
-            return response
+        deadline = monotonic() + self.config.model_step_timeout_seconds
+        retry_models = self._candidate_models()
+        for retry_index in range(self.config.max_retries + 1):
+            next_retry: list[str] = []
+            for model in retry_models:
+                request_body = dict(body, model=model)
+                try:
+                    completion = self._request_completion(
+                        request_body,
+                        timeout_seconds=self._candidate_timeout(deadline),
+                    )
+                except CloudInferenceError as exc:
+                    if not exc.allow_local_fallback:
+                        raise
+                    last_error = exc
+                    if exc.retryable:
+                        next_retry.append(model)
+                    log.warning(
+                        "Cloud model %s was unavailable; trying the next configured model.",
+                        model,
+                    )
+                    continue
+                response = normalize_native_chat_completion(completion, definitions)
+                if response.protocol_failure is not None:
+                    last_protocol_response = response
+                    log.warning(
+                        "Cloud model %s returned protocol failure %s; "
+                        "trying the next configured model.",
+                        model,
+                        response.protocol_failure.code.value,
+                    )
+                    continue
+                self._pin_model(model)
+                return response
+            if not next_retry or retry_index >= self.config.max_retries:
+                break
+            self._wait_before_retry(retry_index + 1, tuple(next_retry), deadline)
+            retry_models = tuple(next_retry)
         if last_protocol_response is not None:
             return last_protocol_response
         if last_error is None:
@@ -182,8 +218,42 @@ class OpenAICompatibleInferenceEngine(InferenceEngine):
         if changed:
             log.info("Pinned cloud inference to model %s after successful failover.", model)
 
-    def _request_message(self, body: dict[str, Any]) -> dict[str, Any]:
-        payload = self._request_completion(body)
+    def _candidate_timeout(self, deadline: float) -> float:
+        remaining = deadline - monotonic()
+        if remaining <= 0:
+            raise CloudInferenceError(
+                "The cloud model pool exceeded its model-step time budget.",
+                allow_local_fallback=True,
+            )
+        return min(float(self.config.timeout_seconds), remaining)
+
+    def _wait_before_retry(
+        self,
+        retry_number: int,
+        models: tuple[str, ...],
+        deadline: float,
+    ) -> None:
+        base = min(2.0 * (2 ** (retry_number - 1)), 30.0)
+        delay = base + (base * 0.25 * random())
+        if monotonic() + delay >= deadline:
+            raise CloudInferenceError(
+                "The cloud model pool exceeded its model-step time budget.",
+                allow_local_fallback=True,
+            )
+        log.warning(
+            "Retrying %d transiently unavailable cloud model(s) in %.1f seconds.",
+            len(models),
+            delay,
+        )
+        sleep(delay)
+
+    def _request_message(
+        self,
+        body: dict[str, Any],
+        *,
+        timeout_seconds: float | None = None,
+    ) -> dict[str, Any]:
+        payload = self._request_completion(body, timeout_seconds=timeout_seconds)
         try:
             choices = payload.get("choices")
             message = choices[0].get("message") if isinstance(choices, list) and choices else None
@@ -196,7 +266,12 @@ class OpenAICompatibleInferenceEngine(InferenceEngine):
             ) from exc
         return message
 
-    def _request_completion(self, body: dict[str, Any]) -> dict[str, Any]:
+    def _request_completion(
+        self,
+        body: dict[str, Any],
+        *,
+        timeout_seconds: float | None = None,
+    ) -> dict[str, Any]:
         if not self._api_key:
             raise CloudInferenceError(
                 f"Cloud mode needs a {self.config.provider_name} API key for this session."
@@ -215,13 +290,19 @@ class OpenAICompatibleInferenceEngine(InferenceEngine):
             method="POST",
         )
         try:
-            with urlopen(request, timeout=self.config.timeout_seconds) as response:
+            request_timeout = (
+                float(self.config.timeout_seconds)
+                if timeout_seconds is None
+                else timeout_seconds
+            )
+            with urlopen(request, timeout=request_timeout) as response:
                 raw = response.read()
         except HTTPError as exc:
             raw = exc.read(4096)
             message = _api_error_message(raw, exc.reason or "The cloud service rejected the request.")
             if self._api_key:
                 message = message.replace(self._api_key, "[REDACTED]")
+            retryable = exc.code in {408, 409, 429} or exc.code >= 500
             if exc.code in {401, 403}:
                 explanation = "The cloud API key was rejected. Enter a valid key and try again."
                 fallback = False
@@ -230,12 +311,17 @@ class OpenAICompatibleInferenceEngine(InferenceEngine):
                 fallback = True
             else:
                 explanation = f"Cloud inference failed with HTTP {exc.code}: {message}"
-                fallback = exc.code >= 500
-            raise CloudInferenceError(explanation, allow_local_fallback=fallback) from exc
+                fallback = retryable or exc.code in {400, 404, 422}
+            raise CloudInferenceError(
+                explanation,
+                allow_local_fallback=fallback,
+                retryable=retryable,
+            ) from exc
         except (URLError, TimeoutError, OSError) as exc:
             raise CloudInferenceError(
                 "Cloud inference could not connect. Check the internet connection or switch to Local.",
                 allow_local_fallback=True,
+                retryable=True,
             ) from exc
 
         try:

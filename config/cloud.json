@@ -17,6 +17,8 @@
   "temperature": 0.1,
   "max_tokens": 1536,
   "timeout_seconds": 90,
+  "model_step_timeout_seconds": 300,
+  "max_retries": 2,
   "default_mode": "local",
   "fallback_to_local": false
 }

@@ -58,12 +58,20 @@ obvious extension/stem variant after an extensionless file read misses. See
 
 ## Configuration
 
-- `config/agent.json`: feature gates and full-local read selection.
+- `config/agent.json`: feature gates, full-local read selection, and bounded agent-loop limits.
+  Normal runs have no short whole-session deadline; model requests and tools retain their own
+  timeouts, while step, capability-call, repetition, protocol-failure, and transcript limits remain
+  finite. Set `runtime_limits.overall_timeout_seconds` to a positive number only when a deployment
+  needs an additional absolute safety deadline.
 - `config/model.json`: local GGUF path, context policy, and generation limits.
 - `config/cloud.json`: OpenAI-compatible endpoint, ordered provider model pool, safe headers, and
   API-key environment-variable name. `model` is the primary model and `fallback_models` are tried
   in order when a cloud request is unavailable or returns a malformed tool-call response. The
-  first successful model remains pinned for later steps.
+  first successful model remains pinned for later steps. Transient network, timeout, rate-limit,
+  conflict, and server failures use bounded exponential-backoff retries controlled by
+  `max_retries`; malformed calls switch models without retrying the same malformed response.
+  `timeout_seconds` bounds each candidate and `model_step_timeout_seconds` bounds the complete
+  pool/retry operation.
 
 Feature flags can be overridden with explicit `ORSI_ENABLE_...` environment variables. Full-local
 read authority is still not created until the launch warning is accepted.

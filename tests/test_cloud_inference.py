@@ -81,6 +81,10 @@ def test_cloud_config_builds_a_bounded_ordered_model_pool():
         cloud_config(
             fallback_models=["vendor/repeated:free", "vendor/repeated:free"],
         )
+    with pytest.raises(ValueError):
+        cloud_config(max_retries=6)
+    with pytest.raises(ValueError, match="at least one"):
+        cloud_config(timeout_seconds=30, model_step_timeout_seconds=20)
 
 
 def test_cloud_backend_requires_a_session_key(monkeypatch):
@@ -465,6 +469,108 @@ def test_cloud_backend_fails_over_on_retryable_provider_error(monkeypatch):
     ]
     assert result.assistant_text == "Recovered."
     assert engine.active_model == "vendor/secondary:free"
+
+
+def test_cloud_backend_retries_transient_errors_with_bounded_backoff(monkeypatch):
+    monkeypatch.delenv("ORSI_TEST_CLOUD_KEY", raising=False)
+    engine = OpenAICompatibleInferenceEngine(
+        cloud_config(max_retries=2),
+        api_key="session-secret",
+    )
+    completion = {
+        "choices": [{"message": {"role": "assistant", "content": "Recovered."}}],
+    }
+    transient = CloudInferenceError(
+        "temporary outage",
+        allow_local_fallback=True,
+        retryable=True,
+    )
+
+    with (
+        patch.object(
+            engine,
+            "_request_completion",
+            side_effect=[transient, transient, completion],
+        ) as request,
+        patch("app.inference.cloud_backend.random", return_value=0.0),
+        patch("app.inference.cloud_backend.sleep") as wait,
+    ):
+        result = engine.respond_with_capabilities(
+            [{"role": "user", "content": "Hello"}],
+            (capability_definition(),),
+        )
+
+    assert result.assistant_text == "Recovered."
+    assert request.call_count == 3
+    assert [call.args[0]["model"] for call in request.call_args_list] == [
+        "free/test-model",
+        "free/test-model",
+        "free/test-model",
+    ]
+    assert [call.args[0] for call in wait.call_args_list] == [2.0, 4.0]
+
+
+def test_cloud_backend_stops_after_configured_transient_retries(monkeypatch):
+    monkeypatch.delenv("ORSI_TEST_CLOUD_KEY", raising=False)
+    engine = OpenAICompatibleInferenceEngine(
+        cloud_config(max_retries=1),
+        api_key="session-secret",
+    )
+    transient = CloudInferenceError(
+        "temporary outage",
+        allow_local_fallback=True,
+        retryable=True,
+    )
+
+    with (
+        patch.object(
+            engine,
+            "_request_completion",
+            side_effect=[transient, transient, AssertionError("unbounded retry")],
+        ) as request,
+        patch("app.inference.cloud_backend.random", return_value=0.0),
+        patch("app.inference.cloud_backend.sleep") as wait,
+        pytest.raises(CloudInferenceError, match="temporary outage"),
+    ):
+        engine.respond_with_capabilities(
+            [{"role": "user", "content": "Hello"}],
+            (capability_definition(),),
+        )
+
+    assert request.call_count == 2
+    wait.assert_called_once_with(2.0)
+
+
+def test_cloud_backend_bounds_retries_by_the_model_step_budget(monkeypatch):
+    monkeypatch.delenv("ORSI_TEST_CLOUD_KEY", raising=False)
+    engine = OpenAICompatibleInferenceEngine(
+        cloud_config(
+            timeout_seconds=20,
+            model_step_timeout_seconds=20,
+            max_retries=2,
+        ),
+        api_key="session-secret",
+    )
+    transient = CloudInferenceError(
+        "temporary outage",
+        allow_local_fallback=True,
+        retryable=True,
+    )
+
+    with (
+        patch.object(engine, "_request_completion", side_effect=[transient]) as request,
+        patch("app.inference.cloud_backend.monotonic", side_effect=[0.0, 0.0, 19.0]),
+        patch("app.inference.cloud_backend.random", return_value=0.0),
+        patch("app.inference.cloud_backend.sleep") as wait,
+        pytest.raises(CloudInferenceError, match="model-step time budget"),
+    ):
+        engine.respond_with_capabilities(
+            [{"role": "user", "content": "Hello"}],
+            (capability_definition(),),
+        )
+
+    request.assert_called_once()
+    wait.assert_not_called()
 
 
 def test_cloud_backend_translates_structured_continuation_history(monkeypatch):

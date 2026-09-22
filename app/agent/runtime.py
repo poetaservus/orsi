@@ -21,9 +21,9 @@ from uuid import uuid4
 from app.agent.contracts import (
     AgentRunResult,
     AgentRunStatus,
-    AgentRuntimeLimits,
     model_unavailable_message,
 )
+from app.settings.agent import AgentRuntimeLimits
 from app.agent.feedback import (
     call_fingerprint,
     constrained_fallback_messages,
@@ -97,16 +97,16 @@ class _AuthorizationOutcome:
 
 
 class _DeadlineCancellationToken(CancellationToken):
-    """Read-only token that becomes cancelled when the runtime clock reaches a deadline."""
+    """Optional safety deadline; ordinary agent runs rely on bounded operations."""
 
-    def __init__(self, clock: Callable[[], float], deadline: float):
+    def __init__(self, clock: Callable[[], float], deadline: float | None):
         self._clock = clock
         self._deadline = deadline
         self._event = Event()
 
     @property
     def is_cancelled(self) -> bool:
-        return self._clock() >= self._deadline
+        return self._deadline is not None and self._clock() >= self._deadline
 
     @property
     def reason(self) -> str:
@@ -115,6 +115,8 @@ class _DeadlineCancellationToken(CancellationToken):
     def wait(self, timeout: float | None = None) -> bool:
         if timeout is not None and timeout < 0:
             raise ValueError("Cancellation wait timeouts cannot be negative.")
+        if self._deadline is None:
+            return self._event.wait(timeout)
         remaining = max(0.0, self._deadline - self._clock())
         if remaining <= 0:
             return True
@@ -234,7 +236,7 @@ class AgentRuntime:
         started = self._timestamp()
         deadline_cancellation = _DeadlineCancellationToken(
             self._clock,
-            started + self.limits.overall_timeout_seconds,
+            self._deadline(started),
         )
         response, stop = self._text_model_step(
             transcript,
@@ -343,7 +345,7 @@ class AgentRuntime:
         started = self._timestamp()
         deadline_cancellation = _DeadlineCancellationToken(
             self._clock,
-            started + self.limits.overall_timeout_seconds,
+            self._deadline(started),
         )
         linked = LinkedCancellationToken(
             user_cancellation,
@@ -1112,7 +1114,14 @@ class AgentRuntime:
         return None
 
     def _remaining(self, started: float) -> float:
-        return max(0.0, self.limits.overall_timeout_seconds - (self._timestamp() - started))
+        timeout = self.limits.overall_timeout_seconds
+        if timeout is None:
+            return math.inf
+        return max(0.0, timeout - (self._timestamp() - started))
+
+    def _deadline(self, started: float) -> float | None:
+        timeout = self.limits.overall_timeout_seconds
+        return None if timeout is None else started + timeout
 
     def _timestamp(self) -> float:
         value = self._clock()

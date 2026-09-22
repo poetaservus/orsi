@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import math
 from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -20,30 +19,6 @@ class AgentRunStatus(StrEnum):
     TRANSCRIPT_LIMIT = "transcript_limit"
     MODEL_UNAVAILABLE = "model_unavailable"
     INTERNAL_FAILURE = "internal_failure"
-
-
-class AgentRuntimeLimits(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
-
-    max_steps: int = Field(default=8, ge=1, le=32)
-    max_capability_calls: int = Field(default=16, ge=1, le=32)
-    max_identical_calls: int = Field(default=2, ge=1, le=8)
-    max_protocol_failures: int = Field(default=2, ge=1, le=8)
-    overall_timeout_seconds: float = Field(default=120.0, gt=0, le=3_600)
-    poll_interval_seconds: float = Field(default=0.01, gt=0, le=1.0)
-    max_transcript_bytes: int = Field(
-        default=4 * 1024 * 1024,
-        ge=1_024,
-        le=16 * 1024 * 1024,
-    )
-
-    @model_validator(mode="after")
-    def validate_finite_durations(self):
-        if not math.isfinite(self.overall_timeout_seconds):
-            raise ValueError("The runtime timeout must be finite.")
-        if not math.isfinite(self.poll_interval_seconds):
-            raise ValueError("The runtime polling interval must be finite.")
-        return self
 
 
 class AgentRunResult(BaseModel):

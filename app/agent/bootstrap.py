@@ -87,4 +87,5 @@ def build_agent_runtime(
         permission_gate=permission_gate,
         approval_manager=ApprovalManager(),
         executor=executor,
+        limits=config.runtime_limits,
     )

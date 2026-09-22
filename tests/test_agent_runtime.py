@@ -725,6 +725,14 @@ def test_maximum_step_limit_stops_before_another_model_request(tmp_path: Path):
     assert len(model.requests) == 1
 
 
+def test_default_runtime_limits_do_not_put_a_short_deadline_over_the_session():
+    limits = AgentRuntimeLimits()
+
+    assert limits.overall_timeout_seconds is None
+    assert limits.max_steps == 24
+    assert limits.max_capability_calls == 32
+
+
 def test_accumulated_structured_transcript_has_a_hard_size_limit(tmp_path: Path):
     capability = LargeOutputCapability()
     limits = AgentRuntimeLimits(max_transcript_bytes=1_024)
@@ -852,6 +860,15 @@ def test_agent_runtime_is_connected_only_through_the_startup_feature_gate():
         "filesystem_trash_enabled": True,
         "application_launch_enabled": True,
         "full_local_read_enabled": True,
+        "runtime_limits": {
+            "max_steps": 24,
+            "max_capability_calls": 32,
+            "max_identical_calls": 2,
+            "max_protocol_failures": 2,
+            "overall_timeout_seconds": None,
+            "poll_interval_seconds": 0.01,
+            "max_transcript_bytes": 4_194_304,
+        },
     }
     assert "load_agent_feature_config" in startup
     assert "agent_config.filesystem_stat_enabled" in startup

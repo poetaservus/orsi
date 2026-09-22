@@ -10,5 +10,14 @@
   "filesystem_move_enabled": true,
   "filesystem_trash_enabled": true,
   "application_launch_enabled": true,
-  "full_local_read_enabled": true
+  "full_local_read_enabled": true,
+  "runtime_limits": {
+    "max_steps": 24,
+    "max_capability_calls": 32,
+    "max_identical_calls": 2,
+    "max_protocol_failures": 2,
+    "overall_timeout_seconds": null,
+    "poll_interval_seconds": 0.01,
+    "max_transcript_bytes": 4194304
+  }
 }
