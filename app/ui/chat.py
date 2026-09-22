@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 
-from PySide6.QtCore import QRect, QTimer, Qt
+from PySide6.QtCore import QElapsedTimer, QRect, QTimer, Qt
 from PySide6.QtGui import QColor, QFontDatabase, QPainter
 from PySide6.QtWidgets import (
     QApplication,
@@ -26,6 +26,10 @@ _FENCED_CODE = re.compile(
 )
 
 _CONVERSATION_WIDTH = 1120
+
+
+def _elapsed_label(prefix: str, seconds: float) -> str:
+    return f"{prefix} for {max(0.0, seconds):.1f}s"
 
 
 def _split_fenced_code(content: str) -> list[tuple[str, str, str]]:
@@ -216,6 +220,97 @@ class _Message(QFrame):
         self.updateGeometry()
 
 
+class _MessageBand(QWidget):
+    """One message plus its quiet, hover-revealed actions."""
+
+    def __init__(
+        self,
+        message: _Message,
+        *,
+        from_user: bool,
+        duration_seconds: float | None,
+    ):
+        super().__init__()
+        self.message = message
+        self.setObjectName("conversationBand")
+        self.setMouseTracking(True)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Minimum)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(4)
+
+        self.meta_row = QWidget()
+        self.meta_row.setObjectName("messageMetaRow")
+        self.meta_row.setFixedHeight(25)
+        meta_layout = QHBoxLayout(self.meta_row)
+        meta_layout.setContentsMargins(2, 0, 2, 0)
+        meta_layout.setSpacing(8)
+
+        self.timing_label = QLabel()
+        self.timing_label.setObjectName("responseTiming")
+        if not from_user and duration_seconds is not None:
+            self.timing_label.setText(_elapsed_label("Worked", duration_seconds))
+            meta_layout.addWidget(self.timing_label)
+        else:
+            self.timing_label.hide()
+        meta_layout.addStretch(1)
+
+        self.copy_button = QPushButton("Copy")
+        self.copy_button.setObjectName("copyMessageButton")
+        self.copy_button.setToolTip("Copy message")
+        self.copy_button.setAccessibleName("Copy message")
+        self.copy_button.setFixedSize(52, 23)
+        self.copy_button.hide()
+        meta_layout.addWidget(self.copy_button)
+        layout.addWidget(self.meta_row)
+
+        body = QWidget()
+        body.setObjectName("messageBodyRow")
+        body_layout = QHBoxLayout(body)
+        body_layout.setContentsMargins(0, 0, 0, 0)
+        body_layout.setSpacing(0)
+        if from_user:
+            body_layout.addStretch(1)
+            body_layout.addWidget(message, 0, Qt.AlignmentFlag.AlignRight)
+        else:
+            body_layout.addWidget(message, 0, Qt.AlignmentFlag.AlignLeft)
+            body_layout.addStretch(1)
+        layout.addWidget(body)
+
+        self._copy_timer = QTimer(self)
+        self._copy_timer.setSingleShot(True)
+        self._copy_timer.timeout.connect(self._restore_copy_label)
+        self.copy_button.clicked.connect(self.copy_message)
+
+    def set_available_width(self, width: int) -> None:
+        self.setFixedWidth(width)
+        self.message.set_available_width(width)
+
+    def copy_message(self) -> None:
+        QApplication.clipboard().setText(self.message._content)
+        self.copy_button.setText("Copied")
+        self.copy_button.show()
+        self._copy_timer.start(1400)
+
+    def enterEvent(self, event) -> None:  # noqa: N802 - Qt API name
+        self.copy_button.show()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:  # noqa: N802 - Qt API name
+        super().leaveEvent(event)
+        QTimer.singleShot(0, self._hide_copy_button_if_idle)
+
+    def _hide_copy_button_if_idle(self) -> None:
+        if not self.underMouse() and not self.copy_button.underMouse():
+            self.copy_button.hide()
+
+    def _restore_copy_label(self) -> None:
+        self.copy_button.setText("Copy")
+        if not self.underMouse() and not self.copy_button.underMouse():
+            self.copy_button.hide()
+
+
 class ChatView(QScrollArea):
     """Chat-style conversation view without sender name tags."""
 
@@ -241,15 +336,23 @@ class ChatView(QScrollArea):
         self._layout.setSpacing(40)
         self._messages: list[_Message] = []
         self._message_rows: list[QWidget] = []
-        self._message_bands: list[QWidget] = []
+        self._message_bands: list[_MessageBand] = []
 
         self._thinking_row = QWidget()
         self._thinking_layout = QHBoxLayout(self._thinking_row)
         self._thinking_layout.setContentsMargins(4, 0, 0, 0)
+        self._thinking_layout.setSpacing(8)
+        self.working_label = QLabel("Working for 0.0s")
+        self.working_label.setObjectName("responseTiming")
         self.thinking_dots = ThinkingDots()
+        self._thinking_layout.addWidget(self.working_label)
         self._thinking_layout.addWidget(self.thinking_dots)
         self._thinking_layout.addStretch(1)
         self._thinking_row.hide()
+        self._response_elapsed = QElapsedTimer()
+        self._response_timer = QTimer(self)
+        self._response_timer.setInterval(100)
+        self._response_timer.timeout.connect(self._update_working_label)
         self._layout.addWidget(self._thinking_row)
         self._layout.addStretch(1)
         self.setWidget(self._content)
@@ -258,7 +361,14 @@ class ChatView(QScrollArea):
         scroll_bar.actionTriggered.connect(self._on_user_scroll_action)
         scroll_bar.sliderMoved.connect(self._on_user_slider_moved)
 
-    def add_message(self, sender: str, content: str, error: bool = False) -> None:
+    def add_message(
+        self,
+        sender: str,
+        content: str,
+        error: bool = False,
+        *,
+        duration_seconds: float | None = None,
+    ) -> None:
         from_user = sender.casefold() == "user"
         # Sending a message always follows the conversation tail. Incoming
         # replies preserve the reader's position if they intentionally
@@ -275,19 +385,12 @@ class ChatView(QScrollArea):
         row_layout.setContentsMargins(left_margin, 0, right_margin, 0)
         row_layout.setSpacing(0)
 
-        band = QWidget()
-        band.setObjectName("conversationBand")
-        band.setFixedWidth(band_width)
-        band.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Minimum)
-        band_layout = QHBoxLayout(band)
-        band_layout.setContentsMargins(0, 0, 0, 0)
-        band_layout.setSpacing(0)
-        if from_user:
-            band_layout.addStretch(1)
-            band_layout.addWidget(message, 0, Qt.AlignmentFlag.AlignRight)
-        else:
-            band_layout.addWidget(message, 0, Qt.AlignmentFlag.AlignLeft)
-            band_layout.addStretch(1)
+        band = _MessageBand(
+            message,
+            from_user=from_user,
+            duration_seconds=duration_seconds,
+        )
+        band.set_available_width(band_width)
         row_layout.addStretch(1)
         row_layout.addWidget(band)
         row_layout.addStretch(1)
@@ -297,7 +400,6 @@ class ChatView(QScrollArea):
         message.ensurePolished()
         for label in message._text_labels:
             label.ensurePolished()
-        message.set_available_width(band_width)
         self._messages.append(message)
         self._message_rows.append(row)
         self._message_bands.append(band)
@@ -315,14 +417,33 @@ class ChatView(QScrollArea):
         self._follow_tail = True
         QTimer.singleShot(0, self._scroll_to_bottom)
 
-    def set_thinking(self, thinking: bool) -> None:
+    def set_thinking(self, thinking: bool) -> float | None:
         self._thinking_row.setVisible(thinking)
         if thinking:
+            self._response_elapsed.start()
+            self._update_working_label()
+            self._response_timer.start()
             self.thinking_dots.start()
             if self._follow_tail:
                 QTimer.singleShot(0, self._scroll_to_bottom)
-        else:
-            self.thinking_dots.stop()
+            return None
+        elapsed = (
+            self._response_elapsed.elapsed() / 1000.0
+            if self._response_elapsed.isValid()
+            else None
+        )
+        self._response_timer.stop()
+        self._response_elapsed.invalidate()
+        self.thinking_dots.stop()
+        return elapsed
+
+    def _update_working_label(self) -> None:
+        elapsed = (
+            self._response_elapsed.elapsed() / 1000.0
+            if self._response_elapsed.isValid()
+            else 0.0
+        )
+        self.working_label.setText(_elapsed_label("Working", elapsed))
 
     def resizeEvent(self, event) -> None:  # noqa: N802 - Qt API name
         super().resizeEvent(event)
@@ -334,8 +455,7 @@ class ChatView(QScrollArea):
             self._message_rows,
         ):
             row.layout().setContentsMargins(left_margin, 0, right_margin, 0)
-            band.setFixedWidth(width)
-            message.set_available_width(width)
+            band.set_available_width(width)
         column_width = self.viewport().width() - left_margin - right_margin
         left = max(4, left_margin + (column_width - width) // 2)
         right = max(0, self.viewport().width() - left - width)

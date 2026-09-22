@@ -65,6 +65,10 @@ log = logging.getLogger(__name__)
 _ICON_DIRECTORY = Path(__file__).with_name("assets")
 _FONT_DIRECTORY = _ICON_DIRECTORY / "fonts"
 _TOP_BAR_HEIGHT = 68
+_TOP_BAR_REVEAL_HEIGHT = 6
+_TOP_BAR_ANIMATION_MS = 220
+_TOP_BAR_HIDE_DELAY_MS = 450
+_TOP_BAR_INITIAL_DELAY_MS = 1100
 _TOP_BUTTON_SIZE = 42
 _TOP_ICON_SIZE = 30
 _COMPOSER_WIDTH = 799
@@ -386,15 +390,18 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(760, 600)
 
         root = QWidget()
+        self._root = root
         root.setObjectName("root")
+        root.installEventFilter(self)
         root_layout = QVBoxLayout(root)
         root_layout.setContentsMargins(0, 0, 0, 0)
         root_layout.setSpacing(0)
 
-        topbar = QWidget()
+        topbar = QWidget(root)
         self.topbar = topbar
         topbar.setObjectName("topBar")
         topbar.setFixedHeight(_TOP_BAR_HEIGHT)
+        topbar.installEventFilter(self)
         topbar_layout = QHBoxLayout(topbar)
         topbar_layout.setContentsMargins(21, 0, 22, 0)
         topbar_layout.setSpacing(17)
@@ -412,18 +419,6 @@ class MainWindow(QMainWindow):
         first_separator.setObjectName("topBarSeparator")
         first_separator.setFixedSize(1, 28)
 
-        self.history_button = QPushButton()
-        self.history_button.setObjectName("topBarButton")
-        self.history_button.setFixedSize(_TOP_BUTTON_SIZE, _TOP_BUTTON_SIZE)
-        self.history_button.setIcon(QIcon(str(_ICON_DIRECTORY / "history.svg")))
-        self.history_button.setIconSize(QSize(_TOP_ICON_SIZE, _TOP_ICON_SIZE))
-        self.history_button.setToolTip("History")
-        self.history_button.setAccessibleName("History")
-
-        second_separator = QFrame()
-        second_separator.setObjectName("topBarSeparator")
-        second_separator.setFixedSize(1, 28)
-
         self.settings_button = QPushButton()
         self.settings_button.setObjectName("topBarButton")
         self.settings_button.setFixedSize(_TOP_BUTTON_SIZE, _TOP_BUTTON_SIZE)
@@ -434,8 +429,6 @@ class MainWindow(QMainWindow):
 
         topbar_layout.addWidget(self.new_session_button, 0, Qt.AlignmentFlag.AlignVCenter)
         topbar_layout.addWidget(first_separator, 0, Qt.AlignmentFlag.AlignVCenter)
-        topbar_layout.addWidget(self.history_button, 0, Qt.AlignmentFlag.AlignVCenter)
-        topbar_layout.addWidget(second_separator, 0, Qt.AlignmentFlag.AlignVCenter)
         topbar_layout.addWidget(self.settings_button, 0, Qt.AlignmentFlag.AlignVCenter)
         topbar_layout.addStretch(1)
         self.context_window = ContextWindowBar(
@@ -443,7 +436,12 @@ class MainWindow(QMainWindow):
             topbar,
         )
         topbar_layout.addWidget(self.context_window, 0, Qt.AlignmentFlag.AlignVCenter)
-        root_layout.addWidget(topbar)
+
+        self._topbar_expanded = True
+        self._topbar_animation = QPropertyAnimation(topbar, b"pos", self)
+        self._topbar_hide_timer = QTimer(self)
+        self._topbar_hide_timer.setSingleShot(True)
+        self._topbar_hide_timer.timeout.connect(self._hide_topbar_if_idle)
 
         content = ChatSurface()
         self._content = content
@@ -582,6 +580,7 @@ class MainWindow(QMainWindow):
         _apply_greeting_font(self.startup_greeting)
         self._update_context_window()
         self._position_overlays()
+        self._topbar_hide_timer.start(_TOP_BAR_INITIAL_DELAY_MS)
         if startup_error:
             self.chat.add_message("Agent", startup_error, True)
         elif self._agent_error():
@@ -598,9 +597,50 @@ class MainWindow(QMainWindow):
         super().closeEvent(event)
 
     def eventFilter(self, watched, event) -> bool:  # noqa: N802 - Qt API name
-        if watched is getattr(self, "_content", None) and event.type() == QEvent.Type.Resize:
+        if watched is getattr(self, "topbar", None):
+            if event.type() == QEvent.Type.Enter:
+                self._topbar_hide_timer.stop()
+                self._set_topbar_expanded(True)
+            elif event.type() == QEvent.Type.Leave:
+                self._schedule_topbar_hide()
+        if watched in {
+            getattr(self, "_root", None),
+            getattr(self, "_content", None),
+        } and event.type() == QEvent.Type.Resize:
             self._position_overlays()
         return super().eventFilter(watched, event)
+
+    def _schedule_topbar_hide(self) -> None:
+        if self.settings_panel.isVisible():
+            return
+        self._topbar_hide_timer.start(_TOP_BAR_HIDE_DELAY_MS)
+
+    def _hide_topbar_if_idle(self) -> None:
+        if self.settings_panel.isVisible() or self.topbar.underMouse():
+            return
+        self._set_topbar_expanded(False)
+
+    def _set_topbar_expanded(self, expanded: bool, *, animate: bool = True) -> None:
+        if expanded:
+            self._topbar_hide_timer.stop()
+        elif self.settings_panel.isVisible():
+            return
+        self._topbar_expanded = expanded
+        target = QPoint(
+            0,
+            0 if expanded else -(_TOP_BAR_HEIGHT - _TOP_BAR_REVEAL_HEIGHT),
+        )
+        self._topbar_animation.stop()
+        if not animate or not self.isVisible():
+            self.topbar.move(target)
+            return
+        self._topbar_animation.setDuration(_TOP_BAR_ANIMATION_MS)
+        self._topbar_animation.setStartValue(self.topbar.pos())
+        self._topbar_animation.setEndValue(target)
+        self._topbar_animation.setEasingCurve(
+            QEasingCurve.Type.OutCubic if expanded else QEasingCurve.Type.InCubic
+        )
+        self._topbar_animation.start()
 
     def _load_greeting_message(self) -> str:
         store = self._preferences_store
@@ -651,6 +691,14 @@ class MainWindow(QMainWindow):
     def _position_overlays(self) -> None:
         if not hasattr(self, "composer"):
             return
+        self.topbar.resize(self._root.width(), _TOP_BAR_HEIGHT)
+        if self._topbar_animation.state() != QPropertyAnimation.State.Running:
+            self.topbar.move(
+                0,
+                0
+                if self._topbar_expanded
+                else -(_TOP_BAR_HEIGHT - _TOP_BAR_REVEAL_HEIGHT),
+            )
         content = self.composer.parentWidget()
         target = self._composer_target_geometry()
         glass_y = max(0, target.y())
@@ -666,7 +714,8 @@ class MainWindow(QMainWindow):
         self.bottom_glass.raise_()
         self.startup_greeting.raise_()
         self.composer.raise_()
-        self.settings_panel.move(162, _TOP_BAR_HEIGHT + 12)
+        self.topbar.raise_()
+        self.settings_panel.move(92, _TOP_BAR_HEIGHT + 12)
         if self.settings_panel.isVisible():
             self.settings_panel.raise_()
 
@@ -786,7 +835,10 @@ class MainWindow(QMainWindow):
         visible = not self.settings_panel.isVisible()
         self.settings_panel.setVisible(visible)
         if visible:
+            self._set_topbar_expanded(True)
             self.settings_panel.raise_()
+        else:
+            self._schedule_topbar_hide()
 
     def submit(self) -> None:
         message = self.input.toPlainText().strip()
@@ -848,8 +900,13 @@ class MainWindow(QMainWindow):
                 text = f"{text}\n\n{notice}"
             self._sync_inference_selector()
         self._update_context_window()
-        self._set_busy(False)
-        self.chat.add_message("Agent", text, error)
+        duration_seconds = self._set_busy(False)
+        self.chat.add_message(
+            "Agent",
+            text,
+            error,
+            duration_seconds=duration_seconds,
+        )
 
     @Slot()
     def _thread_finished(self) -> None:
@@ -857,7 +914,7 @@ class MainWindow(QMainWindow):
         self.thread = None
         self.worker = None
 
-    def _set_busy(self, busy: bool) -> None:
+    def _set_busy(self, busy: bool) -> float | None:
         self.send.setEnabled(not busy)
         self.stop.setEnabled(busy and self.service is not None)
         self.send.setVisible(not busy)
@@ -865,8 +922,9 @@ class MainWindow(QMainWindow):
         self.input.setEnabled(not busy)
         self.model_selector.setEnabled(not busy and self.inference is not None)
         self.new_session_button.setEnabled(not busy and self.service is not None)
-        self.chat.set_thinking(busy)
+        duration_seconds = self.chat.set_thinking(busy)
         self.activity.set_activity("" if busy else self._ready_status())
+        return duration_seconds
 
     def cancel_current_task(self) -> None:
         cancel = getattr(self.service, "cancel_current_task", None)
@@ -1277,6 +1335,27 @@ QFrame#errorMessage QLabel {
     font-size: 15px;
     font-weight: 400;
 }
+QWidget#messageMetaRow { background: transparent; border: none; }
+QLabel#responseTiming {
+    color: #858791;
+    background: transparent;
+    border: none;
+    font-family: Saira;
+    font-size: 11px;
+    font-weight: 400;
+}
+QPushButton#copyMessageButton {
+    color: #b7b8bd;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    padding: 0 7px;
+    font-family: Saira;
+    font-size: 11px;
+    font-weight: 400;
+}
+QPushButton#copyMessageButton:hover { color: #ededee; background: #292a30; }
+QPushButton#copyMessageButton:pressed { background: #1e1f24; }
 QFrame#codeBlock {
     background: #202020;
     border: 1px solid #3b3b3b;

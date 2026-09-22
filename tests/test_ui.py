@@ -9,7 +9,7 @@ from unittest.mock import patch
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 try:
-    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtCore import QEvent, QPoint, Qt
     from PySide6.QtGui import QFont, QPalette
     from PySide6.QtTest import QTest
     from PySide6.QtWidgets import QApplication, QLabel, QMessageBox, QWidget
@@ -62,6 +62,33 @@ class UiTests(unittest.TestCase):
         window.settings_button.click()
         self.assertFalse(window.settings_panel.isHidden())
         self.assertIs(window.context_window.parentWidget(), window.topbar)
+        window.close()
+
+    def test_history_control_is_removed_and_top_bar_smoothly_reveals(self):
+        window = MainWindow(None, "TEST-HOST")
+        window.resize(1280, 800)
+        window.show()
+        QApplication.processEvents()
+
+        self.assertFalse(hasattr(window, "history_button"))
+        self.assertNotIn(
+            "History",
+            [button.accessibleName() for button in window.topbar.findChildren(QWidget)],
+        )
+
+        window._set_topbar_expanded(False, animate=False)
+        self.assertEqual(window.topbar.y(), -62)
+        self.assertEqual(window.topbar.geometry().bottom() + 1, 6)
+
+        QApplication.sendEvent(window.topbar, QEvent(QEvent.Type.Enter))
+        QTest.qWait(260)
+        QApplication.processEvents()
+        self.assertEqual(window.topbar.y(), 0)
+
+        QApplication.sendEvent(window.topbar, QEvent(QEvent.Type.Leave))
+        QTest.qWait(720)
+        QApplication.processEvents()
+        self.assertEqual(window.topbar.y(), -62)
         window.close()
 
     def test_context_window_bar_uses_conversation_estimate(self):
@@ -660,6 +687,47 @@ class UiTests(unittest.TestCase):
         self.assertEqual(chat._messages[1].label.text(), "An O.R.S.I reply")
         margins = chat._messages[0].layout().contentsMargins()
         self.assertEqual((margins.left(), margins.top(), margins.right(), margins.bottom()), (24, 9, 24, 9))
+        chat.close()
+
+    def test_message_copy_actions_are_hover_only_and_copy_both_sides(self):
+        chat = ChatView()
+        chat.resize(1000, 600)
+        chat.show()
+        chat.add_message("User", "Copy the user message")
+        chat.add_message("Agent", "Copy the O.R.S.I response", duration_seconds=1.2)
+        QApplication.processEvents()
+
+        for band, expected in zip(
+            chat._message_bands,
+            ("Copy the user message", "Copy the O.R.S.I response"),
+            strict=True,
+        ):
+            self.assertTrue(band.copy_button.isHidden())
+            QApplication.sendEvent(band, QEvent(QEvent.Type.Enter))
+            self.assertFalse(band.copy_button.isHidden())
+            band.copy_button.click()
+            self.assertEqual(QApplication.clipboard().text(), expected)
+            self.assertEqual(band.copy_button.text(), "Copied")
+
+        chat.close()
+
+    def test_response_counter_changes_from_working_to_worked(self):
+        chat = ChatView()
+        chat.show()
+
+        self.assertIsNone(chat.set_thinking(True))
+        QTest.qWait(140)
+        QApplication.processEvents()
+        self.assertTrue(chat.working_label.text().startswith("Working for "))
+
+        duration = chat.set_thinking(False)
+        self.assertIsNotNone(duration)
+        self.assertGreaterEqual(duration, 0.1)
+        chat.add_message("Agent", "Finished", duration_seconds=duration)
+        self.assertTrue(
+            chat._message_bands[-1].timing_label.text().startswith("Worked for ")
+        )
+        self.assertTrue(chat._thinking_row.isHidden())
         chat.close()
 
     def test_assistant_code_uses_readonly_box_and_working_copy_button(self):
