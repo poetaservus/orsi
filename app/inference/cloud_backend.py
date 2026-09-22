@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
+from threading import Lock
 from typing import Any, Iterable
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
@@ -16,6 +18,9 @@ from app.inference.protocol import (
     native_function_tools,
     normalize_native_chat_completion,
 )
+
+
+log = logging.getLogger(__name__)
 
 
 class CloudInferenceError(InferenceUnavailable):
@@ -60,6 +65,8 @@ class OpenAICompatibleInferenceEngine(InferenceEngine):
         self.context_length = config.context_length
         self.max_response_tokens = config.max_tokens
         self._api_key = (api_key or os.environ.get(config.api_key_environment, "")).strip()
+        self._model_lock = Lock()
+        self._active_model_index = 0
 
     @property
     def has_api_key(self) -> bool:
@@ -68,22 +75,43 @@ class OpenAICompatibleInferenceEngine(InferenceEngine):
     def set_api_key(self, api_key: str) -> None:
         self._api_key = str(api_key).strip()
 
+    @property
+    def active_model(self) -> str:
+        with self._model_lock:
+            return self.config.model_pool[self._active_model_index]
+
     def respond(self, messages: list[dict[str, str]]) -> str:
         if not messages:
             raise CloudInferenceError("Cloud inference received an empty conversation.")
-        message = self._request_message({
-            "model": self.config.model,
-            "messages": messages,
-            "temperature": self.config.temperature,
-            "max_tokens": self.config.max_tokens,
-        })
-        content = _response_text(message)
-        if not content or not content.strip():
-            raise CloudInferenceError(
-                "The cloud model returned an empty response. Try again or switch to Local.",
-                allow_local_fallback=True,
-            )
-        return content
+        last_error: CloudInferenceError | None = None
+        for model in self._candidate_models():
+            try:
+                message = self._request_message({
+                    "model": model,
+                    "messages": messages,
+                    "temperature": self.config.temperature,
+                    "max_tokens": self.config.max_tokens,
+                })
+                content = _response_text(message)
+                if not content or not content.strip():
+                    raise CloudInferenceError(
+                        "The cloud model returned an empty response. Try again or switch to Local.",
+                        allow_local_fallback=True,
+                    )
+            except CloudInferenceError as exc:
+                if not exc.allow_local_fallback:
+                    raise
+                last_error = exc
+                log.warning(
+                    "Cloud model %s was unavailable; trying the next configured model.",
+                    model,
+                )
+                continue
+            self._pin_model(model)
+            return content
+        if last_error is None:
+            raise CloudInferenceError("The cloud model pool is empty.")
+        raise last_error
 
     def respond_with_capabilities(
         self,
@@ -97,7 +125,6 @@ class OpenAICompatibleInferenceEngine(InferenceEngine):
             require_nonempty=True,
         )
         body: dict[str, Any] = {
-            "model": self.config.model,
             "messages": native_chat_messages(messages, definitions),
             "temperature": self.config.temperature,
             "max_tokens": self.config.max_tokens,
@@ -108,8 +135,52 @@ class OpenAICompatibleInferenceEngine(InferenceEngine):
         }
         if self.config.tool_choice is not None:
             body["tool_choice"] = self.config.tool_choice
-        completion = self._request_completion(body)
-        return normalize_native_chat_completion(completion, definitions)
+        last_error: CloudInferenceError | None = None
+        last_protocol_response: ModelResponse | None = None
+        for model in self._candidate_models():
+            request_body = dict(body, model=model)
+            try:
+                completion = self._request_completion(request_body)
+            except CloudInferenceError as exc:
+                if not exc.allow_local_fallback:
+                    raise
+                last_error = exc
+                log.warning(
+                    "Cloud model %s was unavailable; trying the next configured model.",
+                    model,
+                )
+                continue
+            response = normalize_native_chat_completion(completion, definitions)
+            if response.protocol_failure is not None:
+                last_protocol_response = response
+                log.warning(
+                    "Cloud model %s returned protocol failure %s; "
+                    "trying the next configured model.",
+                    model,
+                    response.protocol_failure.code.value,
+                )
+                continue
+            self._pin_model(model)
+            return response
+        if last_protocol_response is not None:
+            return last_protocol_response
+        if last_error is None:
+            raise CloudInferenceError("The cloud model pool is empty.")
+        raise last_error
+
+    def _candidate_models(self) -> tuple[str, ...]:
+        models = self.config.model_pool
+        with self._model_lock:
+            start = self._active_model_index
+        return models[start:] + models[:start]
+
+    def _pin_model(self, model: str) -> None:
+        index = self.config.model_pool.index(model)
+        with self._model_lock:
+            changed = index != self._active_model_index
+            self._active_model_index = index
+        if changed:
+            log.info("Pinned cloud inference to model %s after successful failover.", model)
 
     def _request_message(self, body: dict[str, Any]) -> dict[str, Any]:
         payload = self._request_completion(body)

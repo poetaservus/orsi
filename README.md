@@ -60,8 +60,10 @@ obvious extension/stem variant after an extensionless file read misses. See
 
 - `config/agent.json`: feature gates and full-local read selection.
 - `config/model.json`: local GGUF path, context policy, and generation limits.
-- `config/cloud.json`: OpenAI-compatible endpoint, provider model, safe headers, and API-key
-  environment-variable name.
+- `config/cloud.json`: OpenAI-compatible endpoint, ordered provider model pool, safe headers, and
+  API-key environment-variable name. `model` is the primary model and `fallback_models` are tried
+  in order when a cloud request is unavailable or returns a malformed tool-call response. The
+  first successful model remains pinned for later steps.
 
 Feature flags can be overridden with explicit `ORSI_ENABLE_...` environment variables. Full-local
 read authority is still not created until the launch warning is accepted.
@@ -84,6 +86,12 @@ behavior, natural-language tool use, and off-screen Qt integration.
 
 Opt-in live-model tests remain skipped unless their documented environment gates and model runtime
 are available.
+
+To re-certify every configured OpenRouter pool member independently, set
+`ORSI_RUN_LIVE_CLOUD_MODEL_ACCEPTANCE=1` and `OPENROUTER_API_KEY`, then run
+`runtime\python\python.exe -m pytest tests\test_cloud_live_model.py --basetemp .pytest-tmp`.
+The gate disables pool failover for each candidate and requires both a complete filesystem tool
+round-trip and a no-tool conversational response.
 
 ## Portable runtime
 

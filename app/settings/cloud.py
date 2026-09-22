@@ -15,7 +15,8 @@ class CloudConfig(BaseModel):
 
     provider_name: str = "OpenRouter Free"
     base_url: str = "https://openrouter.ai/api/v1"
-    model: str = "openrouter/free"
+    model: str = "nvidia/nemotron-3-ultra-550b-a55b:free"
+    fallback_models: tuple[str, ...] = Field(default_factory=tuple, max_length=7)
     api_key_environment: str = "OPENROUTER_API_KEY"
     context_length: int = Field(32768, ge=1024)
     temperature: float = Field(0.1, ge=0, le=2)
@@ -34,6 +35,18 @@ class CloudConfig(BaseModel):
         if not value:
             raise ValueError("Value must not be empty.")
         return value
+
+    @field_validator("fallback_models")
+    @classmethod
+    def validate_fallback_models(cls, values: tuple[str, ...]) -> tuple[str, ...]:
+        cleaned = tuple(value.strip() for value in values)
+        if any(not value for value in cleaned):
+            raise ValueError("fallback_models must not contain empty model IDs.")
+        if any(any(character.isspace() for character in value) for value in cleaned):
+            raise ValueError("Cloud model IDs must not contain whitespace.")
+        if len(cleaned) != len(set(cleaned)):
+            raise ValueError("fallback_models must not contain duplicate model IDs.")
+        return cleaned
 
     @field_validator("api_key_environment")
     @classmethod
@@ -77,6 +90,18 @@ class CloudConfig(BaseModel):
             cleaned[name] = value
         object.__setattr__(self, "extra_headers", cleaned)
         return self
+
+    @model_validator(mode="after")
+    def validate_model_pool(self):
+        if any(character.isspace() for character in self.model):
+            raise ValueError("Cloud model IDs must not contain whitespace.")
+        if self.model in self.fallback_models:
+            raise ValueError("The primary cloud model cannot also be a fallback model.")
+        return self
+
+    @property
+    def model_pool(self) -> tuple[str, ...]:
+        return (self.model, *self.fallback_models)
 
     @property
     def chat_completions_url(self) -> str:

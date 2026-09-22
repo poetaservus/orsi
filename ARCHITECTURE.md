@@ -141,8 +141,9 @@ grants write or execute authority.
 
 - `config/agent.json`: capability feature flags and read scope.
 - `config/model.json`: local model path and generation/context limits.
-- `config/cloud.json`: provider endpoint, model, safe headers, and the name of the API-key
-  environment variable.
+- `config/cloud.json`: provider endpoint, ordered model pool, safe headers, and the name of the
+  API-key environment variable. Cloud pool failover is bounded by the configured candidates;
+  malformed native tool responses never execute, and the first successful model remains sticky.
 - `app/settings/`: strict loaders and models. Environment overrides are applied here, not in tools.
 
 Secrets are never accepted in checked-in headers or JSON. Cloud keys come from the configured

@@ -61,6 +61,28 @@ def test_cloud_config_rejects_secret_extra_headers():
         cloud_config(extra_headers={"Authorization": "Bearer should-not-be-here"})
 
 
+def test_cloud_config_builds_a_bounded_ordered_model_pool():
+    config = cloud_config(
+        model="vendor/primary:free",
+        fallback_models=["vendor/secondary:free", "vendor/tertiary:free"],
+    )
+
+    assert config.model_pool == (
+        "vendor/primary:free",
+        "vendor/secondary:free",
+        "vendor/tertiary:free",
+    )
+    with pytest.raises(ValueError, match="cannot also be a fallback"):
+        cloud_config(
+            model="vendor/primary:free",
+            fallback_models=["vendor/primary:free"],
+        )
+    with pytest.raises(ValueError, match="duplicate"):
+        cloud_config(
+            fallback_models=["vendor/repeated:free", "vendor/repeated:free"],
+        )
+
+
 def test_cloud_backend_requires_a_session_key(monkeypatch):
     monkeypatch.delenv("ORSI_TEST_CLOUD_KEY", raising=False)
     engine = OpenAICompatibleInferenceEngine(cloud_config())
@@ -259,6 +281,190 @@ def test_cloud_backend_returns_malformed_native_call_as_protocol_result(monkeypa
 
     assert result.protocol_failure.code == ModelProtocolFailureCode.MALFORMED_ARGUMENTS
     assert "private malformed arguments" not in result.model_dump_json()
+
+
+def test_cloud_backend_fails_over_on_malformed_call_and_pins_successful_model(
+    monkeypatch,
+):
+    monkeypatch.delenv("ORSI_TEST_CLOUD_KEY", raising=False)
+    engine = OpenAICompatibleInferenceEngine(
+        cloud_config(
+            model="vendor/primary:free",
+            fallback_models=["vendor/secondary:free", "vendor/tertiary:free"],
+        ),
+        api_key="session-secret",
+    )
+    malformed = MagicMock()
+    malformed.__enter__.return_value.read.return_value = json.dumps(
+        {
+            "model": "vendor/primary:free",
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "primary-call-1",
+                                "type": "function",
+                                "function": {
+                                    "name": provider_capability_name(),
+                                    "arguments": "not-json",
+                                },
+                            }
+                        ],
+                    }
+                }
+            ],
+        }
+    ).encode("utf-8")
+    valid = MagicMock()
+    valid.__enter__.return_value.read.return_value = json.dumps(
+        {
+            "model": "vendor/secondary:free",
+            "choices": [
+                {
+                    "message": {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": "secondary-call-1",
+                                "type": "function",
+                                "function": {
+                                    "name": provider_capability_name(),
+                                    "arguments": '{"path":"sample.txt"}',
+                                },
+                            }
+                        ],
+                    }
+                }
+            ],
+        }
+    ).encode("utf-8")
+
+    with patch(
+        "app.inference.cloud_backend.urlopen",
+        side_effect=[malformed, valid],
+    ) as mocked:
+        result = engine.respond_with_capabilities(
+            [{"role": "user", "content": "Inspect sample.txt"}],
+            (capability_definition(),),
+        )
+
+    sent_models = [
+        json.loads(call.args[0].data.decode("utf-8"))["model"]
+        for call in mocked.call_args_list
+    ]
+    assert sent_models == ["vendor/primary:free", "vendor/secondary:free"]
+    assert result.kind == ModelResponseKind.CAPABILITY_CALLS
+    assert result.capability_calls[0].arguments == {"path": "sample.txt"}
+    assert engine.active_model == "vendor/secondary:free"
+
+    pinned = MagicMock()
+    pinned.__enter__.return_value.read.return_value = json.dumps(
+        {
+            "model": "vendor/secondary:free",
+            "choices": [{"message": {"role": "assistant", "content": "Done."}}],
+        }
+    ).encode("utf-8")
+    with patch("app.inference.cloud_backend.urlopen", return_value=pinned) as mocked:
+        continuation = engine.respond_with_capabilities(
+            [{"role": "user", "content": "Continue"}],
+            (capability_definition(),),
+        )
+
+    sent = json.loads(mocked.call_args.args[0].data.decode("utf-8"))
+    assert sent["model"] == "vendor/secondary:free"
+    assert continuation.assistant_text == "Done."
+
+
+def test_cloud_backend_returns_failure_after_every_pool_model_is_malformed(
+    monkeypatch,
+):
+    monkeypatch.delenv("ORSI_TEST_CLOUD_KEY", raising=False)
+    engine = OpenAICompatibleInferenceEngine(
+        cloud_config(
+            model="vendor/primary:free",
+            fallback_models=["vendor/secondary:free"],
+        ),
+        api_key="session-secret",
+    )
+    responses = []
+    for model in engine.config.model_pool:
+        response = MagicMock()
+        response.__enter__.return_value.read.return_value = json.dumps(
+            {
+                "model": model,
+                "choices": [
+                    {
+                        "message": {
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": f"{model.rsplit('/', 1)[-1]}-call",
+                                    "type": "function",
+                                    "function": {
+                                        "name": provider_capability_name(),
+                                        "arguments": "still-not-json",
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                ],
+            }
+        ).encode("utf-8")
+        responses.append(response)
+
+    with patch(
+        "app.inference.cloud_backend.urlopen",
+        side_effect=responses,
+    ) as mocked:
+        result = engine.respond_with_capabilities(
+            [{"role": "user", "content": "Inspect"}],
+            (capability_definition(),),
+        )
+
+    assert mocked.call_count == 2
+    assert result.protocol_failure.code == ModelProtocolFailureCode.MALFORMED_ARGUMENTS
+    assert engine.active_model == "vendor/primary:free"
+
+
+def test_cloud_backend_fails_over_on_retryable_provider_error(monkeypatch):
+    monkeypatch.delenv("ORSI_TEST_CLOUD_KEY", raising=False)
+    engine = OpenAICompatibleInferenceEngine(
+        cloud_config(
+            model="vendor/primary:free",
+            fallback_models=["vendor/secondary:free"],
+        ),
+        api_key="session-secret",
+    )
+    completion = {
+        "model": "vendor/secondary:free",
+        "choices": [{"message": {"role": "assistant", "content": "Recovered."}}],
+    }
+
+    with patch.object(
+        engine,
+        "_request_completion",
+        side_effect=[
+            CloudInferenceError("rate limited", allow_local_fallback=True),
+            completion,
+        ],
+    ) as request:
+        result = engine.respond_with_capabilities(
+            [{"role": "user", "content": "Hello"}],
+            (capability_definition(),),
+        )
+
+    assert [call.args[0]["model"] for call in request.call_args_list] == [
+        "vendor/primary:free",
+        "vendor/secondary:free",
+    ]
+    assert result.assistant_text == "Recovered."
+    assert engine.active_model == "vendor/secondary:free"
 
 
 def test_cloud_backend_translates_structured_continuation_history(monkeypatch):
