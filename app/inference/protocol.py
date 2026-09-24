@@ -63,6 +63,7 @@ class ModelProtocolFailureCode(StrEnum):
     TOO_MANY_CALLS = "too_many_calls"
     DUPLICATE_CALL_ID = "duplicate_call_id"
     UNKNOWN_CAPABILITY = "unknown_capability"
+    OUTPUT_TRUNCATED = "output_truncated"
 
 
 class ModelProtocolFailure(BaseModel):
@@ -403,7 +404,16 @@ def normalize_native_chat_completion(
     choice = choices[0]
     if not isinstance(choice, dict):
         return _malformed_response()
-    return normalize_native_chat_message(choice.get("message"), values)
+    normalized = normalize_native_chat_message(choice.get("message"), values)
+    if (
+        choice.get("finish_reason") == "length"
+        and normalized.kind == ModelResponseKind.PROTOCOL_FAILURE
+    ):
+        return ModelResponse.failure(
+            ModelProtocolFailureCode.OUTPUT_TRUNCATED,
+            "The model response ended before its structured call was complete.",
+        )
+    return normalized
 
 
 def normalize_native_chat_message(

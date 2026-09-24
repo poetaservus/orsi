@@ -47,13 +47,15 @@ redirected, reparse, or ambiguous paths are denied.
 
 ## How tool requests work
 
-The active model receives the complete enabled capability catalog and can return ordinary text or
-one native tool call. O.R.S.I validates the tool name and arguments, applies deterministic
-permissions, asks for approval when required, journals the lifecycle, executes the tool once, and
-returns its structured result to the model.
+The active model receives a turn-scoped subset of the enabled capability catalog and can return
+ordinary text or one native tool call. The visibility selector only narrows schemas; it never
+constructs arguments, grants permission, or executes an operation. O.R.S.I validates the model's
+tool name and arguments, applies deterministic permissions, asks for approval when required,
+journals the lifecycle, executes the tool once, and returns its structured result to the model.
 
-There is no production regex command router. A narrow same-folder filename recovery can resolve one
-obvious extension/stem variant after an extensionless file read misses. See
+There is no production regex command executor. A deterministic visibility selector keeps unrelated
+schemas out of each prompt, while a narrow same-folder filename recovery can resolve one obvious
+extension/stem variant after an extensionless file read misses. See
 [ARCHITECTURE.md](ARCHITECTURE.md#10-natural-language-resolution).
 
 ## Configuration
@@ -63,7 +65,9 @@ obvious extension/stem variant after an extensionless file read misses. See
   timeouts, while step, capability-call, repetition, protocol-failure, and transcript limits remain
   finite. Set `runtime_limits.overall_timeout_seconds` to a positive number only when a deployment
   needs an additional absolute safety deadline.
-- `config/model.json`: local GGUF path, context policy, and generation limits.
+- `config/model.json`: local GGUF path, context policy, and generation limits. The configured Qwen3
+  14B profile uses a 16,384-token context and a 4,096-token response budget so multiline tool calls
+  have room to finish.
 - `config/cloud.json`: OpenAI-compatible endpoint, ordered provider model pool, safe headers, and
   API-key environment-variable name. `model` is the primary model and `fallback_models` are tried
   in order when a cloud request is unavailable or returns a malformed tool-call response. The
@@ -71,7 +75,7 @@ obvious extension/stem variant after an extensionless file read misses. See
   conflict, and server failures use bounded exponential-backoff retries controlled by
   `max_retries`; malformed calls switch models without retrying the same malformed response.
   `timeout_seconds` bounds each candidate and `model_step_timeout_seconds` bounds the complete
-  pool/retry operation.
+  pool/retry operation. The cloud response budget is also 4,096 tokens.
 
 Feature flags can be overridden with explicit `ORSI_ENABLE_...` environment variables. Full-local
 read authority is still not created until the launch warning is accepted.
@@ -99,7 +103,7 @@ To re-certify every configured OpenRouter pool member independently, set
 `ORSI_RUN_LIVE_CLOUD_MODEL_ACCEPTANCE=1` and `OPENROUTER_API_KEY`, then run
 `runtime\python\python.exe -m pytest tests\test_cloud_live_model.py --basetemp .pytest-tmp`.
 The gate disables pool failover for each candidate and independently exercises listing, reading,
-multiline writing, searching, copying, moving, folder creation, trashing, metadata inspection, and
+an 80-rule multiline write, searching, copying, moving, folder creation, trashing, metadata inspection, and
 a no-tool conversational response. Every mutating case uses a temporary workspace and automatic
 test-only approval; the trash case moves its fixture into temporary holding instead of adding an
 entry to the real Windows Recycle Bin.

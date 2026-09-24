@@ -1,8 +1,8 @@
 {
-  "model_path": "models/model.gguf",
-  "context_length": 4096,
+  "model_path": "models/Qwen314BQ4KM.gguf",
+  "context_length": 16384,
   "minimum_context_length": 4096,
-  "maximum_context_length": 32768,
+  "maximum_context_length": 16384,
   "cpu_context_length": 4096,
   "context_vram_fraction": 0.8,
   "context_free_vram_fraction": 0.9,
@@ -10,6 +10,6 @@
   "context_fixed_reserve_mib": 1024,
   "estimated_kv_bytes_per_token": 262144,
   "temperature": 0.1,
-  "max_tokens": 1536,
+  "max_tokens": 4096,
   "gpu_layers": -1
 }

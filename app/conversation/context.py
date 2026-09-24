@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from copy import deepcopy
 import json
+from copy import deepcopy
+from math import ceil
 from typing import Any
 
 
@@ -10,11 +11,16 @@ def select_context_messages(
     *,
     system_prompt: str,
     history: list[dict[str, Any]],
+    reserved_tokens: int = 0,
 ) -> list[dict[str, Any]]:
     """Select complete conversation turns that fit the model's context window."""
+    reserved_tokens = _validated_reserved_tokens(reserved_tokens)
     system = {"role": "system", "content": system_prompt}
     count_message_tokens(inference, [system])
-    budget = max(1, context_length(inference) - response_reserve(inference))
+    budget = max(
+        1,
+        context_length(inference) - response_reserve(inference) - reserved_tokens,
+    )
     selected: list[dict[str, Any]] = []
     for group in reversed(conversation_turn_groups(history)):
         candidate_group = deepcopy(group)
@@ -39,13 +45,44 @@ def select_context_messages(
     return [system, *selected]
 
 
-def estimated_context_tokens(inference, messages: list[dict[str, Any]]) -> int:
+def estimated_context_tokens(
+    inference,
+    messages: list[dict[str, Any]],
+    *,
+    reserved_tokens: int = 0,
+) -> int:
     if not messages:
         return 0
+    reserved_tokens = _validated_reserved_tokens(reserved_tokens)
     return min(
         context_length(inference),
-        count_message_tokens(inference, messages) + response_reserve(inference),
+        count_message_tokens(inference, messages)
+        + response_reserve(inference)
+        + reserved_tokens,
     )
+
+
+def capability_schema_reserve(definitions) -> int:
+    """Conservatively reserve context for native tool schemas and wrappers."""
+    values = tuple(definitions)
+    if not values:
+        return 0
+    payload = [value.model_dump(mode="json") for value in values]
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return ceil(len(encoded) / 3) + 48 * len(values)
+
+
+def _validated_reserved_tokens(value: int) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError("Reserved context tokens must be an integer.")
+    if value < 0:
+        raise ValueError("Reserved context tokens cannot be negative.")
+    return value
 
 
 def count_message_tokens(inference, messages: list[dict[str, Any]]) -> int:

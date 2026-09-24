@@ -453,7 +453,7 @@ def test_ambiguous_requests_require_an_exact_target(text):
     assert _folder_creation_target(text) is None
 
 
-def test_planner_turn_receives_write_capability(service):
+def test_metadata_turn_does_not_receive_mkdir_capability(service):
     from app.inference.protocol import ModelResponse, ModelResponseKind
     seen = []
 
@@ -463,7 +463,7 @@ def test_planner_turn_receives_write_capability(service):
 
     service.inference.respond_with_capabilities = read_model
     assert service.run("Inspect the file metadata") == "Which file?"
-    assert seen and "filesystem.mkdir" in seen
+    assert seen == ["filesystem.stat"]
     assert not service.agent_runtime.executor.journal.records
 
 

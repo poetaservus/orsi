@@ -102,10 +102,11 @@ class ScriptedListModel(InferenceEngine):
     def respond_with_capabilities(self, messages, capabilities):
         self.requests.append(deepcopy(messages))
         self.definitions.append(tuple(capabilities))
-        assert [item.name for item in capabilities] == [
-            "filesystem.list",
-            "filesystem.stat",
-        ]
+        names = [item.name for item in capabilities]
+        assert names in (
+            ["filesystem.stat"],
+            ["filesystem.list", "filesystem.stat"],
+        )
         return self.responses.pop(0)
 
 

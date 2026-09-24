@@ -15,6 +15,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from app.inference.engine import InferenceEngine, InferenceUnavailable
+from app.inference.diagnostics import completion_diagnostics
 from app.settings.model import ModelConfig, detect_nvidia_memory_mib
 from app.inference.protocol import (
     ModelCapabilityDefinition,
@@ -163,7 +164,20 @@ class LlamaServerInferenceEngine(InferenceEngine):
         # Keep this shared normalizer as the only authority boundary. The
         # server decodes Qwen's native envelope but cannot relax O.R.S.I's
         # call IDs, names, argument, size, or mixed-response rules.
-        return normalize_native_chat_completion(completion, definitions)
+        response = normalize_native_chat_completion(completion, definitions)
+        if response.protocol_failure is not None:
+            finish_reason, prompt_tokens, completion_tokens = completion_diagnostics(
+                completion
+            )
+            log.warning(
+                "Local model returned protocol failure %s; finish_reason=%s "
+                "prompt_tokens=%s completion_tokens=%s.",
+                response.protocol_failure.code.value,
+                finish_reason,
+                prompt_tokens,
+                completion_tokens,
+            )
+        return response
 
     def cancel_current_request(self) -> None:
         """Bound cancellation by stopping the isolated inference server."""

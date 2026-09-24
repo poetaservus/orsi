@@ -540,6 +540,28 @@ def test_protocol_failure_can_recover_but_repeated_failures_stop(tmp_path: Path)
     assert stopped_result.steps == 2
 
 
+def test_truncated_structured_output_stops_without_a_pointless_retry(tmp_path: Path):
+    truncated = ModelResponse.failure(
+        ModelProtocolFailureCode.OUTPUT_TRUNCATED,
+        "The structured response was cut off.",
+    )
+    runtime, model, capability, journal, _ = build_runtime(
+        tmp_path,
+        [truncated, capability_call(1)],
+    )
+
+    result = run(runtime, tmp_path)
+
+    assert result.status == AgentRunStatus.PROTOCOL_FAILURE_LIMIT
+    assert result.steps == 1
+    assert result.protocol_failures == 1
+    assert "cut off" in result.message
+    assert "No computer action was taken" in result.message
+    assert len(model.requests) == 1
+    assert capability.values == []
+    assert journal.records == ()
+
+
 def test_mixed_response_feedback_preserves_strict_sequential_continuation(
     tmp_path: Path,
 ):

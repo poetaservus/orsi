@@ -159,6 +159,8 @@ environment variable or the in-memory GUI prompt. Runtime directories are create
 
 Normal diagnostics use Python logging configured by `infrastructure/logging.py` with bounded rotated
 files under `state/orsi.log`. Conversation content and file contents are not logged by default.
+Malformed structured responses log only the provider/model, failure code, finish reason, and token
+counts so output-budget failures can be diagnosed without recording generated or file content.
 Capability intent, authorization, completion, failure, and unknown outcomes are stored separately in
 the crash journal. Conversation and UI preference JSON writes use atomic replacement.
 
@@ -178,9 +180,11 @@ allowlist and still requires approval.
 
 ## 10. Natural-language resolution
 
-There is no production regex command router after this cleanup. General intent and tool selection are
-handled by the model against the schemas exported from `capabilities/catalog.py`, normalized in
-`inference/protocol.py`, and continued by `agent/runtime.py`. The only deterministic resolver is the
-narrow recovery in `agent/file_resolution.py`: after an extensionless read/find miss, it may list the
-same directory and accept one obvious exact name/stem/extension match. Test-only natural-language
-parsers live under `tests/support/` and cannot enter production startup.
+`conversation/capability_routing.py` deterministically selects a small, turn-scoped visibility set
+from the enabled catalog. It may retain schemas needed by active tool history or a short follow-up,
+but it cannot create arguments, grant authority, or execute anything. General intent and the actual
+tool call remain model decisions against those exported schemas, normalized in
+`inference/protocol.py`, and continued by `agent/runtime.py`. The narrow recovery in
+`agent/file_resolution.py` may list the same directory after an extensionless read/find miss and
+accept one obvious exact name/stem/extension match. Test-only command parsers live under
+`tests/support/` and cannot enter production startup.

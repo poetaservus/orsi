@@ -160,6 +160,25 @@ def test_invalid_assistant_text_encoding_becomes_a_protocol_failure():
     assert result.protocol_failure.code == ModelProtocolFailureCode.MALFORMED_RESPONSE
 
 
+def test_length_finished_malformed_call_is_reported_as_output_truncation():
+    result = normalize_native_chat_completion(
+        {
+            "choices": [
+                {
+                    "finish_reason": "length",
+                    "message": message(
+                        content=None,
+                        tool_calls=[native_call(arguments='{"path":"unfinished')],
+                    ),
+                }
+            ]
+        },
+        (definition(),),
+    )
+
+    assert result.protocol_failure.code == ModelProtocolFailureCode.OUTPUT_TRUNCATED
+
+
 def test_native_calls_preserve_provider_ids_names_and_untrusted_arguments():
     provider_message = message(
         tool_calls=[

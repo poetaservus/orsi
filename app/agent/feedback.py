@@ -100,6 +100,11 @@ def protocol_feedback(code: str) -> dict[str, str]:
         instruction = "Use only one of the capability names in the advertised catalog."
     elif code == ModelProtocolFailureCode.MALFORMED_ARGUMENTS.value:
         instruction = "Return arguments as one JSON object matching the advertised capability schema."
+    elif code == ModelProtocolFailureCode.OUTPUT_TRUNCATED.value:
+        instruction = (
+            "The structured response exceeded the model output budget. Return one complete, "
+            "valid call within that budget and never return a partial JSON object."
+        )
     else:
         instruction = "Return either assistant text or exactly one valid native capability call."
     return {

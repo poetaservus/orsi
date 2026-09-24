@@ -139,10 +139,24 @@ def _prepare_capability_case(
 
     if case_name == "multiline-writing":
         target = portable_root / "matrix-written.txt"
-        text = "matrix-line-one\nmatrix-line-two\nmatrix-line-three"
+        text = "\n".join(
+            [
+                ":root {",
+                "  --charcoal: #17171c;",
+                "  --snow: #fffafa;",
+                "  --neon-violet: #a855f7;",
+                "}",
+                "",
+                *(
+                    f".matrix-card-{index:03d} {{ color: var(--snow); "
+                    f"background: var(--charcoal); border-color: var(--neon-violet); }}"
+                    for index in range(1, 81)
+                ),
+            ]
+        )
         return (
             f'Use filesystem.write_text exactly once to create "{target}" with exactly '
-            "the following UTF-8 text, preserving the two newlines and adding no final newline:\n"
+            "the following multiline UTF-8 text, preserving every newline and adding no final newline:\n"
             f"{text}\nDo not call another tool.",
             {"target": target, "text": text},
         )

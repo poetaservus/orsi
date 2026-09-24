@@ -230,7 +230,7 @@ def test_ambiguous_copy_requests_are_not_parsed(text):
     assert _copy_request(text) is None
 
 
-def test_read_model_never_receives_copy_capability(service):
+def test_metadata_turn_does_not_receive_copy_capability(service):
     from app.inference.protocol import ModelResponse, ModelResponseKind
     seen = []
 
@@ -240,7 +240,7 @@ def test_read_model_never_receives_copy_capability(service):
 
     service.inference.respond_with_capabilities = read_model
     assert service.run("Inspect the file metadata") == "Which file?"
-    assert seen and "filesystem.copy" in seen
+    assert seen == ["filesystem.stat"]
     assert not service.agent_runtime.executor.journal.records
 
 

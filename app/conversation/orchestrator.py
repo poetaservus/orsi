@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from copy import deepcopy
 from pathlib import Path
 from threading import Lock
@@ -7,12 +8,14 @@ from uuid import uuid4
 
 from app.agent.runtime import AgentRunStatus, AgentRuntime
 from app.conversation.context import (
+    capability_schema_reserve,
     context_length,
     count_message_tokens,
     estimated_context_tokens,
     response_reserve,
     select_context_messages,
 )
+from app.conversation.capability_routing import select_turn_capabilities
 from app.conversation.prompt import (
     AGENT_CONVERSATION_SYSTEM_PROMPT,
     SYSTEM_PROMPT,
@@ -166,7 +169,7 @@ class ConversationService:
             )
             turn_results.extend(zip(calls, results, strict=True))
 
-        capabilities = self.agent_capabilities
+        capabilities = self._turn_capabilities(text)
         result = self.agent_runtime.run(
             self._model_messages(
                 capability_turn=True,
@@ -236,11 +239,26 @@ class ConversationService:
     def estimated_context_tokens(self) -> int:
         if not self.store.messages():
             return 0
+        capabilities = self.agent_capabilities
+        if self.agent_enabled:
+            latest_user = next(
+                (
+                    message.get("content", "")
+                    for message in reversed(self._agent_history)
+                    if message.get("role") == "user"
+                ),
+                "",
+            )
+            capabilities = self._turn_capabilities(latest_user)
         messages = self._model_messages(
             capability_turn=self.agent_enabled,
-            capability_names=(self.agent_capabilities if self.agent_enabled else None),
+            capability_names=(capabilities if self.agent_enabled else None),
         )
-        return estimated_context_tokens(self.inference, messages)
+        return estimated_context_tokens(
+            self.inference,
+            messages,
+            reserved_tokens=self._capability_schema_reserve(capabilities),
+        )
 
     def _model_messages(
         self,
@@ -249,8 +267,12 @@ class ConversationService:
         capability_names: tuple[str, ...] | None = None,
     ) -> list[dict]:
         use_agent = self.agent_enabled and capability_turn is not False
-        capabilities = capability_names or self.agent_capabilities
+        capabilities = (
+            self.agent_capabilities if capability_names is None else capability_names
+        )
+        schema_reserve = 0
         if use_agent:
+            schema_reserve = self._capability_schema_reserve(capabilities)
             prompt = agent_system_prompt(
                 self.host_read_scope or HostReadScope.PORTABLE_ROOT,
                 capabilities,
@@ -264,7 +286,9 @@ class ConversationService:
             count_message_tokens(self.inference, [full_system])
             budget = max(
                 1,
-                context_length(self.inference) - response_reserve(self.inference),
+                context_length(self.inference)
+                - response_reserve(self.inference)
+                - schema_reserve,
             )
             if count_message_tokens(self.inference, [full_system]) >= max(1, budget - 256):
                 prompt = compact_agent_system_prompt(
@@ -284,8 +308,64 @@ class ConversationService:
             self.inference,
             system_prompt=prompt,
             history=history,
+            reserved_tokens=schema_reserve,
         )
 
     def _planner_capabilities(self) -> tuple[str, ...]:
         """Return the full registry catalog without applying semantic routing."""
         return self.agent_capabilities
+
+    def _turn_capabilities(self, latest_user_text: str) -> tuple[str, ...]:
+        if self.agent_runtime is None:
+            return ()
+        available = self.agent_capabilities
+        selected = set(select_turn_capabilities(latest_user_text, available))
+        history_names = self._history_capability_names()
+        selected.update(history_names)
+        if self._has_filesystem_followup_context() and (
+            re.fullmatch(
+                r"\s*(?:yes|yeah|yep|ok(?:ay)?|go ahead|do it|there|the rest|remaining)"
+                r"\s*[.!?]*\s*",
+                latest_user_text,
+                flags=re.IGNORECASE,
+            )
+            or re.fullmatch(r"\s*[A-Za-z]:[\\/].+", latest_user_text)
+        ):
+            selected.update(available)
+        return tuple(name for name in available if name in selected)
+
+    def _history_capability_names(self) -> set[str]:
+        available = set(self.agent_capabilities)
+        names: set[str] = set()
+        for message in self._agent_history:
+            if message.get("role") != "assistant":
+                continue
+            calls = message.get("capability_calls")
+            if not isinstance(calls, list):
+                continue
+            for call in calls:
+                if isinstance(call, dict) and call.get("capability") in available:
+                    names.add(call["capability"])
+        return names
+
+    def _has_filesystem_followup_context(self) -> bool:
+        for message in reversed(self._agent_history[-8:]):
+            content = message.get("content")
+            if isinstance(content, str) and re.search(
+                r"\b(?:file|folder|directory|path|desktop|documents|downloads)\b",
+                content,
+                flags=re.IGNORECASE,
+            ):
+                return True
+        return False
+
+    def _capability_schema_reserve(self, names: tuple[str, ...]) -> int:
+        if self.agent_runtime is None or not names:
+            return 0
+        selected = set(names)
+        definitions = tuple(
+            definition
+            for definition in self.agent_runtime.registry.model_definitions()
+            if definition.name in selected
+        )
+        return capability_schema_reserve(definitions)

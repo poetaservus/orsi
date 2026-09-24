@@ -12,6 +12,7 @@ from urllib.request import Request, urlopen
 
 from app.settings.cloud import CloudConfig
 from app.inference.engine import InferenceEngine, InferenceUnavailable
+from app.inference.diagnostics import completion_diagnostics
 from app.inference.protocol import (
     ModelCapabilityDefinition,
     ModelResponse,
@@ -185,11 +186,18 @@ class OpenAICompatibleInferenceEngine(InferenceEngine):
                 response = normalize_native_chat_completion(completion, definitions)
                 if response.protocol_failure is not None:
                     last_protocol_response = response
+                    finish_reason, prompt_tokens, completion_tokens = (
+                        completion_diagnostics(completion)
+                    )
                     log.warning(
                         "Cloud model %s returned protocol failure %s; "
+                        "finish_reason=%s prompt_tokens=%s completion_tokens=%s; "
                         "trying the next configured model.",
                         model,
                         response.protocol_failure.code.value,
+                        finish_reason,
+                        prompt_tokens,
+                        completion_tokens,
                     )
                     continue
                 self._pin_model(model)

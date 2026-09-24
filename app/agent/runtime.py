@@ -482,6 +482,18 @@ class AgentRuntime:
 
             if response.kind == ModelResponseKind.PROTOCOL_FAILURE:
                 protocol_failures += 1
+                if (
+                    response.protocol_failure.code
+                    == ModelProtocolFailureCode.OUTPUT_TRUNCATED
+                ):
+                    return self._stopped(
+                        AgentRunStatus.PROTOCOL_FAILURE_LIMIT,
+                        "The model response was cut off before it could complete the requested "
+                        "action. No computer action was taken.",
+                        steps=steps,
+                        capability_calls=capability_calls,
+                        protocol_failures=protocol_failures,
+                    )
                 if protocol_failures >= self.limits.max_protocol_failures:
                     return self._stopped(
                         AgentRunStatus.PROTOCOL_FAILURE_LIMIT,
