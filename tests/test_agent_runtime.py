@@ -124,6 +124,15 @@ class ScriptedModel(InferenceEngine):
         return response
 
 
+class TinyContextScriptedModel(ScriptedModel):
+    context_length = 512
+    max_response_tokens = 64
+
+    @staticmethod
+    def count_message_tokens(messages):
+        return sum(len(message["content"]) for message in messages)
+
+
 class BlockingModel(InferenceEngine):
     def __init__(self):
         self.started = Event()
@@ -768,6 +777,26 @@ def test_accumulated_structured_transcript_has_a_hard_size_limit(tmp_path: Path)
     result = run(runtime, tmp_path)
 
     assert result.status == AgentRunStatus.TRANSCRIPT_LIMIT
+    assert capability.values == ["hello"]
+    assert journal.records[0].state == CallLifecycleState.COMPLETED
+
+
+def test_agent_refuses_a_continuation_that_exceeds_the_context_budget(tmp_path: Path):
+    model = TinyContextScriptedModel(
+        [capability_call(1), ModelResponse.text("must not be requested")]
+    )
+    runtime, _, capability, journal, _ = build_runtime(
+        tmp_path,
+        [],
+        model=model,
+        capability=LargeOutputCapability(),
+    )
+
+    result = run(runtime, tmp_path)
+
+    assert result.status == AgentRunStatus.CONTEXT_LIMIT
+    assert result.steps == 1
+    assert len(model.requests) == 1
     assert capability.values == ["hello"]
     assert journal.records[0].state == CallLifecycleState.COMPLETED
 

@@ -15,7 +15,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from app.inference.engine import InferenceEngine, InferenceUnavailable
-from app.inference.diagnostics import completion_diagnostics
+from app.inference.diagnostics import record_completion_diagnostics
 from app.settings.model import ModelConfig, detect_nvidia_memory_mib
 from app.inference.protocol import (
     ModelCapabilityDefinition,
@@ -133,6 +133,7 @@ class LlamaServerInferenceEngine(InferenceEngine):
                 "max_tokens": self.config.max_tokens,
             }
         )
+        record_completion_diagnostics(log, completion, provider="local-llama-server")
         response = normalize_native_chat_completion(completion, ())
         if response.kind != ModelResponseKind.ASSISTANT_TEXT:
             raise InferenceUnavailable(
@@ -161,21 +162,23 @@ class LlamaServerInferenceEngine(InferenceEngine):
                 "tool_choice": "auto",
             }
         )
+        diagnostics = record_completion_diagnostics(
+            log,
+            completion,
+            provider="local-llama-server",
+        )
         # Keep this shared normalizer as the only authority boundary. The
         # server decodes Qwen's native envelope but cannot relax O.R.S.I's
         # call IDs, names, argument, size, or mixed-response rules.
         response = normalize_native_chat_completion(completion, definitions)
         if response.protocol_failure is not None:
-            finish_reason, prompt_tokens, completion_tokens = completion_diagnostics(
-                completion
-            )
             log.warning(
                 "Local model returned protocol failure %s; finish_reason=%s "
-                "prompt_tokens=%s completion_tokens=%s.",
+                "input_tokens=%s output_tokens=%s.",
                 response.protocol_failure.code.value,
-                finish_reason,
-                prompt_tokens,
-                completion_tokens,
+                diagnostics.finish_reason,
+                diagnostics.input_tokens,
+                diagnostics.output_tokens,
             )
         return response
 

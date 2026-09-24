@@ -10,6 +10,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from app.conversation.context import ContextBudget
+
 
 _APP_STATUS_VERSION = "O.R.S.I. v0.4.0-dev"
 
@@ -23,6 +25,8 @@ class ContextWindowBar(QWidget):
         self.setFixedWidth(420)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Minimum)
         self._runtime_mode = "Local"
+        self._used_tokens = 0
+        self._budget: ContextBudget | None = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -64,25 +68,47 @@ class ContextWindowBar(QWidget):
 
     def set_context_length(self, context_length: int) -> None:
         length = max(0, int(context_length))
-        previous = self.bar.value()
         self.bar.setRange(0, max(1, length))
-        self.bar.setValue(min(previous, length))
+        self.bar.setValue(min(self._used_tokens, length))
         self.size.setText(f"{length:,}")
         self._update_tooltip()
 
     def set_used_tokens(self, used_tokens: int) -> None:
-        self.bar.setValue(max(0, min(int(used_tokens), self.bar.maximum())))
+        self._budget = None
+        self._used_tokens = max(0, int(used_tokens))
+        self.bar.setValue(min(self._used_tokens, self.bar.maximum()))
+        self._update_tooltip()
+
+    def set_budget(self, budget: ContextBudget) -> None:
+        if not isinstance(budget, ContextBudget):
+            raise TypeError("The context meter requires a ContextBudget.")
+        self._budget = budget
+        self._used_tokens = budget.total_estimated_request_tokens
+        self.set_context_length(budget.model_context_limit)
         self._update_tooltip()
 
     def _update_tooltip(self) -> None:
-        percent = round((self.bar.value() / max(1, self.bar.maximum())) * 100)
+        percent = round((self._used_tokens / max(1, self.bar.maximum())) * 100)
         percent = max(0, min(100, percent))
         self.status.setText(
             f"{_APP_STATUS_VERSION} // {self._runtime_mode} // Context Window: {percent}%"
         )
-        tooltip = (
-            f"Estimated conversation use: {self.bar.value():,} of "
-            f"{self.bar.maximum():,} tokens"
-        )
+        if self._budget is None:
+            tooltip = (
+                f"Estimated conversation use: {self._used_tokens:,} of "
+                f"{self.bar.maximum():,} tokens"
+            )
+        else:
+            budget = self._budget
+            tooltip = (
+                f"Estimated request use: {budget.total_estimated_request_tokens:,} of "
+                f"{budget.model_context_limit:,} tokens\n"
+                f"System: {budget.system_message_tokens:,} · Conversation: "
+                f"{budget.conversation_tokens:,} · Tool history: "
+                f"{budget.structured_tool_history_tokens:,}\n"
+                f"Capability schemas: {budget.capability_schema_reserve:,} · Output reserve: "
+                f"{budget.requested_output_reserve:,} · Safety buffer: "
+                f"{budget.safety_buffer:,}\nRemaining: {budget.remaining_tokens:,}"
+            )
         self.setToolTip(tooltip)
         self.bar.setToolTip(tooltip)

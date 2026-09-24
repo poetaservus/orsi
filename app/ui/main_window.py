@@ -1200,6 +1200,10 @@ class MainWindow(QMainWindow):
         length = int(getattr(self.inference, "context_length", 0))
         self.context_window.set_runtime_mode(self._runtime_mode_label())
         self.context_window.set_context_length(length)
+        budgeter = getattr(self.service, "context_budget", None)
+        if callable(budgeter):
+            self.context_window.set_budget(budgeter())
+            return
         estimate = getattr(self.service, "estimated_context_tokens", None)
         used = estimate() if callable(estimate) else 0
         self.context_window.set_used_tokens(used)

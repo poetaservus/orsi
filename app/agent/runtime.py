@@ -58,6 +58,7 @@ from app.security.permissions import (
     prepare_capability_call,
 )
 from app.capabilities.registry import CapabilityLookupError, CapabilityRegistry
+from app.inference.diagnostics import record_context_budget
 from app.inference.engine import InferenceEngine, InferenceUnavailable
 from app.inference.protocol import (
     ModelCapabilityCall,
@@ -967,6 +968,23 @@ class AgentRuntime:
         ModelResponse | None,
         tuple[AgentRunStatus, str] | None,
     ]:
+        from app.conversation.context import (
+            calculate_context_budget,
+            capability_schema_reserve,
+        )
+
+        budget = calculate_context_budget(
+            self.model,
+            transcript,
+            reserved_tokens=capability_schema_reserve(definitions),
+        )
+        record_context_budget(log, budget, request_kind="agent-capability-step")
+        if not budget.fits:
+            return None, (
+                AgentRunStatus.CONTEXT_LIMIT,
+                "The agent stopped before sending a request that exceeded the active model "
+                "context window.",
+            )
         future: Future[ModelResponse] = Future()
 
         def invoke() -> None:
@@ -1024,6 +1042,16 @@ class AgentRuntime:
         user_cancellation: CancellationToken,
         deadline_cancellation: _DeadlineCancellationToken,
     ) -> tuple[str | None, tuple[AgentRunStatus, str] | None]:
+        from app.conversation.context import calculate_context_budget
+
+        budget = calculate_context_budget(self.model, transcript)
+        record_context_budget(log, budget, request_kind="agent-text-step")
+        if not budget.fits:
+            return None, (
+                AgentRunStatus.CONTEXT_LIMIT,
+                "The agent stopped before sending a request that exceeded the active model "
+                "context window.",
+            )
         future: Future[str] = Future()
 
         def invoke() -> None:

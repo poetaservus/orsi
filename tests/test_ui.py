@@ -14,6 +14,7 @@ try:
     from PySide6.QtTest import QTest
     from PySide6.QtWidgets import QApplication, QLabel, QMessageBox, QWidget
 
+    from app.conversation.context import ContextBudget
     from app.ui.chat import ChatView
     from app.ui.main_window import MainWindow
     from app.startup import request_full_local_read_acknowledgement
@@ -110,6 +111,50 @@ class UiTests(unittest.TestCase):
         self.assertEqual(window.context_window.bar.value(), 1200)
         self.assertIn("1,200 of 8,192 tokens", window.context_window.toolTip())
         self.assertIn("Context Window: 15%", window.context_window.status.text())
+        window.close()
+
+    def test_context_window_bar_uses_the_shared_budget_breakdown(self):
+        budget = ContextBudget(
+            model_context_limit=8_192,
+            system_message_tokens=100,
+            conversation_tokens=300,
+            structured_tool_history_tokens=400,
+            capability_schema_reserve=200,
+            requested_output_reserve=512,
+            safety_buffer=256,
+            total_estimated_request_tokens=1_768,
+            remaining_tokens=6_424,
+        )
+
+        class FakeService:
+            @staticmethod
+            def context_budget():
+                return budget
+
+            @staticmethod
+            def estimated_context_tokens():
+                raise AssertionError("The legacy estimate must not be used when a budget exists.")
+
+        class FakeInference:
+            available_modes = ("local",)
+            mode = "local"
+            context_length = 4_096
+
+            @staticmethod
+            def consume_notice():
+                return None
+
+        window = MainWindow(FakeService(), "TEST-HOST", inference=FakeInference())
+
+        self.assertEqual(window.context_window.bar.maximum(), 8_192)
+        self.assertEqual(window.context_window.bar.value(), 1_768)
+        tooltip = window.context_window.toolTip()
+        self.assertIn("Estimated request use: 1,768 of 8,192 tokens", tooltip)
+        self.assertIn("System: 100", tooltip)
+        self.assertIn("Tool history: 400", tooltip)
+        self.assertIn("Capability schemas: 200", tooltip)
+        self.assertIn("Safety buffer: 256", tooltip)
+        self.assertIn("Remaining: 6,424", tooltip)
         window.close()
 
     def test_new_session_button_clears_chat_context_and_persisted_session(self):

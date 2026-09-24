@@ -12,7 +12,7 @@ from urllib.request import Request, urlopen
 
 from app.settings.cloud import CloudConfig
 from app.inference.engine import InferenceEngine, InferenceUnavailable
-from app.inference.diagnostics import completion_diagnostics
+from app.inference.diagnostics import record_completion_diagnostics
 from app.inference.protocol import (
     ModelCapabilityDefinition,
     ModelResponse,
@@ -100,7 +100,7 @@ class OpenAICompatibleInferenceEngine(InferenceEngine):
             next_retry: list[str] = []
             for model in retry_models:
                 try:
-                    message = self._request_message(
+                    message, completion = self._request_message(
                         {
                             "model": model,
                             "messages": messages,
@@ -108,6 +108,11 @@ class OpenAICompatibleInferenceEngine(InferenceEngine):
                             "max_tokens": self.config.max_tokens,
                         },
                         timeout_seconds=self._candidate_timeout(deadline),
+                    )
+                    record_completion_diagnostics(
+                        log,
+                        completion,
+                        provider="cloud",
                     )
                     content = _response_text(message)
                     if not content or not content.strip():
@@ -184,20 +189,22 @@ class OpenAICompatibleInferenceEngine(InferenceEngine):
                     )
                     continue
                 response = normalize_native_chat_completion(completion, definitions)
+                diagnostics = record_completion_diagnostics(
+                    log,
+                    completion,
+                    provider="cloud",
+                )
                 if response.protocol_failure is not None:
                     last_protocol_response = response
-                    finish_reason, prompt_tokens, completion_tokens = (
-                        completion_diagnostics(completion)
-                    )
                     log.warning(
                         "Cloud model %s returned protocol failure %s; "
-                        "finish_reason=%s prompt_tokens=%s completion_tokens=%s; "
+                        "finish_reason=%s input_tokens=%s output_tokens=%s; "
                         "trying the next configured model.",
                         model,
                         response.protocol_failure.code.value,
-                        finish_reason,
-                        prompt_tokens,
-                        completion_tokens,
+                        diagnostics.finish_reason,
+                        diagnostics.input_tokens,
+                        diagnostics.output_tokens,
                     )
                     continue
                 self._pin_model(model)
@@ -260,7 +267,7 @@ class OpenAICompatibleInferenceEngine(InferenceEngine):
         body: dict[str, Any],
         *,
         timeout_seconds: float | None = None,
-    ) -> dict[str, Any]:
+    ) -> tuple[dict[str, Any], dict[str, Any]]:
         payload = self._request_completion(body, timeout_seconds=timeout_seconds)
         try:
             choices = payload.get("choices")
@@ -272,7 +279,7 @@ class OpenAICompatibleInferenceEngine(InferenceEngine):
                 "The cloud service returned an unreadable response. Try again or switch to Local.",
                 allow_local_fallback=True,
             ) from exc
-        return message
+        return message, payload
 
     def _request_completion(
         self,

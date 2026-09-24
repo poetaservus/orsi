@@ -2,7 +2,7 @@
 
 Date: 2026-09-24  
 O.R.S.I. baseline: `main` at `4a4e819`  
-Status: planning only; no implementation is authorized by this document
+Status: Phase 0 implemented on its review branch; later phases remain gated
 
 ## Delivery tracking
 
@@ -12,7 +12,7 @@ branch is created only after the preceding phase has merged to `main`.
 
 | Phase | Branch | Status | Verification and handoff |
 | --- | --- | --- | --- |
-| Phase 0 | `codex/phase0-context-measurements` | In progress: branch opened; implementation not started | Created from `main` at `4a4e819`. Focused pre-implementation baseline: 149 passed, 1 skipped. Update this row with implementation commits, full deterministic results, launcher checks, and review outcome before merge. |
+| Phase 0 | `codex/phase0-context-measurements` | Implemented; ready for review | Created from `main` at `4a4e819`. Added one shared numeric budget for selection, admission, diagnostics, and the GUI; content-free provider usage logging; and all five deterministic regression scenarios. Verification: 619 passed, 44 skipped. Manual launcher checks and review outcome remain to be recorded before merge. |
 | Phase 1 | `codex/phase1-compact-edit` | Queued | Create from updated `main` only after Phase 0 merges. Inherit this ledger, mark Phase 0 complete, and record the edit threat review before registering `filesystem.edit_text`. |
 | Phase 2 | `codex/phase2-paged-text-reads` | Not started | Create only after Phase 1 merges. |
 | Phase 3 | `codex/phase3-tool-result-projection` | Not started | Create only after Phase 2 merges. |

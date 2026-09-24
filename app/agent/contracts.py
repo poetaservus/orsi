@@ -17,6 +17,7 @@ class AgentRunStatus(StrEnum):
     PROTOCOL_FAILURE_LIMIT = "protocol_failure_limit"
     APPROVAL_REQUIRED = "approval_required"
     TRANSCRIPT_LIMIT = "transcript_limit"
+    CONTEXT_LIMIT = "context_limit"
     MODEL_UNAVAILABLE = "model_unavailable"
     INTERNAL_FAILURE = "internal_failure"
 

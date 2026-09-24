@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Iterable
 
 from app.inference.engine import InferenceEngine, InferenceUnavailable
+from app.inference.diagnostics import record_completion_diagnostics
 from app.settings.model import ModelConfig
 from app.inference.protocol import (
     ModelCapabilityDefinition,
@@ -153,6 +154,7 @@ class LlamaCppInferenceEngine(InferenceEngine):
             "temperature": self.config.temperature,
             "max_tokens": self.config.max_tokens,
         })
+        record_completion_diagnostics(log, response, provider="local-llama-cpp")
         message = response["choices"][0]["message"]
         content = message.get("content")
         if not isinstance(content, str) or not content.strip():
@@ -177,6 +179,7 @@ class LlamaCppInferenceEngine(InferenceEngine):
             tools=native_function_tools(definitions),
             tool_choice="auto",
         )
+        record_completion_diagnostics(log, response, provider="local-llama-cpp")
         return normalize_native_chat_completion(response, definitions)
 
     def close(self) -> None:

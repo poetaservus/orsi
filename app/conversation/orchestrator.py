@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import re
 from copy import deepcopy
 from pathlib import Path
@@ -8,12 +9,15 @@ from uuid import uuid4
 
 from app.agent.runtime import AgentRunStatus, AgentRuntime
 from app.conversation.context import (
+    DEFAULT_SAFETY_BUFFER_TOKENS,
+    ContextBudget,
+    ContextSelection,
     capability_schema_reserve,
     context_length,
     count_message_tokens,
-    estimated_context_tokens,
+    empty_context_budget,
     response_reserve,
-    select_context_messages,
+    select_context_request,
 )
 from app.conversation.capability_routing import select_turn_capabilities
 from app.conversation.prompt import (
@@ -29,7 +33,11 @@ from app.inference.protocol import (
     model_capability_calls_message,
     model_capability_result_message,
 )
+from app.inference.diagnostics import record_context_budget
 from app.runtime.cancellation import CancellationSource, TaskCancelled
+
+
+log = logging.getLogger(__name__)
 
 
 class ConversationService:
@@ -137,7 +145,11 @@ class ConversationService:
         if activity:
             activity("Thinking...")
         source.token.raise_if_cancelled()
-        response = self.inference.respond(self._model_messages(capability_turn=False))
+        request = self._model_request(capability_turn=False)
+        if not request.budget.fits:
+            raise RuntimeError("The conversation cannot fit the active model context window.")
+        record_context_budget(log, request.budget, request_kind="conversation")
+        response = self.inference.respond(request.messages)
         source.token.raise_if_cancelled()
         if not isinstance(response, str) or not response.strip():
             raise RuntimeError("The model returned an empty response.")
@@ -170,11 +182,14 @@ class ConversationService:
             turn_results.extend(zip(calls, results, strict=True))
 
         capabilities = self._turn_capabilities(text)
+        request = self._model_request(
+            capability_turn=True,
+            capability_names=capabilities,
+        )
+        if not request.budget.fits:
+            raise RuntimeError("The agent request cannot fit the active model context window.")
         result = self.agent_runtime.run(
-            self._model_messages(
-                capability_turn=True,
-                capability_names=capabilities,
-            ),
+            request.messages,
             session_id=self._session_id,
             turn_id=f"turn-{self._turn_number}",
             portable_root=self.portable_root,
@@ -237,8 +252,11 @@ class ConversationService:
                 close()
 
     def estimated_context_tokens(self) -> int:
+        return self.context_budget().total_estimated_request_tokens
+
+    def context_budget(self) -> ContextBudget:
         if not self.store.messages():
-            return 0
+            return empty_context_budget(self.inference)
         capabilities = self.agent_capabilities
         if self.agent_enabled:
             latest_user = next(
@@ -250,15 +268,11 @@ class ConversationService:
                 "",
             )
             capabilities = self._turn_capabilities(latest_user)
-        messages = self._model_messages(
+        request = self._model_request(
             capability_turn=self.agent_enabled,
             capability_names=(capabilities if self.agent_enabled else None),
         )
-        return estimated_context_tokens(
-            self.inference,
-            messages,
-            reserved_tokens=self._capability_schema_reserve(capabilities),
-        )
+        return request.budget
 
     def _model_messages(
         self,
@@ -266,6 +280,17 @@ class ConversationService:
         capability_turn: bool | None = None,
         capability_names: tuple[str, ...] | None = None,
     ) -> list[dict]:
+        return self._model_request(
+            capability_turn=capability_turn,
+            capability_names=capability_names,
+        ).messages
+
+    def _model_request(
+        self,
+        *,
+        capability_turn: bool | None = None,
+        capability_names: tuple[str, ...] | None = None,
+    ) -> ContextSelection:
         use_agent = self.agent_enabled and capability_turn is not False
         capabilities = (
             self.agent_capabilities if capability_names is None else capability_names
@@ -288,9 +313,10 @@ class ConversationService:
                 1,
                 context_length(self.inference)
                 - response_reserve(self.inference)
-                - schema_reserve,
+                - schema_reserve
+                - DEFAULT_SAFETY_BUFFER_TOKENS,
             )
-            if count_message_tokens(self.inference, [full_system]) >= max(1, budget - 256):
+            if count_message_tokens(self.inference, [full_system]) >= budget:
                 prompt = compact_agent_system_prompt(
                     self.host_read_scope or HostReadScope.PORTABLE_ROOT,
                     capabilities,
@@ -304,7 +330,7 @@ class ConversationService:
         else:
             prompt = AGENT_CONVERSATION_SYSTEM_PROMPT if self.agent_enabled else SYSTEM_PROMPT
             history = self.store.messages()
-        return select_context_messages(
+        return select_context_request(
             self.inference,
             system_prompt=prompt,
             history=history,
