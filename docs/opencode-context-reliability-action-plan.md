@@ -2,7 +2,7 @@
 
 Date: 2026-09-24  
 O.R.S.I. baseline: `main` at `4a4e819`  
-Status: Phase 0 implemented on its review branch; later phases remain gated
+Status: Phase 0 review approved; preparing the Phase 1 branch
 
 ## Delivery tracking
 
@@ -12,7 +12,7 @@ branch is created only after the preceding phase has merged to `main`.
 
 | Phase | Branch | Status | Verification and handoff |
 | --- | --- | --- | --- |
-| Phase 0 | `codex/phase0-context-measurements` | Implemented; ready for review | Created from `main` at `4a4e819`. Added one shared numeric budget for selection, admission, diagnostics, and the GUI; content-free provider usage logging; and all five deterministic regression scenarios. Verification: 619 passed, 44 skipped. Manual launcher checks and review outcome remain to be recorded before merge. |
+| Phase 0 | `codex/phase0-context-measurements` | Review approved; ready to merge | Created from `main` at `4a4e819`. Added one shared numeric budget for selection, admission, diagnostics, and the GUI; content-free provider usage logging; and all five deterministic regression scenarios. Verification: 619 passed, 44 skipped; full suite passed again on 2026-09-26. Follow-up code review found no new blocking issue. User confirmed successful Phase 0 review on 2026-09-26 and authorized advancing to Phase 1. |
 | Phase 1 | `codex/phase1-compact-edit` | Queued | Create from updated `main` only after Phase 0 merges. Inherit this ledger, mark Phase 0 complete, and record the edit threat review before registering `filesystem.edit_text`. |
 | Phase 2 | `codex/phase2-paged-text-reads` | Not started | Create only after Phase 1 merges. |
 | Phase 3 | `codex/phase3-tool-result-projection` | Not started | Create only after Phase 2 merges. |
@@ -28,6 +28,21 @@ Branch update rule:
 2. Record material implementation checkpoints and deterministic test results as they land.
 3. Before review, update the row with remaining manual or live-model gates.
 4. Mark the phase complete only after merge, then create the next phase branch from updated `main`.
+
+### Phase 0 follow-up verification — 2026-09-26
+
+- Reviewed commit `53c3296` against `4a4e819`, covering budget selection and admission,
+  per-step agent enforcement, GUI projection, and provider completion diagnostics. No new
+  blocking issue was identified in this review.
+- The full deterministic suite passed with:
+  `runtime\python\python.exe -m pytest -q -p no:cacheprovider --basetemp C:\Users\yaboy\Desktop\orsi_phase0_review_20260926`.
+- Test fixture placement matters: mutation tests deliberately reject targets inside the
+  application directory and AppData. Initial runs in those locations hit the expected protected-path
+  denials; the passing run used the separate Desktop directory above. Do not weaken path policy
+  to accommodate test fixtures.
+- Visible checks of `ORSI.cmd` and `ORSI_TEST.cmd` remain unverified. This review session had no
+  native Windows UI control. The user subsequently approved advancing to Phase 1; no automated visible launcher result is claimed.
+- User confirmed successful Phase 0 review on 2026-09-26 and authorized moving to Phase 1. This approval supersedes the pending pre-merge gate; it does not claim an automated visible launcher check was performed.
 
 ## Objective
 
