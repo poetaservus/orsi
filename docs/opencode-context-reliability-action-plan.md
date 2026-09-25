@@ -2,7 +2,7 @@
 
 Date: 2026-09-24  
 O.R.S.I. baseline: `main` at `4a4e819`  
-Status: Phase 0 review approved; preparing the Phase 1 branch
+Status: Phase 0 merged locally; Phase 1 branch prepared for implementation
 
 ## Delivery tracking
 
@@ -12,8 +12,8 @@ branch is created only after the preceding phase has merged to `main`.
 
 | Phase | Branch | Status | Verification and handoff |
 | --- | --- | --- | --- |
-| Phase 0 | `codex/phase0-context-measurements` | Review approved; ready to merge | Created from `main` at `4a4e819`. Added one shared numeric budget for selection, admission, diagnostics, and the GUI; content-free provider usage logging; and all five deterministic regression scenarios. Verification: 619 passed, 44 skipped; full suite passed again on 2026-09-26. Follow-up code review found no new blocking issue. User confirmed successful Phase 0 review on 2026-09-26 and authorized advancing to Phase 1. |
-| Phase 1 | `codex/phase1-compact-edit` | Queued | Create from updated `main` only after Phase 0 merges. Inherit this ledger, mark Phase 0 complete, and record the edit threat review before registering `filesystem.edit_text`. |
+| Phase 0 | `codex/phase0-context-measurements` | Complete; merged to local `main` | Created from `main` at `4a4e819`. Added one shared numeric budget for selection, admission, diagnostics, and the GUI; content-free provider usage logging; and all five deterministic regression scenarios. Verification: 619 passed, 44 skipped; full suite passed again on 2026-09-26. Follow-up code review found no new blocking issue. User confirmed successful Phase 0 review on 2026-09-26. Fast-forwarded local `main` to `05512fc` before creating Phase 1. |
+| Phase 1 | `codex/phase1-compact-edit` | In progress; branch prepared | Created from local `main` at `05512fc` on 2026-09-26 after Phase 0 merged. Inherits the completed Phase 0 record. Next: record the edit threat review before registering `filesystem.edit_text`, then implement exact replacement and its approval, race, cancellation, and atomicity tests. Implementation has not yet begun. |
 | Phase 2 | `codex/phase2-paged-text-reads` | Not started | Create only after Phase 1 merges. |
 | Phase 3 | `codex/phase3-tool-result-projection` | Not started | Create only after Phase 2 merges. |
 | Phase 4 | `codex/phase4-model-aware-context` | Not started | Create only after Phase 3 merges. |
