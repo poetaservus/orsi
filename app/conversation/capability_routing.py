@@ -46,6 +46,9 @@ _PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
         re.compile(r"\b(?:write|edit|modify|update|rewrite|replace|restyle|redesign)\b"),
         re.compile(r"\b(?:make|change)\b.*\b(?:file|text|css|html|javascript|design|style|theme|color)\b"),
     ),
+    "filesystem.edit_text": (
+        re.compile(r"\b(?:edit|modify|update|rewrite|replace|restyle|redesign|change)\b"),
+    ),
     "filesystem.copy": (
         re.compile(r"\b(?:copy|duplicate)\b"),
     ),
@@ -109,9 +112,9 @@ def select_turn_capabilities(
     # Path resolution and same-folder filename disambiguation may require a
     # short read-only chain before the requested operation can run.
     dependency_names: set[str] = set()
-    if selected & {"filesystem.read_text", "filesystem.write_text"}:
+    if selected & {"filesystem.read_text", "filesystem.write_text", "filesystem.edit_text"}:
         dependency_names.add("filesystem.list")
-    if "filesystem.write_text" in selected:
+    if selected & {"filesystem.write_text", "filesystem.edit_text"}:
         dependency_names.add("filesystem.read_text")
     selected.update(dependency_names & available)
 

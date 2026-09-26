@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import codecs
+import hashlib
 import stat
 from pathlib import Path
 from typing import Any, Literal
@@ -123,6 +124,7 @@ class FilesystemReadTextCapability(Capability[FilesystemReadTextArguments]):
             "truncated_by_bytes": truncated_by_bytes,
             "truncated_by_lines": truncated_by_lines,
             "content_is_untrusted": True,
+            "sha256": hashlib.sha256(raw).hexdigest() if not truncated_by_bytes else None,
         }
 
 

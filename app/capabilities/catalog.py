@@ -15,6 +15,7 @@ from app.capabilities.filesystem_search import FilesystemSearchCapability
 from app.capabilities.filesystem_stat import FilesystemStatCapability
 from app.capabilities.filesystem_trash import FilesystemTrashCapability
 from app.capabilities.filesystem_write_text import FilesystemWriteTextCapability
+from app.capabilities.filesystem_edit_text import FilesystemEditTextCapability
 from app.capabilities.registry import CapabilityRegistration, CapabilityRegistry
 from app.security.write_policy import HostWritePolicy
 from app.settings.agent import AgentFeatureConfig
@@ -44,6 +45,7 @@ def build_builtin_registry(
     write_flags = (
         config.filesystem_mkdir_enabled,
         config.filesystem_write_text_enabled,
+        config.filesystem_edit_text_enabled,
         config.filesystem_copy_enabled,
         config.filesystem_move_enabled,
         config.filesystem_trash_enabled,
@@ -53,6 +55,7 @@ def build_builtin_registry(
         factories.extend(
             (
                 (config.filesystem_mkdir_enabled, lambda: FilesystemMkdirCapability(write_policy)),
+                (config.filesystem_edit_text_enabled, lambda: FilesystemEditTextCapability(write_policy)),
                 (
                     config.filesystem_write_text_enabled,
                     lambda: FilesystemWriteTextCapability(write_policy),

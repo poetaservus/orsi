@@ -208,6 +208,11 @@ class Capability(ABC, Generic[ArgumentsT]):
         del arguments, context
         return None
 
+    def approval_details(self, arguments: ArgumentsT, context: CapabilityContext) -> tuple[str | None, str | None]:
+        """Return preview and identity together; snapshot-based capabilities override this."""
+        preview = self.approval_preview(arguments, context)
+        return preview, self.permission_resource_identity(arguments, context)
+
     def _failure(
         self,
         context: CapabilityContext,

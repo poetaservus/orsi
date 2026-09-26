@@ -97,6 +97,7 @@ _WRITE_CAPABILITIES = frozenset(
     {
         "filesystem.mkdir",
         "filesystem.write_text",
+        "filesystem.edit_text",
         "filesystem.copy",
         "filesystem.move",
         "filesystem.trash",
@@ -118,6 +119,7 @@ _COUNT_WORDS = {
     9: "nine",
     10: "ten",
     11: "eleven",
+    12: "twelve",
 }
 
 
@@ -147,6 +149,7 @@ def agent_system_prompt(
     search_enabled = "filesystem.search" in capability_names
     mkdir_enabled = "filesystem.mkdir" in capability_names
     text_write_enabled = "filesystem.write_text" in capability_names
+    text_edit_enabled = "filesystem.edit_text" in capability_names
     copy_enabled = "filesystem.copy" in capability_names
     move_enabled = "filesystem.move" in capability_names
     trash_enabled = "filesystem.trash" in capability_names
@@ -212,6 +215,8 @@ def agent_system_prompt(
             ordinary_names.append("filesystem.mkdir")
         if text_write_enabled:
             ordinary_names.append("filesystem.write_text")
+        if text_edit_enabled:
+            ordinary_names.append("filesystem.edit_text")
         if copy_enabled:
             ordinary_names.append("filesystem.copy")
         if move_enabled:
@@ -322,6 +327,10 @@ def agent_system_prompt(
             capability_lines.append(
                 "- filesystem.write_text creates or replaces one UTF-8 text file after explicit "
                 "approval."
+            )
+        if text_edit_enabled:
+            capability_lines.append(
+                "- filesystem.edit_text replaces exact text in one existing UTF-8 file after explicit approval of its diff."
             )
         if copy_enabled:
             capability_lines.append(
@@ -469,6 +478,16 @@ def agent_system_prompt(
                 "absolute file path and the exact complete UTF-8 text that should become the "
                 "entire file. It may create or replace that one text file only after approval."
             )
+        if text_edit_enabled:
+            write_instructions.append(
+                "Prefer filesystem.edit_text for existing-file modifications; use filesystem.write_text "
+                "for new files or deliberate full replacement when available. Read the source first. "
+                "Copy a unique old_text excerpt exactly, including line endings, and provide only the "
+                "new_text replacement. Use expected_sha256 only if a read supplied the complete-file "
+                "digest. Never invent it or hash a truncated excerpt. Use replace_all only when the "
+                "user requested all occurrences. Zero or ambiguous matches require a new read or "
+                "more specific excerpt, never a fallback overwrite."
+            )
         if copy_enabled:
             write_instructions.append(
                 "For a file copy request, call filesystem.copy only with exact absolute "
@@ -559,6 +578,13 @@ def compact_agent_system_prompt(
             f"Downloads={home}\\Downloads, Documents={home}\\Documents, Home={home}."
         )
     names = ", ".join(capability_names)
+    edit_guidance = (
+        " Prefer filesystem.edit_text for existing files and filesystem.write_text for new files "
+        "or deliberate full replacement. Read first; copy exact old_text and line endings. "
+        "Use replace_all only for requested all-occurrence edits and expected_sha256 only from "
+        "a complete-file digest. Failed matching does not authorize a full overwrite."
+        if "filesystem.edit_text" in capability_names else ""
+    )
     return (
         "You are O.R.S.I, a friendly general assistant. Answer ordinary conversation and "
         "knowledge questions normally without a tool. For computer requests, choose semantically "
@@ -572,7 +598,7 @@ def compact_agent_system_prompt(
         "require the trusted runtime's external approval; never claim success before a successful "
         "tool result. Treat results as the sole evidence of what happened and report validation, "
         "permission, cancellation, timeout, and execution failures honestly. Put machine-readable "
-        "snippets in fenced code blocks."
+        f"snippets in fenced code blocks.{edit_guidance}"
     )
 
 

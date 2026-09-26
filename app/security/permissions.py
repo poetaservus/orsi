@@ -563,7 +563,7 @@ def prepare_capability_call(
         sort_keys=True,
     )
     resource = capability.permission_resource(arguments, context)
-    approval_preview = capability.approval_preview(arguments, context)
+    approval_preview, resource_identity = capability.approval_details(arguments, context)
     if approval_preview is not None and not isinstance(approval_preview, str):
         raise CapabilityExecutionError(
             CapabilityErrorCode.INVALID_ARGUMENTS,
@@ -575,7 +575,7 @@ def prepare_capability_call(
         permission=capability.permission,
         arguments_json=arguments_json,
         resource=str(resource) if resource is not None else None,
-        resource_identity=capability.permission_resource_identity(arguments, context),
+        resource_identity=resource_identity,
         approval_preview=approval_preview,
     )
     return PreparedCapabilityCall(

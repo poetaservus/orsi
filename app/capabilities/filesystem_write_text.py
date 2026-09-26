@@ -83,7 +83,7 @@ class FilesystemWriteTextCapability(Capability[FilesystemWriteTextArguments]):
             _raise_path_error(exc)
 
 
-def atomic_write_text_file(path: Path, data: bytes, cancellation) -> str:
+def atomic_write_text_file(path: Path, data: bytes, cancellation, *, before_replace=None) -> str:
     temp_path = _temporary_path(path)
     replaced = False
     try:
@@ -91,6 +91,9 @@ def atomic_write_text_file(path: Path, data: bytes, cancellation) -> str:
             handle.write(data)
             handle.flush()
             os.fsync(handle.fileno())
+        cancellation.raise_if_cancelled()
+        if before_replace is not None:
+            before_replace()
         cancellation.raise_if_cancelled()
         os.replace(temp_path, path)
         replaced = True

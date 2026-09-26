@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import hashlib
 from pathlib import Path
 
 import pytest
@@ -56,6 +57,7 @@ def test_read_text_returns_bounded_untrusted_text(tmp_path: Path):
         "truncated_by_bytes": False,
         "truncated_by_lines": False,
         "content_is_untrusted": True,
+        "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
     }
 
 
@@ -120,10 +122,12 @@ def test_read_text_applies_byte_and_line_limits(tmp_path: Path):
     assert by_bytes.output["text"] == "abc"
     assert by_bytes.output["bytes_read"] == 3
     assert by_bytes.output["truncated_by_bytes"] is True
+    assert by_bytes.output["sha256"] is None
     assert by_lines.success
     assert by_lines.output["text"] == "one\ntwo\n"
     assert by_lines.output["lines_returned"] == 2
     assert by_lines.output["truncated_by_lines"] is True
+    assert by_lines.output["sha256"] == hashlib.sha256(line_target.read_bytes()).hexdigest()
 
 
 def test_read_text_supports_declared_utf_encodings(tmp_path: Path):

@@ -27,6 +27,7 @@ _READ_CAPABILITIES = (
 _WRITE_CAPABILITIES = (
     ("filesystem_mkdir_enabled", "filesystem.mkdir", "mkdir"),
     ("filesystem_write_text_enabled", "filesystem.write_text", "write-text"),
+    ("filesystem_edit_text_enabled", "filesystem.edit_text", "edit-text"),
     ("filesystem_copy_enabled", "filesystem.copy", "copy"),
     ("filesystem_move_enabled", "filesystem.move", "move"),
     ("filesystem_trash_enabled", "filesystem.trash", "trash"),

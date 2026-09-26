@@ -94,6 +94,39 @@ def directory_identity_for_path(path: Path) -> str:
         kernel.CloseHandle(handle)
 
 
+def read_file_snapshot(path: Path, max_bytes: int, cancellation) -> tuple[bytes, str]:
+    """Read bounded bytes and identity from one non-following, write/delete-locked handle."""
+    import msvcrt
+
+    cancellation.raise_if_cancelled()
+    kernel = _kernel()
+    handle = kernel.CreateFileW(str(path), 0x80000000, 0x1, None, 3,
+                                0x80 | 0x00200000, None)
+    if handle == ctypes.c_void_p(-1).value:
+        raise ctypes.WinError(ctypes.get_last_error())
+    transferred = False
+    try:
+        info = _FileInformation()
+        if not kernel.GetFileInformationByHandle(handle, ctypes.byref(info)):
+            raise ctypes.WinError(ctypes.get_last_error())
+        if info.attributes & (0x10 | 0x400 | 0x4):
+            raise PermissionError("Only regular non-reparse, non-system files can be edited.")
+        if ((info.size_high << 32) | info.size_low) > max_bytes:
+            raise ValueError("The file exceeds the snapshot byte limit.")
+        identity = f"{info.volume:x}:{info.index_high:x}:{info.index_low:x}"
+        descriptor = msvcrt.open_osfhandle(handle, os.O_RDONLY | os.O_BINARY)
+        transferred = True
+        with os.fdopen(descriptor, "rb") as stream:
+            data = stream.read(max_bytes + 1)
+        cancellation.raise_if_cancelled()
+        if len(data) > max_bytes:
+            raise ValueError("The file exceeds the snapshot byte limit.")
+        return data, identity
+    finally:
+        if not transferred:
+            kernel.CloseHandle(handle)
+
+
 @contextmanager
 def pinned_parent(path: Path, cancellation):
     """Hold every ancestor without write/delete sharing during the filesystem operation."""

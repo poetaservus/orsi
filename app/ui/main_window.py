@@ -978,6 +978,8 @@ class MainWindow(QMainWindow):
                 read_status += " · Folder approval"
             if "filesystem.write_text" in getattr(self.service, "agent_capabilities", ()):
                 read_status += " · Text-write approval"
+            if "filesystem.edit_text" in getattr(self.service, "agent_capabilities", ()):
+                read_status += " · Text-edit approval"
             if "filesystem.copy" in getattr(self.service, "agent_capabilities", ()):
                 read_status += " · Copy approval"
             if "filesystem.move" in getattr(self.service, "agent_capabilities", ()):
@@ -1134,6 +1136,9 @@ class MainWindow(QMainWindow):
             if text_write_enabled:
                 write_actions.append("create or replace one text file")
                 approved_results.append("text-write paths and content")
+            if "filesystem.edit_text" in getattr(self.service, "agent_capabilities", ()):
+                write_actions.append("edit exact text in one existing file")
+                approved_results.append("text-edit paths and replacement excerpts")
             if copy_enabled:
                 write_actions.append("copy one regular file")
                 approved_results.append("copy paths")

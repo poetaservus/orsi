@@ -29,6 +29,18 @@ class ApprovalDialogSpec:
 
 
 _SPECS = {
+    "filesystem.edit_text": ApprovalDialogSpec(
+        capability="filesystem.edit_text",
+        object_name="editApproval",
+        title="Edit text file?",
+        heading="Apply this exact diff to:",
+        approve_text="Apply edit",
+        approve_object_name="approveTextEdit",
+        notice="Approval is for this file version and exact edit only. Escaped line endings are shown in the diff.",
+        activity="Waiting for edit approval...",
+        size=(720, 480),
+        content_kind="path_and_content",
+    ),
     "filesystem.mkdir": ApprovalDialogSpec(
         capability="filesystem.mkdir",
         object_name="folderApproval",

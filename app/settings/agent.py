@@ -16,6 +16,7 @@ _FILESYSTEM_READ_TEXT_GATE = "ORSI_ENABLE_FILESYSTEM_READ_TEXT"
 _FILESYSTEM_SEARCH_GATE = "ORSI_ENABLE_FILESYSTEM_SEARCH"
 _FILESYSTEM_MKDIR_GATE = "ORSI_ENABLE_FILESYSTEM_MKDIR"
 _FILESYSTEM_WRITE_TEXT_GATE = "ORSI_ENABLE_FILESYSTEM_WRITE_TEXT"
+_FILESYSTEM_EDIT_TEXT_GATE = "ORSI_ENABLE_FILESYSTEM_EDIT_TEXT"
 _FILESYSTEM_COPY_GATE = "ORSI_ENABLE_FILESYSTEM_COPY"
 _FILESYSTEM_MOVE_GATE = "ORSI_ENABLE_FILESYSTEM_MOVE"
 _FILESYSTEM_TRASH_GATE = "ORSI_ENABLE_FILESYSTEM_TRASH"
@@ -66,6 +67,7 @@ class AgentFeatureConfig(BaseModel):
     filesystem_search_enabled: bool = False
     filesystem_mkdir_enabled: bool = False
     filesystem_write_text_enabled: bool = False
+    filesystem_edit_text_enabled: bool = False
     filesystem_copy_enabled: bool = False
     filesystem_move_enabled: bool = False
     filesystem_trash_enabled: bool = False
@@ -83,6 +85,8 @@ class AgentFeatureConfig(BaseModel):
             raise ValueError("Folder creation requires the filesystem metadata agent.")
         if self.filesystem_write_text_enabled and not self.filesystem_stat_enabled:
             raise ValueError("Text writing requires the filesystem metadata agent.")
+        if self.filesystem_edit_text_enabled and not self.filesystem_stat_enabled:
+            raise ValueError("Text editing requires the filesystem metadata agent.")
         if self.filesystem_copy_enabled and not self.filesystem_stat_enabled:
             raise ValueError("File copying requires the filesystem metadata agent.")
         if self.filesystem_move_enabled and not self.filesystem_stat_enabled:
@@ -123,6 +127,7 @@ def load_agent_feature_config() -> AgentFeatureConfig:
         (_FILESYSTEM_SEARCH_GATE, "filesystem_search_enabled"),
         (_FILESYSTEM_MKDIR_GATE, "filesystem_mkdir_enabled"),
         (_FILESYSTEM_WRITE_TEXT_GATE, "filesystem_write_text_enabled"),
+        (_FILESYSTEM_EDIT_TEXT_GATE, "filesystem_edit_text_enabled"),
         (_FILESYSTEM_COPY_GATE, "filesystem_copy_enabled"),
         (_FILESYSTEM_MOVE_GATE, "filesystem_move_enabled"),
         (_FILESYSTEM_TRASH_GATE, "filesystem_trash_enabled"),
