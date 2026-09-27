@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from threading import Lock
+from threading import Event, Lock, RLock
 from typing import Callable, Iterable
 
 from app.inference.cloud_backend import CloudInferenceError, OpenAICompatibleInferenceEngine
@@ -25,6 +25,7 @@ class LazyInferenceEngine(InferenceEngine):
         self._engine = None
         self._initialization_error = None
         self._lock = Lock()
+        self._closed = Event()
         self.context_length = int(context_length)
         self.max_response_tokens = int(max_response_tokens)
 
@@ -59,6 +60,12 @@ class LazyInferenceEngine(InferenceEngine):
             except Exception as exc:
                 log.warning("Could not fully release the local inference backend: %s", exc)
 
+    def close(self) -> None:
+        # Set before taking the initialization lock: an in-flight factory must
+        # release its result instead of publishing it after shutdown begins.
+        self._closed.set()
+        self.unload()
+
     def cancel_current_request(self) -> None:
         with self._lock:
             engine = self._engine
@@ -68,12 +75,20 @@ class LazyInferenceEngine(InferenceEngine):
 
     def _get_engine(self) -> InferenceEngine:
         with self._lock:
+            if self._closed.is_set():
+                raise InferenceUnavailable("The local inference backend is closed.")
             if self._engine is not None:
                 return self._engine
             if self._initialization_error is not None:
                 raise InferenceUnavailable(str(self._initialization_error)) from self._initialization_error
             try:
-                self._engine = self._factory()
+                engine = self._factory()
+                if self._closed.is_set():
+                    close = getattr(engine, "close", None)
+                    if callable(close):
+                        close()
+                    raise InferenceUnavailable("The local inference backend is closed.")
+                self._engine = engine
                 self.context_length = int(getattr(self._engine, "context_length", self.context_length))
                 self.max_response_tokens = int(
                     getattr(self._engine, "max_response_tokens", self.max_response_tokens)
@@ -101,7 +116,8 @@ class HybridInferenceEngine(InferenceEngine):
         self.cloud = cloud
         self.local_error = local_error
         self.fallback_to_local = fallback_to_local
-        self._lock = Lock()
+        self._lock = RLock()
+        self._closed = False
         self._notice = None
         modes = self.available_modes
         if not modes:
@@ -131,6 +147,7 @@ class HybridInferenceEngine(InferenceEngine):
             if normalized == "local" and self.local_error:
                 raise InferenceUnavailable(self.local_error)
             raise InferenceUnavailable(f"The {normalized or 'selected'} inference mode is unavailable.")
+        self._engine_for(normalized)
         if normalized == "cloud":
             unload = getattr(self.local, "unload", None)
             if callable(unload):
@@ -161,22 +178,26 @@ class HybridInferenceEngine(InferenceEngine):
         return notice
 
     def cancel_current_request(self) -> None:
-        engine = self._engine_for(self.mode)
+        with self._lock:
+            if self._closed:
+                return
+            engine = self._engine_for(self._mode)
         cancel = getattr(engine, "cancel_current_request", None)
         if callable(cancel):
             cancel()
 
     def close(self) -> None:
-        unload = getattr(self.local, "unload", None)
-        if callable(unload):
-            unload()
-        else:
-            close_local = getattr(self.local, "close", None)
-            if callable(close_local):
-                close_local()
-        close = getattr(self.cloud, "close", None)
-        if callable(close):
-            close()
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+        for engine in (self.local, self.cloud):
+            close = getattr(engine, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception:
+                    log.warning("Could not fully release an inference backend.")
 
     def respond(self, messages: list[dict[str, str]]) -> str:
         mode = self.mode
@@ -197,7 +218,7 @@ class HybridInferenceEngine(InferenceEngine):
             ):
                 raise
             try:
-                result = self.local.respond(messages)
+                result = self._engine_for("local").respond(messages)
             except Exception as local_exc:
                 raise CloudInferenceError(
                     f"{exc} Local fallback was also unavailable: {local_exc}"
@@ -232,7 +253,7 @@ class HybridInferenceEngine(InferenceEngine):
             ):
                 raise
             try:
-                result = self.local.respond_with_capabilities(
+                result = self._engine_for("local").respond_with_capabilities(
                     messages,
                     definitions,
                 )
@@ -277,7 +298,10 @@ class HybridInferenceEngine(InferenceEngine):
             )
 
     def _engine_for(self, mode: str) -> InferenceEngine:
-        engine = self.local if mode == "local" else self.cloud
-        if engine is None:
-            raise InferenceUnavailable(f"The {mode} inference mode is unavailable.")
-        return engine
+        with self._lock:
+            if self._closed:
+                raise InferenceUnavailable("Inference is closed.")
+            engine = self.local if mode == "local" else self.cloud
+            if engine is None:
+                raise InferenceUnavailable(f"The {mode} inference mode is unavailable.")
+            return engine

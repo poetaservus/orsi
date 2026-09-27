@@ -588,12 +588,6 @@ class MainWindow(QMainWindow):
         super().resizeEvent(event)
         self._position_overlays()
 
-    def closeEvent(self, event) -> None:  # noqa: N802 - Qt API name
-        if hasattr(self, "_greeting_save_timer") and self._greeting_save_timer.isActive():
-            self._greeting_save_timer.stop()
-            self._save_greeting_message()
-        super().closeEvent(event)
-
     def eventFilter(self, watched, event) -> bool:  # noqa: N802 - Qt API name
         if watched is getattr(self, "topbar", None):
             if event.type() == QEvent.Type.Enter:
@@ -911,6 +905,8 @@ class MainWindow(QMainWindow):
         self.thread.deleteLater()
         self.thread = None
         self.worker = None
+        if getattr(self, "_closing", False):
+            self.close()
 
     def _set_busy(self, busy: bool) -> float | None:
         self.send.setEnabled(not busy)
@@ -1180,11 +1176,32 @@ class MainWindow(QMainWindow):
         )
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt API name
+        self._closing = True
+        if self._greeting_save_timer.isActive():
+            self._greeting_save_timer.stop()
+            self._save_greeting_message()
         if self._approval_dialog is not None:
             self._approval_dialog.reject()
         shutdown = getattr(self.service, "shutdown", None)
-        if callable(shutdown):
-            shutdown()
+        try:
+            if callable(shutdown):
+                shutdown()
+        except Exception:
+            log.warning("Application service cleanup failed.")
+        finally:
+            close = getattr(self.inference, "close", None)
+            if callable(close):
+                try:
+                    close()
+                except Exception:
+                    log.warning("Inference cleanup failed.")
+        if self.thread is not None and self.thread.isRunning():
+            # Let the cancelled worker unwind with Qt's event loop still alive.
+            # Never destroy a running QThread or force-terminate a file write.
+            self.setEnabled(False)
+            self.thread.quit()
+            event.ignore()
+            return
         super().closeEvent(event)
 
     def _sync_inference_selector(self) -> None:

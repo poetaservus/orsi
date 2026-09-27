@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import logging
 from pathlib import Path
 
 # Support module execution from the project root and direct file execution.
@@ -46,10 +47,25 @@ def main() -> int:
         agent_config_override=startup_agent_config,
         full_local_read_acknowledged=full_local_read_acknowledged,
     )
-    preferences = JsonStore(PATHS.state / "ui_preferences_v1.json")
-    window = MainWindow(service, host["hostname"], error, inference, preferences)
-    window.show()
-    return app.exec()
+    def shutdown():
+        try:
+            if service is not None:
+                service.shutdown()
+        except Exception:
+            logging.getLogger(__name__).warning("Application service cleanup failed.")
+        finally:
+            close = getattr(inference, "close", None)
+            if callable(close):
+                close()
+
+    app.aboutToQuit.connect(shutdown)
+    try:
+        preferences = JsonStore(PATHS.state / "ui_preferences_v1.json")
+        window = MainWindow(service, host["hostname"], error, inference, preferences)
+        window.show()
+        return app.exec()
+    finally:
+        shutdown()
 
 
 if __name__ == "__main__":

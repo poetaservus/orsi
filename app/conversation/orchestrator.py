@@ -88,6 +88,7 @@ class ConversationService:
         self._run_lock = Lock()
         self._cancellation_lock = Lock()
         self._cancellation: CancellationSource | None = None
+        self._closed = False
         self._session_id = uuid4().hex
         self._turn_number = 0
         # Capability calls/results stay in memory. Persistent history intentionally
@@ -118,9 +119,11 @@ class ConversationService:
             raise RuntimeError("O.R.S.I is already replying.")
 
         source = CancellationSource()
-        with self._cancellation_lock:
-            self._cancellation = source
         try:
+            with self._cancellation_lock:
+                if self._closed:
+                    raise RuntimeError("The conversation is closed.")
+                self._cancellation = source
             self.store.append("user", text)
             if self.agent_runtime is None:
                 answer = self._run_chat_turn(source, activity)
@@ -245,11 +248,21 @@ class ConversationService:
             self._run_lock.release()
 
     def shutdown(self) -> None:
-        self.cancel_current_task()
-        if self.agent_runtime is not None:
-            close = getattr(self.agent_runtime, "shutdown", None)
-            if callable(close):
-                close()
+        with self._cancellation_lock:
+            if self._closed:
+                return
+            self._closed = True
+        try:
+            self.cancel_current_task()
+        finally:
+            try:
+                close = getattr(self.inference, "close", None)
+                if callable(close):
+                    close()
+            finally:
+                close = getattr(self.agent_runtime, "shutdown", None)
+                if callable(close):
+                    close()
 
     def estimated_context_tokens(self) -> int:
         return self.context_budget().total_estimated_request_tokens

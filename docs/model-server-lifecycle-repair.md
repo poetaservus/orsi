@@ -67,5 +67,9 @@ diagnostics are bounded and sanitized. A passing mocked shutdown test alone is i
 
 ## Progress
 
-- Phase 0: branch and initial diagnosis recorded; implementation has not started.
-- Phases 1–4: pending.
+- Phase 0: complete. The service never closed inference, and a duplicate window-close
+  handler overrode preference cleanup. Server output was discarded; no OS ownership guard existed.
+- Phase 1: implemented. Lazy/hybrid closure is terminal, service and application exit
+  close inference, window close preserves preferences and waits for a cancelled worker.
+  Focused inference/lifecycle/UI tests pass (including initialization and cleanup-failure cases).
+- Phases 2–4: pending.
