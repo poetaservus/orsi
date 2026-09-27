@@ -5,12 +5,10 @@ import re
 from PySide6.QtCore import QElapsedTimer, QRect, QRectF, QTimer, Qt
 from PySide6.QtGui import QColor, QFontDatabase, QLinearGradient, QPainter, QPen
 from PySide6.QtWidgets import (
-    QApplication,
     QFrame,
     QHBoxLayout,
     QLabel,
     QPlainTextEdit,
-    QPushButton,
     QScrollArea,
     QSizePolicy,
     QVBoxLayout,
@@ -19,6 +17,7 @@ from PySide6.QtWidgets import (
 
 from app.ui.status import ThinkingDots
 from app.ui.code_highlighting import CodeHighlighter
+from app.ui.copy_button import CopyButton
 
 
 _FENCED_CODE = re.compile(
@@ -69,11 +68,9 @@ class _CodeBlock(QFrame):
 
         self.language = QLabel(language)
         self.language.setObjectName("codeLanguage")
-        self.copy_button = QPushButton("Copy")
+        self.copy_button = CopyButton("Copy code")
         self.copy_button.setObjectName("copyCodeButton")
-        self.copy_button.setToolTip("Copy code")
-        self.copy_button.setAccessibleName("Copy code")
-        self.copy_button.setFixedHeight(28)
+        self.copy_button.setFixedSize(28, 28)
 
         header_layout.addWidget(self.language)
         header_layout.addStretch(1)
@@ -96,18 +93,10 @@ class _CodeBlock(QFrame):
         self.editor.setFixedHeight(max(76, min(320, editor_height)))
         layout.addWidget(self.editor)
 
-        self._copy_timer = QTimer(self)
-        self._copy_timer.setSingleShot(True)
-        self._copy_timer.timeout.connect(self._restore_copy_label)
         self.copy_button.clicked.connect(self.copy_code)
 
     def copy_code(self) -> None:
-        QApplication.clipboard().setText(self.code)
-        self.copy_button.setText("Copied")
-        self._copy_timer.start(1400)
-
-    def _restore_copy_label(self) -> None:
-        self.copy_button.setText("Copy")
+        self.copy_button.copy_text(self.code)
 
 
 class _Message(QFrame):
@@ -279,11 +268,9 @@ class _MessageBand(QWidget):
             self.timing_label.hide()
         meta_layout.addStretch(1)
 
-        self.copy_button = QPushButton("Copy")
+        self.copy_button = CopyButton("Copy message")
         self.copy_button.setObjectName("copyMessageButton")
-        self.copy_button.setToolTip("Copy message")
-        self.copy_button.setAccessibleName("Copy message")
-        self.copy_button.setFixedSize(52, 23)
+        self.copy_button.setFixedSize(28, 23)
         self.copy_button.hide()
         if from_user:
             meta_layout.addWidget(self.copy_button)
@@ -318,9 +305,7 @@ class _MessageBand(QWidget):
             action_layout.addStretch(1)
             layout.addWidget(self.action_row)
 
-        self._copy_timer = QTimer(self)
-        self._copy_timer.setSingleShot(True)
-        self._copy_timer.timeout.connect(self._restore_copy_label)
+        self.copy_button.feedback_finished.connect(self._hide_copy_button_if_idle)
         self.copy_button.clicked.connect(self.copy_message)
 
     def set_available_width(self, width: int) -> None:
@@ -328,10 +313,8 @@ class _MessageBand(QWidget):
         self.message.set_available_width(width)
 
     def copy_message(self) -> None:
-        QApplication.clipboard().setText(self.message._content)
-        self.copy_button.setText("Copied")
-        self.copy_button.show()
-        self._copy_timer.start(1400)
+        if self.copy_button.copy_text(self.message._content):
+            self.copy_button.show()
 
     def enterEvent(self, event) -> None:  # noqa: N802 - Qt API name
         self.copy_button.show()
@@ -342,12 +325,8 @@ class _MessageBand(QWidget):
         QTimer.singleShot(0, self._hide_copy_button_if_idle)
 
     def _hide_copy_button_if_idle(self) -> None:
-        if not self.underMouse() and not self.copy_button.underMouse():
-            self.copy_button.hide()
-
-    def _restore_copy_label(self) -> None:
-        self.copy_button.setText("Copy")
-        if not self.underMouse() and not self.copy_button.underMouse():
+        if (not self.copy_button.copy_succeeded
+                and not self.underMouse() and not self.copy_button.underMouse()):
             self.copy_button.hide()
 
 

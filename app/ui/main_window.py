@@ -1358,7 +1358,7 @@ QFrame#userMessage QLabel, QFrame#orsiMessage QLabel {
     font-size: 18px;
     font-weight: 400;
 }
-QFrame#userMessage QLabel { color: #dce2ee; font-size: 16px; }
+QFrame#userMessage QLabel { color: #dce2ee; font-size: 12.5pt; }
 QFrame#errorMessage QLabel {
     color: #ff8d86;
     font-family: Saira;
@@ -1382,7 +1382,7 @@ QPushButton#copyMessageButton {
     background: transparent;
     border: none;
     border-radius: 6px;
-    padding: 0 7px;
+    padding: 0;
     font-family: Saira;
     font-size: 11px;
     font-weight: 400;
@@ -1414,7 +1414,7 @@ QPushButton#copyCodeButton {
     background: rgba(221, 237, 255, 14);
     border: 1px solid rgba(221, 237, 255, 30);
     border-radius: 7px;
-    padding: 0 10px;
+    padding: 0;
     font-size: 11px;
     font-family: Saira;
     font-weight: 400;

@@ -750,9 +750,18 @@ class UiTests(unittest.TestCase):
             self.assertTrue(band.copy_button.isHidden())
             QApplication.sendEvent(band, QEvent(QEvent.Type.Enter))
             self.assertFalse(band.copy_button.isHidden())
+            self.assertFalse(band.copy_button.icon().isNull())
+            copy_icon = band.copy_button.icon().cacheKey()
             band.copy_button.click()
             self.assertEqual(QApplication.clipboard().text(), expected)
-            self.assertEqual(band.copy_button.text(), "Copied")
+            self.assertEqual(band.copy_button.text(), "")
+            self.assertEqual(band.copy_button.accessibleName(), "Copied")
+            self.assertNotEqual(band.copy_button.icon().cacheKey(), copy_icon)
+
+        QTest.qWait(1500)
+        for band in chat._message_bands:
+            self.assertFalse(band.copy_button.copy_succeeded)
+            self.assertEqual(band.copy_button.accessibleName(), "Copy message")
 
         user_band, assistant_band = chat._message_bands
         user_copy_y = user_band.copy_button.mapTo(user_band, QPoint()).y()
@@ -836,10 +845,21 @@ class UiTests(unittest.TestCase):
         self.assertEqual(block.editor.toPlainText(), "print('hello')")
         self.assertTrue(block.editor.isReadOnly())
 
+        copy_icon = block.copy_button.icon().cacheKey()
         block.copy_button.click()
 
         self.assertEqual(QApplication.clipboard().text(), "print('hello')")
-        self.assertEqual(block.copy_button.text(), "Copied")
+        self.assertEqual(block.copy_button.text(), "")
+        self.assertEqual(block.copy_button.accessibleName(), "Copied")
+        self.assertNotEqual(block.copy_button.icon().cacheKey(), copy_icon)
+        QTest.qWait(1500)
+        self.assertEqual(block.copy_button.icon().cacheKey(), copy_icon)
+        self.assertEqual(block.copy_button.accessibleName(), "Copy code")
+        with patch("app.ui.copy_button.QApplication.clipboard") as clipboard:
+            clipboard.return_value.text.return_value = "clipboard busy"
+            block.copy_button.click()
+        self.assertFalse(block.copy_button.copy_succeeded)
+        self.assertEqual(block.copy_button.icon().cacheKey(), copy_icon)
         self.assertEqual(
             [label.text() for label in message._text_labels],
             ["Use this:", "Then run it."],
@@ -873,6 +893,7 @@ class UiTests(unittest.TestCase):
                 QApplication.processEvents()
                 for message in window.chat._messages:
                     label = message.label
+                    self.assertAlmostEqual(label.font().pointSizeF(), 12.5)
                     bounds = label.fontMetrics().boundingRect(
                         label.rect().adjusted(0, 0, 0, 100_000),
                         int(Qt.TextFlag.TextWordWrap | Qt.TextFlag.TextExpandTabs),
