@@ -1,7 +1,21 @@
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import PureWindowsPath
 import re
+
+
+_FILE_LANGUAGES = {
+    ".html": "html", ".htm": "html", ".xhtml": "html",
+    ".css": "css", ".scss": "scss", ".less": "less",
+    ".js": "javascript", ".mjs": "javascript", ".cjs": "javascript", ".jsx": "jsx",
+    ".ts": "typescript", ".tsx": "tsx",
+    ".json": "json", ".py": "python", ".pyw": "python",
+    ".yaml": "yaml", ".yml": "yaml", ".toml": "toml", ".ini": "ini",
+    ".xml": "xml", ".svg": "xml", ".md": "markdown",
+    ".ps1": "powershell", ".sh": "bash", ".bat": "batch", ".cmd": "batch",
+    ".c": "c", ".h": "c", ".cpp": "cpp", ".hpp": "cpp",
+    ".cs": "csharp", ".rs": "rust", ".go": "go", ".sql": "sql",
+}
 
 
 def grounded_text_read_answer(
@@ -81,15 +95,19 @@ def _render_text_result(call, result) -> str:
     text = output.get("text")
     if not isinstance(text, str):
         return "The text-file read returned an invalid result."
-    name = _safe_filename(Path(str(call.arguments.get("path", "file"))).name)
+    path = PureWindowsPath(str(call.arguments.get("path", "file")))
+    name = _safe_filename(path.name)
     if not text:
         answer = f"{name} is empty."
     else:
         fence = _markdown_code_fence(text)
+        # The fence is presentation metadata only. Preserve the read text exactly
+        # and keep unknown/plain-text files neutral instead of guessing from content.
+        language = _FILE_LANGUAGES.get(path.suffix.casefold(), "text")
         closing_prefix = "" if text.endswith(("\n", "\r")) else "\n"
         answer = (
             f"Here is the content of {name}:\n\n"
-            f"{fence}text\n{text}{closing_prefix}{fence}"
+            f"{fence}{language}\n{text}{closing_prefix}{fence}"
         )
     if output.get("truncated_by_bytes") is True or output.get("truncated_by_lines") is True:
         answer += "\n\nThe displayed content was truncated by the configured read limit."

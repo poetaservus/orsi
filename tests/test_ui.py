@@ -889,6 +889,45 @@ class UiTests(unittest.TestCase):
         self.assertEqual(QApplication.clipboard().text(), code)
         chat.close()
 
+    def test_file_read_replies_highlight_using_the_actual_file_type(self):
+        from types import SimpleNamespace
+        from app.conversation.result_grounding import grounded_text_read_answer
+
+        samples = (
+            ("index.HTML", "html", '<!DOCTYPE html>\n<a href="home.html">Home</a>'),
+            ("style.css", "css", "header { padding: 20px; color: #ffffff; }"),
+            ("script.js", "javascript", 'const title = "Hello"; const count = 42;'),
+            ("notes.txt", "text", '<a href="home.html">This is literal text</a>'),
+            ("notes.unknown", "text", "Unknown file type stays plain."),
+        )
+        for filename, language, code in samples:
+            with self.subTest(filename=filename):
+                call = SimpleNamespace(capability="filesystem.read_text",
+                                       arguments={"path": rf"C:\Users\reader\Documents\website\{filename}"})
+                result = SimpleNamespace(success=True, output={"text": code})
+                answer = grounded_text_read_answer("show the file contents", "I read the file.", [(call, result)])
+                chat = ChatView()
+                try:
+                    chat.add_message("Agent", answer)
+                    block = chat._messages[0]._code_blocks[0]
+                    self.assertEqual(block.language.text(), language)
+                    block.highlighter.rehighlight()
+                    colors = set()
+                    paragraph = block.editor.document().firstBlock()
+                    while paragraph.isValid():
+                        formats = paragraph.layout().formats()
+                        for item in formats:
+                            colors.add(item.format.foreground().color().name())
+                        paragraph = paragraph.next()
+                    if language == "text":
+                        self.assertEqual(colors, set())
+                    else:
+                        self.assertGreaterEqual(len(colors), 3)
+                    block.copy_button.click()
+                    self.assertEqual(QApplication.clipboard().text(), code)
+                finally:
+                    chat.close()
+
     def test_thinking_dots_start_and_stop(self):
         chat = ChatView()
         chat.set_thinking(True)
