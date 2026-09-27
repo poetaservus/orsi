@@ -66,6 +66,10 @@ _PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
 _EDIT_EXISTING = re.compile(
     r"\b(?:edit|modify|update|rewrite|replace|restyle|redesign|change)\b"
 )
+_APPLY_TO_FILE = re.compile(
+    r"\b(?:implement|apply|add|append|insert)\b.*"
+    r"(?:\b(?:file|css|html|javascript|script)\b|\.(?:css|html?|js|json|md|txt|py|toml|ya?ml)\b)"
+)
 
 
 def select_turn_capabilities(
@@ -99,6 +103,12 @@ def select_turn_capabilities(
     for name, patterns in _PATTERNS.items():
         if name in available and any(pattern.search(text) for pattern in patterns):
             selected.add(name)
+
+    if _APPLY_TO_FILE.search(text):
+        if "filesystem.edit_text" in available:
+            selected.add("filesystem.edit_text")
+        elif "filesystem.write_text" in available:
+            selected.add("filesystem.write_text")
 
     # Editing an existing text file is a read/transform/write operation. Expose
     # both halves from the start so the same bounded agent run can continue.

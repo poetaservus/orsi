@@ -29,11 +29,11 @@ class FilesystemEditTextArguments(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     path: str = Field(min_length=1, max_length=32767,
-                      description="Exact absolute local-drive path of an existing UTF-8 file.")
+                      description="Exact absolute local-drive path of an existing UTF-8 file. Copy the path returned by the source read; never shorten it to a filename.")
     old_text: str = Field(min_length=1, max_length=MAX_FRAGMENT_CHARS,
-                         description="Exact text from the file, including its original line endings. No fuzzy matching.")
+                         description="A unique exact excerpt from the source read, including original line endings and enough surrounding text to identify the requested location. For one CSS rule include its selector, not a declaration repeated in other rules. No fuzzy matching.")
     new_text: str = Field(max_length=MAX_FRAGMENT_CHARS,
-                         description="Exact replacement text. Preserve the file's line endings.")
+                         description="Replacement for the entire old_text excerpt. Copy old_text and change only the requested content; retain every unchanged selector, declaration, closing brace, and line ending. Example: old_text='header { color: red; }', new_text='header { color: white; }'.")
     replace_all: bool = Field(default=False,
                               description="Replace every non-overlapping match only when explicitly requested.")
     expected_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$",
@@ -153,7 +153,11 @@ def plan_edit(raw: bytes, arguments: FilesystemEditTextArguments) -> EditPlan:
             _invalid("The search text has overlapping matches. Use a more specific excerpt.")
         positions.append(index)
         if len(positions) > 1 and not arguments.replace_all:
-            _invalid("The search text has multiple matches. Use a unique excerpt or explicit replace_all.")
+            _invalid("The search text has multiple matches; no edit was made. Expand old_text with "
+                     "exact surrounding lines from the source read to identify the requested location "
+                     "(for CSS, include the selector). Retain those lines in new_text and submit the "
+                     "corrected edit. Do not repeat the same call or use replace_all unless the user "
+                     "requested every occurrence.")
         start = index + 1
     if not positions:
         _invalid("The exact search text was not found. Read the file again.")

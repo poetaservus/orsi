@@ -906,6 +906,7 @@ def test_agent_runtime_is_connected_only_through_the_startup_feature_gate():
         "filesystem_search_enabled": True,
         "filesystem_mkdir_enabled": True,
         "filesystem_write_text_enabled": True,
+        "filesystem_edit_text_enabled": True,
         "filesystem_copy_enabled": True,
         "filesystem_move_enabled": True,
         "filesystem_trash_enabled": True,

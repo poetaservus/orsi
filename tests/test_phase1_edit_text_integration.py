@@ -132,6 +132,48 @@ def test_invalid_edits_never_ask_for_approval(service, tmp_path, raw, update):
     assert target.read_bytes() == raw
 
 
+@pytest.mark.parametrize("approved", [True, False])
+def test_ambiguous_edit_can_be_corrected_but_still_requires_approval(service, tmp_path, monkeypatch, approved):
+    raw = b"header {\r\n  background: #222;\r\n}\r\nfooter {\r\n  background: #222;\r\n}\r\n"
+    target = setup_target(service, tmp_path, raw)
+    old = "header {\r\n  background: #222;\r\n}"
+    new = old.replace("#222", "linear-gradient(black, blue)")
+    calls = []
+
+    def respond(messages, capabilities):
+        if not calls:
+            arguments = {"path": str(target), "old_text": "background: #222;",
+                         "new_text": "background: linear-gradient(black, blue);"}
+        elif len(calls) == 1:
+            rejected = messages[-1]["result"]
+            assert not rejected["success"] and rejected["error"]["code"] == "invalid_arguments"
+            assert target.read_bytes() == raw
+            assert not approvals
+            arguments = {"path": str(target), "old_text": old, "new_text": new}
+        else:
+            return ModelResponse.text(json.dumps(messages[-1]["result"]))
+        calls.append(arguments)
+        return ModelResponse.calls((ModelCapabilityCall(provider_call_id=f"correction-{len(calls)}",
+                                    capability="filesystem.edit_text", arguments=arguments),))
+
+    monkeypatch.setattr(service.inference, "respond_with_capabilities", respond)
+    approvals = []
+
+    def approve(record):
+        assert target.read_bytes() == raw
+        assert record.resource == str(target)
+        assert "linear-gradient" in record.approval_preview
+        approvals.append(record)
+        service.resolve_approval(record.approval_id, approved)
+
+    service.set_approval_requester(approve)
+    result = json.loads(service.run("add a gradient in the header in style.css"))
+    assert result["success"] == approved
+    assert len(approvals) == 1 and len(calls) == 2
+    assert target.read_bytes() == (raw.replace(old.encode(), new.encode(), 1) if approved else raw)
+    assert len(service.agent_runtime.executor.journal.records) == 1
+
+
 def test_denial_preserves_source(service, tmp_path):
     target = setup_target(service, tmp_path)
     service.set_approval_requester(lambda r: service.resolve_approval(r.approval_id, False))

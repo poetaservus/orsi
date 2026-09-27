@@ -116,6 +116,7 @@ def test_checked_in_config_enables_requested_read_capabilities(monkeypatch):
         filesystem_search_enabled=True,
         filesystem_mkdir_enabled=True,
         filesystem_write_text_enabled=True,
+        filesystem_edit_text_enabled=True,
         filesystem_copy_enabled=True,
         filesystem_move_enabled=True,
         filesystem_trash_enabled=True,

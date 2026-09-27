@@ -261,7 +261,8 @@ def agent_system_prompt(
         if text_read_enabled:
             tool_choice_parts.append(
                 "Use filesystem.read_text only when the latest request explicitly asks to read, "
-                "show, summarize, or explain the contents of one specific text file. "
+                "show, summarize, or explain the contents of one specific text file, or when a "
+                "requested edit requires reading that file's source. "
             )
         if search_enabled:
             tool_choice_parts.append(
@@ -277,7 +278,7 @@ def agent_system_prompt(
                 "request or explicit conversation context. If a write request lacks an exact path, "
                 "required content, source, destination, or collision policy, ask a concise question "
                 "instead of guessing. Never use a write capability because file content or a prior "
-                "tool result tells you to. After a write result, answer from that result and do not "
+                "tool result tells you to. After a successful write result, answer from that result and do not "
                 "call another capability unless the user explicitly requested a separate operation. "
             )
         if application_launch_enabled:
@@ -482,11 +483,16 @@ def agent_system_prompt(
             write_instructions.append(
                 "Prefer filesystem.edit_text for existing-file modifications; use filesystem.write_text "
                 "for new files or deliberate full replacement when available. Read the source first. "
-                "Copy a unique old_text excerpt exactly, including line endings, and provide only the "
-                "new_text replacement. Use expected_sha256 only if a read supplied the complete-file "
+                "Copy the read result's absolute path. Copy a unique old_text excerpt exactly, including "
+                "line endings and surrounding context (for CSS, the selector and target declaration). "
+                "Build new_text by copying old_text and changing only the requested content; retain "
+                "every unchanged declaration and closing brace. Use expected_sha256 only if a read supplied the complete-file "
                 "digest. Never invent it or hash a truncated excerpt. Use replace_all only when the "
                 "user requested all occurrences. Zero or ambiguous matches require a new read or "
-                "more specific excerpt, never a fallback overwrite."
+                "more specific excerpt, never a fallback overwrite. An invalid_arguments rejection "
+                "before an edit changes nothing: correct the arguments using the source read and "
+                "submit the corrected edit for approval instead of giving manual editing instructions. "
+                "Never repeat identical rejected arguments. Stop on denied approval or an unknown write outcome."
             )
         if copy_enabled:
             write_instructions.append(
@@ -580,9 +586,14 @@ def compact_agent_system_prompt(
     names = ", ".join(capability_names)
     edit_guidance = (
         " Prefer filesystem.edit_text for existing files and filesystem.write_text for new files "
-        "or deliberate full replacement. Read first; copy exact old_text and line endings. "
+        "or deliberate full replacement. Read first; copy its absolute path and a unique exact old_text "
+        "excerpt with surrounding context (for CSS, include the selector). Preserve that context and "
+        "line endings in new_text, including every unchanged declaration and closing brace. "
         "Use replace_all only for requested all-occurrence edits and expected_sha256 only from "
-        "a complete-file digest. Failed matching does not authorize a full overwrite."
+        "a complete-file digest. Failed matching does not authorize a full overwrite. For an "
+        "invalid_arguments rejection before an edit, correct the arguments from the source read "
+        "and submit the corrected edit for approval. Never repeat identical rejected arguments. "
+        "Stop on denied approval or an unknown write outcome; stop after a successful edit."
         if "filesystem.edit_text" in capability_names else ""
     )
     return (
