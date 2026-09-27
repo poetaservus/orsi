@@ -17,6 +17,7 @@ from urllib.request import Request, urlopen
 from app.inference.engine import InferenceEngine, InferenceUnavailable
 from app.inference.diagnostics import record_completion_diagnostics
 from app.inference.owned_process import OwnedProcess, ProcessOwnershipError, start_owned_process
+from app.inference.startup_diagnostics import StartupDiagnostics
 from app.settings.model import ModelConfig, detect_nvidia_memory_mib
 from app.inference.protocol import (
     ModelCapabilityDefinition,
@@ -306,10 +307,13 @@ class LlamaServerInferenceEngine(InferenceEngine):
                 "--no-webui",
                 "--api-key",
                 api_key,
-                "--log-disable",
+                "--log-verbosity",
+                "1",
+                "--log-colors",
+                "off",
             ]
             try:
-                process = start_owned_process(
+                process = _launch_owned_server(
                     command,
                     cwd=self.server_executable.parent,
                     env=_server_environment(self.server_executable.parent),
@@ -331,6 +335,9 @@ class LlamaServerInferenceEngine(InferenceEngine):
             with self._lifecycle_lock:
                 if self._closed or self._process is not process:
                     raise InferenceUnavailable("Local server startup was cancelled.")
+            diagnostics = getattr(process, "startup_diagnostics", None)
+            if diagnostics is not None:
+                diagnostics.finish()
         except Exception:
             self._clear_process(process)
             self._stop_process(process)
@@ -349,10 +356,18 @@ class LlamaServerInferenceEngine(InferenceEngine):
             headers={"Authorization": f"Bearer {api_key}", "Accept": "application/json"},
         )
         while monotonic() < deadline:
-            if process.poll() is not None:
-                raise InferenceUnavailable(
-                    "The local tool-call server exited during startup."
-                )
+            with self._lifecycle_lock:
+                if self._closed or self._process is not process:
+                    raise InferenceUnavailable("Local server startup was cancelled.")
+            exit_code = process.poll()
+            if exit_code is not None:
+                diagnostics = getattr(process, "startup_diagnostics", None)
+                category = (diagnostics.failure_category(exit_code) if diagnostics is not None
+                            else "unclassified native startup failure")
+                error = ("The local tool-call server exited during startup "
+                         f"(exit {exit_code}, 0x{exit_code & 0xFFFFFFFF:08X}): {category}.")
+                log.warning("%s", error)
+                raise InferenceUnavailable(error)
             try:
                 with urlopen(request, timeout=0.5) as response:
                     raw = response.read(_MAX_HEALTH_RESPONSE_BYTES + 1)
@@ -394,9 +409,14 @@ class LlamaServerInferenceEngine(InferenceEngine):
         try:
             self._terminate_process(process)
         finally:
-            close = getattr(process, "close", None)
-            if callable(close):
-                close()
+            try:
+                close = getattr(process, "close", None)
+                if callable(close):
+                    close()
+            finally:
+                diagnostics = getattr(process, "startup_diagnostics", None)
+                if diagnostics is not None:
+                    diagnostics.finish(wait=True)
 
     def _terminate_process(self, process: OwnedProcess) -> None:
         if process.poll() is not None:
@@ -413,6 +433,22 @@ class LlamaServerInferenceEngine(InferenceEngine):
             process.wait(timeout=max(0.01, deadline - monotonic()))
         except (OSError, subprocess.TimeoutExpired):
             log.warning("The local tool-call server did not stop within its deadline.")
+
+
+def _launch_owned_server(command, *, cwd, env):
+    read_fd, write_fd = os.pipe()
+    diagnostics = None
+    succeeded = False
+    try:
+        diagnostics = StartupDiagnostics(read_fd)
+        process = start_owned_process(command, cwd=cwd, env=env, stderr=write_fd)
+        process.startup_diagnostics = diagnostics
+        succeeded = True
+        return process
+    finally:
+        os.close(write_fd)
+        if not succeeded and diagnostics is not None:
+            diagnostics.finish(wait=True)
 
 
 def _free_loopback_port() -> int:
@@ -486,6 +522,9 @@ def _server_environment(server_directory: Path) -> dict[str, str]:
     environment = dict(os.environ)
     current_path = ""
     for key in tuple(environment):
+        if key.upper().startswith(("LLAMA_ARG_LOG", "LLAMA_LOG")):
+            environment.pop(key)
+            continue
         if key.casefold() == "path":
             current_path = environment.pop(key)
     entries = [str(server_directory)]

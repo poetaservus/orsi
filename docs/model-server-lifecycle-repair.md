@@ -77,4 +77,8 @@ diagnostics are bounded and sanitized. A passing mocked shutdown test alone is i
   All 19 ownership/server tests pass, including real parent force-kill, descendants,
   unrelated-process survival, launch failures, and stable handle counts.
   Design reference: [Microsoft's atomic job assignment explanation](https://devblogs.microsoft.com/oldnewthing/20230209-00/?p=107812).
-- Phases 3–4: pending.
+- Phase 3: implemented. Bounded stderr draining retains fixed failure categories only;
+  exit codes are reported, raw log-file environment overrides are removed, and capture
+  stops when healthy. All 34 focused lifecycle/ownership/diagnostic tests pass, including
+  multi-megabyte noisy output, secret-bearing output, timeout/retry, and close during startup.
+- Phase 4: in progress.
