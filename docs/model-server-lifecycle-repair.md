@@ -81,4 +81,33 @@ diagnostics are bounded and sanitized. A passing mocked shutdown test alone is i
   exit codes are reported, raw log-file environment overrides are removed, and capture
   stops when healthy. All 34 focused lifecycle/ownership/diagnostic tests pass, including
   multi-megabyte noisy output, secret-bearing output, timeout/retry, and close during startup.
-- Phase 4: in progress.
+- Phase 4: complete. Revalidation found zero legacy servers; no cleanup kill was needed.
+  Added active-response window-close, preference-save failure, application exception,
+  and application-quit tests. Late worker results no longer refresh a closed backend.
+
+## Final verification — 2026-09-27
+
+- Full regression: **712 passed, 52 skipped, 5 subtests passed**. The skipped tests include
+  optional integrations; they are not counted as passing.
+- Real shipped model: service shutdown (including an actual model response) passed in
+  9.8 seconds; Qt window shutdown passed in 6.6 seconds. Both native process handles
+  signaled termination. UI checks used Qt's offscreen platform.
+- A separate real-model owner was forcibly killed after health became ready. Windows
+  terminated its loaded server within the five-second assertion deadline; test passed.
+- Final system check: **zero servers from this checkout**, 21,756 MiB available RAM,
+  17,590,108,160 committed bytes, GPU usage 1,023 / 16,384 MiB. Memory figures are a
+  momentary system snapshot, not a claim that this repair terminated the earlier orphans.
+- Main remains `dc2d092f51e941bff0ca13154720a94818004d8e`. Earlier uncommitted Phase 1
+  recovery changes remain unstaged; this branch includes the existing GUI work.
+- `ORSI.cmd` directly launches `app.main` from this checkout, so a fresh launch uses the fix.
+
+Re-run the opt-in real-model acceptance (requires the shipped model and Windows runtime):
+
+```powershell
+$env:ORSI_RUN_SERVER_LIFECYCLE = '1'
+.\runtime\python\python.exe -m pytest tests/test_live_server_lifecycle.py -s
+```
+
+The guard prevents orphaned servers; it cannot guarantee model startup if another
+application independently exhausts memory. Such failures now include a sanitized category
+and native exit code when available. No context settings or capability policies were changed.

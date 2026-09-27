@@ -886,6 +886,8 @@ class MainWindow(QMainWindow):
         self._done(text, True)
 
     def _done(self, text: str, error: bool) -> None:
+        if getattr(self, "_closing", False):
+            return
         if self.inference is not None:
             notice = self.inference.consume_notice()
             if notice:
@@ -1177,22 +1179,26 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt API name
         self._closing = True
-        if self._greeting_save_timer.isActive():
-            self._greeting_save_timer.stop()
-            self._save_greeting_message()
-        if self._approval_dialog is not None:
-            self._approval_dialog.reject()
-        shutdown = getattr(self.service, "shutdown", None)
         try:
-            if callable(shutdown):
-                shutdown()
+            if self._greeting_save_timer.isActive():
+                self._greeting_save_timer.stop()
+                self._save_greeting_message()
+            if self._approval_dialog is not None:
+                self._approval_dialog.reject()
         except Exception:
-            log.warning("Application service cleanup failed.")
+            log.warning("Window settings or approval cleanup failed.")
         finally:
-            close = getattr(self.inference, "close", None)
-            if callable(close):
+            try:
+                shutdown = getattr(self.service, "shutdown", None)
+                if callable(shutdown):
+                    shutdown()
+            except Exception:
+                log.warning("Application service cleanup failed.")
+            finally:
+                close = getattr(self.inference, "close", None)
                 try:
-                    close()
+                    if callable(close):
+                        close()
                 except Exception:
                     log.warning("Inference cleanup failed.")
         if self.thread is not None and self.thread.isRunning():
