@@ -1326,7 +1326,7 @@ QScrollArea#chatView QWidget#qt_scrollarea_viewport { background: transparent; }
 QFrame#userMessage {
     background: transparent;
     border: none;
-    border-radius: 27px;
+    border-radius: 12px;
 }
 QFrame#orsiMessage, QFrame#errorMessage { background: transparent; border: none; }
 QFrame#userMessage QLabel, QFrame#orsiMessage QLabel {
@@ -1335,7 +1335,7 @@ QFrame#userMessage QLabel, QFrame#orsiMessage QLabel {
     font-size: 18px;
     font-weight: 400;
 }
-QFrame#userMessage QLabel { font-size: 18px; }
+QFrame#userMessage QLabel { color: #dce2ee; font-size: 16px; }
 QFrame#errorMessage QLabel {
     color: #ff8d86;
     font-family: Saira;

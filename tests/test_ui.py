@@ -731,7 +731,7 @@ class UiTests(unittest.TestCase):
         self.assertEqual(chat._messages[0].label.text(), "A user message")
         self.assertEqual(chat._messages[1].label.text(), "An O.R.S.I reply")
         margins = chat._messages[0].layout().contentsMargins()
-        self.assertEqual((margins.left(), margins.top(), margins.right(), margins.bottom()), (24, 9, 24, 9))
+        self.assertEqual((margins.left(), margins.top(), margins.right(), margins.bottom()), (16, 10, 16, 10))
         chat.close()
 
     def test_message_copy_actions_are_hover_only_and_copy_both_sides(self):

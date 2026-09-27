@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import re
 
-from PySide6.QtCore import QElapsedTimer, QRect, QTimer, Qt
-from PySide6.QtGui import QColor, QFontDatabase, QPainter
+from PySide6.QtCore import QElapsedTimer, QRect, QRectF, QTimer, Qt
+from PySide6.QtGui import QColor, QFontDatabase, QLinearGradient, QPainter, QPen
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
@@ -126,8 +126,8 @@ class _Message(QFrame):
 
         self.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Minimum)
         layout = QVBoxLayout(self)
-        horizontal_margin = 24 if from_user else 0
-        vertical_margin = 12 if from_user and "\n" in content else (9 if from_user else 0)
+        horizontal_margin = 16 if from_user else 0
+        vertical_margin = 10 if from_user else 0
         layout.setContentsMargins(
             horizontal_margin,
             vertical_margin,
@@ -171,10 +171,14 @@ class _Message(QFrame):
         del event
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor("#373943"))
-        radius = min(22, max(1, self.height() // 2))
-        painter.drawRoundedRect(self.rect(), radius, radius)
+        bounds = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        glass = QLinearGradient(bounds.topLeft(), bounds.bottomRight())
+        glass.setColorAt(0, QColor(46, 58, 85, 210))
+        glass.setColorAt(1, QColor(38, 42, 60, 212))
+        painter.setPen(QPen(QColor(170, 190, 232, 55), 1))
+        painter.setBrush(glass)
+        radius = min(12, max(1, self.height() / 2))
+        painter.drawRoundedRect(bounds, radius, radius)
 
     def set_available_width(self, width: int) -> None:
         if self.from_user:
