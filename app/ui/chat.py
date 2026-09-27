@@ -209,10 +209,22 @@ class _Message(QFrame):
             default=0,
         )
         natural_width = max(natural_text_width, natural_code_width)
-        minimum = min(360, maximum) if self._code_blocks else 36
+        minimum = min(360, maximum) if self._code_blocks else max(36, horizontal_padding + 24)
         target = min(maximum, max(minimum, natural_width + horizontal_padding + 4))
-        if self.from_user and "\n" in self._content:
-            target = maximum
+        if self.from_user:
+            # Wrap at the normal width cap, then fit the bubble to the widest
+            # rendered line. Word wrapping often leaves unused space before the
+            # next word; that space should not inflate the bubble's right edge.
+            wrap_width = max(24, target - horizontal_padding)
+            wrapped_width = max(
+                label.fontMetrics().boundingRect(
+                    QRect(0, 0, wrap_width, 100_000),
+                    int(Qt.TextFlag.TextWordWrap | Qt.TextFlag.TextExpandTabs),
+                    label.text(),
+                ).width()
+                for label in self._text_labels
+            )
+            target = min(target, max(minimum, wrapped_width + horizontal_padding + 4))
         content_width = max(24, target - horizontal_padding)
         self.setFixedWidth(target)
         for label in self._text_labels:

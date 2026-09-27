@@ -855,6 +855,37 @@ class UiTests(unittest.TestCase):
         self.assertEqual(chat._messages[0].label.text(), content)
         chat.close()
 
+    def test_user_bubbles_fit_wrapped_lines_without_extra_right_space(self):
+        window = MainWindow(None, "PREVIEW")
+        window.resize(1280, 900)
+        window.show()
+        samples = (
+            "can you modify this code so i can control the ball? instead of bouncing "
+            "i want to control where it goes with WASD",
+            "One more detail:\nKeep the existing spacing and rounded corners.\nOnly change the background.",
+            "i",
+        )
+        try:
+            for content in samples:
+                window.chat.add_message("User", content)
+            for width in (1280, 840):
+                window.resize(width, 900)
+                QApplication.processEvents()
+                for message in window.chat._messages:
+                    label = message.label
+                    bounds = label.fontMetrics().boundingRect(
+                        label.rect().adjusted(0, 0, 0, 100_000),
+                        int(Qt.TextFlag.TextWordWrap | Qt.TextFlag.TextExpandTabs),
+                        label.text(),
+                    )
+                    self.assertLessEqual(label.width(), max(24, bounds.width() + 4))
+                    self.assertGreaterEqual(label.height(), bounds.height())
+                    margins = message.layout().contentsMargins()
+                    self.assertEqual(message.width(), label.width() + margins.left() + margins.right())
+                    self.assertEqual(label.text(), message._content)
+        finally:
+            window.close()
+
     def test_syntax_highlighting_keeps_multiline_state_and_unicode_offsets(self):
         chat = ChatView()
         code = '/* first line\n   second line */\nconst greeting = "Hi 👋"; const count = 42;'
