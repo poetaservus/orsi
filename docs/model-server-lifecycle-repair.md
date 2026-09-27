@@ -72,4 +72,9 @@ diagnostics are bounded and sanitized. A passing mocked shutdown test alone is i
 - Phase 1: implemented. Lazy/hybrid closure is terminal, service and application exit
   close inference, window close preserves preferences and waits for a cancelled worker.
   Focused inference/lifecycle/UI tests pass (including initialization and cleanup-failure cases).
-- Phases 2–4: pending.
+- Phase 2: implemented. `CreateProcessW` receives `PROC_THREAD_ATTRIBUTE_JOB_LIST`
+  and a private kill-on-close job before the child runs. No unguarded fallback.
+  All 19 ownership/server tests pass, including real parent force-kill, descendants,
+  unrelated-process survival, launch failures, and stable handle counts.
+  Design reference: [Microsoft's atomic job assignment explanation](https://devblogs.microsoft.com/oldnewthing/20230209-00/?p=107812).
+- Phases 3–4: pending.

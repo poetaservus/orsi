@@ -386,7 +386,7 @@ def test_server_launch_is_hidden_loopback_only_and_uses_qwen_jinja(
         lambda _: "test-key",
     )
     monkeypatch.setattr(
-        "app.inference.llama_server_backend.subprocess.Popen",
+        "app.inference.llama_server_backend.start_owned_process",
         popen,
     )
     engine = LlamaServerInferenceEngine(
@@ -404,9 +404,7 @@ def test_server_launch_is_hidden_loopback_only_and_uses_qwen_jinja(
     assert "--no-webui" in command
     assert command[command.index("--parallel") + 1] == "1"
     assert command[command.index("--api-key") + 1] == "test-key"
-    assert captured["kwargs"]["stdin"] is subprocess.DEVNULL
-    assert captured["kwargs"]["stdout"] is subprocess.DEVNULL
-    assert captured["kwargs"]["stderr"] is subprocess.DEVNULL
+    assert captured["kwargs"]["cwd"] == server.parent
     assert base_url == "http://127.0.0.1:54321"
     assert api_key == "test-key"
     assert returned is process

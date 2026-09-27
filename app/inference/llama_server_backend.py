@@ -16,6 +16,7 @@ from urllib.request import Request, urlopen
 
 from app.inference.engine import InferenceEngine, InferenceUnavailable
 from app.inference.diagnostics import record_completion_diagnostics
+from app.inference.owned_process import OwnedProcess, ProcessOwnershipError, start_owned_process
 from app.settings.model import ModelConfig, detect_nvidia_memory_mib
 from app.inference.protocol import (
     ModelCapabilityDefinition,
@@ -101,7 +102,7 @@ class LlamaServerInferenceEngine(InferenceEngine):
         self.startup_timeout_seconds = float(startup_timeout_seconds)
         self.shutdown_timeout_seconds = float(shutdown_timeout_seconds)
         self.request_timeout_seconds = float(request_timeout_seconds)
-        self._process: subprocess.Popen | None = None
+        self._process: OwnedProcess | None = None
         self._base_url: str | None = None
         self._api_key: str | None = None
         self._closed = False
@@ -238,6 +239,7 @@ class LlamaServerInferenceEngine(InferenceEngine):
                 except (URLError, TimeoutError, OSError) as exc:
                     if process.poll() is not None:
                         self._clear_process(process)
+                        self._stop_process(process)
                     raise InferenceUnavailable(
                         "The local tool-call server became unavailable."
                     ) from exc
@@ -269,12 +271,14 @@ class LlamaServerInferenceEngine(InferenceEngine):
                 )
             return completion
 
-    def _ensure_started(self) -> tuple[str, str, subprocess.Popen]:
+    def _ensure_started(self) -> tuple[str, str, OwnedProcess]:
         with self._lifecycle_lock:
             if self._closed:
                 raise InferenceUnavailable("The local tool-call server is closed.")
             if self._process is not None and self._process.poll() is None:
                 return self._base_url, self._api_key, self._process
+            if self._process is not None:
+                self._stop_process(self._process)
             self._process = None
             self._base_url = None
             self._api_key = None
@@ -305,17 +309,15 @@ class LlamaServerInferenceEngine(InferenceEngine):
                 "--log-disable",
             ]
             try:
-                process = subprocess.Popen(
+                process = start_owned_process(
                     command,
                     cwd=self.server_executable.parent,
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
-                    close_fds=True,
-                    creationflags=_hidden_creation_flags(),
-                    startupinfo=_hidden_startup_info(),
                     env=_server_environment(self.server_executable.parent),
                 )
+            except ProcessOwnershipError as exc:
+                raise InferenceUnavailable(
+                    "The local server could not establish safe process ownership."
+                ) from exc
             except OSError as exc:
                 raise InferenceUnavailable(
                     "The pinned local tool-call server could not start."
@@ -326,6 +328,9 @@ class LlamaServerInferenceEngine(InferenceEngine):
 
         try:
             self._wait_until_healthy(process, base_url, api_key)
+            with self._lifecycle_lock:
+                if self._closed or self._process is not process:
+                    raise InferenceUnavailable("Local server startup was cancelled.")
         except Exception:
             self._clear_process(process)
             self._stop_process(process)
@@ -334,7 +339,7 @@ class LlamaServerInferenceEngine(InferenceEngine):
 
     def _wait_until_healthy(
         self,
-        process: subprocess.Popen,
+        process: OwnedProcess,
         base_url: str,
         api_key: str,
     ) -> None:
@@ -370,7 +375,7 @@ class LlamaServerInferenceEngine(InferenceEngine):
             "The local tool-call server exceeded its startup deadline."
         )
 
-    def _detach_process(self) -> subprocess.Popen | None:
+    def _detach_process(self) -> OwnedProcess | None:
         with self._lifecycle_lock:
             process = self._process
             self._process = None
@@ -378,14 +383,22 @@ class LlamaServerInferenceEngine(InferenceEngine):
             self._api_key = None
             return process
 
-    def _clear_process(self, process: subprocess.Popen) -> None:
+    def _clear_process(self, process: OwnedProcess) -> None:
         with self._lifecycle_lock:
             if self._process is process:
                 self._process = None
                 self._base_url = None
                 self._api_key = None
 
-    def _stop_process(self, process: subprocess.Popen) -> None:
+    def _stop_process(self, process: OwnedProcess) -> None:
+        try:
+            self._terminate_process(process)
+        finally:
+            close = getattr(process, "close", None)
+            if callable(close):
+                close()
+
+    def _terminate_process(self, process: OwnedProcess) -> None:
         if process.poll() is not None:
             return
         deadline = monotonic() + self.shutdown_timeout_seconds
@@ -494,21 +507,6 @@ def _server_environment(server_directory: Path) -> dict[str, str]:
         entries.append(current_path)
     environment["PATH"] = os.pathsep.join(entries)
     return environment
-
-
-def _hidden_creation_flags() -> int:
-    if os.name != "nt":
-        return 0
-    return int(getattr(subprocess, "CREATE_NO_WINDOW", 0))
-
-
-def _hidden_startup_info():
-    if os.name != "nt" or not hasattr(subprocess, "STARTUPINFO"):
-        return None
-    startup = subprocess.STARTUPINFO()
-    startup.dwFlags |= getattr(subprocess, "STARTF_USESHOWWINDOW", 0)
-    startup.wShowWindow = getattr(subprocess, "SW_HIDE", 0)
-    return startup
 
 
 def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
