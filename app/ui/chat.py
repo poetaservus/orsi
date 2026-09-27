@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.ui.status import ThinkingDots
+from app.ui.code_highlighting import CodeHighlighter
 
 
 _FENCED_CODE = re.compile(
@@ -63,7 +64,7 @@ class _CodeBlock(QFrame):
         header = QWidget()
         header.setObjectName("codeHeader")
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(10, 4, 6, 4)
+        header_layout.setContentsMargins(16, 7, 10, 7)
         header_layout.setSpacing(8)
 
         self.language = QLabel(language)
@@ -72,7 +73,7 @@ class _CodeBlock(QFrame):
         self.copy_button.setObjectName("copyCodeButton")
         self.copy_button.setToolTip("Copy code")
         self.copy_button.setAccessibleName("Copy code")
-        self.copy_button.setFixedHeight(24)
+        self.copy_button.setFixedHeight(28)
 
         header_layout.addWidget(self.language)
         header_layout.addStretch(1)
@@ -85,11 +86,14 @@ class _CodeBlock(QFrame):
         self.editor.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
         self.editor.setPlainText(code)
         fixed_font = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
+        fixed_font.setPointSizeF(10.5)
         self.editor.setFont(fixed_font)
+        self.highlighter = CodeHighlighter(self.editor.document(), language)
         self.editor.setTabStopDistance(self.editor.fontMetrics().horizontalAdvance(" ") * 4)
         line_count = max(2, min(14, code.count("\n") + 1))
-        editor_height = self.editor.fontMetrics().lineSpacing() * line_count + 18
-        self.editor.setFixedHeight(max(60, min(300, editor_height)))
+        metrics = self.editor.fontMetrics()
+        editor_height = max(metrics.height(), metrics.lineSpacing()) * line_count + 36
+        self.editor.setFixedHeight(max(76, min(320, editor_height)))
         layout.addWidget(self.editor)
 
         self._copy_timer = QTimer(self)
@@ -194,7 +198,7 @@ class _Message(QFrame):
         )
         natural_code_width = max(
             (
-                block.editor.fontMetrics().horizontalAdvance(line.expandtabs(4)) + 28
+                block.editor.fontMetrics().horizontalAdvance(line.expandtabs(4)) + 44
                 for block in self._code_blocks
                 for line in (block.code.splitlines() or [block.code])
             ),

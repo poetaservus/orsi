@@ -1367,43 +1367,57 @@ QPushButton#copyMessageButton {
 QPushButton#copyMessageButton:hover { color: #ededee; background: #292a30; }
 QPushButton#copyMessageButton:pressed { background: #1e1f24; }
 QFrame#codeBlock {
-    background: #202020;
-    border: 1px solid #3b3b3b;
-    border-radius: 9px;
+    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+        stop:0 rgba(79, 94, 117, 218), stop:0.5 rgba(59, 73, 94, 210),
+        stop:1 rgba(49, 61, 80, 212));
+    border: 1px solid rgba(219, 234, 255, 65);
+    border-radius: 14px;
 }
 QWidget#codeHeader {
-    background: #292929;
-    border: none;
-    border-bottom: 1px solid #3b3b3b;
-}
-QLabel#codeLanguage {
-    color: #a9a9a9;
     background: transparent;
     border: none;
-    font-size: 11px;
+    border-bottom: 1px solid rgba(219, 234, 255, 35);
+}
+QLabel#codeLanguage {
+    color: #dce9fa;
+    background: transparent;
+    border: none;
+    font-size: 12px;
     font-family: Saira;
     font-weight: 400;
 }
 QPushButton#copyCodeButton {
-    color: #d8d8d8;
-    background: transparent;
-    border: none;
-    border-radius: 6px;
-    padding: 0 7px;
+    color: #edf4ff;
+    background: rgba(221, 237, 255, 14);
+    border: 1px solid rgba(221, 237, 255, 30);
+    border-radius: 7px;
+    padding: 0 10px;
     font-size: 11px;
     font-family: Saira;
     font-weight: 400;
 }
-QPushButton#copyCodeButton:hover { background: #383838; }
-QPushButton#copyCodeButton:pressed { background: #222222; }
+QPushButton#copyCodeButton:hover { background: rgba(221, 237, 255, 32); border-color: rgba(221, 237, 255, 80); }
+QPushButton#copyCodeButton:pressed { background: rgba(221, 237, 255, 48); }
+QPushButton#copyCodeButton:focus { border-color: #acd8ff; }
 QPlainTextEdit#codeEditor {
-    color: #e8e8e8;
-    background: #202020;
+    color: #f2f4fa;
+    background: transparent;
+    font-family: Consolas, "DejaVu Sans Mono", monospace;
+    font-size: 14px;
     border: none;
-    padding: 9px;
+    padding: 12px;
     selection-color: #ffffff;
-    selection-background-color: #505050;
+    selection-background-color: #526d94;
 }
+QPlainTextEdit#codeEditor QScrollBar:vertical { width: 11px; margin: 4px 1px; background: transparent; }
+QPlainTextEdit#codeEditor QScrollBar:horizontal { height: 11px; margin: 1px 4px; background: transparent; }
+QPlainTextEdit#codeEditor QScrollBar::handle:vertical,
+QPlainTextEdit#codeEditor QScrollBar::handle:horizontal { background: rgba(201, 219, 245, 90); border-radius: 4px; min-width: 28px; min-height: 28px; }
+QPlainTextEdit#codeEditor QScrollBar::handle:hover { background: rgba(201, 219, 245, 140); }
+QPlainTextEdit#codeEditor QScrollBar::add-line,
+QPlainTextEdit#codeEditor QScrollBar::sub-line { width: 0; height: 0; background: transparent; }
+QPlainTextEdit#codeEditor QScrollBar::add-page,
+QPlainTextEdit#codeEditor QScrollBar::sub-page { background: transparent; }
 QLabel#conversationStatus {
     color: #929292;
     background: transparent;

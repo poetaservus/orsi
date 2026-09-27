@@ -855,6 +855,40 @@ class UiTests(unittest.TestCase):
         self.assertEqual(chat._messages[0].label.text(), content)
         chat.close()
 
+    def test_syntax_highlighting_keeps_multiline_state_and_unicode_offsets(self):
+        chat = ChatView()
+        code = '/* first line\n   second line */\nconst greeting = "Hi 👋"; const count = 42;'
+        chat.add_message("Agent", f"```javascript\n{code}\n```")
+        block = chat._messages[0]._code_blocks[0]
+        block.highlighter.rehighlight()
+        document = block.editor.document()
+        first_formats = document.firstBlock().layout().formats()
+        second_formats = document.findBlockByNumber(1).layout().formats()
+        first_comment = first_formats[0].format.foreground().color()
+        second_comment = second_formats[0].format.foreground().color()
+        self.assertEqual(first_comment, second_comment)
+        last_line = code.splitlines()[-1]
+        number_start = len(last_line[:last_line.index("42")].encode("utf-16-le")) // 2
+        number_format = next(r for r in document.findBlockByNumber(2).layout().formats()
+                             if r.start == number_start and r.length == 2)
+        self.assertNotEqual(number_format.format.foreground().color(), first_comment)
+        self.assertEqual(block.editor.toPlainText(), code)
+        block.copy_button.click()
+        self.assertEqual(QApplication.clipboard().text(), code)
+        chat.close()
+
+    def test_unknown_code_language_remains_readable_and_copyable(self):
+        chat = ChatView()
+        code = 'hello <world> & "literal"'
+        chat.add_message("Agent", f"```unknown-language\n{code}\n```")
+        block = chat._messages[0]._code_blocks[0]
+        block.highlighter.rehighlight()
+        self.assertEqual(block.editor.toPlainText(), code)
+        self.assertEqual(block.editor.document().firstBlock().layout().formats(), [])
+        block.copy_button.click()
+        self.assertEqual(QApplication.clipboard().text(), code)
+        chat.close()
+
     def test_thinking_dots_start_and_stop(self):
         chat = ChatView()
         chat.set_thinking(True)
