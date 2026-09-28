@@ -111,13 +111,17 @@ class HybridInferenceEngine(InferenceEngine):
     def __init__(self, *, local: InferenceEngine | None,
                  cloud: OpenAICompatibleInferenceEngine | None,
                  default_mode: str = "local", local_error: str | None = None,
-                 fallback_to_local: bool = True):
+                 fallback_to_local: bool = True, model_catalog=None, local_factory=None):
         self.local = local
         self.cloud = cloud
         self.local_error = local_error
         self.fallback_to_local = fallback_to_local
         self._lock = RLock()
         self._closed = False
+        self.model_catalog = model_catalog
+        self._local_factory = local_factory
+        self._switch_lock = Lock()
+        self._pending_local = None
         self._notice = None
         modes = self.available_modes
         if not modes:
@@ -191,13 +195,58 @@ class HybridInferenceEngine(InferenceEngine):
             if self._closed:
                 return
             self._closed = True
-        for engine in (self.local, self.cloud):
+            engines = (self.local, self._pending_local, self.cloud)
+        for engine in engines:
             close = getattr(engine, "close", None)
             if callable(close):
                 try:
                     close()
                 except Exception:
                     log.warning("Could not fully release an inference backend.")
+
+    def select_local_model(self, model_id: str) -> None:
+        if self.model_catalog is None or self._local_factory is None:
+            raise InferenceUnavailable("Local model selection is unavailable.")
+        with self._switch_lock:
+            with self._lock:
+                if self._closed:
+                    raise InferenceUnavailable("Inference is closed.")
+                if self._mode != "local":
+                    raise InferenceUnavailable("Switch to Local before choosing a local model.")
+                if model_id == self.model_catalog.current_id:
+                    return
+                previous = self.local
+            # Release VRAM before calculating the replacement's hardware profile.
+            unload = getattr(previous, "unload", None)
+            if not callable(unload):
+                raise InferenceUnavailable("The current backend cannot switch models safely.")
+            unload()
+            candidate = None
+            try:
+                config = self.model_catalog.configuration(model_id)
+                candidate = LazyInferenceEngine(lambda: self._local_factory(config),
+                    context_length=config.context_length, max_response_tokens=config.max_tokens)
+                with self._lock:
+                    if self._closed:
+                        raise InferenceUnavailable("Inference is closed.")
+                    self._pending_local = candidate
+                backend = candidate._get_engine()
+                backend.prepare()
+                with self._lock:
+                    if self._closed:
+                        raise InferenceUnavailable("Inference is closed.")
+                    self.model_catalog.save(config)
+                    self.local = candidate
+                    self.context_length = candidate.context_length
+                    self.max_response_tokens = candidate.max_response_tokens
+                    self._pending_local = None
+                previous.close()
+            except Exception:
+                if candidate is not None:
+                    candidate.close()
+                with self._lock:
+                    self._pending_local = None
+                raise
 
     def respond(self, messages: list[dict[str, str]]) -> str:
         mode = self.mode

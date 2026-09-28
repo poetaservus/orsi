@@ -71,7 +71,7 @@ def call(
 
 def scripted_engine(responses: list[dict]):
     engine = object.__new__(LlamaServerInferenceEngine)
-    engine.config = SimpleNamespace(temperature=0.1, max_tokens=256)
+    engine.config = ModelConfig(model_path="unused.gguf", temperature=0.1, max_tokens=256)
     captured: list[dict] = []
 
     def request(body):
@@ -111,6 +111,24 @@ def test_explicit_stat_request_uses_native_server_tools_and_strict_normalizer():
     assert requests[0]["tool_choice"] == "auto"
     assert requests[0]["tools"][0]["function"]["name"] == provider_name()
     assert requests[0]["tools"][0]["function"]["strict"] is True
+
+
+def test_selected_sampling_profile_reaches_chat_and_tool_requests():
+    engine, requests = scripted_engine([
+        completion({"role": "assistant", "content": "Hello"}),
+        completion({"role": "assistant", "content": "", "tool_calls": [call()]}),
+    ])
+    engine.config = ModelConfig(
+        model_path="unused.gguf", temperature=0.2, top_p=0.9, top_k=35,
+        min_p=0.0, repeat_penalty=1.1, presence_penalty=0.5, max_tokens=4096,
+    )
+    engine.respond([{"role": "user", "content": "Hello"}])
+    engine.respond_with_capabilities(
+        [{"role": "user", "content": "Inspect README.md"}], (definition(),),
+    )
+    for request in requests:
+        assert request["max_tokens"] == 4096
+        assert all(request[key] == value for key, value in engine.config.sampling_parameters().items())
 
 
 def test_server_schema_projection_drops_only_unsupported_validation_hints():
@@ -403,6 +421,8 @@ def test_server_launch_is_hidden_loopback_only_and_uses_qwen_jinja(
     assert "--jinja" in command
     assert "--no-webui" in command
     assert command[command.index("--parallel") + 1] == "1"
+    assert command[command.index("--cache-type-k") + 1] == "f16"
+    assert command[command.index("--cache-type-v") + 1] == "f16"
     assert command[command.index("--api-key") + 1] == "test-key"
     assert captured["kwargs"]["cwd"] == server.parent
     assert base_url == "http://127.0.0.1:54321"

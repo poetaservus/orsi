@@ -55,6 +55,17 @@ class ModelConfig(BaseModel):
     temperature: float = Field(0.1, ge=0, le=2)
     max_tokens: int = Field(512, ge=32)
     gpu_layers: int = -1
+    top_p: float = Field(0.95, gt=0, le=1)
+    top_k: int = Field(40, ge=0, le=1000)
+    min_p: float = Field(0.05, ge=0, le=1)
+    repeat_penalty: float = Field(1.0, gt=0, le=2)
+    presence_penalty: float = Field(0.0, ge=-2, le=2)
+    cache_type: Literal["f16", "q8_0"] = "f16"
+
+    def sampling_parameters(self) -> dict:
+        return {key: getattr(self, key) for key in (
+            "temperature", "top_p", "top_k", "min_p", "repeat_penalty", "presence_penalty"
+        )}
 
     @model_validator(mode="after")
     def validate_context_limits(self):

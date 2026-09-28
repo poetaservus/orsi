@@ -28,6 +28,7 @@ from app.security.host_access import (
 )
 from app.settings.agent import AgentFeatureConfig, load_agent_feature_config
 from app.settings.model import detect_nvidia_memory_mib, load_model_config
+from app.settings.local_models import LocalModelCatalog
 from app.settings.paths import PATHS
 
 
@@ -69,6 +70,7 @@ def build_application(
 
     local_engine = None
     local_error = None
+    model_catalog = None
     try:
         model_config = load_model_config()
         if not model_config.resolved_model_path.is_file():
@@ -93,6 +95,8 @@ def build_application(
             context_length=context_hint.length,
             max_response_tokens=model_config.max_tokens,
         )
+        if agent_config is not None and agent_config.filesystem_stat_enabled:
+            model_catalog = LocalModelCatalog(PATHS.models, PATHS.config / "model.json", model_config)
     except Exception as exc:
         log.exception("Local inference could not be configured.")
         local_error = (
@@ -120,6 +124,8 @@ def build_application(
             default_mode=cloud_config.default_mode if cloud_config else "local",
             local_error=local_error,
             fallback_to_local=cloud_config.fallback_to_local if cloud_config else False,
+            model_catalog=model_catalog,
+            local_factory=LlamaServerInferenceEngine if model_catalog is not None else None,
         )
     except InferenceUnavailable:
         startup_error = " ".join(

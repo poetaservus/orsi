@@ -30,3 +30,21 @@ class ConversationWorker(QObject):
         except Exception as exc:
             log.exception("A conversation turn failed in the UI worker.")
             self.failed.emit(str(exc))
+
+
+class ModelSwitchWorker(QObject):
+    finished = Signal()
+    failed = Signal(str)
+
+    def __init__(self, service, model_id: str):
+        super().__init__()
+        self.service, self.model_id = service, model_id
+
+    @Slot()
+    def run(self):
+        try:
+            self.service.select_local_model(self.model_id)
+            self.finished.emit()
+        except Exception as exc:
+            log.warning("Local model selection failed: %s", type(exc).__name__)
+            self.failed.emit(str(exc))

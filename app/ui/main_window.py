@@ -56,7 +56,7 @@ from app.ui.approvals import open_approval_dialog
 from app.ui.chat import ChatView
 from app.ui.context_window import ContextWindowBar
 from app.ui.status import ConversationStatus
-from app.ui.worker import ConversationWorker
+from app.ui.worker import ConversationWorker, ModelSwitchWorker
 
 
 log = logging.getLogger(__name__)
@@ -456,7 +456,7 @@ class MainWindow(QMainWindow):
 
         self.settings_panel = QFrame(root)
         self.settings_panel.setObjectName("settingsPanel")
-        self.settings_panel.setFixedSize(314, 226)
+        self.settings_panel.setFixedSize(400, 376)
         settings_layout = QVBoxLayout(self.settings_panel)
         settings_layout.setContentsMargins(18, 16, 18, 16)
         settings_layout.setSpacing(8)
@@ -465,7 +465,7 @@ class MainWindow(QMainWindow):
         settings_title.setObjectName("settingsTitle")
         settings_layout.addWidget(settings_title)
 
-        model_label = QLabel("Model")
+        model_label = QLabel("Run with")
         model_label.setObjectName("settingsLabel")
         settings_layout.addWidget(model_label)
 
@@ -484,6 +484,35 @@ class MainWindow(QMainWindow):
             self._sync_inference_selector()
             self.model_selector.currentIndexChanged.connect(self._select_inference_mode)
         settings_layout.addWidget(self.model_selector)
+
+        local_label = QLabel("Local model")
+        local_label.setObjectName("settingsLabel")
+        settings_layout.addWidget(local_label)
+        self.local_model_selector = QComboBox()
+        self.local_model_selector.setObjectName("modelSelector")
+        self.local_model_selector.setAccessibleName("Local model")
+        self.local_model_selector.setFixedHeight(38)
+        self.local_model_selector.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+        self.local_model_selector.setMinimumContentsLength(20)
+        catalog = getattr(inference, "model_catalog", None)
+        for model in getattr(catalog, "models", ()):
+            label = f"Experimental · {model.name}" if model.text_only else model.name
+            self.local_model_selector.addItem(label, model.id)
+            self.local_model_selector.setItemData(
+                self.local_model_selector.count() - 1,
+                f"{model.path.name}\n{model.compatibility_note}",
+                Qt.ItemDataRole.ToolTipRole,
+            )
+        if self.local_model_selector.count() == 0:
+            self.local_model_selector.addItem("No supported local models found", None)
+        settings_layout.addWidget(self.local_model_selector)
+        self.local_model_details = QLabel()
+        self.local_model_details.setObjectName("settingsLabel")
+        self.local_model_details.setWordWrap(True)
+        self.local_model_details.setMinimumHeight(36)
+        settings_layout.addWidget(self.local_model_details)
+        self._sync_local_model_selector()
+        self.local_model_selector.currentIndexChanged.connect(self._select_local_model)
 
         greeting_label = QLabel("Greeting")
         greeting_label.setObjectName("settingsLabel")
@@ -917,6 +946,11 @@ class MainWindow(QMainWindow):
         self.stop.setVisible(busy)
         self.input.setEnabled(not busy)
         self.model_selector.setEnabled(not busy and self.inference is not None)
+        self.local_model_selector.setEnabled(
+            not busy and self.service is not None and self.inference is not None
+            and self.inference.mode == "local"
+            and bool(getattr(getattr(self.inference, "model_catalog", None), "models", ()))
+        )
         self.new_session_button.setEnabled(not busy and self.service is not None)
         duration_seconds = self.chat.set_thinking(busy)
         self.activity.set_activity("" if busy else self._ready_status())
@@ -1014,8 +1048,76 @@ class MainWindow(QMainWindow):
             self.chat.add_message("Agent", str(exc), True)
             self.inference.set_mode(previous)
         self._sync_inference_selector()
+        self._sync_local_model_selector()
         self._update_context_window()
         self.activity.set_activity(self._ready_status())
+
+    def _sync_local_model_selector(self):
+        catalog = getattr(self.inference, "model_catalog", None)
+        self.local_model_selector.blockSignals(True)
+        index = self.local_model_selector.findData(catalog.current_id) if catalog else -1
+        if index >= 0:
+            self.local_model_selector.setCurrentIndex(index)
+        elif catalog and catalog.models:
+            self.local_model_selector.setCurrentIndex(-1)
+        self.local_model_selector.blockSignals(False)
+        enabled = bool(catalog and catalog.models and self.service is not None
+                       and self.inference.mode == "local" and self.thread is None)
+        self.local_model_selector.setEnabled(enabled)
+        if catalog:
+            config = catalog.current_config
+            model = next((item for item in catalog.models if item.id == catalog.current_id), None)
+            note = model.compatibility_note if model else "Model unavailable"
+            self.local_model_details.setText(
+                f"{int(config.context_length):,} context · {config.max_tokens:,} reply limit\n"
+                f"Settings applied automatically\n{note}"
+                if isinstance(config.context_length, int) else "Settings applied automatically"
+            )
+            self.local_model_details.setToolTip(
+                f"Temperature {config.temperature} · Top-p {config.top_p} · Top-k {config.top_k}\n"
+                f"{'GPU acceleration' if config.gpu_layers != 0 else 'CPU'} · {config.cache_type.upper()} cache\n"
+                "Switching preserves your conversation. Vision attachments are not enabled."
+            )
+        else:
+            self.local_model_details.setText("Local model selection is unavailable.")
+
+    @Slot(int)
+    def _select_local_model(self, index):
+        if self.thread is not None or self.service is None or index < 0:
+            return
+        catalog = getattr(self.inference, "model_catalog", None)
+        requested = self.local_model_selector.itemData(index)
+        if catalog is None or requested is None or requested == catalog.current_id:
+            return
+        self._set_busy(True)
+        self.stop.setEnabled(False)
+        self.activity.set_activity("Loading local model...")
+        self.thread = QThread()
+        self.worker = ModelSwitchWorker(self.service, requested)
+        self.worker.moveToThread(self.thread)
+        self.thread.started.connect(self.worker.run)
+        self.worker.finished.connect(self._local_model_selected)
+        self.worker.failed.connect(self._local_model_failed)
+        self.worker.finished.connect(self.thread.quit)
+        self.worker.failed.connect(self.thread.quit)
+        self.thread.finished.connect(self._thread_finished)
+        self.thread.finished.connect(self._sync_local_model_selector)
+        self.thread.start()
+
+    @Slot()
+    def _local_model_selected(self):
+        if getattr(self, "_closing", False):
+            return
+        self._set_busy(False)
+        self._sync_local_model_selector()
+        self._update_context_window()
+
+    @Slot(str)
+    def _local_model_failed(self, reason):
+        if getattr(self, "_closing", False):
+            return
+        self._local_model_selected()
+        self.chat.add_message("Agent", f"Could not switch models: {reason}\nThe previous selection was kept.", True)
 
     def _ensure_cloud_ready(self) -> bool:
         if self.inference is None:

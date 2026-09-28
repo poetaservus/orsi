@@ -67,7 +67,9 @@ extension/stem variant after an extensionless file read misses. See
   needs an additional absolute safety deadline.
 - `config/model.json`: local GGUF path, context policy, and generation limits. The configured Qwen3
   14B profile uses a 16,384-token context and a 4,096-token response budget so multiline tool calls
-  have room to finish.
+  have room to finish. **Settings → Local model** switches downloaded compatible models and
+  applies their complete profiles automatically. See [local model selection](docs/local-model-selection.md)
+  for supported models and the experimental Qwen3-VL 4B limitations.
 - `config/cloud.json`: OpenAI-compatible endpoint, ordered provider model pool, safe headers, and
   API-key environment-variable name. `model` is the primary model and `fallback_models` are tried
   in order when a cloud request is unavailable or returns a malformed tool-call response. The

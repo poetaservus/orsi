@@ -131,7 +131,7 @@ class LlamaServerInferenceEngine(InferenceEngine):
             {
                 "model": "local",
                 "messages": deepcopy(messages),
-                "temperature": self.config.temperature,
+                **self.config.sampling_parameters(),
                 "max_tokens": self.config.max_tokens,
             }
         )
@@ -158,7 +158,7 @@ class LlamaServerInferenceEngine(InferenceEngine):
             {
                 "model": "local",
                 "messages": native_chat_messages(messages, definitions),
-                "temperature": self.config.temperature,
+                **self.config.sampling_parameters(),
                 "max_tokens": self.config.max_tokens,
                 "tools": _llama_server_function_tools(definitions),
                 "tool_choice": "auto",
@@ -193,6 +193,11 @@ class LlamaServerInferenceEngine(InferenceEngine):
     def wait_for_active_request(self, timeout: float) -> bool:
         """Testable lifecycle signal; it exposes no request data."""
         return self._request_active.wait(timeout)
+
+    def prepare(self) -> None:
+        """Load and health-check a model before committing a settings switch."""
+        with self._request_lock:
+            self._ensure_started()
 
     def close(self) -> None:
         with self._lifecycle_lock:
@@ -304,6 +309,10 @@ class LlamaServerInferenceEngine(InferenceEngine):
                 "on",
                 "--parallel",
                 "1",
+                "--cache-type-k",
+                self.config.cache_type,
+                "--cache-type-v",
+                self.config.cache_type,
                 "--no-webui",
                 "--api-key",
                 api_key,
