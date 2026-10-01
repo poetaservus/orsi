@@ -1,9 +1,13 @@
 """Bounded GGUF discovery and complete, independent local-model profiles."""
 from dataclasses import dataclass
 from pathlib import Path
+import hashlib
+import logging
 import struct
 
 from app.settings.model import ModelConfig, detect_nvidia_memory_mib
+from app.settings.model_profiles import LocalModelProfile, LocalModelProfiles
+from app.settings.loader import load_json
 from app.state.storage import JsonStore
 
 
@@ -118,9 +122,18 @@ def inspect_model(path: Path) -> LocalModel:
 
 
 class LocalModelCatalog:
-    def __init__(self, models_directory: Path, config_path: Path, current: ModelConfig):
+    def __init__(self, models_directory: Path, config_path: Path, current: ModelConfig,
+                 *, selection_path: Path | None = None):
         self.models_directory = models_directory
         self.config_path = config_path
+        self.selection_path = selection_path or config_path.parent.parent / "state" / "local_model_selection_v1.json"
+        values = load_json(config_path, default={})
+        self.profiles = LocalModelProfiles.model_validate(values) if "profiles" in values else None
+        self.profiles_sha256 = hashlib.sha256(self.profiles.model_dump_json().encode()).hexdigest() \
+            if self.profiles else None
+        self._legacy_config = current
+        self._identities = {}
+        self._resolutions = {}
         self.current_config = current
         self.models = []
         self.unavailable = []
@@ -129,6 +142,58 @@ class LocalModelCatalog:
                 self.models.append(inspect_model(path))
             except (OSError, ValueError, UnicodeError, struct.error) as exc:
                 self.unavailable.append((path.name, str(exc)))
+
+    def selected_id(self) -> str:
+        """Invalid saved selection falls back to the versioned default, without rewriting it."""
+        default = self.profiles.default_model_id if self.profiles else self.current_id
+        try:
+            saved = JsonStore(self.selection_path).load(default={})
+            if (isinstance(saved, dict) and set(saved) == {"schema_version", "model_id"}
+                    and saved["schema_version"] == 1
+                    and any(item.id == saved["model_id"] for item in self.models)):
+                return saved["model_id"]
+        except (OSError, ValueError):
+            logging.getLogger(__name__).warning("Saved local selection is invalid; using the default profile.")
+        return default
+
+    def profile(self, model: LocalModel) -> LocalModelProfile:
+        accepted = self.profiles.get(model.id) if self.profiles else None
+        if accepted is not None:
+            return accepted
+        maximum = min(16384, model.native_context)
+        # Old flat configuration remains readable, but selection never writes it.
+        legacy = self._legacy_config if model.id == Path(self._legacy_config.model_path).name else None
+        configuration = legacy if legacy and isinstance(legacy.context_length, int) else ModelConfig(
+            model_path=str(model.path.resolve()), context_length=maximum,
+            minimum_context_length=min(4096, maximum), maximum_context_length=maximum,
+            cpu_context_length=min(4096, maximum), estimated_kv_bytes_per_token=model.kv_bytes_per_token,
+            max_tokens=min(4096, maximum // 2),
+            temperature=0.2 if model.architecture == "qwen3vl" else 0.1,
+            top_p=0.9 if model.architecture == "qwen3vl" else 0.95,
+            min_p=0.0 if model.architecture == "qwen3vl" else 0.05,
+        )
+        return LocalModelProfile(model_id=model.id, qualification="unqualified",
+                                 architecture=model.architecture, configuration=configuration,
+                                 cpu_max_tokens=min(1024, configuration.cpu_context_length // 2))
+
+    def identity(self, model: LocalModel) -> dict:
+        stat = model.path.stat()
+        signature = (stat.st_size, stat.st_mtime_ns)
+        cached = self._identities.get(model.id)
+        if cached is None or cached[0] != signature:
+            digest = hashlib.sha256()
+            with model.path.open("rb") as stream:
+                for chunk in iter(lambda: stream.read(8 * 1024 * 1024), b""):
+                    digest.update(chunk)
+            if model.path.stat().st_mtime_ns != signature[1]:
+                raise ValueError("The model changed during identity verification.")
+            cached = (signature, digest.hexdigest())
+            self._identities[model.id] = cached
+        return {"model_id": model.id, "architecture": model.architecture,
+                "size_bytes": signature[0], "sha256": cached[1]}
+
+    def diagnostic(self) -> dict | None:
+        return self._resolutions.get(self.current_id)
 
     @property
     def current_id(self):
@@ -139,31 +204,47 @@ class LocalModelCatalog:
         if entry is None:
             raise ValueError("Select an available local model.")
         model = inspect_model(entry.path)  # detect removed/replaced/corrupted metadata
+        profile = self.profile(model)
+        identity = self.identity(model)
+        if (model.architecture != profile.architecture
+                or profile.size_bytes is not None and identity["size_bytes"] != profile.size_bytes
+                or profile.sha256 is not None and identity["sha256"] != profile.sha256):
+            raise ValueError("This model file does not match its versioned profile.")
         gpu = detect_nvidia_memory_mib()
-        maximum = min(16384, model.native_context)
-        config = ModelConfig(
-            model_path=str(model.path.resolve()), context_length="auto",
-            minimum_context_length=min(4096, maximum), maximum_context_length=maximum,
-            cpu_context_length=min(4096, maximum), estimated_kv_bytes_per_token=model.kv_bytes_per_token,
-            gpu_layers=-1 if gpu else 0, max_tokens=4096,
-            temperature=0.2 if model.architecture == "qwen3vl" else 0.1,
-            top_p=0.9 if model.architecture == "qwen3vl" else 0.95,
-            top_k=40, min_p=0.0 if model.architecture == "qwen3vl" else 0.05,
-            repeat_penalty=1.0, presence_penalty=0.0, cache_type="f16",
-        )
+        target = profile.configuration
+        maximum = min(target.context_length, target.maximum_context_length, model.native_context)
+        config = target.model_copy(update={"model_path": str(model.path.resolve()),
+            "context_length": "auto", "maximum_context_length": maximum,
+            "minimum_context_length": min(target.minimum_context_length, maximum),
+            "estimated_kv_bytes_per_token": model.kv_bytes_per_token})
         selection = config.select_context(native_context=model.native_context,
-                                          gpu_offload_available=gpu is not None,
-                                          gpu_memory_mib=gpu)
-        # Keep the response reserve proportional if a CPU/memory fallback reduces context.
-        return config.model_copy(update={"context_length": selection.length,
-                                         "max_tokens": min(4096, selection.length // 4)})
+                                          gpu_offload_available=gpu is not None and target.gpu_layers != 0,
+                                          gpu_memory_mib=gpu, model_size_bytes=identity["size_bytes"])
+        cpu = not selection.gpu_offload
+        effective = config.model_copy(update={"context_length": selection.length,
+            "gpu_layers": 0 if cpu else target.gpu_layers,
+            "max_tokens": min(profile.cpu_max_tokens if cpu else target.max_tokens, selection.length // 2)})
+        estimated_mib = (identity["size_bytes"] / 1048576 * config.context_model_size_multiplier
+                         + config.context_fixed_reserve_mib
+                         + selection.length * model.kv_bytes_per_token / 1048576)
+        self._resolutions[model_id] = {
+            **identity, "qualification": profile.qualification,
+            "profiles_sha256": self.profiles_sha256,
+            "native_context": model.native_context,
+            "target": {"context_length": target.context_length, "max_response_tokens": target.max_tokens},
+            "effective": {"context_length": effective.context_length,
+                          "max_response_tokens": effective.max_tokens, "gpu_layers": effective.gpu_layers,
+                          "cache_type": effective.cache_type, **effective.sampling_parameters()},
+            "selection_reason": selection.reason,
+            "gpu_before_load_mib": {"total": gpu[0], "free": gpu[1]} if gpu else None,
+            "estimated_allocation_mib": round(estimated_mib, 2) if not cpu else None,
+            "memory_guard": {key: getattr(config, key) for key in (
+                "context_vram_fraction", "context_free_vram_fraction", "context_model_size_multiplier",
+                "context_fixed_reserve_mib", "estimated_kv_bytes_per_token")},
+        }
+        return effective
 
     def save(self, config: ModelConfig):
-        data = config.model_dump()
-        try:
-            data["model_path"] = config.resolved_model_path.relative_to(
-                self.config_path.parent.parent.resolve()).as_posix()
-        except ValueError:
-            pass
-        JsonStore(self.config_path).save(data)
+        JsonStore(self.selection_path).save({"schema_version": 1,
+                                           "model_id": Path(config.model_path).name})
         self.current_config = config

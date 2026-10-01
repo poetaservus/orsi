@@ -143,7 +143,13 @@ grants write or execute authority.
   are bounded by individual model/tool deadlines and finite step/call/repetition/transcript limits,
   not a short universal wall-clock deadline. An optional absolute deadline remains available for
   deployments that require one.
-- `config/model.json`: local model path and generation/context limits.
+- `config/model.json`: immutable validated per-model targets, qualification, size/SHA-256 identity,
+  sampling and memory guards. `LocalModelCatalog` resolves these targets against current memory
+  at startup and actual lazy loading, including reloads after switching away. Runtime selection
+  stores only an ID in ignored `state/local_model_selection_v1.json`; switches never write profiles.
+  Memory reductions preserve the target for later loads. CPU fallback explicitly disables GPU
+  offload when the minimum GPU context cannot fit. Response limits are independent profile targets,
+  capped to half the effective context; CPU uses its separately specified response limit.
 - `config/cloud.json`: provider endpoint, ordered model pool, safe headers, and the name of the
   API-key environment variable. Cloud pool failover is bounded by the configured candidates;
   malformed native tool responses never execute, and the first successful model remains sticky.
@@ -163,6 +169,15 @@ Malformed structured responses log only the provider/model, failure code, finish
 counts so output-budget failures can be diagnosed without recording generated or file content.
 Capability intent, authorization, completion, failure, and unknown outcomes are stored separately in
 the crash journal. Conversation and UI preference JSON writes use atomic replacement.
+
+`infrastructure/baseline.py` writes an allowlisted snapshot to
+`state/diagnostics/effective_baseline_v1.json` at startup, successful switches, mode changes and
+inference/tokenization updates. It records revision and tracked/untracked change status, effective flags after
+read acknowledgement and agent fallback, bounded agent limits, selected model identity and profile
+hash, target/effective limits, sampling, memory guard and current GPU memory. No prompts, replies,
+file contents, host paths, cloud credentials or server credentials enter this snapshot. Diagnostic
+write failure is non-fatal. A startup snapshot describes configured limits; later snapshots reflect
+the loaded backend. Live switch evidence is kept separately under ignored `state/test-artifacts/`.
 
 ## 9. Security boundaries
 

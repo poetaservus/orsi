@@ -19,6 +19,7 @@ class ContextSelection:
     native_context: int | None
     gpu_total_mib: int | None
     gpu_free_mib: int | None
+    gpu_offload: bool = False
 
 
 def detect_nvidia_memory_mib() -> tuple[int, int] | None:
@@ -41,7 +42,7 @@ def detect_nvidia_memory_mib() -> tuple[int, int] | None:
 
 
 class ModelConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", frozen=True)
     model_path: str
     context_length: int | Literal["auto"] = "auto"
     minimum_context_length: int = Field(4096, ge=512)
@@ -86,9 +87,11 @@ class ModelConfig(BaseModel):
         lower = min(self.minimum_context_length, upper)
         if isinstance(self.context_length, int):
             selected = max(512, min(self.context_length, upper))
-            return ContextSelection(selected, "fixed configuration", native, None, None)
+            return ContextSelection(selected, "fixed configuration", native, None, None,
+                                    gpu_offload_available and self.gpu_layers != 0)
 
-        memory = gpu_memory_mib if gpu_memory_mib is not None else detect_nvidia_memory_mib()
+        memory = (gpu_memory_mib if gpu_memory_mib is not None else detect_nvidia_memory_mib()) \
+            if gpu_offload_available else None
         if not gpu_offload_available or not memory:
             selected = max(lower, min(self.cpu_context_length, upper))
             reason = "CPU/default profile" if not gpu_offload_available else "GPU memory unavailable; safe fallback"
@@ -102,12 +105,22 @@ class ModelConfig(BaseModel):
         context_mib = max(0, usable_mib - model_mib * self.context_model_size_multiplier
                           - self.context_fixed_reserve_mib)
         estimated_capacity = int(context_mib * 1024 * 1024 / self.estimated_kv_bytes_per_token)
+        if estimated_capacity < lower:
+            selected = max(lower, min(self.cpu_context_length, upper))
+            return ContextSelection(selected, "GPU memory insufficient; CPU fallback", native,
+                                    total_mib, free_mib)
         allowed = max(lower, min(upper, estimated_capacity))
         selected = lower
         while selected * 2 <= allowed:
             selected *= 2
-        return ContextSelection(selected, "adaptive GPU memory profile", native, total_mib, free_mib)
+        return ContextSelection(selected, "adaptive GPU memory profile", native, total_mib, free_mib, True)
 
 
 def load_model_config() -> ModelConfig:
-    return ModelConfig.model_validate(load_json(PATHS.config / "model.json"))
+    values = load_json(PATHS.config / "model.json")
+    if "profiles" in values:
+        from app.settings.model_profiles import LocalModelProfiles
+
+        profiles = LocalModelProfiles.model_validate(values)
+        return profiles.get(profiles.default_model_id).configuration
+    return ModelConfig.model_validate(values)

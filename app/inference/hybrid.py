@@ -123,6 +123,7 @@ class HybridInferenceEngine(InferenceEngine):
         self._switch_lock = Lock()
         self._pending_local = None
         self._notice = None
+        self.baseline_observer = None
         modes = self.available_modes
         if not modes:
             raise InferenceUnavailable(local_error or "No inference backend is available.")
@@ -162,6 +163,14 @@ class HybridInferenceEngine(InferenceEngine):
             self.max_response_tokens = int(
                 getattr(self._engine_for(normalized), "max_response_tokens", 512)
             )
+        self.record_baseline()
+
+    def record_baseline(self):
+        if self.baseline_observer is not None:
+            try:
+                self.baseline_observer(self)
+            except Exception:
+                log.warning("Effective baseline observer failed.")
 
     @property
     def cloud_has_api_key(self) -> bool:
@@ -224,7 +233,15 @@ class HybridInferenceEngine(InferenceEngine):
             candidate = None
             try:
                 config = self.model_catalog.configuration(model_id)
-                candidate = LazyInferenceEngine(lambda: self._local_factory(config),
+                def load_selected():
+                    current = self.model_catalog.configuration(model_id)
+                    backend = self._local_factory(current)
+                    with self._lock:
+                        if self.local is candidate:
+                            self.model_catalog.current_config = current
+                    return backend
+                candidate = LazyInferenceEngine(
+                    load_selected,
                     context_length=config.context_length, max_response_tokens=config.max_tokens)
                 with self._lock:
                     if self._closed:
@@ -235,12 +252,13 @@ class HybridInferenceEngine(InferenceEngine):
                 with self._lock:
                     if self._closed:
                         raise InferenceUnavailable("Inference is closed.")
-                    self.model_catalog.save(config)
+                    self.model_catalog.save(getattr(backend, "config", config))
                     self.local = candidate
                     self.context_length = candidate.context_length
                     self.max_response_tokens = candidate.max_response_tokens
                     self._pending_local = None
                 previous.close()
+                self.record_baseline()
             except Exception:
                 if candidate is not None:
                     candidate.close()
@@ -317,11 +335,7 @@ class HybridInferenceEngine(InferenceEngine):
         engine = self._engine_for(self.mode)
         counter = getattr(engine, "count_message_tokens", None)
         count = counter(messages) if callable(counter) else super().count_message_tokens(messages)
-        with self._lock:
-            self.context_length = int(getattr(engine, "context_length", self.context_length))
-            self.max_response_tokens = int(
-                getattr(engine, "max_response_tokens", self.max_response_tokens)
-            )
+        self._refresh_limits(engine)
         return count
 
     def _refresh_limits(self, engine: InferenceEngine) -> None:
@@ -332,6 +346,7 @@ class HybridInferenceEngine(InferenceEngine):
             self.max_response_tokens = int(
                 getattr(engine, "max_response_tokens", self.max_response_tokens)
             )
+        self.record_baseline()
 
     def _activate_local_fallback(self) -> None:
         if self.local is None:
@@ -345,6 +360,7 @@ class HybridInferenceEngine(InferenceEngine):
             self._notice = (
                 "Cloud was unavailable, so O.R.S.I safely switched to the local model."
             )
+        self.record_baseline()
 
     def _engine_for(self, mode: str) -> InferenceEngine:
         with self._lock:

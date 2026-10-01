@@ -30,6 +30,7 @@ from app.settings.agent import AgentFeatureConfig, load_agent_feature_config
 from app.settings.model import detect_nvidia_memory_mib, load_model_config
 from app.settings.local_models import LocalModelCatalog
 from app.settings.paths import PATHS
+from app.infrastructure.baseline import BaselineRecorder
 
 
 log = logging.getLogger(__name__)
@@ -73,6 +74,12 @@ def build_application(
     model_catalog = None
     try:
         model_config = load_model_config()
+        model_catalog = LocalModelCatalog(PATHS.models, PATHS.config / "model.json", model_config)
+        if model_catalog.profiles is not None or any(
+            item.id == model_catalog.current_id for item in model_catalog.models
+        ):
+            model_config = model_catalog.configuration(model_catalog.selected_id())
+            model_catalog.current_config = model_config
         if not model_config.resolved_model_path.is_file():
             raise InferenceUnavailable(
                 f"No local GGUF model found at {model_config.resolved_model_path}. "
@@ -85,18 +92,23 @@ def build_application(
             gpu_memory_mib=gpu_memory,
             model_size_bytes=model_config.resolved_model_path.stat().st_size,
         )
-        local_factory = (
-            (lambda: LlamaServerInferenceEngine(model_config))
-            if agent_config is not None and agent_config.filesystem_stat_enabled
-            else (lambda: LlamaCppInferenceEngine(model_config))
-        )
+        backend_factory = (LlamaServerInferenceEngine
+                           if agent_config is not None and agent_config.filesystem_stat_enabled
+                           else LlamaCppInferenceEngine)
+        initial_model_id = model_catalog.current_id
+        def local_factory():
+            # Check current free memory again when the lazy backend actually loads.
+            config = (model_catalog.configuration(initial_model_id)
+                      if any(item.id == initial_model_id for item in model_catalog.models)
+                      else model_config)
+            backend = backend_factory(config)
+            model_catalog.current_config = config
+            return backend
         local_engine = LazyInferenceEngine(
             local_factory,
             context_length=context_hint.length,
             max_response_tokens=model_config.max_tokens,
         )
-        if agent_config is not None and agent_config.filesystem_stat_enabled:
-            model_catalog = LocalModelCatalog(PATHS.models, PATHS.config / "model.json", model_config)
     except Exception as exc:
         log.exception("Local inference could not be configured.")
         local_error = (
@@ -124,8 +136,11 @@ def build_application(
             default_mode=cloud_config.default_mode if cloud_config else "local",
             local_error=local_error,
             fallback_to_local=cloud_config.fallback_to_local if cloud_config else False,
-            model_catalog=model_catalog,
-            local_factory=LlamaServerInferenceEngine if model_catalog is not None else None,
+            model_catalog=model_catalog if agent_config is not None
+                and agent_config.filesystem_stat_enabled else None,
+            local_factory=LlamaServerInferenceEngine
+                if model_catalog is not None and agent_config is not None
+                and agent_config.filesystem_stat_enabled else None,
         )
     except InferenceUnavailable:
         startup_error = " ".join(
@@ -176,6 +191,12 @@ def build_application(
             host_access_policy=host_access_policy,
             agent_error=agent_error,
         )
+        if callable(getattr(inference, "record_baseline", None)):
+            effective_flags = agent_config if agent_runtime is not None else AgentFeatureConfig()
+            inference.baseline_observer = BaselineRecorder(
+                PATHS.root, PATHS.state / "diagnostics" / "effective_baseline_v1.json",
+                effective_flags, agent_available=agent_runtime is not None, local_catalog=model_catalog)
+            inference.record_baseline()
 
     host = {"hostname": socket.gethostname() or "Windows PC"}
     return service, host, startup_error, inference

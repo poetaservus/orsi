@@ -54,7 +54,10 @@ def catalog(tmp_path, monkeypatch):
     write_model(directory / "new.gguf")
     current = ModelConfig(model_path=str(old), context_length=8192, max_tokens=2048)
     monkeypatch.setattr("app.settings.local_models.detect_nvidia_memory_mib", lambda: (16384, 15000))
-    result = LocalModelCatalog(directory, tmp_path / "config" / "model.json", current)
+    config_path = tmp_path / "config" / "model.json"
+    config_path.parent.mkdir()
+    config_path.write_text(current.model_dump_json())
+    result = LocalModelCatalog(directory, config_path, current)
     result.save(current)
     return result
 
@@ -95,14 +98,16 @@ def test_profile_replaces_all_previous_settings_and_respects_cpu_fallback(catalo
     assert cpu.gpu_layers == 0 and cpu.context_length == 4096 and cpu.max_tokens == 1024
 
 
-def test_profile_persists_portable_path_and_all_parameters_for_restart(catalog):
+def test_selection_persists_only_identity_and_preserves_profile_for_restart(catalog):
+    before = catalog.config_path.read_bytes()
     config = catalog.configuration("new.gguf")
     catalog.save(config)
-    persisted = ModelConfig.model_validate_json(catalog.config_path.read_text())
-    assert persisted.model_path == "models/new.gguf"
-    assert persisted.model_dump(exclude={"model_path"}) == config.model_dump(exclude={"model_path"})
-    restarted = LocalModelCatalog(catalog.models_directory, catalog.config_path, persisted)
+    assert catalog.config_path.read_bytes() == before
+    assert json.loads(catalog.selection_path.read_text()) == {"schema_version": 1, "model_id": "new.gguf"}
+    restarted = LocalModelCatalog(catalog.models_directory, catalog.config_path, catalog._legacy_config)
+    restarted.current_config = restarted.configuration(restarted.selected_id())
     assert restarted.current_id == "new.gguf"
+    assert restarted.current_config == config
 
 
 class Backend(InferenceEngine):
@@ -163,6 +168,7 @@ def test_failed_switch_releases_candidate_and_preserves_previous_profile(catalog
 
     inference, events = hybrid(catalog, fail if failure == "load" else None)
     before = catalog.config_path.read_bytes()
+    selection_before = catalog.selection_path.read_bytes()
     if failure == "save":
         monkeypatch.setattr(catalog, "save", lambda config: fail())
     elif failure == "missing":
@@ -172,6 +178,7 @@ def test_failed_switch_releases_candidate_and_preserves_previous_profile(catalog
             inference.select_local_model("new.gguf")
         assert catalog.current_id == "old.gguf"
         assert catalog.config_path.read_bytes() == before
+        assert catalog.selection_path.read_bytes() == selection_before
         assert inference._pending_local is None
         assert inference.context_length == 8192
         assert inference.respond([]) == "old"

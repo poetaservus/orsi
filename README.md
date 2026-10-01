@@ -65,10 +65,11 @@ extension/stem variant after an extensionless file read misses. See
   timeouts, while step, capability-call, repetition, protocol-failure, and transcript limits remain
   finite. Set `runtime_limits.overall_timeout_seconds` to a positive number only when a deployment
   needs an additional absolute safety deadline.
-- `config/model.json`: local GGUF path, context policy, and generation limits. The configured Qwen3
-  14B profile uses a 16,384-token context and a 4,096-token response budget so multiline tool calls
-  have room to finish. **Settings → Local model** switches downloaded compatible models and
-  applies their complete profiles automatically. See [local model selection](docs/local-model-selection.md)
+- `config/model.json`: versioned per-model targets, pinned model identities, sampling and memory
+  guards. The accepted Qwen3 14B target is 16,384 context tokens and 4,096 response tokens. Actual
+  limits are checked against free memory at load time. **Settings → Local model** saves only the
+  chosen ID under ignored `state/local_model_selection_v1.json`; it never rewrites accepted profiles.
+  See [local model selection](docs/local-model-selection.md)
   for supported models and the experimental Qwen3-VL 4B limitations.
 - `config/cloud.json`: OpenAI-compatible endpoint, ordered provider model pool, safe headers, and
   API-key environment-variable name. `model` is the primary model and `fallback_models` are tried
@@ -81,6 +82,10 @@ extension/stem variant after an extensionless file read misses. See
 
 Feature flags can be overridden with explicit `ORSI_ENABLE_...` environment variables. Full-local
 read authority is still not created until the launch warning is accepted.
+
+The content-free `state/diagnostics/effective_baseline_v1.json` snapshot records the source revision,
+effective flags, model hash, targets, actual limits and GPU memory. See
+[baseline verification](docs/model-baseline-2026-10-01.md) and [Git workflow](docs/git-workflow.md).
 
 Cloud credentials are accepted only from the configured environment variable or the in-memory GUI
 prompt. Do not place API keys in JSON or headers. Cloud mode may send conversation text and requested
