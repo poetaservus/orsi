@@ -82,10 +82,12 @@ continuation, protocol, context-compaction or tool-selection defects.
 
 ## Verification result
 
-The complete regression run passed 733 tests and 5 subtests, with 53 live or
-host-dependent skips; the final revision-identification check adds one deterministic
-test. The dedicated live 14B → 3B → 14B check also passed. Both 14B loads left
-about 4,024–4,025 MiB GPU memory free, and all owned servers exited.
+The complete pre-commit regression run passed 733 tests and 5 subtests, with 53
+live or host-dependent skips; the final revision-identification check added one
+deterministic test and all 24 model/profile-focused tests passed. The dedicated
+live 14B → 3B → 14B check passed again against clean source commit `28c2787`.
+Both 14B loads left about 4,020–4,025 MiB GPU memory free across the two runs,
+and all owned servers exited. Its snapshots identify the full clean commit.
 
 An earlier full run hit three intermittent Windows `WinError 5` failures while
 atomically replacing conversation/journal JSON in unchanged persistence code.
@@ -93,3 +95,14 @@ Those affected areas passed a focused recheck (72 tests), and the subsequent
 complete run passed. This repair does not hide or fix that separate persistence
 reliability concern; the original failure output is retained under
 `state/test-artifacts/model-baseline-suite.txt`.
+
+A further full run against clean commit `28c2787` passed 733 tests and 5 subtests
+but failed one existing filesystem-list case on the same journal JSON replacement
+error (53 skipped). The failure occurred in a scripted-model test that does not
+use the new profile resolver or baseline recorder. The persistence implementation
+is unchanged by this repair. Keep this as an open reliability defect; do not
+describe the overall application as fully stable merely because another run
+passes. Exact output: `state/test-artifacts/model-baseline-clean-suite.txt`.
+The failing filesystem-list cases passed their immediate focused recheck (2 tests).
+The final live verification also constructs the real configured capability runtime
+under isolated test state before recording its effective flags.

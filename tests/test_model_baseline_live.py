@@ -8,12 +8,14 @@ from urllib.request import Request, urlopen
 import pytest
 
 from app.infrastructure.baseline import BaselineRecorder
+from app.agent.bootstrap import build_agent_runtime
 from app.inference.hybrid import HybridInferenceEngine, LazyInferenceEngine
 from app.inference.llama_server_backend import LlamaServerInferenceEngine
 from app.settings.agent import load_agent_feature_config
 from app.settings.local_models import LocalModelCatalog
 from app.settings.model import detect_nvidia_memory_mib, load_model_config
 from app.settings.paths import PATHS
+from app.security.host_access import HostAccessPolicy
 from app.state.storage import JsonStore
 
 
@@ -40,8 +42,12 @@ def test_14b_small_model_14b_restores_baseline_and_releases_gpu(tmp_path):
     snapshot = tmp_path / "baseline.json"
     inference.baseline_observer = BaselineRecorder(PATHS.root, snapshot, flags, agent_available=True)
     processes, records = [], []
+    runtime = None
     started = monotonic()
     try:
+        runtime = build_agent_runtime(inference, config=flags, portable_root=PATHS.root,
+            state_directory=tmp_path / "agent", host_access_policy=HostAccessPolicy.portable_root(PATHS.root))
+        assert runtime is not None and runtime.registry.model_visible_names
         for model_id in (initial_id, "model.gguf", initial_id):
             if catalog.current_id != model_id:
                 previous = processes[-1]
@@ -79,6 +85,8 @@ def test_14b_small_model_14b_restores_baseline_and_releases_gpu(tmp_path):
         assert catalog.selected_id() == initial_id
     finally:
         inference.close()
+        if runtime is not None:
+            runtime.shutdown()
         assert all(process.poll() is not None for process in processes)
     JsonStore(PATHS.state / "test-artifacts/model-baseline-live.json").save({
         "schema_version": 1, "passed": True, "duration_seconds": round(monotonic() - started, 2),
