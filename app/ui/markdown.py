@@ -1,5 +1,5 @@
 """Text-only Markdown presentation; original response text remains copyable."""
-from PySide6.QtGui import QFont, QFontDatabase, QImage, QTextBlockFormat, QTextCharFormat, QTextCursor, QTextDocument
+from PySide6.QtGui import QColor, QFont, QImage, QTextBlockFormat, QTextCharFormat, QTextCursor, QTextDocument
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QLabel
 
@@ -67,7 +67,9 @@ class MarkdownLabel(QLabel):
             cursor.setPosition(position + length, QTextCursor.MoveMode.KeepAnchor)
             cursor.mergeCharFormat(emphasis_format)
         code_format = QTextCharFormat()
-        code_format.setFontFamilies([QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont).family()])
+        code_format.setFontFamilies(font.families())
+        code_format.setFontFixedPitch(font.fixedPitch())
+        code_format.setBackground(QColor("#343434"))
         for position, length in inline_code:
             cursor = QTextCursor(self.document)
             cursor.setPosition(position)
