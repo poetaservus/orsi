@@ -906,36 +906,42 @@ class MainWindow(QMainWindow):
     def _approval_finished(self) -> None:
         self._approval_dialog = None
 
-    @Slot(str)
+    @Slot(object)
     def _worker_succeeded(self, text: str) -> None:
         self._done(text, False)
 
-    @Slot(str)
+    @Slot(object)
     def _worker_failed(self, text: str) -> None:
         self._done(text, True)
 
     def _done(self, text: str, error: bool) -> None:
         if getattr(self, "_closing", False):
             return
-        if self.inference is not None:
-            notice = self.inference.consume_notice()
-            if notice:
-                text = f"{text}\n\n{notice}"
-            self._sync_inference_selector()
-        self._update_context_window()
         duration_seconds = self._set_busy(False)
+        notice = None
+        try:
+            if self.inference is not None:
+                notice = self.inference.consume_notice()
+                self._sync_inference_selector()
+            self._update_context_window()
+        except Exception:
+            log.warning("Could not refresh response controls or context meter.")
         self.chat.add_message(
             "Agent",
             text,
             error,
             duration_seconds=duration_seconds,
         )
+        if notice:
+            self.chat.add_message("Agent", notice)
 
     @Slot()
     def _thread_finished(self) -> None:
-        self.thread.deleteLater()
+        if self.thread is not None:
+            self.thread.deleteLater()
         self.thread = None
         self.worker = None
+        self._set_busy(False)
         if getattr(self, "_closing", False):
             self.close()
 
@@ -1110,7 +1116,10 @@ class MainWindow(QMainWindow):
             return
         self._set_busy(False)
         self._sync_local_model_selector()
-        self._update_context_window()
+        try:
+            self._update_context_window()
+        except Exception:
+            log.warning("Could not refresh context meter after local model selection.")
 
     @Slot(str)
     def _local_model_failed(self, reason):
@@ -1478,6 +1487,14 @@ QLabel#responseTiming {
     font-family: Saira;
     font-size: 11px;
     font-weight: 400;
+}
+QFrame#orsiMessage QLabel#incompleteResponse, QFrame#errorMessage QLabel#incompleteResponse {
+    color: #e9bd78;
+    background: transparent;
+    border: none;
+    font-family: Saira;
+    font-size: 14px;
+    font-weight: 500;
 }
 QPushButton#copyMessageButton {
     color: #b7b8bd;

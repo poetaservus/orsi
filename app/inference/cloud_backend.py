@@ -21,6 +21,7 @@ from app.inference.protocol import (
     native_function_tools,
     normalize_native_chat_completion,
 )
+from app.inference.completion import CompletionMetadata, CompletionText, IncompleteResponseError
 
 
 log = logging.getLogger(__name__)
@@ -116,6 +117,9 @@ class OpenAICompatibleInferenceEngine(InferenceEngine):
                     )
                     content = _response_text(message)
                     if not content or not content.strip():
+                        metadata = CompletionMetadata.from_payload(completion)
+                        if metadata.incomplete:
+                            raise IncompleteResponseError("The cloud response was cut off.", metadata)
                         raise CloudInferenceError(
                             "The cloud model returned an empty response. "
                             "Try again or switch to Local.",
@@ -132,8 +136,10 @@ class OpenAICompatibleInferenceEngine(InferenceEngine):
                         model,
                     )
                     continue
-                self._pin_model(model)
-                return content
+                metadata = CompletionMetadata.from_payload(completion)
+                if not metadata.incomplete:
+                    self._pin_model(model)
+                return CompletionText(content, metadata)
             if not next_retry or retry_index >= self.config.max_retries:
                 break
             self._wait_before_retry(retry_index + 1, tuple(next_retry), deadline)
@@ -194,6 +200,8 @@ class OpenAICompatibleInferenceEngine(InferenceEngine):
                     completion,
                     provider="cloud",
                 )
+                if response.completion.incomplete:
+                    return response
                 if response.protocol_failure is not None:
                     last_protocol_response = response
                     log.warning(

@@ -87,6 +87,11 @@ The content-free `state/diagnostics/effective_baseline_v1.json` snapshot records
 effective flags, model hash, targets, actual limits and GPU memory. See
 [baseline verification](docs/model-baseline-2026-10-01.md) and [Git workflow](docs/git-workflow.md).
 
+Replies that hit their output limit are shown as **incomplete**, with the received text retained.
+Unfinished code fences still appear in code boxes. Incomplete tool generation is rejected before
+argument repair or execution. The UI releases its controls even when the context meter cannot
+refresh. See [completion-state verification](docs/completion-state-2026-10-02.md).
+
 Cloud credentials are accepted only from the configured environment variable or the in-memory GUI
 prompt. Do not place API keys in JSON or headers. Cloud mode may send conversation text and requested
 tool results—including file names or file content—to the configured provider after the GUI

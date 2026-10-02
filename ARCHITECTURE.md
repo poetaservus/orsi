@@ -179,6 +179,26 @@ file contents, host paths, cloud credentials or server credentials enter this sn
 write failure is non-fatal. A startup snapshot describes configured limits; later snapshots reflect
 the loaded backend. Live switch evidence is kept separately under ignored `state/test-artifacts/`.
 
+Completion state is part of the response contract. `inference/completion.py` holds bounded
+finish-reason and token-usage metadata. Plain conversational adapters return a string-compatible
+`CompletionText`; structured `ModelResponse` carries the same metadata and any bounded partial
+assistant text. A known early termination, including `length`, is checked before native argument
+decoding/repair and before constrained fallback JSON decoding. Even syntactically valid tool
+arguments cannot authorize execution when their generation ended early. Cloud output-limit
+responses retain their state instead of being discarded through provider failover.
+
+`AgentRunStatus.INCOMPLETE` is distinct from `COMPLETED`; its result retains partial text and per-step
+completion metadata, and stops without an automatic continuation. Conversation history stores
+partial assistant text with completion/usage metadata; provider prompt messages keep their existing
+role/content contract. Previously executed tool results remain in the in-memory trace when the
+final generation is incomplete. Grounding does not replace partial text with a completed answer.
+
+The Qt worker transports response objects rather than coercing them to strings. Chat messages
+retain completion metadata and display a visible incomplete notice; unfinished fenced blocks
+remain read-only highlighted code without synthesizing missing code or a closing fence. Copy
+preserves the actual received text. Terminal UI cleanup releases controls before attempting
+context refresh, and thread cleanup independently restores controls if that refresh fails.
+
 ## 9. Security boundaries
 
 - Model output is untrusted until protocol and schema validation succeed.

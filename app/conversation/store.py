@@ -9,6 +9,7 @@ import uuid
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.state.storage import JsonStore
+from app.inference.completion import CompletionMetadata
 
 
 def _now() -> str:
@@ -21,6 +22,8 @@ class ChatMessage(BaseModel):
     role: Literal["user", "assistant"]
     content: str = Field(min_length=1)
     timestamp: str = Field(default_factory=_now)
+    completion: CompletionMetadata | None = None
+    completion_history: list[CompletionMetadata] | None = None
 
 
 class Conversation(BaseModel):
@@ -51,11 +54,17 @@ class ConversationStore:
             self._save()
 
     def append(self, role: Literal["user", "assistant"], content: str) -> None:
-        text = str(content).strip()
+        completion = getattr(content, "completion", None) if role == "assistant" else None
+        history = getattr(content, "completion_history", None) if role == "assistant" else None
+        text = str(content) if completion and completion.incomplete else str(content).strip()
         if not text:
             raise ValueError("Conversation messages cannot be empty.")
         with self._lock:
-            self._conversation.messages.append(ChatMessage(role=role, content=text))
+            informative = completion is not None and (completion != CompletionMetadata()
+                or any(item != CompletionMetadata() for item in history or ()))
+            self._conversation.messages.append(ChatMessage(role=role, content=text,
+                completion=completion if informative else None,
+                completion_history=list(history) if informative and history else None))
             self._conversation.updated_at = _now()
             self._save()
 
@@ -73,4 +82,4 @@ class ConversationStore:
             self._save()
 
     def _save(self) -> None:
-        self._store.save(self._conversation.model_dump(mode="json"))
+        self._store.save(self._conversation.model_dump(mode="json", exclude_none=True))

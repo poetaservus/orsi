@@ -16,6 +16,7 @@ from urllib.request import Request, urlopen
 
 from app.inference.engine import InferenceEngine, InferenceUnavailable
 from app.inference.diagnostics import record_completion_diagnostics
+from app.inference.completion import CompletionText, IncompleteResponseError
 from app.inference.owned_process import OwnedProcess, ProcessOwnershipError, start_owned_process
 from app.inference.startup_diagnostics import StartupDiagnostics
 from app.settings.model import ModelConfig, detect_nvidia_memory_mib
@@ -138,10 +139,13 @@ class LlamaServerInferenceEngine(InferenceEngine):
         record_completion_diagnostics(log, completion, provider="local-llama-server")
         response = normalize_native_chat_completion(completion, ())
         if response.kind != ModelResponseKind.ASSISTANT_TEXT:
+            if response.completion.incomplete:
+                raise IncompleteResponseError("The model response was cut off.", response.completion,
+                                              response.partial_text)
             raise InferenceUnavailable(
                 "The local model returned an invalid conversational response."
             )
-        return response.assistant_text
+        return CompletionText(response.assistant_text, response.completion)
 
     def respond_with_capabilities(
         self,

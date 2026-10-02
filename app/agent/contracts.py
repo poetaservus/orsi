@@ -5,10 +5,12 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.inference.engine import InferenceUnavailable
+from app.inference.completion import CompletionMetadata
 
 
 class AgentRunStatus(StrEnum):
     COMPLETED = "completed"
+    INCOMPLETE = "incomplete"
     CANCELLED = "cancelled"
     TIMED_OUT = "timed_out"
     STEP_LIMIT = "step_limit"
@@ -33,11 +35,15 @@ class AgentRunResult(BaseModel):
     steps: int = Field(ge=0, le=32)
     capability_calls: int = Field(ge=0, le=32)
     protocol_failures: int = Field(ge=0, le=32)
+    completion: CompletionMetadata = Field(default_factory=CompletionMetadata)
+    completion_history: tuple[CompletionMetadata, ...] = Field(default=(), max_length=64)
+    partial_text: str | None = Field(default=None, min_length=1, max_length=1_000_000)
 
     @model_validator(mode="after")
     def validate_terminal_outcome(self):
         if self.status == AgentRunStatus.COMPLETED:
-            if self.assistant_text is None or self.message is not None:
+            if (self.assistant_text is None or self.message is not None
+                    or self.completion.incomplete or self.partial_text is not None):
                 raise ValueError("Completed agent runs require assistant text only.")
         elif self.assistant_text is not None or self.message is None:
             raise ValueError("Stopped agent runs require one bounded status message.")

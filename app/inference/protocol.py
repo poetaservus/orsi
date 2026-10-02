@@ -10,6 +10,7 @@ from typing import Any, Iterable
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.inference.contracts import ModelCapabilityDefinition
+from app.inference.completion import CompletionMetadata
 from app.inference.tool_repair import StructuredCallDecodeError, decode_json_object
 
 
@@ -111,6 +112,8 @@ class ModelResponse(BaseModel):
         max_length=_MAX_CAPABILITY_CALLS,
     )
     protocol_failure: ModelProtocolFailure | None = None
+    completion: CompletionMetadata = Field(default_factory=CompletionMetadata)
+    partial_text: str | None = Field(default=None, min_length=1, max_length=_MAX_ASSISTANT_TEXT_CHARS)
 
     @model_validator(mode="after")
     def validate_outcome(self):
@@ -134,6 +137,8 @@ class ModelResponse(BaseModel):
             )
         if not valid:
             raise ValueError("A model response must contain exactly one outcome kind.")
+        if self.kind == ModelResponseKind.CAPABILITY_CALLS and self.completion.incomplete:
+            raise ValueError("Incomplete generation cannot authorize capability calls.")
         return self
 
     @classmethod
@@ -404,16 +409,27 @@ def normalize_native_chat_completion(
     choice = choices[0]
     if not isinstance(choice, dict):
         return _malformed_response()
-    normalized = normalize_native_chat_message(choice.get("message"), values)
-    if (
-        choice.get("finish_reason") == "length"
-        and normalized.kind == ModelResponseKind.PROTOCOL_FAILURE
-    ):
+    completion = CompletionMetadata.from_payload(response)
+    message = choice.get("message")
+    # Stop before argument decoding or name/syntax repair, even when the partial
+    # call is already valid JSON. A budget-ended tool generation is not a call.
+    if completion.incomplete:
+        valid, content = _native_text(message.get("content")) if isinstance(message, dict) else (False, None)
+        text = (ModelResponse.text(content or "")
+                if valid and (content is None or len(content) <= _MAX_ASSISTANT_TEXT_CHARS)
+                else _malformed_response())
+        partial = content if text.assistant_text is not None else None
+        has_calls = isinstance(message, dict) and (
+            bool(message.get("tool_calls")) or message.get("function_call") is not None)
+        if not has_calls and text.kind == ModelResponseKind.ASSISTANT_TEXT:
+            return text.model_copy(update={"assistant_text": partial, "completion": completion,
+                                            "partial_text": partial})
         return ModelResponse.failure(
             ModelProtocolFailureCode.OUTPUT_TRUNCATED,
             "The model response ended before its structured call was complete.",
-        )
-    return normalized
+        ).model_copy(update={"completion": completion, "partial_text": partial})
+    normalized = normalize_native_chat_message(message, values)
+    return normalized.model_copy(update={"completion": completion})
 
 
 def normalize_native_chat_message(

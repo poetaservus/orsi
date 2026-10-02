@@ -59,6 +59,7 @@ from app.security.permissions import (
 )
 from app.capabilities.registry import CapabilityLookupError, CapabilityRegistry
 from app.inference.diagnostics import record_context_budget
+from app.inference.completion import CompletionMetadata, CompletionText, IncompleteResponseError
 from app.inference.engine import InferenceEngine, InferenceUnavailable
 from app.inference.protocol import (
     ModelCapabilityCall,
@@ -254,6 +255,11 @@ class AgentRuntime:
                 capability_calls=0,
                 protocol_failures=0,
             )
+        if isinstance(response, str) and CompletionText(response).completion.incomplete:
+            text = CompletionText(response)
+            return self._stopped(AgentRunStatus.INCOMPLETE,
+                "The response is incomplete.", steps=1, capability_calls=0, protocol_failures=0,
+                completion=text.completion, partial_text=str(text) if text.strip() else None)
         if not isinstance(response, str) or not response.strip():
             return self._stopped(
                 AgentRunStatus.INTERNAL_FAILURE,
@@ -262,15 +268,25 @@ class AgentRuntime:
                 capability_calls=0,
                 protocol_failures=0,
             )
+        text = CompletionText(response)
         return AgentRunResult(
             status=AgentRunStatus.COMPLETED,
             assistant_text=response.strip(),
             steps=1,
             capability_calls=0,
             protocol_failures=0,
+            completion=text.completion, completion_history=text.completion_history,
         )
 
     def run(
+        self, messages: Iterable[dict[str, Any]], **kwargs,
+    ) -> AgentRunResult:
+        history = []
+        result = self._run(messages, _completion_history=history, **kwargs)
+        return result.model_copy(update={"completion_history": tuple(history),
+            "completion": result.completion if result.completion.incomplete or not history else history[-1]})
+
+    def _run(
         self,
         messages: Iterable[dict[str, Any]],
         *,
@@ -287,6 +303,7 @@ class AgentRuntime:
         required_calls: tuple[ModelCapabilityCall, ...] = (),
         capability_names: tuple[str, ...] | None = None,
         continue_after_required_calls: bool = False,
+        _completion_history: list[CompletionMetadata] | None = None,
     ) -> AgentRunResult:
         if not safe_identifier(session_id) or not safe_identifier(turn_id):
             raise ValueError("Agent session and turn IDs must use bounded stable syntax.")
@@ -420,11 +437,14 @@ class AgentRuntime:
                 if (
                     model_stop is None
                     and response is not None
+                    and not response.completion.incomplete
                     and response.kind == ModelResponseKind.PROTOCOL_FAILURE
                     and response.protocol_failure.code
                     == ModelProtocolFailureCode.UNSUPPORTED_CAPABILITY_CALLS
                 ):
                     structured_fallback = True
+                    if _completion_history is not None:
+                        _completion_history.append(response.completion)
                     response, model_stop = self._fallback_model_step(
                         transcript,
                         definitions,
@@ -450,6 +470,16 @@ class AgentRuntime:
                     capability_calls=capability_calls,
                     protocol_failures=protocol_failures,
                 )
+            if _completion_history is not None:
+                _completion_history.append(response.completion)
+            if response.completion.incomplete:
+                return self._stopped(AgentRunStatus.INCOMPLETE,
+                    "The response was cut off. The incomplete tool generation was not executed."
+                    if response.kind != ModelResponseKind.ASSISTANT_TEXT else "The response is incomplete.",
+                    steps=steps, capability_calls=capability_calls,
+                    protocol_failures=protocol_failures + int(response.kind == ModelResponseKind.PROTOCOL_FAILURE),
+                    completion=response.completion,
+                    partial_text=response.partial_text or response.assistant_text)
             if response.kind == ModelResponseKind.ASSISTANT_TEXT:
                 filename_feedback = filename_disambiguation_feedback(
                     transcript,
@@ -488,12 +518,14 @@ class AgentRuntime:
                     == ModelProtocolFailureCode.OUTPUT_TRUNCATED
                 ):
                     return self._stopped(
-                        AgentRunStatus.PROTOCOL_FAILURE_LIMIT,
+                        AgentRunStatus.INCOMPLETE,
                         "The model response was cut off before it could complete the requested "
-                        "action. No computer action was taken.",
+                        "action. The incomplete tool generation was not executed.",
                         steps=steps,
                         capability_calls=capability_calls,
                         protocol_failures=protocol_failures,
+                        completion=response.completion.model_copy(update={"interrupted": True}),
+                        partial_text=response.partial_text,
                     )
                 if protocol_failures >= self.limits.max_protocol_failures:
                     return self._stopped(
@@ -1017,6 +1049,10 @@ class AgentRuntime:
                 )
             except FutureTimeoutError:
                 continue
+            except IncompleteResponseError as exc:
+                return ModelResponse.failure(ModelProtocolFailureCode.OUTPUT_TRUNCATED,
+                    "The model generation was incomplete.").model_copy(
+                        update={"completion": exc.completion, "partial_text": exc.partial_text}), None
             except InferenceUnavailable as exc:
                 return None, (
                     AgentRunStatus.MODEL_UNAVAILABLE,
@@ -1079,6 +1115,8 @@ class AgentRuntime:
                 )
             except FutureTimeoutError:
                 continue
+            except IncompleteResponseError as exc:
+                return CompletionText(exc.partial_text or "", exc.completion), None
             except InferenceUnavailable as exc:
                 return None, (
                     AgentRunStatus.MODEL_UNAVAILABLE,
@@ -1109,24 +1147,30 @@ class AgentRuntime:
         )
         if stop is not None:
             return None, stop
+        completion = CompletionText(raw).completion if isinstance(raw, str) else CompletionMetadata()
+        if completion.incomplete:
+            return ModelResponse.failure(ModelProtocolFailureCode.OUTPUT_TRUNCATED,
+                "The constrained response was cut off before decoding.").model_copy(
+                    update={"completion": completion,
+                            "partial_text": str(raw) if raw.strip() and len(raw) <= 1_000_000 else None}), None
         try:
             decision = decode_constrained_decision(raw)
         except StructuredCallDecodeError:
             return ModelResponse.failure(
                 ModelProtocolFailureCode.MALFORMED_RESPONSE,
                 "The constrained fallback did not return one valid JSON decision.",
-            ), None
+            ).model_copy(update={"completion": completion}), None
 
         requested_name = decision["tool"]
         if requested_name is None:
-            return ModelResponse.text(decision["response"]), None
+            return ModelResponse.text(decision["response"]).model_copy(update={"completion": completion}), None
         names = {definition.name.casefold(): definition.name for definition in definitions}
         capability = names.get(requested_name.casefold())
         if capability is None:
             return ModelResponse.failure(
                 ModelProtocolFailureCode.UNKNOWN_CAPABILITY,
                 "The constrained fallback requested a capability that was not advertised.",
-            ), None
+            ).model_copy(update={"completion": completion}), None
         provider_call_id = str(self._fallback_call_id_factory())
         try:
             call = ModelCapabilityCall(
@@ -1138,8 +1182,8 @@ class AgentRuntime:
             return ModelResponse.failure(
                 ModelProtocolFailureCode.MALFORMED_CALL_ID,
                 "The constrained fallback could not create a safe call identity.",
-            ), None
-        return ModelResponse.calls((call,)), None
+            ).model_copy(update={"completion": completion}), None
+        return ModelResponse.calls((call,)).model_copy(update={"completion": completion}), None
 
     def _stop_status(
         self,
@@ -1213,6 +1257,8 @@ class AgentRuntime:
         steps: int,
         capability_calls: int,
         protocol_failures: int,
+        completion: CompletionMetadata | None = None,
+        partial_text: str | None = None,
     ) -> AgentRunResult:
         return AgentRunResult(
             status=status,
@@ -1220,4 +1266,6 @@ class AgentRuntime:
             steps=steps,
             capability_calls=capability_calls,
             protocol_failures=protocol_failures,
+            completion=completion or CompletionMetadata(), partial_text=partial_text,
+            completion_history=(completion,) if completion is not None else (),
         )

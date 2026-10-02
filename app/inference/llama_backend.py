@@ -9,6 +9,7 @@ from typing import Iterable
 
 from app.inference.engine import InferenceEngine, InferenceUnavailable
 from app.inference.diagnostics import record_completion_diagnostics
+from app.inference.completion import CompletionMetadata, CompletionText, IncompleteResponseError
 from app.settings.model import ModelConfig
 from app.inference.protocol import (
     ModelCapabilityDefinition,
@@ -158,8 +159,12 @@ class LlamaCppInferenceEngine(InferenceEngine):
         message = response["choices"][0]["message"]
         content = message.get("content")
         if not isinstance(content, str) or not content.strip():
+            completion = CompletionMetadata.from_payload(response)
+            if completion.incomplete:
+                raise IncompleteResponseError("The model response was cut off.", completion)
             raise InferenceUnavailable("The local model returned an empty response.")
-        return content.strip()
+        completion = CompletionMetadata.from_payload(response)
+        return CompletionText(content if completion.incomplete else content.strip(), completion)
 
     def respond_with_capabilities(
         self,

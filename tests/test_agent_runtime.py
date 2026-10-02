@@ -561,11 +561,11 @@ def test_truncated_structured_output_stops_without_a_pointless_retry(tmp_path: P
 
     result = run(runtime, tmp_path)
 
-    assert result.status == AgentRunStatus.PROTOCOL_FAILURE_LIMIT
+    assert result.status == AgentRunStatus.INCOMPLETE
     assert result.steps == 1
     assert result.protocol_failures == 1
     assert "cut off" in result.message
-    assert "No computer action was taken" in result.message
+    assert "incomplete tool generation was not executed" in result.message
     assert len(model.requests) == 1
     assert capability.values == []
     assert journal.records == ()

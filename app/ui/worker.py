@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from PySide6.QtCore import QObject, Signal, Slot
+from app.inference.completion import CompletionText, IncompleteResponseError
 
 
 log = logging.getLogger(__name__)
@@ -11,8 +12,8 @@ log = logging.getLogger(__name__)
 class ConversationWorker(QObject):
     """Run one conversation turn away from the GUI event loop."""
 
-    finished = Signal(str)
-    failed = Signal(str)
+    finished = Signal(object)
+    failed = Signal(object)
     activity = Signal(str)
 
     def __init__(self, service, message: str):
@@ -24,9 +25,16 @@ class ConversationWorker(QObject):
     def run(self) -> None:
         try:
             response = self.service.run(self.message, self.activity.emit)
+            if isinstance(response, str) and getattr(response, "completion", None) is not None:
+                if response.completion.incomplete and not response.strip():
+                    raise IncompleteResponseError("The response was cut off.", response.completion,
+                                                  history=response.completion_history)
             if response is None or not str(response).strip():
                 raise RuntimeError("O.R.S.I finished processing, but returned an empty response.")
-            self.finished.emit(str(response))
+            self.finished.emit(response)
+        except IncompleteResponseError as exc:
+            self.failed.emit(CompletionText(exc.partial_text or str(exc), exc.completion,
+                exc.completion_history, status_message=str(exc) if exc.partial_text else None))
         except Exception as exc:
             log.exception("A conversation turn failed in the UI worker.")
             self.failed.emit(str(exc))

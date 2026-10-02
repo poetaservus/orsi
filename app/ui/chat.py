@@ -18,12 +18,10 @@ from PySide6.QtWidgets import (
 from app.ui.status import ThinkingDots
 from app.ui.code_highlighting import CodeHighlighter
 from app.ui.copy_button import CopyButton
+from app.inference.completion import CompletionMetadata
 
 
-_FENCED_CODE = re.compile(
-    r"^[ \t]*```([^\r\n`]*)[ \t]*\r?\n(.*?)^[ \t]*```[ \t]*(?:\r?\n|$)",
-    re.MULTILINE | re.DOTALL,
-)
+_FENCE_OPEN = re.compile(r"^[ \t]*(`{3,}|~{3,})([^\r\n]*)(?:\r?\n|$)", re.MULTILINE)
 
 _CONVERSATION_WIDTH = 1120
 
@@ -35,14 +33,20 @@ def _elapsed_label(prefix: str, seconds: float) -> str:
 def _split_fenced_code(content: str) -> list[tuple[str, str, str]]:
     parts: list[tuple[str, str, str]] = []
     position = 0
-    for match in _FENCED_CODE.finditer(content):
+    while match := _FENCE_OPEN.search(content, position):
         before = content[position:match.start()].rstrip("\r\n")
         if before:
             parts.append(("text", "", before))
-        language = match.group(1).strip() or "Code"
-        code = match.group(2).rstrip("\r\n")
-        parts.append(("code", language, code))
-        position = match.end()
+        fence = match.group(1)
+        language = match.group(2).strip() or "Code"
+        closing = re.compile(r"^[ \t]*" + re.escape(fence[0]) + "{" + str(len(fence))
+                             + r",}[ \t]*(?:\r?\n|$)", re.MULTILINE).search(content, match.end())
+        if closing is None:
+            parts.append(("incomplete_code", language, content[match.end():]))
+            position = len(content)
+            break
+        parts.append(("code", language, content[match.end():closing.start()].rstrip("\r\n")))
+        position = closing.end()
     after = content[position:].lstrip("\r\n")
     if after:
         parts.append(("text", "", after))
@@ -50,9 +54,10 @@ def _split_fenced_code(content: str) -> list[tuple[str, str, str]]:
 
 
 class _CodeBlock(QFrame):
-    def __init__(self, language: str, code: str):
+    def __init__(self, language: str, code: str, *, incomplete: bool = False):
         super().__init__()
         self.code = code
+        self.incomplete = incomplete
         self.setObjectName("codeBlock")
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
@@ -66,7 +71,7 @@ class _CodeBlock(QFrame):
         header_layout.setContentsMargins(16, 7, 10, 7)
         header_layout.setSpacing(8)
 
-        self.language = QLabel(language)
+        self.language = QLabel(f"{language} · Incomplete" if incomplete else language)
         self.language.setObjectName("codeLanguage")
         self.copy_button = CopyButton("Copy code")
         self.copy_button.setObjectName("copyCodeButton")
@@ -104,6 +109,8 @@ class _Message(QFrame):
         super().__init__()
         self.from_user = from_user
         self._content = content
+        self.completion = getattr(content, "completion", CompletionMetadata())
+        self.completion_history = getattr(content, "completion_history", ())
         if from_user:
             self.setObjectName("userMessage")
             self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
@@ -130,12 +137,30 @@ class _Message(QFrame):
 
         parts = (
             [("text", "", content)]
-            if from_user or error
+            if from_user or (error and not self.completion.incomplete)
             else _split_fenced_code(content)
         )
+        self.completion_label = None
+        if not from_user and (self.completion.incomplete or any(kind == "incomplete_code" for kind, _, _ in parts)):
+            indication = ("Incomplete — output limit reached. Partial response."
+                          if self.completion.finish_reason == "length" else
+                          "Incomplete response." if self.completion.incomplete else
+                          "Incomplete code block — closing fence missing.")
+            if getattr(content, "status_message", None):
+                indication += "\n" + content.status_message
+            self.completion_label = QLabel(indication)
+            self.completion_label.setObjectName("incompleteResponse")
+            self.completion_label.setWordWrap(True)
+            self.completion_label.setTextFormat(Qt.TextFormat.PlainText)
+            self.completion_label.setToolTip(
+                f"Finish reason: {self.completion.finish_reason or 'not supplied'}\n"
+                f"Input tokens: {self.completion.usage.input_tokens}\n"
+                f"Output tokens: {self.completion.usage.output_tokens}\n"
+                f"Total tokens: {self.completion.usage.total_tokens}")
+            layout.addWidget(self.completion_label)
         for kind, language, value in parts:
-            if kind == "code":
-                block = _CodeBlock(language, value)
+            if kind in {"code", "incomplete_code"}:
+                block = _CodeBlock(language, value, incomplete=kind == "incomplete_code")
                 self._code_blocks.append(block)
                 layout.addWidget(block)
             else:
@@ -177,6 +202,9 @@ class _Message(QFrame):
         maximum = max(220, int(width * ratio))
         margins = self.layout().contentsMargins()
         horizontal_padding = margins.left() + margins.right()
+        labels = self._text_labels + (
+            [self.completion_label] if self.completion_label is not None else []
+        )
 
         # QLabel's word-wrapped size hint often prefers a nearly square, very
         # narrow column. Size from the longest logical line instead, then wrap
@@ -184,7 +212,7 @@ class _Message(QFrame):
         natural_text_width = max(
             (
                 label.fontMetrics().horizontalAdvance(line.expandtabs(4))
-                for label in self._text_labels
+                for label in labels
                 for line in (label.text().splitlines() or [label.text()])
             ),
             default=0,
@@ -216,7 +244,7 @@ class _Message(QFrame):
             target = min(target, max(minimum, wrapped_width + horizontal_padding + 4))
         content_width = max(24, target - horizontal_padding)
         self.setFixedWidth(target)
-        for label in self._text_labels:
+        for label in labels:
             label.setFixedWidth(content_width)
             bounds = label.fontMetrics().boundingRect(
                 QRect(0, 0, content_width, 100_000),
@@ -262,7 +290,8 @@ class _MessageBand(QWidget):
         self.timing_label = QLabel()
         self.timing_label.setObjectName("responseTiming")
         if not from_user and duration_seconds is not None:
-            self.timing_label.setText(_elapsed_label("Worked", duration_seconds))
+            self.timing_label.setText(_elapsed_label(
+                "Stopped" if message.completion.incomplete else "Worked", duration_seconds))
             meta_layout.addWidget(self.timing_label)
         else:
             self.timing_label.hide()
@@ -425,6 +454,8 @@ class ChatView(QScrollArea):
         message.ensurePolished()
         for label in message._text_labels:
             label.ensurePolished()
+        if message.completion_label is not None:
+            message.completion_label.ensurePolished()
         band.set_available_width(band_width)
         self._messages.append(message)
         self._message_rows.append(row)

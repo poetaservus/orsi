@@ -35,6 +35,7 @@ from app.inference.protocol import (
 )
 from app.inference.diagnostics import record_context_budget
 from app.runtime.cancellation import CancellationSource, TaskCancelled
+from app.inference.completion import CompletionText, IncompleteResponseError
 
 
 log = logging.getLogger(__name__)
@@ -154,9 +155,15 @@ class ConversationService:
         record_context_budget(log, request.budget, request_kind="conversation")
         response = self.inference.respond(request.messages)
         source.token.raise_if_cancelled()
+        if isinstance(response, str) and getattr(response, "completion", None) is not None:
+            if response.completion.incomplete and not response.strip():
+                raise IncompleteResponseError("The response was cut off.", response.completion,
+                                              history=response.completion_history)
         if not isinstance(response, str) or not response.strip():
             raise RuntimeError("The model returned an empty response.")
-        return response.strip()
+        text = CompletionText(response)
+        return CompletionText(str(text) if text.completion.incomplete else text.strip(),
+                              text.completion, text.completion_history)
 
     def _run_agent_turn(
         self,
@@ -204,6 +211,13 @@ class ConversationService:
         )
         if result.status == AgentRunStatus.CANCELLED:
             raise TaskCancelled("The response was stopped.")
+        if result.status == AgentRunStatus.INCOMPLETE:
+            if result.partial_text is not None:
+                return CompletionText(result.partial_text, result.completion, result.completion_history,
+                                      status_message=result.message), turn_trace
+            self._agent_history.extend(deepcopy(turn_trace))
+            raise IncompleteResponseError(result.message or "The response is incomplete.",
+                result.completion, history=result.completion_history)
         if result.status != AgentRunStatus.COMPLETED:
             raise RuntimeError(result.message or "The bounded agent run did not complete.")
 
@@ -211,7 +225,7 @@ class ConversationService:
         grounded_answer = grounded_text_read_answer(text, answer, turn_results)
         if grounded_answer is not None:
             answer = grounded_answer
-        return answer, turn_trace
+        return CompletionText(answer, result.completion, result.completion_history), turn_trace
 
     def set_approval_requester(self, requester) -> None:
         if self.agent_runtime is not None:
