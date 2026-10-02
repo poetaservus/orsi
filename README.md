@@ -26,6 +26,10 @@ For development:
 runtime\python\python.exe -m app.main
 ```
 
+Development source is **unqualified** until every shipped profile passes the repeated mandatory
+live workflows. Skipped live tests cannot promote a build. Working-baseline promotion and release
+packaging require exact-revision evidence; see [live qualification](docs/live-qualification-2026-10-02.md).
+
 ## Current capabilities
 
 - Ordinary local or cloud conversation with bounded context.

@@ -1,5 +1,7 @@
-param([string]$Python = "python")
+param([string]$Python = "python", [Parameter(Mandatory=$true)][string]$QualificationReport)
 $ErrorActionPreference = 'Stop'
+& $Python tools/promote_working_baseline.py --report $QualificationReport
+if ($LASTEXITCODE -ne 0) { throw "Release packaging requires exact-revision live qualification. No build was produced." }
 & $Python -m nuitka --standalone --enable-plugin=pyside6 --windows-console-mode=disable --include-data-dir=app/ui/assets=app/ui/assets --output-dir=dist app/main.py
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 Copy-Item -Recurse -Force config,models dist/main.dist/

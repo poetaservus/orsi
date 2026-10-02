@@ -4,10 +4,18 @@
 under `C:\Users\yaboy\Desktop\o.r.s.i\.git`; the original checkout remains on
 `archive/conversational-main-20260921`. That archive checkout is not the current application.
 
-`main` holds the latest locally verified integration. Use one short-lived `codex/<change>` branch
-for a bounded change. After its required checks pass, commit it, fast-forward local `main`, return
-the active checkout to `main`, and remove the merged branch. Avoid stacks of finished phase branches.
-Remote publication is a separate operation; local integration does not imply that GitHub was updated.
+`main` holds historical integration source; past deterministic verification and skipped live tests
+do not certify it as the working baseline. Use one `codex/<change>` branch for a bounded candidate.
+Commit before running the mandatory exact-revision live matrix. Promote only with
+`tools/promote_working_baseline.py --report <report> --promote`: it verifies every required live
+workflow and profile, fast-forwards local `main`, marks `working-baseline`, returns to `main`, and
+removes the merged candidate branch. Failed or blocked candidates stay on their single unmerged
+branch. No `working-baseline` ref is created until a complete run passes.
+
+Manual Git merges do not produce qualification evidence. The supported promotion command and
+release packaging enforce the gate; this is not protection against an owner deliberately bypassing
+the workflow with raw Git. No shared Git hooks are installed in the other active checkout.
+Remote publication is separate; local integration does not imply that GitHub was updated.
 
 On 1 October 2026, 31 historical local branch tips were preserved as lightweight tags under
 `archive/2026-10-01/<original-branch-name>`, then removed from the local branch list. Tags preserve
@@ -25,3 +33,6 @@ its tag; do not move `main` backwards or reset an active checkout to recover old
 Source configuration defines accepted/qualified profile targets. Ignored runtime state records
 which model is selected. A clean Git status must not be confused with a matching runtime baseline:
 use the diagnostic snapshot for revision, effective flags, model identity and effective limits.
+
+See [mandatory live qualification](live-qualification-2026-10-02.md). Profile labels such as
+`accepted`, `load_tested` and `experimental` describe model targets and history, not build qualification.
