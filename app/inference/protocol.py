@@ -243,6 +243,7 @@ def native_function_tools(
 
 def model_capability_calls_message(
     calls: tuple[ModelCapabilityCall, ...],
+    *, provider_message_id: str | None = None,
 ) -> dict[str, Any]:
     """Create one provider-neutral assistant capability-call transcript item."""
     if (
@@ -252,30 +253,41 @@ def model_capability_calls_message(
         or not all(isinstance(call, ModelCapabilityCall) for call in calls)
     ):
         raise ValueError("Capability-call transcript items require a bounded non-empty call set.")
-    return {
+    message = {
         "role": "assistant",
         "capability_calls": [
             deepcopy(call.model_dump(mode="python"))
             for call in calls
         ],
     }
+    if provider_message_id is not None:
+        if _PROVIDER_CALL_ID.fullmatch(provider_message_id) is None:
+            raise ValueError("Provider message identities must use safe bounded syntax.")
+        message["provider_message_id"] = provider_message_id
+    return message
 
 
 def model_capability_result_message(
     call: ModelCapabilityCall,
     result: dict[str, Any],
+    *, provider_message_id: str | None = None,
 ) -> dict[str, Any]:
     """Create one provider-neutral result tied to an exact provider call ID."""
     if not isinstance(call, ModelCapabilityCall):
         raise TypeError("Capability results require a ModelCapabilityCall identity.")
     if not isinstance(result, dict) or _json_size(result) > _MAX_RESULT_BYTES:
         raise ValueError("Capability results must contain a bounded JSON object.")
-    return {
+    message = {
         "role": "capability",
         "provider_call_id": call.provider_call_id,
         "capability": call.capability,
         "result": deepcopy(result),
     }
+    if provider_message_id is not None:
+        if _PROVIDER_CALL_ID.fullmatch(provider_message_id) is None:
+            raise ValueError("Provider message identities must use safe bounded syntax.")
+        message["provider_message_id"] = provider_message_id
+    return message
 
 
 def native_chat_messages(
@@ -316,7 +328,8 @@ def native_chat_messages(
             continue
 
         if role == "assistant":
-            if outstanding or set(raw_message) != {"role", "capability_calls"}:
+            if outstanding or set(raw_message) not in ({"role", "capability_calls"},
+                    {"role", "capability_calls", "provider_message_id"}):
                 raise ValueError("Capability-call messages have an invalid transcript shape.")
             raw_calls = raw_message.get("capability_calls")
             if not isinstance(raw_calls, (list, tuple)) or not raw_calls:
@@ -333,13 +346,14 @@ def native_chat_messages(
                 provider_name = provider_names.get(call.capability)
                 if provider_name is None:
                     raise ValueError("A transcript call references an unadvertised capability.")
-                if call.provider_call_id in seen_provider_call_ids:
+                identity = _transcript_call_identity(raw_message, call.provider_call_id)
+                if identity in seen_provider_call_ids:
                     raise ValueError("A transcript contains a duplicate provider call ID.")
-                seen_provider_call_ids.add(call.provider_call_id)
-                outstanding[call.provider_call_id] = call.capability
+                seen_provider_call_ids.add(identity)
+                outstanding[identity] = call.capability
                 native_calls.append(
                     {
-                        "id": call.provider_call_id,
+                        "id": identity,
                         "type": "function",
                         "function": {
                             "name": provider_name,
@@ -357,12 +371,13 @@ def native_chat_messages(
             continue
 
         if role == "capability":
-            if set(raw_message) != {
+            required = {
                 "role",
                 "provider_call_id",
                 "capability",
                 "result",
-            }:
+            }
+            if set(raw_message) not in (required, required | {"provider_message_id"}):
                 raise ValueError("Capability-result messages have an invalid transcript shape.")
             provider_call_id = raw_message.get("provider_call_id")
             capability = raw_message.get("capability")
@@ -373,7 +388,8 @@ def native_chat_messages(
                 or _CAPABILITY_NAME.fullmatch(capability) is None
             ):
                 raise ValueError("Capability-result messages contain unsafe identifiers.")
-            expected = outstanding.pop(provider_call_id, None)
+            identity = _transcript_call_identity(raw_message, provider_call_id)
+            expected = outstanding.pop(identity, None)
             if expected is None or expected != capability:
                 raise ValueError("A capability result does not match an outstanding call.")
             result = raw_message.get("result")
@@ -382,7 +398,7 @@ def native_chat_messages(
             translated.append(
                 {
                     "role": "tool",
-                    "tool_call_id": provider_call_id,
+                    "tool_call_id": identity,
                     "content": _canonical_json(result),
                 }
             )
@@ -393,6 +409,15 @@ def native_chat_messages(
     if outstanding:
         raise ValueError("Every assistant capability call requires a matching result.")
     return translated
+
+
+def _transcript_call_identity(message: dict, provider_call_id: str) -> str:
+    if "provider_message_id" not in message:
+        return provider_call_id  # Legacy paired transcripts remain compatible.
+    scope = message["provider_message_id"]
+    if not isinstance(scope, str) or _PROVIDER_CALL_ID.fullmatch(scope) is None:
+        raise ValueError("A transcript has an invalid provider message identity.")
+    return "call_orsi_" + sha256(f"{scope}\0{provider_call_id}".encode()).hexdigest()[:32]
 
 
 def normalize_native_chat_completion(

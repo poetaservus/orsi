@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import json
 from types import SimpleNamespace
+import pytest
 
 from app.conversation.prompt import SYSTEM_PROMPT
 from app.conversation.orchestrator import ConversationService
@@ -83,14 +84,17 @@ def test_system_prompt_explicitly_denies_computer_access():
     assert "triple-backtick fenced code block" in prompt
 
 
-def test_bootstrap_uses_fresh_conversation_state(monkeypatch, tmp_path: Path):
+@pytest.mark.parametrize("corrupted", [False, True])
+def test_bootstrap_restores_durable_conversation_state(monkeypatch, tmp_path: Path, corrupted):
     import app.startup as main
     from app.inference.engine import InferenceUnavailable
 
     state_path = tmp_path / "conversation_v1" / "conversation.json"
     previous = ConversationStore(state_path)
-    previous.append("user", "This previous-window context must disappear")
+    previous.append("user", "This previous-window context remains known")
     previous_id = json.loads(state_path.read_text(encoding="utf-8"))["conversation_id"]
+    if corrupted:
+        state_path.write_text("{corrupted history")
 
     monkeypatch.setattr(main, "PATHS", SimpleNamespace(state=tmp_path))
     monkeypatch.setattr(
@@ -115,13 +119,18 @@ def test_bootstrap_uses_fresh_conversation_state(monkeypatch, tmp_path: Path):
         agent_config_override=main.AgentFeatureConfig()
     )
 
+    if corrupted:
+        assert service is None and "preserved" in error and "restored safely" in error
+        assert state_path.read_text() == "{corrupted history"
+        return
     assert isinstance(service, ConversationService)
     assert host["hostname"] and error is None and isinstance(inference, FakeHybrid)
     assert state_path.is_file()
     payload = json.loads(state_path.read_text(encoding="utf-8"))
-    assert payload["conversation_id"] != previous_id
-    assert payload["messages"] == []
-    assert service.estimated_context_tokens() == 0
+    assert payload["conversation_id"] == previous_id
+    assert payload["messages"][0]["content"] == "This previous-window context remains known"
+    assert service.store.messages() == previous.messages()
+    assert service.estimated_context_tokens() > 0
     assert not (tmp_path / "runtime_v4").exists()
 
 

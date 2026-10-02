@@ -52,6 +52,7 @@ from PySide6.QtWidgets import (
 
 from app.security.host_access import HostReadScope
 from app.inference.engine import InferenceUnavailable
+from app.inference.completion import CompletionText
 from app.ui.approvals import open_approval_dialog
 from app.ui.chat import ChatView
 from app.ui.context_window import ContextWindowBar
@@ -606,6 +607,14 @@ class MainWindow(QMainWindow):
         self._intro_active = not startup_error and not self._agent_error()
         self._intro_transition = None
         _apply_greeting_font(self.startup_greeting)
+        visible_history = getattr(getattr(service, "store", None), "visible_messages", None)
+        if callable(visible_history):
+            for message in visible_history():
+                value = CompletionText(message.content, message.completion,
+                    tuple(message.completion_history) if message.completion_history else None)
+                self.chat.add_message("You" if message.role == "user" else "Agent", value, message.stopped)
+            if self.chat._messages:
+                self._intro_active = False
         self._update_context_window()
         self._position_overlays()
         if startup_error:

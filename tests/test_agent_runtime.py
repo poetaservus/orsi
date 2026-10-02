@@ -499,7 +499,7 @@ def test_repeated_identical_calls_stop_before_the_third_execution(tmp_path: Path
     assert len(journal.records) == 2
 
 
-def test_duplicate_provider_call_id_is_a_bounded_protocol_failure(tmp_path: Path):
+def test_provider_call_id_reuse_in_a_later_message_has_a_distinct_identity(tmp_path: Path):
     duplicate = ModelResponse.calls(
         (
             ModelCapabilityCall(
@@ -517,10 +517,14 @@ def test_duplicate_provider_call_id_is_a_bounded_protocol_failure(tmp_path: Path
     result = run(runtime, tmp_path)
 
     assert result.status == AgentRunStatus.COMPLETED
-    assert result.protocol_failures == 1
-    assert capability.values == ["hello"]
-    assert model.requests[2][-1]["role"] == "system"
-    assert "duplicate_call_id" in model.requests[2][-1]["content"]
+    assert result.protocol_failures == 0
+    assert capability.values == ["hello", "changed"]
+    assert len(result.settled_calls) == 2
+    assert result.settled_calls[0].provider_message_id != result.settled_calls[1].provider_message_id
+    from app.inference.protocol import native_chat_messages
+    native = native_chat_messages(model.requests[2], model.definitions[2])
+    ids = [message["tool_call_id"] for message in native if message["role"] == "tool"]
+    assert len(ids) == len(set(ids)) == 2
 
 
 def test_protocol_failure_can_recover_but_repeated_failures_stop(tmp_path: Path):

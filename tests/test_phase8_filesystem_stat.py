@@ -293,7 +293,7 @@ def test_missing_and_outside_paths_return_structured_failures_without_content(
         service.shutdown()
 
 
-def test_agent_cancellation_stores_no_assistant_message(tmp_path: Path):
+def test_agent_cancellation_preserves_a_durable_stopped_turn(tmp_path: Path):
     model = BlockingStatModel()
     service, _runtime, store, _portable_root = build_service(tmp_path, model)
     result: list[str] = []
@@ -305,7 +305,10 @@ def test_agent_cancellation_stores_no_assistant_message(tmp_path: Path):
         worker.join(1.0)
         assert not worker.is_alive()
         assert result == ["The response was stopped."]
-        assert store.messages() == [{"role": "user", "content": "Wait for the model"}]
+        assert store.messages()[0] == {"role": "user", "content": "Wait for the model"}
+        assert "Turn stopped (cancelled)" in store.messages()[1]["content"]
+        assert store.turns()[0].outcome.status.value == "cancelled"
+        assert ConversationStore(store.path).turns()[0].outcome.status.value == "cancelled"
     finally:
         model.release.set()
         worker.join(1.0)

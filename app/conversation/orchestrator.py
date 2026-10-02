@@ -5,9 +5,9 @@ import re
 from copy import deepcopy
 from pathlib import Path
 from threading import Lock
-from uuid import uuid4
 
 from app.agent.runtime import AgentRunStatus, AgentRuntime
+from app.agent.contracts import AgentRunResult, SettledCall
 from app.conversation.context import (
     DEFAULT_SAFETY_BUFFER_TOKENS,
     ContextBudget,
@@ -27,12 +27,9 @@ from app.conversation.prompt import (
     compact_agent_system_prompt,
 )
 from app.conversation.result_grounding import grounded_text_read_answer
-from app.conversation.store import ConversationStore
+from app.conversation.store import ConversationStore, TurnHistoryError
 from app.security.host_access import HostAccessPolicy, HostReadScope
-from app.inference.protocol import (
-    model_capability_calls_message,
-    model_capability_result_message,
-)
+from app.inference.engine import InferenceUnavailable
 from app.inference.diagnostics import record_context_budget
 from app.runtime.cancellation import CancellationSource, TaskCancelled
 from app.inference.completion import CompletionText, IncompleteResponseError
@@ -90,11 +87,13 @@ class ConversationService:
         self._cancellation_lock = Lock()
         self._cancellation: CancellationSource | None = None
         self._closed = False
-        self._session_id = uuid4().hex
-        self._turn_number = 0
-        # Capability calls/results stay in memory. Persistent history intentionally
-        # contains only the user-visible conversation.
-        self._agent_history = self.store.messages()
+        self._session_id = self.store.session_id
+        self._active_turn_id: str | None = None
+        self._turn_result: AgentRunResult | None = None
+        self._history_persistence_failed = False
+        if agent_runtime is not None:
+            self.store.reconcile_journal(agent_runtime.executor.journal.records)
+        self._agent_history = self.store.agent_messages(capability_names=self.agent_capabilities)
 
     @property
     def agent_enabled(self) -> bool:
@@ -120,29 +119,70 @@ class ConversationService:
             raise RuntimeError("O.R.S.I is already replying.")
 
         source = CancellationSource()
+        turn_id = None
         try:
             with self._cancellation_lock:
                 if self._closed:
                     raise RuntimeError("The conversation is closed.")
                 self._cancellation = source
-            self.store.append("user", text)
+            if self._history_persistence_failed:
+                raise TurnHistoryError("A settled turn could not be retained safely. Review its outcomes before retrying.")
+            turn_id = self.store.begin_turn(text)
+            self._active_turn_id = turn_id
+            self._turn_result = None
+            self._agent_history.append({"role": "user", "content": text})
             if self.agent_runtime is None:
                 answer = self._run_chat_turn(source, activity)
-                self.store.append("assistant", answer)
-                return answer
-
-            self._agent_history.append({"role": "user", "content": text})
-            answer, turn_trace = self._run_agent_turn(text, source, activity)
-            self.store.append("assistant", answer)
-            self._agent_history.extend(deepcopy(turn_trace))
-            self._agent_history.append({"role": "assistant", "content": answer})
+                value = CompletionText(answer)
+                self._turn_result = AgentRunResult(
+                    status=AgentRunStatus.INCOMPLETE if value.completion.incomplete else AgentRunStatus.COMPLETED,
+                    assistant_text=None if value.completion.incomplete else str(value),
+                    partial_text=str(value) if value.completion.incomplete else None,
+                    message="The response is incomplete." if value.completion.incomplete else None,
+                    steps=1, capability_calls=0, protocol_failures=0,
+                    completion=value.completion, completion_history=value.completion_history)
+            else:
+                answer = self._run_agent_turn(text, source, activity)
+            self.store.finish_turn(turn_id, self._turn_result, answer)
+            self._agent_history = self.store.agent_messages(capability_names=self.agent_capabilities)
             return answer
-        except TaskCancelled:
-            return "The response was stopped."
+        except Exception as exc:
+            if turn_id is not None:
+                outcome = self._turn_result
+                if outcome is None or outcome.status == AgentRunStatus.COMPLETED:
+                    prior_outcome = outcome
+                    value = CompletionText(exc.partial_text or "", exc.completion, exc.completion_history) \
+                        if isinstance(exc, IncompleteResponseError) else CompletionText("")
+                    status = (AgentRunStatus.CANCELLED if isinstance(exc, TaskCancelled) else
+                              AgentRunStatus.INCOMPLETE if isinstance(exc, IncompleteResponseError) else
+                              AgentRunStatus.MODEL_UNAVAILABLE if isinstance(exc, InferenceUnavailable) else
+                              AgentRunStatus.INTERNAL_FAILURE)
+                    outcome = AgentRunResult(status=status, message=str(exc).strip()[:500] or "The turn stopped.",
+                        steps=prior_outcome.steps if prior_outcome else 0,
+                        capability_calls=prior_outcome.capability_calls if prior_outcome else 0,
+                        protocol_failures=prior_outcome.protocol_failures if prior_outcome else 0,
+                        completion=prior_outcome.completion if prior_outcome else value.completion,
+                        completion_history=prior_outcome.completion_history if prior_outcome else value.completion_history,
+                        partial_text=prior_outcome.assistant_text if prior_outcome else str(value) or None,
+                        settled_calls=prior_outcome.settled_calls if prior_outcome else ())
+                try:
+                    self.store.finish_turn(turn_id, outcome)
+                    self._agent_history = self.store.agent_messages(capability_names=self.agent_capabilities)
+                except Exception:
+                    self._history_persistence_failed = True
+                    self._agent_history.append({"role": "assistant", "content":
+                        f"Turn stopped ({outcome.status.value}). {outcome.message or 'History persistence failed.'}"})
+                    log.exception("Stopped turn outcomes could not be persisted.")
+                if isinstance(exc, TurnHistoryError):
+                    self._history_persistence_failed = True
+            if isinstance(exc, TaskCancelled):
+                return "The response was stopped."
+            raise
         finally:
             with self._cancellation_lock:
                 if self._cancellation is source:
                     self._cancellation = None
+            self._active_turn_id = None
             self._run_lock.release()
 
     def _run_chat_turn(self, source: CancellationSource, activity=None) -> str:
@@ -170,26 +210,22 @@ class ConversationService:
         text: str,
         source: CancellationSource,
         activity=None,
-    ) -> tuple[str, list[dict]]:
+    ) -> str:
         if self.agent_runtime is None or self.portable_root is None:
             raise RuntimeError("The structured agent runtime is unavailable.")
         if activity:
             activity("Working...")
         source.token.raise_if_cancelled()
-        self._turn_number += 1
-        turn_trace: list[dict] = []
         turn_results: list[tuple] = []
 
-        def retain_results(calls, results) -> None:
-            turn_trace.append(model_capability_calls_message(calls))
-            turn_trace.extend(
-                model_capability_result_message(
-                    call,
-                    result.model_dump(mode="json"),
-                )
-                for call, result in zip(calls, results, strict=True)
-            )
-            turn_results.extend(zip(calls, results, strict=True))
+        def retain_settled(settled: SettledCall) -> None:
+            self._agent_history.extend(deepcopy(settled.messages()))
+            turn_results.append((settled.call, settled.result))
+            try:
+                self.store.record_settled(self._active_turn_id, settled)
+            except Exception:
+                self._history_persistence_failed = True
+                raise
 
         capabilities = self._turn_capabilities(text)
         request = self._model_request(
@@ -201,21 +237,21 @@ class ConversationService:
         result = self.agent_runtime.run(
             request.messages,
             session_id=self._session_id,
-            turn_id=f"turn-{self._turn_number}",
+            turn_id=self._active_turn_id,
             portable_root=self.portable_root,
             allowed_read_roots=self.allowed_read_roots,
             host_access_policy=self.host_access_policy,
             cancellation=source.token,
-            result_observer=retain_results,
+            settled_observer=retain_settled,
             capability_names=capabilities,
         )
+        self._turn_result = result
         if result.status == AgentRunStatus.CANCELLED:
             raise TaskCancelled("The response was stopped.")
         if result.status == AgentRunStatus.INCOMPLETE:
             if result.partial_text is not None:
                 return CompletionText(result.partial_text, result.completion, result.completion_history,
-                                      status_message=result.message), turn_trace
-            self._agent_history.extend(deepcopy(turn_trace))
+                                      status_message=result.message)
             raise IncompleteResponseError(result.message or "The response is incomplete.",
                 result.completion, history=result.completion_history)
         if result.status != AgentRunStatus.COMPLETED:
@@ -225,7 +261,7 @@ class ConversationService:
         grounded_answer = grounded_text_read_answer(text, answer, turn_results)
         if grounded_answer is not None:
             answer = grounded_answer
-        return CompletionText(answer, result.completion, result.completion_history), turn_trace
+        return CompletionText(answer, result.completion, result.completion_history)
 
     def set_approval_requester(self, requester) -> None:
         if self.agent_runtime is not None:
@@ -253,11 +289,11 @@ class ConversationService:
             raise RuntimeError("Stop the current response before starting a new session.")
         try:
             self.store.new_session()
+            self._session_id = self.store.session_id
+            self._history_persistence_failed = False
+            self._agent_history = []
             if self.agent_runtime is not None:
                 self.agent_runtime.purge_terminal_records()
-            self._session_id = uuid4().hex
-            self._turn_number = 0
-            self._agent_history = []
         finally:
             self._run_lock.release()
 
@@ -280,6 +316,10 @@ class ConversationService:
         try:
             self.cancel_current_task()
         finally:
+            try:
+                self.store.close_session()
+            except Exception:
+                log.exception("Session close outcome could not be persisted.")
             try:
                 close = getattr(self.inference, "close", None)
                 if callable(close):
@@ -367,7 +407,7 @@ class ConversationService:
             history = self._agent_history
         else:
             prompt = AGENT_CONVERSATION_SYSTEM_PROMPT if self.agent_enabled else SYSTEM_PROMPT
-            history = self.store.messages()
+            history = self.store.agent_messages(capability_names=())
         return select_context_request(
             self.inference,
             system_prompt=prompt,

@@ -92,6 +92,12 @@ Unfinished code fences still appear in code boxes. Incomplete tool generation is
 argument repair or execution. The UI releases its controls even when the context meter cannot
 refresh. See [completion-state verification](docs/completion-state-2026-10-02.md).
 
+The active session now survives restart, including settled tool results and stopped turn outcomes.
+A successful edit stays known when a later model step fails. Unknown mutations require review and
+are never resumed or replayed automatically. Conversation history retains tool arguments/results,
+which can include file contents; **New session** clears that history. The execution journal and
+diagnostic snapshots remain content-free. See [durable turn verification](docs/turn-outcomes-2026-10-02.md).
+
 Cloud credentials are accepted only from the configured environment variable or the in-memory GUI
 prompt. Do not place API keys in JSON or headers. Cloud mode may send conversation text and requested
 tool results—including file names or file content—to the configured provider after the GUI

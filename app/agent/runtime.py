@@ -21,6 +21,7 @@ from uuid import uuid4
 from app.agent.contracts import (
     AgentRunResult,
     AgentRunStatus,
+    SettledCall,
     model_unavailable_message,
 )
 from app.settings.agent import AgentRuntimeLimits
@@ -282,8 +283,10 @@ class AgentRuntime:
         self, messages: Iterable[dict[str, Any]], **kwargs,
     ) -> AgentRunResult:
         history = []
-        result = self._run(messages, _completion_history=history, **kwargs)
+        settled = []
+        result = self._run(messages, _completion_history=history, _settled_calls=settled, **kwargs)
         return result.model_copy(update={"completion_history": tuple(history),
+            "settled_calls": tuple(settled),
             "completion": result.completion if result.completion.incomplete or not history else history[-1]})
 
     def _run(
@@ -304,6 +307,8 @@ class AgentRuntime:
         capability_names: tuple[str, ...] | None = None,
         continue_after_required_calls: bool = False,
         _completion_history: list[CompletionMetadata] | None = None,
+        _settled_calls: list[SettledCall] | None = None,
+        settled_observer: Callable[[SettledCall], None] | None = None,
     ) -> AgentRunResult:
         if not safe_identifier(session_id) or not safe_identifier(turn_id):
             raise ValueError("Agent session and turn IDs must use bounded stable syntax.")
@@ -321,6 +326,12 @@ class AgentRuntime:
             raise TypeError("Agent cancellation must be a CancellationToken.")
         if result_observer is not None and not callable(result_observer):
             raise TypeError("Agent result observers must be callable when supplied.")
+        if settled_observer is not None and not callable(settled_observer):
+            raise TypeError("Settled-call observers must be callable when supplied.")
+        if self.executor.review_required:
+            return self._stopped(AgentRunStatus.INTERNAL_FAILURE,
+                "A previous write outcome requires review before another operation can run.",
+                steps=0, capability_calls=0, protocol_failures=0)
         if (
             not isinstance(required_calls, tuple)
             or not all(isinstance(call, ModelCapabilityCall) for call in required_calls)
@@ -374,7 +385,6 @@ class AgentRuntime:
         protocol_failures = 0
         repeated: dict[str, int] = {}
         used_call_ids: set[str] = set()
-        used_provider_call_ids: set[str] = set()
         advertised_names = {item.name for item in definitions}
         required_fingerprints = tuple(call_fingerprint(call) for call in required_calls)
         if (
@@ -603,10 +613,7 @@ class AgentRuntime:
                 )
 
             provider_call_ids = [call.provider_call_id for call in calls]
-            if len(set(provider_call_ids)) != len(provider_call_ids) or any(
-                provider_call_id in used_provider_call_ids
-                for provider_call_id in provider_call_ids
-            ):
+            if len(set(provider_call_ids)) != len(provider_call_ids):
                 capability_calls += len(calls)
                 protocol_failures += 1
                 if protocol_failures >= self.limits.max_protocol_failures:
@@ -665,8 +672,8 @@ class AgentRuntime:
                 internal_call_ids.append(internal_call_id)
 
             capability_calls += len(calls)
-            used_provider_call_ids.update(provider_call_ids)
             repeated = staged_repeated
+            provider_message_id = uuid4().hex
             results: list[CapabilityResult] = []
             for call, internal_call_id in zip(calls, internal_call_ids, strict=True):
                 outcome = self._process_call(
@@ -683,6 +690,29 @@ class AgentRuntime:
                     user_cancellation=user_cancellation,
                     deadline_cancellation=deadline_cancellation,
                 )
+                if outcome.stop_status is not None and outcome.result is None:
+                    code = (CapabilityErrorCode.OUTCOME_UNKNOWN if self.executor.review_required else
+                            CapabilityErrorCode.CANCELLED if outcome.stop_status == AgentRunStatus.CANCELLED else
+                            CapabilityErrorCode.TIMED_OUT if outcome.stop_status == AgentRunStatus.TIMED_OUT else
+                            CapabilityErrorCode.INTERNAL_ERROR)
+                    outcome = _CallOutcome(result=failure_result(internal_call_id, call.capability,
+                        CapabilityFailure(code=code, message=outcome.stop_message or "The call stopped safely.")),
+                        stop_status=outcome.stop_status, stop_message=outcome.stop_message)
+                if outcome.result is not None:
+                    settled = SettledCall(provider_message_id=provider_message_id,
+                                          call=call, result=outcome.result)
+                    if _settled_calls is not None:
+                        _settled_calls.append(settled)
+                    try:
+                        if settled_observer is not None:
+                            settled_observer(settled)
+                        if result_observer is not None:
+                            result_observer((call,), (outcome.result,))
+                    except Exception:
+                        log.exception("Settled capability result observation failed unexpectedly.")
+                        return self._stopped(AgentRunStatus.INTERNAL_FAILURE,
+                            "The settled capability result could not be retained durably. Review its outcome before retrying.",
+                            steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
                 if outcome.stop_status is not None:
                     return self._stopped(
                         outcome.stop_status,
@@ -706,19 +736,6 @@ class AgentRuntime:
                 if fingerprint in required_set
             )
 
-            if result_observer is not None:
-                try:
-                    result_observer(tuple(calls), tuple(results))
-                except Exception:
-                    log.exception("Capability result observation failed unexpectedly.")
-                    return self._stopped(
-                        AgentRunStatus.INTERNAL_FAILURE,
-                        "The capability context could not be retained safely.",
-                        steps=steps,
-                        capability_calls=capability_calls,
-                        protocol_failures=protocol_failures,
-                    )
-
             if required_set and completed_required == required_set:
                 if not continue_after_required_calls:
                     return AgentRunResult(
@@ -732,12 +749,13 @@ class AgentRuntime:
                 completed_required = set()
 
             try:
-                transcript.append(model_capability_calls_message(calls))
+                transcript.append(model_capability_calls_message(calls, provider_message_id=provider_message_id))
                 for call, result in zip(calls, results, strict=True):
                     transcript.append(
                         model_capability_result_message(
                             call,
                             result.model_dump(mode="json"),
+                            provider_message_id=provider_message_id,
                         )
                     )
             except (TypeError, ValueError):
@@ -895,7 +913,7 @@ class AgentRuntime:
                 stop_message="The capability result could not be persisted safely. Review its outcome before retrying.",
             )
         if result.error is not None and result.error.code == CapabilityErrorCode.OUTCOME_UNKNOWN:
-            return _CallOutcome(stop_status=AgentRunStatus.INTERNAL_FAILURE,
+            return _CallOutcome(result=result, stop_status=AgentRunStatus.INTERNAL_FAILURE,
                                 stop_message=result.error.message)
         if (
             result.error is not None
@@ -906,10 +924,12 @@ class AgentRuntime:
                 and not user_cancellation.is_cancelled
             ):
                 return _CallOutcome(
+                    result=result,
                     stop_status=AgentRunStatus.TIMED_OUT,
                     stop_message="The agent task exceeded its overall deadline.",
                 )
             return _CallOutcome(
+                result=result,
                 stop_status=AgentRunStatus.CANCELLED,
                 stop_message="The agent task was cancelled during capability execution.",
             )

@@ -6,6 +6,7 @@ from pathlib import Path
 
 from app.agent.bootstrap import build_agent_runtime
 from app.conversation import ConversationService, ConversationStore
+from app.conversation.store import TurnHistoryError
 from app.inference import (
     HybridInferenceEngine,
     InferenceUnavailable,
@@ -149,10 +150,12 @@ def build_application(
 
     service = None
     if inference is not None:
-        store = ConversationStore(
-            PATHS.state / "conversation_v1" / "conversation.json",
-            start_fresh=True,
-        )
+        try:
+            store = ConversationStore(PATHS.state / "conversation_v1" / "conversation.json")
+        except (TurnHistoryError, OSError):
+            log.exception("Durable conversation history could not be opened safely.")
+            return None, {"hostname": socket.gethostname() or "Windows PC"}, \
+                "Conversation outcomes could not be restored safely. History was preserved; review it before continuing.", inference
         agent_runtime = None
         host_access_policy = None
         agent_error = agent_config_error
@@ -178,19 +181,26 @@ def build_application(
             log.exception("The capability agent could not start safely.")
             host_access_policy = None
             agent_error = _AGENT_STARTUP_ERROR
-        service = ConversationService(
-            inference,
-            store,
-            agent_runtime=agent_runtime,
-            portable_root=PATHS.root if agent_runtime is not None else None,
-            allowed_read_roots=(
-                host_access_policy.permission_roots()
-                if host_access_policy is not None
-                else ()
-            ),
-            host_access_policy=host_access_policy,
-            agent_error=agent_error,
-        )
+        try:
+            service = ConversationService(
+                inference,
+                store,
+                agent_runtime=agent_runtime,
+                portable_root=PATHS.root if agent_runtime is not None else None,
+                allowed_read_roots=(
+                    host_access_policy.permission_roots()
+                    if host_access_policy is not None
+                    else ()
+                ),
+                host_access_policy=host_access_policy,
+                agent_error=agent_error,
+            )
+        except (TurnHistoryError, OSError):
+            log.exception("Durable conversation outcomes could not be reconciled safely.")
+            if agent_runtime is not None:
+                agent_runtime.shutdown()
+            return None, {"hostname": socket.gethostname() or "Windows PC"}, \
+                "Conversation outcomes could not be restored safely. History was preserved; review it before continuing.", inference
         if callable(getattr(inference, "record_baseline", None)):
             effective_flags = agent_config if agent_runtime is not None else AgentFeatureConfig()
             inference.baseline_observer = BaselineRecorder(

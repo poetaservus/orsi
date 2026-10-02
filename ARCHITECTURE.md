@@ -93,7 +93,7 @@ and are not alternate implementations.
 8. The journaled executor records intent and authorization, executes once, records the result, and
    returns structured output to the model.
 9. The loop continues until final assistant text or a bounded terminal status. The orchestrator
-   stores the visible response and retains only the structured history needed for the active session.
+   durably stores the terminal turn outcome, visible response and every settled call in the active session.
 
 ## 4. LLM abstraction
 
@@ -169,6 +169,33 @@ Malformed structured responses log only the provider/model, failure code, finish
 counts so output-budget failures can be diagnosed without recording generated or file content.
 Capability intent, authorization, completion, failure, and unknown outcomes are stored separately in
 the crash journal. Conversation and UI preference JSON writes use atomic replacement.
+
+`conversation/store.py` retains the active session identity/status, ordered turns, visible messages,
+per-call settled traces and terminal `AgentRunResult` metadata in the conversation file. Each settled
+result is observed and persisted before the next call or model continuation, including denied,
+cancelled and unknown results. Runtime results retain these records even if the observer or a later
+batch/model step fails. History persistence failure stops continuation and blocks further live
+turns; it does not justify replaying an operation.
+
+Restart restores the same session and marks unfinished turns interrupted. Before constructing
+context, the service reconciles crash-journal evidence missing from the detailed trace. Those
+recovered summaries retain only call identity, capability and lifecycle outcome; missing arguments
+or detailed output are not invented. Bootstrap no longer purges terminal journal records before
+this recovery. Explicit New session clears conversation traces and applies journal retention;
+unreviewed unknown outcomes survive that purge and block turns before inference or execution.
+
+Every generating response has a persisted `provider_message_id`. Source call IDs are scoped to
+that message; native transcript IDs are deterministic hashes of the scope/call pair. Reusing a
+provider ID in another message or turn is valid, while duplicates within the same message and
+mismatched results remain rejected. Disabled capabilities are represented as bounded factual
+summaries rather than unadvertised executable transcript calls. The UI restores visible history,
+including stopped and partial replies, without starting work. Malformed history is preserved and
+fails closed rather than silently creating a fresh session.
+
+Conversation traces are content-bearing user history and may contain arguments, paths, edits and
+read results. They are bounded to 64 MiB and cleared only by an explicit session reset. This changes
+the former in-memory-only trace retention; diagnostics and the content-free crash journal retain
+their existing privacy boundary. Existing text-only conversation files remain readable.
 
 `infrastructure/baseline.py` writes an allowlisted snapshot to
 `state/diagnostics/effective_baseline_v1.json` at startup, successful switches, mode changes and

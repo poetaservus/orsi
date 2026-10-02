@@ -75,11 +75,8 @@ def build_agent_runtime(
     journal = CapabilityCrashJournal(
         state_directory / "capability_journal_v1.json"
     )
-    if journal.review_required:
-        raise AgentBootstrapError(
-            "A previous capability call has an unknown outcome that requires review."
-        )
-    journal.purge()
+    # Restore outcome evidence before applying any explicit retention/reset policy.
+    # AgentRuntime blocks turns before inference when the journal requires review.
     executor = JournaledCapabilityExecutor(CapabilityExecutor(), journal)
     return AgentRuntime(
         model=inference,
