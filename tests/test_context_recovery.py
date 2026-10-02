@@ -126,13 +126,14 @@ def test_runtime_recovers_after_large_result_and_keeps_raw_settlement(tmp_path, 
         assert len(model.requests[1][-1]["result"]["output"]["text"]) < 6000
 
 
-def test_recovery_catalog_reachability_does_not_depend_on_phrases(tmp_path):
+@pytest.mark.parametrize("recovery_enabled", [False, True])
+def test_catalog_reachability_does_not_depend_on_phrases(tmp_path, recovery_enabled):
     from app.agent.bootstrap import build_agent_runtime
     from app.conversation.orchestrator import ConversationService
     from app.conversation.store import ConversationStore
     model = ScriptedModel([ModelResponse.text("done")])
     flags = AgentFeatureConfig(filesystem_stat_enabled=True, filesystem_copy_enabled=True,
-        filesystem_read_text_enabled=True, context_recovery_enabled=True)
+        filesystem_read_text_enabled=True, context_recovery_enabled=recovery_enabled)
     runtime = build_agent_runtime(model, config=flags, portable_root=tmp_path, state_directory=tmp_path / "state")
     service = ConversationService(model, ConversationStore(tmp_path / "conversation.json"),
         agent_runtime=runtime, portable_root=tmp_path)

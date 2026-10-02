@@ -107,7 +107,7 @@ def test_edit_routing_and_both_prompt_variants():
     catalog = ("filesystem.stat", "filesystem.list", "filesystem.read_text", "filesystem.edit_text", "filesystem.write_text")
     assert "filesystem.edit_text" in select_turn_capabilities("Change the CSS color", catalog)
     assert "filesystem.read_text" in select_turn_capabilities("Change the CSS color", catalog)
-    assert "filesystem.edit_text" not in select_turn_capabilities("Read the file", catalog)
+    assert select_turn_capabilities("Read the file", catalog) == catalog
     for prompt in (agent_system_prompt, compact_agent_system_prompt):
         text = prompt(HostReadScope.PORTABLE_ROOT, catalog)
         assert "Prefer filesystem.edit_text" in text

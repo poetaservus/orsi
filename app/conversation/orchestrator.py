@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import re
 from copy import deepcopy
 from pathlib import Path
 from threading import Lock
@@ -432,51 +431,14 @@ class ConversationService:
         return self.agent_capabilities
 
     def _turn_capabilities(self, latest_user_text: str) -> tuple[str, ...]:
+        """Resolve visibility from the enabled registry, never from task wording.
+
+        Permissions and approvals still authorize each concrete invocation in
+        the runtime. Context recovery only controls context management.
+        """
         if self.agent_runtime is None:
             return ()
-        available = self.agent_capabilities
-        if self.agent_runtime.context_recovery_enabled:
-            # Registry visibility and policy define reachability; phrases are only legacy hints.
-            return available
-        selected = set(select_turn_capabilities(latest_user_text, available))
-        history_names = self._history_capability_names()
-        selected.update(history_names)
-        if self._has_filesystem_followup_context() and (
-            re.fullmatch(
-                r"\s*(?:yes|yeah|yep|ok(?:ay)?|go ahead|do it|there|the rest|remaining)"
-                r"\s*[.!?]*\s*",
-                latest_user_text,
-                flags=re.IGNORECASE,
-            )
-            or re.fullmatch(r"\s*[A-Za-z]:[\\/].+", latest_user_text)
-        ):
-            selected.update(available)
-        return tuple(name for name in available if name in selected)
-
-    def _history_capability_names(self) -> set[str]:
-        available = set(self.agent_capabilities)
-        names: set[str] = set()
-        for message in self._agent_history:
-            if message.get("role") != "assistant":
-                continue
-            calls = message.get("capability_calls")
-            if not isinstance(calls, list):
-                continue
-            for call in calls:
-                if isinstance(call, dict) and call.get("capability") in available:
-                    names.add(call["capability"])
-        return names
-
-    def _has_filesystem_followup_context(self) -> bool:
-        for message in reversed(self._agent_history[-8:]):
-            content = message.get("content")
-            if isinstance(content, str) and re.search(
-                r"\b(?:file|folder|directory|path|desktop|documents|downloads)\b",
-                content,
-                flags=re.IGNORECASE,
-            ):
-                return True
-        return False
+        return select_turn_capabilities(latest_user_text, self.agent_capabilities)
 
     def _capability_schema_reserve(self, names: tuple[str, ...]) -> int:
         if self.agent_runtime is None or not names:

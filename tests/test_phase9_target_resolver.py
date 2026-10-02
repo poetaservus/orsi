@@ -670,17 +670,25 @@ def test_whats_in_named_desktop_folder_lists_contents_in_one_turn(
         service.shutdown()
 
 
-def test_ordinary_chat_meter_uses_conversation_prompt_not_agent_prompt(tmp_path: Path):
+@pytest.mark.parametrize("context_limit", [4096, 16384])
+def test_ordinary_chat_keeps_catalog_and_respects_context_admission(tmp_path: Path, context_limit):
     model = DeterministicFindModel("hello")
-    model.context_length = 4096
+    model.context_length = context_limit
     model.max_response_tokens = 1536
     service, _runtime, _user_home, _policy = build_service(tmp_path, model)
     try:
-        assert service.run("hey") == "hello"
-
-        assert service.estimated_context_tokens() < 4096
+        if context_limit == 4096:
+            with pytest.raises(RuntimeError, match="cannot fit"):
+                service.run("hey")
+            assert service.store.turns()[-1].outcome.status.value == "context_limit"
+            assert not service.context_budget().fits
+            assert not model.capability_requests
+        else:
+            assert service.run("hey") == "hello"
+            assert service.estimated_context_tokens() < context_limit
+            assert model.capability_requests
+        assert service._turn_capabilities("hey") == service.agent_capabilities
         assert model.text_requests == []
-        assert model.capability_requests
     finally:
         service.shutdown()
 

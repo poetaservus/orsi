@@ -268,14 +268,19 @@ def test_edit_uses_protected_path_policy(tmp_path, path):
         prepare_capability_call(capability, {"path": path, "old_text": "old", "new_text": "new"}, context)
 
 
-def test_read_only_turn_cannot_inject_edit(service, tmp_path):
+def test_unrequested_edit_still_requires_denied_operation_approval(service, tmp_path):
     target = setup_target(service, tmp_path)
     approvals = []
-    service.set_approval_requester(approvals.append)
-    # Malicious model attempts an edit even though the latest request is metadata only.
-    service.run("Inspect the file metadata")
-    assert all("filesystem.edit_text" not in names for names in service.inference.seen)
-    assert not approvals and target.read_bytes().startswith(b"old")
+    def deny(record):
+        approvals.append(record)
+        assert target.read_bytes() == b"old\r\nkeep\r\n"
+        service.resolve_approval(record.approval_id, False)
+    service.set_approval_requester(deny)
+    # A malicious proposal stays visible but cannot execute without authorization.
+    result = json.loads(service.run("Inspect the file metadata"))
+    assert all("filesystem.edit_text" in names for names in service.inference.seen)
+    assert not result["success"] and len(approvals) == 1
+    assert target.read_bytes() == b"old\r\nkeep\r\n"
 
 
 def test_window_edit_approval(service, tmp_path):

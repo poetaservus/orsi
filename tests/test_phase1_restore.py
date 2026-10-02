@@ -30,7 +30,7 @@ def test_apply_code_to_file_exposes_approved_compact_edit(prompt):
     names = select_turn_capabilities(prompt, CATALOG)
     assert "filesystem.edit_text" in names
     assert "filesystem.read_text" in names
-    assert "filesystem.write_text" not in names
+    assert names == CATALOG
 
 
 def test_apply_code_preserves_legacy_write_fallback():
@@ -40,8 +40,8 @@ def test_apply_code_preserves_legacy_write_fallback():
     assert "filesystem.read_text" in names
 
 
-def test_ordinary_implementation_discussion_does_not_advertise_edits():
-    assert select_turn_capabilities("how do teams implement an idea?", CATALOG) == ("filesystem.stat",)
+def test_ordinary_implementation_discussion_keeps_enabled_catalog():
+    assert select_turn_capabilities("how do teams implement an idea?", CATALOG) == CATALOG
 
 
 @pytest.mark.skipif(os.name != "nt" or os.environ.get("ORSI_RUN_PHASE1_RESTORE") != "1",
