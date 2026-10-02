@@ -32,6 +32,9 @@ tools while performing no write. Both context-recovery settings use the same cat
 
 Advertising the full catalog increases schema tokens. Real-model correctness and
 continuous-session cost must be measured separately from deterministic tests.
-The repair remains on `codex/stable-tool-catalog`; neither skipped live gates nor a
-green unit suite authorize promotion to the working baseline. Live diagnostics belong
-under ignored `state/`, bound to the tested revision, effective flags and model profile.
+The user explicitly approved integration into `main` on 3 October 2026 after reviewing
+the repair and native Windows styling. This is user-approved integration, not successful
+qualification of every model. Neither skipped live gates nor a green unit suite establish
+qualification. See [the integration record](git-workflow.md) for measured results.
+Live diagnostics remain under ignored `state/`, bound to the tested revision, effective
+flags and model profile.

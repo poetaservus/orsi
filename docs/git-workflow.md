@@ -46,3 +46,26 @@ before the obsolete branches are removed. Neither unmerged tip is incorporated i
 
 Eight other remote phase/UI branches are ancestors of the approved working state and can be
 removed after publishing main. The original archive checkout remains on its existing branch.
+
+## User-approved tool catalog and inline styling integration, 3 October 2026
+
+The user explicitly requested merging and pushing the current branch after reviewing the
+stable tool catalog and rounded grey inline references. The integrated source revisions are
+`ca82326` (tool availability), `ee2ba69` (inline styling) and `d601dc5` (native Windows font
+detection and rounded backgrounds). The previous main is `1daa20a`. This integration does
+not incorporate the archived qualification-gate branch or change model profiles and limits.
+
+At `ca82326`, the repeated live matrix passed 10/10 workflows for 14B, 6/10 for 3B and 6/10
+for VL 4B: 22/30 overall, so qualification remained false. The same 14B confirmation/restart
+workflow passed 2/2 on the repair versus 0/2 on unchanged main. Measured total tokens increased
+from 43,338 to 94,061 across those matched sessions; the larger catalog has a material context
+cost. Generated Breakout code was checked for compilation, not gameplay execution. Owned
+validation servers exited. Content-free diagnostics are stored locally in the ignored
+`state/stable-catalog-summary.json`; raw conversations and runtime settings are not published.
+
+The final styling checks passed 66 focused tests and 5 subtests, including the native Qt Windows
+backend. The full suite recorded 844 passed, 3 failed, 54 skipped and 15 subtests passed.
+The three failures were Windows access-denied errors during atomic conversation persistence;
+all three passed their isolated recheck. These failures and skipped gates remain unresolved
+qualification evidence. The user's explicit merge instruction authorizes this integration;
+it does not turn these results into a fully qualified baseline.
