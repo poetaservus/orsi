@@ -98,6 +98,11 @@ are never resumed or replayed automatically. Conversation history retains tool a
 which can include file contents; **New session** clears that history. The execution journal and
 diagnostic snapshots remain content-free. See [durable turn verification](docs/turn-outcomes-2026-10-02.md).
 
+Normal provider responses may contain text alongside multiple calls. Calls settle sequentially
+with independent validation and approval; separate limits bound consecutive format failures,
+semantic corrections and total model requests. See
+[provider response verification](docs/provider-response-recovery-2026-10-02.md).
+
 Cloud credentials are accepted only from the configured environment variable or the in-memory GUI
 prompt. Do not place API keys in JSON or headers. Cloud mode may send conversation text and requested
 tool results—including file names or file content—to the configured provider after the GUI

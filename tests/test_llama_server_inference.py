@@ -261,10 +261,6 @@ def test_structured_result_continuation_preserves_exact_native_call_identity():
             ModelProtocolFailureCode.MALFORMED_ARGUMENTS,
         ),
         (
-            {"role": "assistant", "content": "mixed", "tool_calls": [call()]},
-            ModelProtocolFailureCode.MIXED_RESPONSE,
-        ),
-        (
             {
                 "role": "assistant",
                 "content": None,
@@ -282,7 +278,7 @@ def test_structured_result_continuation_preserves_exact_native_call_identity():
         ),
     ],
 )
-def test_malformed_mixed_unknown_and_oversized_calls_remain_protocol_failures(
+def test_malformed_unknown_and_oversized_calls_remain_protocol_failures(
     message,
     expected,
 ):
@@ -295,6 +291,15 @@ def test_malformed_mixed_unknown_and_oversized_calls_remain_protocol_failures(
 
     assert result.kind == ModelResponseKind.PROTOCOL_FAILURE
     assert result.protocol_failure.code == expected
+
+
+def test_server_accepts_text_alongside_native_calls():
+    engine, _requests = scripted_engine([completion({"role": "assistant", "content": "Inspecting now",
+        "tool_calls": [call()]})])
+    result = engine.respond_with_capabilities([{"role": "user", "content": "Inspect"}], (definition(),))
+    assert result.kind == ModelResponseKind.CAPABILITY_CALLS
+    assert result.assistant_text == "Inspecting now"
+    assert len(result.capability_calls) == 1
 
 
 def test_plain_respond_rejects_unexpected_tool_calls():

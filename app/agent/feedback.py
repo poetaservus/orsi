@@ -38,7 +38,7 @@ def constrained_fallback_messages(
     messages: list[dict[str, str]] = [{"role": "system", "content": instruction}]
     for message in transcript:
         role = message.get("role")
-        if role in {"system", "user", "assistant"} and isinstance(
+        if role in {"system", "user", "assistant"} and "capability_calls" not in message and isinstance(
             message.get("content"), str
         ):
             messages.append({"role": role, "content": message["content"]})
@@ -47,7 +47,8 @@ def constrained_fallback_messages(
                 {
                     "role": "assistant",
                     "content": "Previous structured capability request: "
-                    + canonical_json(message["capability_calls"]),
+                    + canonical_json(message["capability_calls"])
+                    + ("\nAssistant text: " + message["content"] if "content" in message else ""),
                 }
             )
         elif role == "capability" and isinstance(message.get("result"), dict):
@@ -92,9 +93,7 @@ def call_fingerprint(call: ModelCapabilityCall) -> str:
 def protocol_feedback(code: str) -> dict[str, str]:
     if code == ModelProtocolFailureCode.MIXED_RESPONSE.value:
         instruction = (
-            "If the task still has an unprocessed item, return only one native capability call "
-            "for that next item with no assistant text. If the task is complete, return only final "
-            "assistant text with no capability call. Never combine text and a call."
+            "Return a valid native response with complete calls and optional assistant text."
         )
     elif code == ModelProtocolFailureCode.UNKNOWN_CAPABILITY.value:
         instruction = "Use only one of the capability names in the advertised catalog."
@@ -106,7 +105,7 @@ def protocol_feedback(code: str) -> dict[str, str]:
             "valid call within that budget and never return a partial JSON object."
         )
     else:
-        instruction = "Return either assistant text or exactly one valid native capability call."
+        instruction = "Return assistant text, complete valid native capability calls, or both."
     return {
         "role": "system",
         "content": (
@@ -124,18 +123,6 @@ def required_calls_feedback() -> dict[str, str]:
             "active directory listing. Do not return final text yet. Call filesystem.stat once "
             "for every requested target that has not received a capability result. Do not call "
             "filesystem.list and do not repeat a completed target."
-        ),
-    }
-
-
-def single_call_feedback() -> dict[str, str]:
-    return {
-        "role": "system",
-        "content": (
-            "The prior structured response requested multiple capability calls. "
-            "No call was executed. Return exactly one native capability call for only the next "
-            "required item, wait for its result, and request any later item in a separate step. "
-            "Never return multiple calls together."
         ),
     }
 

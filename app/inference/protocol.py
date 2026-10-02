@@ -125,8 +125,7 @@ class ModelResponse(BaseModel):
             )
         elif self.kind == ModelResponseKind.CAPABILITY_CALLS:
             valid = (
-                self.assistant_text is None
-                and bool(self.capability_calls)
+                bool(self.capability_calls)
                 and self.protocol_failure is None
             )
         else:
@@ -172,10 +171,12 @@ class ModelResponse(BaseModel):
     def calls(
         cls,
         calls: tuple[ModelCapabilityCall, ...],
+        *, assistant_text: str | None = None,
     ) -> ModelResponse:
         return cls(
             kind=ModelResponseKind.CAPABILITY_CALLS,
             capability_calls=calls,
+            assistant_text=assistant_text,
         )
 
     @classmethod
@@ -243,7 +244,7 @@ def native_function_tools(
 
 def model_capability_calls_message(
     calls: tuple[ModelCapabilityCall, ...],
-    *, provider_message_id: str | None = None,
+    *, provider_message_id: str | None = None, assistant_text: str | None = None,
 ) -> dict[str, Any]:
     """Create one provider-neutral assistant capability-call transcript item."""
     if (
@@ -264,6 +265,8 @@ def model_capability_calls_message(
         if _PROVIDER_CALL_ID.fullmatch(provider_message_id) is None:
             raise ValueError("Provider message identities must use safe bounded syntax.")
         message["provider_message_id"] = provider_message_id
+    if assistant_text is not None:
+        message["content"] = _bounded_message_text(assistant_text)
     return message
 
 
@@ -328,8 +331,8 @@ def native_chat_messages(
             continue
 
         if role == "assistant":
-            if outstanding or set(raw_message) not in ({"role", "capability_calls"},
-                    {"role", "capability_calls", "provider_message_id"}):
+            if (outstanding or not {"role", "capability_calls"}.issubset(raw_message)
+                    or not set(raw_message).issubset({"role", "capability_calls", "provider_message_id", "content"})):
                 raise ValueError("Capability-call messages have an invalid transcript shape.")
             raw_calls = raw_message.get("capability_calls")
             if not isinstance(raw_calls, (list, tuple)) or not raw_calls:
@@ -364,7 +367,7 @@ def native_chat_messages(
             translated.append(
                 {
                     "role": "assistant",
-                    "content": None,
+                    "content": _bounded_message_text(raw_message["content"]) if "content" in raw_message else None,
                     "tool_calls": native_calls,
                 }
             )
@@ -491,10 +494,10 @@ def normalize_native_chat_message(
     if not isinstance(raw_calls, list):
         return _malformed_response()
     if content and content.strip() and raw_calls:
-        return ModelResponse.failure(
-            ModelProtocolFailureCode.MIXED_RESPONSE,
-            "The model returned assistant text and capability calls in the same response.",
-        )
+        try:
+            _bounded_message_text(content)
+        except (ValueError, TypeError, UnicodeError):
+            return _malformed_response()
     if len(raw_calls) > _MAX_CAPABILITY_CALLS:
         return ModelResponse.failure(
             ModelProtocolFailureCode.TOO_MANY_CALLS,
@@ -546,7 +549,8 @@ def normalize_native_chat_message(
         if capability is None:
             capability = repaired_names.get(provider_name.casefold())
         if capability is None:
-            if _PROVIDER_FUNCTION_NAME.fullmatch(provider_name) is None:
+            if (_PROVIDER_FUNCTION_NAME.fullmatch(provider_name) is None
+                    and _CAPABILITY_NAME.fullmatch(provider_name) is None):
                 return ModelResponse.failure(
                     ModelProtocolFailureCode.MALFORMED_CAPABILITY_NAME,
                     "The model returned a malformed capability name.",
@@ -573,7 +577,7 @@ def normalize_native_chat_message(
                 arguments=deepcopy(arguments),
             )
         )
-    return ModelResponse.calls(tuple(calls))
+    return ModelResponse.calls(tuple(calls), assistant_text=content if content and content.strip() else None)
 
 
 def _native_text(content: Any) -> tuple[bool, str | None]:

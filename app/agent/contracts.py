@@ -19,6 +19,8 @@ class AgentRunStatus(StrEnum):
     CAPABILITY_CALL_LIMIT = "capability_call_limit"
     REPEATED_CALL = "repeated_call"
     PROTOCOL_FAILURE_LIMIT = "protocol_failure_limit"
+    SEMANTIC_CORRECTION_LIMIT = "semantic_correction_limit"
+    MODEL_REQUEST_LIMIT = "model_request_limit"
     APPROVAL_REQUIRED = "approval_required"
     TRANSCRIPT_LIMIT = "transcript_limit"
     CONTEXT_LIMIT = "context_limit"
@@ -33,6 +35,7 @@ class SettledCall(BaseModel):
     provider_message_id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
     call: ModelCapabilityCall
     result: CapabilityResult
+    assistant_text: str | None = Field(default=None, min_length=1, max_length=1_000_000)
 
     @model_validator(mode="after")
     def validate_pair(self):
@@ -42,7 +45,8 @@ class SettledCall(BaseModel):
         return self
 
     def messages(self) -> list[dict]:
-        return [model_capability_calls_message((self.call,), provider_message_id=self.provider_message_id),
+        return [model_capability_calls_message((self.call,), provider_message_id=self.provider_message_id,
+                                              assistant_text=self.assistant_text),
                 model_capability_result_message(self.call, self.result.model_dump(mode="json"),
                                                 provider_message_id=self.provider_message_id)]
 
@@ -58,6 +62,9 @@ class AgentRunResult(BaseModel):
     steps: int = Field(ge=0, le=32)
     capability_calls: int = Field(ge=0, le=32)
     protocol_failures: int = Field(ge=0, le=32)
+    consecutive_format_failures: int = Field(default=0, ge=0, le=32)
+    semantic_corrections: int = Field(default=0, ge=0, le=32)
+    model_requests: int = Field(default=0, ge=0, le=32)
     completion: CompletionMetadata = Field(default_factory=CompletionMetadata)
     completion_history: tuple[CompletionMetadata, ...] = Field(default=(), max_length=64)
     partial_text: str | None = Field(default=None, min_length=1, max_length=1_000_000)

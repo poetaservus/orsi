@@ -227,6 +227,7 @@ def test_text_fallback_fails_closed_for_prose_and_unknown_tools(tmp_path: Path):
         ]
     )
     runtime, capability = _echo_runtime(tmp_path, model)
+    runtime.limits = runtime.limits.model_copy(update={"max_semantic_corrections": 1})
 
     result = runtime.run(
         [{"role": "user", "content": "Do something"}],
@@ -236,7 +237,9 @@ def test_text_fallback_fails_closed_for_prose_and_unknown_tools(tmp_path: Path):
         allowed_read_roots=(tmp_path,),
     )
 
-    assert result.status == AgentRunStatus.PROTOCOL_FAILURE_LIMIT
+    assert result.status == AgentRunStatus.SEMANTIC_CORRECTION_LIMIT
+    assert result.semantic_corrections == 1
+    assert result.consecutive_format_failures == 0
     assert capability.values == []
 
 

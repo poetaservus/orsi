@@ -35,6 +35,9 @@ class AgentRuntimeLimits(BaseModel):
     max_capability_calls: int = Field(default=32, ge=1, le=32)
     max_identical_calls: int = Field(default=2, ge=1, le=8)
     max_protocol_failures: int = Field(default=2, ge=1, le=8)
+    # Existing configuration key now limits consecutive format failures.
+    max_semantic_corrections: int = Field(default=4, ge=1, le=32)
+    max_model_requests: int = Field(default=32, ge=1, le=32)
     overall_timeout_seconds: float | None = Field(default=None, gt=0, le=3_600)
     poll_interval_seconds: float = Field(default=0.01, gt=0, le=1.0)
     max_transcript_bytes: int = Field(

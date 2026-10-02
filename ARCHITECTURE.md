@@ -84,8 +84,10 @@ and are not alternate implementations.
    system prompt.
 3. If the capability agent is unavailable, one bounded text-only model step runs. Otherwise the
    full visible catalog is supplied to `AgentRuntime`.
-4. `AgentRuntime` accepts either assistant text or one normalized native capability call. Invalid,
-   mixed, repeated, oversized, or excessive calls stop or receive bounded feedback.
+4. `AgentRuntime` accepts assistant text alongside complete normalized native capability calls.
+   Multiple calls, including different capabilities, settle sequentially with independent approvals.
+   Invalid, repeated, oversized, or excessive calls stop or receive bounded feedback. Consecutive
+   format failures, cumulative semantic corrections and total model requests have separate limits.
 5. The registry validates the capability name and Pydantic argument schema.
 6. The permission gate evaluates canonical resources. Read rules may allow directly; writes and
    application launch require a pending, exact, expiring approval record.
@@ -111,7 +113,8 @@ adapter tests, and wiring the provider into startup/hybrid selection.
 ## 5. Tool registration and execution
 
 Every tool implements `Capability` and declares a stable `namespace.name`, description, strict
-Pydantic arguments model, permission class, timeout, execution isolation, and batch limit. The
+Pydantic arguments model, permission class, timeout and execution isolation. Legacy batch metadata
+is retained for catalog compatibility; it no longer rejects normal multi-call provider responses. The
 single production catalog is `app/capabilities/catalog.py`; the immutable validator and lookup API
 are in `app/capabilities/registry.py`.
 

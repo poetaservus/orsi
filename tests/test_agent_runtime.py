@@ -592,13 +592,12 @@ def test_mixed_response_feedback_preserves_strict_sequential_continuation(
     assert result.status == AgentRunStatus.COMPLETED
     feedback = model.requests[1][-1]["content"]
     assert "No call from it was executed" in feedback
-    assert "only one native capability call" in feedback
-    assert "Never combine text and a call" in feedback
+    assert "complete calls and optional assistant text" in feedback
     assert capability.values == ["hello"]
     assert len(journal.records) == 1
 
 
-def test_multi_call_response_is_rejected_without_execution_and_can_recover(
+def test_multi_call_response_executes_sequentially_without_capability_opt_in(
     tmp_path: Path,
 ):
     multi_call = ModelResponse.calls(
@@ -623,13 +622,10 @@ def test_multi_call_response_is_rejected_without_execution_and_can_recover(
     result = run(runtime, tmp_path)
 
     assert result.status == AgentRunStatus.COMPLETED
-    assert result.protocol_failures == 1
-    assert capability.values == []
-    assert journal.records == ()
-    feedback = model.requests[1][-1]["content"]
-    assert "No call was executed" in feedback
-    assert "only the next required item" in feedback
-    assert "Never return multiple calls together" in feedback
+    assert result.protocol_failures == 0
+    assert capability.values == ["one", "two"]
+    assert len(journal.records) == 2
+    assert [item["role"] for item in model.requests[1][-3:]] == ["assistant", "capability", "capability"]
 
 
 def test_opted_in_call_batch_executes_and_journals_each_call_sequentially(

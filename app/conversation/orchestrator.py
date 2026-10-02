@@ -140,6 +140,7 @@ class ConversationService:
                     partial_text=str(value) if value.completion.incomplete else None,
                     message="The response is incomplete." if value.completion.incomplete else None,
                     steps=1, capability_calls=0, protocol_failures=0,
+                    model_requests=1,
                     completion=value.completion, completion_history=value.completion_history)
             else:
                 answer = self._run_agent_turn(text, source, activity)
@@ -161,6 +162,9 @@ class ConversationService:
                         steps=prior_outcome.steps if prior_outcome else 0,
                         capability_calls=prior_outcome.capability_calls if prior_outcome else 0,
                         protocol_failures=prior_outcome.protocol_failures if prior_outcome else 0,
+                        model_requests=prior_outcome.model_requests if prior_outcome else 0,
+                        consecutive_format_failures=prior_outcome.consecutive_format_failures if prior_outcome else 0,
+                        semantic_corrections=prior_outcome.semantic_corrections if prior_outcome else 0,
                         completion=prior_outcome.completion if prior_outcome else value.completion,
                         completion_history=prior_outcome.completion_history if prior_outcome else value.completion_history,
                         partial_text=prior_outcome.assistant_text if prior_outcome else str(value) or None,

@@ -337,13 +337,15 @@ def test_malformed_native_calls_become_bounded_protocol_failures(
     assert "not-json" not in result.model_dump_json()
 
 
-def test_mixed_text_and_calls_are_rejected_instead_of_guessing_intent():
+def test_mixed_text_and_calls_are_normalized_without_authorizing_execution():
     result = normalize_native_chat_message(
         message(content="I will do that", tool_calls=[native_call()]),
         (definition(),),
     )
 
-    assert result.protocol_failure.code == ModelProtocolFailureCode.MIXED_RESPONSE
+    assert result.kind == ModelResponseKind.CAPABILITY_CALLS
+    assert result.assistant_text == "I will do that"
+    assert len(result.capability_calls) == 1
 
 
 def test_legacy_function_call_is_rejected_without_prose_or_json_recovery():

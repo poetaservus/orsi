@@ -33,7 +33,6 @@ from app.agent.feedback import (
     protocol_feedback,
     required_calls_feedback,
     safe_identifier,
-    single_call_feedback,
 )
 from app.agent.file_resolution import filename_disambiguation_feedback
 from app.capabilities.contracts import (
@@ -84,6 +83,13 @@ from app.runtime.cancellation import (
 
 
 log = logging.getLogger(__name__)
+
+
+@dataclass(slots=True)
+class _RecoveryUsage:
+    model_requests: int = 0
+    consecutive_format_failures: int = 0
+    semantic_corrections: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -255,12 +261,12 @@ class AgentRuntime:
                 steps=0,
                 capability_calls=0,
                 protocol_failures=0,
-            )
+            ).model_copy(update={"model_requests": 1})
         if isinstance(response, str) and CompletionText(response).completion.incomplete:
             text = CompletionText(response)
             return self._stopped(AgentRunStatus.INCOMPLETE,
                 "The response is incomplete.", steps=1, capability_calls=0, protocol_failures=0,
-                completion=text.completion, partial_text=str(text) if text.strip() else None)
+                completion=text.completion, partial_text=str(text) if text.strip() else None).model_copy(update={"model_requests": 1})
         if not isinstance(response, str) or not response.strip():
             return self._stopped(
                 AgentRunStatus.INTERNAL_FAILURE,
@@ -268,7 +274,7 @@ class AgentRuntime:
                 steps=1,
                 capability_calls=0,
                 protocol_failures=0,
-            )
+            ).model_copy(update={"model_requests": 1})
         text = CompletionText(response)
         return AgentRunResult(
             status=AgentRunStatus.COMPLETED,
@@ -276,6 +282,7 @@ class AgentRuntime:
             steps=1,
             capability_calls=0,
             protocol_failures=0,
+            model_requests=1,
             completion=text.completion, completion_history=text.completion_history,
         )
 
@@ -284,9 +291,14 @@ class AgentRuntime:
     ) -> AgentRunResult:
         history = []
         settled = []
-        result = self._run(messages, _completion_history=history, _settled_calls=settled, **kwargs)
+        recovery = _RecoveryUsage()
+        result = self._run(messages, _completion_history=history, _settled_calls=settled,
+                           _recovery=recovery, **kwargs)
         return result.model_copy(update={"completion_history": tuple(history),
             "settled_calls": tuple(settled),
+            "model_requests": recovery.model_requests,
+            "consecutive_format_failures": recovery.consecutive_format_failures,
+            "semantic_corrections": recovery.semantic_corrections,
             "completion": result.completion if result.completion.incomplete or not history else history[-1]})
 
     def _run(
@@ -309,6 +321,7 @@ class AgentRuntime:
         _completion_history: list[CompletionMetadata] | None = None,
         _settled_calls: list[SettledCall] | None = None,
         settled_observer: Callable[[SettledCall], None] | None = None,
+        _recovery: _RecoveryUsage | None = None,
     ) -> AgentRunResult:
         if not safe_identifier(session_id) or not safe_identifier(turn_id):
             raise ValueError("Agent session and turn IDs must use bounded stable syntax.")
@@ -381,6 +394,7 @@ class AgentRuntime:
             deadline_cancellation,
         )
         steps = 0
+        recovery = _recovery if _recovery is not None else _RecoveryUsage()
         capability_calls = 0
         protocol_failures = 0
         repeated: dict[str, int] = {}
@@ -405,6 +419,10 @@ class AgentRuntime:
         structured_fallback = False
 
         while True:
+            if recovery.semantic_corrections >= self.limits.max_semantic_corrections:
+                return self._stopped(AgentRunStatus.SEMANTIC_CORRECTION_LIMIT,
+                    "The agent stopped after reaching its semantic-correction limit.",
+                    steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
             stop = self._stop_status(started, user_cancellation, deadline_cancellation)
             if stop is not None:
                 status, message = stop
@@ -424,6 +442,12 @@ class AgentRuntime:
                     protocol_failures=protocol_failures,
                 )
 
+            if planned_response is None and recovery.model_requests >= self.limits.max_model_requests:
+                return self._stopped(AgentRunStatus.MODEL_REQUEST_LIMIT,
+                    "The agent stopped after reaching its total model-request limit.",
+                    steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
+            if planned_response is None:
+                recovery.model_requests += 1
             if planned_response is not None:
                 response = planned_response
                 planned_response = None
@@ -455,6 +479,11 @@ class AgentRuntime:
                     structured_fallback = True
                     if _completion_history is not None:
                         _completion_history.append(response.completion)
+                    if recovery.model_requests >= self.limits.max_model_requests:
+                        return self._stopped(AgentRunStatus.MODEL_REQUEST_LIMIT,
+                            "The agent stopped before exceeding its total model-request limit.",
+                            steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
+                    recovery.model_requests += 1
                     response, model_stop = self._fallback_model_step(
                         transcript,
                         definitions,
@@ -496,6 +525,8 @@ class AgentRuntime:
                     advertised_names,
                 )
                 if filename_feedback is not None:
+                    recovery.consecutive_format_failures = 0
+                    recovery.semantic_corrections += 1
                     transcript.append(filename_feedback)
                     if not self._transcript_within_limit(transcript):
                         return self._transcript_limited(
@@ -505,6 +536,8 @@ class AgentRuntime:
                         )
                     continue
                 if required_set - completed_required:
+                    recovery.consecutive_format_failures = 0
+                    recovery.semantic_corrections += 1
                     transcript.append(required_calls_feedback())
                     if not self._transcript_within_limit(transcript):
                         return self._transcript_limited(
@@ -513,6 +546,7 @@ class AgentRuntime:
                             protocol_failures,
                         )
                     continue
+                recovery.consecutive_format_failures = 0
                 return AgentRunResult(
                     status=AgentRunStatus.COMPLETED,
                     assistant_text=response.assistant_text,
@@ -537,7 +571,13 @@ class AgentRuntime:
                         completion=response.completion.model_copy(update={"interrupted": True}),
                         partial_text=response.partial_text,
                     )
-                if protocol_failures >= self.limits.max_protocol_failures:
+                semantic_failure = response.protocol_failure.code == ModelProtocolFailureCode.UNKNOWN_CAPABILITY
+                if semantic_failure:
+                    recovery.consecutive_format_failures = 0
+                    recovery.semantic_corrections += 1
+                else:
+                    recovery.consecutive_format_failures += 1
+                if recovery.consecutive_format_failures >= self.limits.max_protocol_failures:
                     return self._stopped(
                         AgentRunStatus.PROTOCOL_FAILURE_LIMIT,
                         "The agent stopped after repeated malformed model responses.",
@@ -557,6 +597,8 @@ class AgentRuntime:
                 fingerprint not in required_set or fingerprint in completed_required
                 for fingerprint in call_fingerprints
             ):
+                recovery.consecutive_format_failures = 0
+                recovery.semantic_corrections += 1
                 transcript.append(required_calls_feedback())
                 if not self._transcript_within_limit(transcript):
                     return self._transcript_limited(
@@ -565,44 +607,6 @@ class AgentRuntime:
                         protocol_failures,
                     )
                 continue
-            batch_allowed = True
-            if len(calls) > 1:
-                batch_names = {call.capability for call in calls}
-                if len(batch_names) != 1:
-                    batch_allowed = False
-                else:
-                    try:
-                        batch_capability = self.registry.resolve(calls[0].capability)
-                    except CapabilityLookupError:
-                        batch_allowed = False
-                    except Exception:
-                        log.exception("Capability batch lookup failed unexpectedly.")
-                        return self._stopped(
-                            AgentRunStatus.INTERNAL_FAILURE,
-                            "The capability registry failed unexpectedly.",
-                            steps=steps,
-                            capability_calls=capability_calls,
-                            protocol_failures=protocol_failures,
-                        )
-                    else:
-                        batch_allowed = (
-                            len(calls) <= batch_capability.max_calls_per_batch
-                        )
-            if not batch_allowed:
-                protocol_failures += 1
-                if protocol_failures >= self.limits.max_protocol_failures:
-                    return self._stopped(
-                        AgentRunStatus.PROTOCOL_FAILURE_LIMIT,
-                        "The agent stopped after repeated unsupported call batches.",
-                        steps=steps,
-                        capability_calls=capability_calls,
-                        protocol_failures=protocol_failures,
-                    )
-                transcript.append(single_call_feedback())
-                if not self._transcript_within_limit(transcript):
-                    return self._transcript_limited(steps, capability_calls, protocol_failures)
-                continue
-
             if capability_calls + len(calls) > self.limits.max_capability_calls:
                 return self._stopped(
                     AgentRunStatus.CAPABILITY_CALL_LIMIT,
@@ -616,7 +620,8 @@ class AgentRuntime:
             if len(set(provider_call_ids)) != len(provider_call_ids):
                 capability_calls += len(calls)
                 protocol_failures += 1
-                if protocol_failures >= self.limits.max_protocol_failures:
+                recovery.consecutive_format_failures += 1
+                if recovery.consecutive_format_failures >= self.limits.max_protocol_failures:
                     return self._stopped(
                         AgentRunStatus.PROTOCOL_FAILURE_LIMIT,
                         "The agent stopped after repeated provider call IDs.",
@@ -636,6 +641,8 @@ class AgentRuntime:
                         protocol_failures,
                     )
                 continue
+
+            recovery.consecutive_format_failures = 0
 
             fingerprints = call_fingerprints
             if len(set(fingerprints)) != len(fingerprints):
@@ -700,7 +707,8 @@ class AgentRuntime:
                         stop_status=outcome.stop_status, stop_message=outcome.stop_message)
                 if outcome.result is not None:
                     settled = SettledCall(provider_message_id=provider_message_id,
-                                          call=call, result=outcome.result)
+                                          call=call, result=outcome.result,
+                                          assistant_text=response.assistant_text if not results else None)
                     if _settled_calls is not None:
                         _settled_calls.append(settled)
                     try:
@@ -730,6 +738,14 @@ class AgentRuntime:
                         protocol_failures=protocol_failures,
                     )
                 results.append(outcome.result)
+                if outcome.result.error is not None and outcome.result.error.code in {
+                    CapabilityErrorCode.INVALID_ARGUMENTS, CapabilityErrorCode.UNKNOWN_CAPABILITY,
+                }:
+                    recovery.semantic_corrections += 1
+                    if recovery.semantic_corrections >= self.limits.max_semantic_corrections:
+                        return self._stopped(AgentRunStatus.SEMANTIC_CORRECTION_LIMIT,
+                            "The agent stopped after reaching its semantic-correction limit.",
+                            steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
             completed_required.update(
                 fingerprint
                 for fingerprint in fingerprints
@@ -749,7 +765,7 @@ class AgentRuntime:
                 completed_required = set()
 
             try:
-                transcript.append(model_capability_calls_message(calls, provider_message_id=provider_message_id))
+                transcript.append(model_capability_calls_message(calls, provider_message_id=provider_message_id, assistant_text=response.assistant_text))
                 for call, result in zip(calls, results, strict=True):
                     transcript.append(
                         model_capability_result_message(

@@ -219,6 +219,8 @@ class ConversationStore:
                         if capability_names is None or settled.call.capability in capability_names:
                             history.extend(settled.messages())
                         else:
+                            if settled.assistant_text is not None:
+                                history.append({"role": "assistant", "content": settled.assistant_text})
                             result = settled.result
                             output = json.dumps(result.output, ensure_ascii=False)[:2_000]
                             history.append({"role": "assistant", "content":

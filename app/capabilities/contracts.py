@@ -117,6 +117,7 @@ class Capability(ABC, Generic[ArgumentsT]):
     permission: ClassVar[PermissionClass]
     timeout_seconds: ClassVar[float]
     execution_isolation: ClassVar[ExecutionIsolation]
+    # Legacy catalog metadata; sequential settlement no longer uses this as a response-shape gate.
     max_calls_per_batch: ClassVar[int] = 1
 
     def validate_arguments(self, raw_arguments: Any) -> ArgumentsT:
