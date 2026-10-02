@@ -58,6 +58,7 @@ from app.ui.chat import ChatView
 from app.ui.context_window import ContextWindowBar
 from app.ui.status import ConversationStatus
 from app.ui.worker import ConversationWorker, ModelSwitchWorker
+from app.ui.window_frame import CAPTION_HEIGHT, DragStrip, WindowControls, WindowsFrame
 
 
 log = logging.getLogger(__name__)
@@ -386,6 +387,9 @@ class MainWindow(QMainWindow):
 
         self.setObjectName("mainWindow")
         self.setWindowTitle("O.R.S.I")
+        self._window_frame = WindowsFrame(self)
+        self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint
+            | Qt.WindowType.WindowMinMaxButtonsHint | Qt.WindowType.WindowCloseButtonHint)
         self.resize(1280, 800)
         self.setMinimumSize(760, 600)
 
@@ -397,13 +401,16 @@ class MainWindow(QMainWindow):
         root_layout.setContentsMargins(0, 0, 0, 0)
         root_layout.setSpacing(0)
 
+        self.drag_strip = DragStrip(root)
+        self.window_controls = WindowControls(self, root)
+
         topbar = QWidget(root)
         self.topbar = topbar
         topbar.setObjectName("topBar")
         topbar.setFixedHeight(_TOP_BAR_HEIGHT)
         topbar.installEventFilter(self)
         topbar_layout = QHBoxLayout(topbar)
-        topbar_layout.setContentsMargins(21, 0, 22, 0)
+        topbar_layout.setContentsMargins(21, 0, 130, 0)
         topbar_layout.setSpacing(17)
 
         self.new_session_button = QPushButton()
@@ -626,6 +633,23 @@ class MainWindow(QMainWindow):
         super().resizeEvent(event)
         self._position_overlays()
 
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        self._window_frame.configure()
+
+    def nativeEvent(self, event_type, message):  # noqa: N802
+        frame = getattr(self, "_window_frame", None)
+        if frame is not None:
+            handled, result = frame.handle(message)
+            if handled:
+                return True, result
+        return super().nativeEvent(event_type, message)
+
+    def changeEvent(self, event) -> None:  # noqa: N802
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.WindowStateChange and hasattr(self, "window_controls"):
+            self.window_controls.refresh()
+
     def eventFilter(self, watched, event) -> bool:  # noqa: N802 - Qt API name
         if watched is getattr(self, "topbar", None):
             if event.type() == QEvent.Type.Enter:
@@ -744,7 +768,11 @@ class MainWindow(QMainWindow):
         self.bottom_glass.raise_()
         self.startup_greeting.raise_()
         self.composer.raise_()
+        self.drag_strip.setGeometry(7, 7, max(0, self._root.width() - 130), CAPTION_HEIGHT - 7)
+        self.drag_strip.raise_()
         self.topbar.raise_()
+        self.window_controls.move(self._root.width() - self.window_controls.width() - 8, 8)
+        self.window_controls.raise_()
         self.settings_panel.move(92, _TOP_BAR_HEIGHT + 12)
         if self.settings_panel.isVisible():
             self.settings_panel.raise_()

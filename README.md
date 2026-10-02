@@ -88,6 +88,9 @@ effective flags, model hash, targets, actual limits and GPU memory. See
 [baseline verification](docs/model-baseline-2026-10-01.md) and [Git workflow](docs/git-workflow.md).
 
 Replies that hit their output limit are shown as **incomplete**, with the received text retained.
+The desktop window has no separate title bar. Small controls in its top-right corner minimize,
+maximize/restore and close it; drag the empty top strip or resize from its edges. Windows keeps
+native caption/resize handling and Snap styles. Closing uses the existing model/worker cleanup.
 Assistant prose supports Markdown emphasis, lists, headings and inline code. Replies use light
 formatting where helpful and respect explicit code-only or plain-text requests. User messages stay
 literal; copying a full response retains its original Markdown and code.

@@ -48,7 +48,7 @@ def test_window_close_cancels_response_waits_for_worker_and_saves_preferences(tm
         window.greeting_input.setText("Saved during close")
         save = Mock(wraps=window._save_greeting_message)
         window._save_greeting_message = save
-        window.close()
+        window.window_controls.close_button.click()
         deadline = monotonic() + 5
         while window.thread is not None and monotonic() < deadline:
             app.processEvents()

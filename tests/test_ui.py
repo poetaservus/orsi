@@ -299,7 +299,7 @@ class UiTests(unittest.TestCase):
         self.assertEqual(middle_panel.x(), 400)
         self.assertEqual(
             window.topbar.width() - window.context_window.geometry().right() - 1,
-            22,
+            130,
         )
         self.assertIn("O.R.S.I. v0.4.0-dev // Local", window.context_window.status.text())
         self.assertTrue(window.settings_panel.isHidden())
