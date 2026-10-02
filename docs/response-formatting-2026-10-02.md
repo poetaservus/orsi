@@ -20,6 +20,15 @@ The typography full regression passed 830 tests and 5 subtests, with 54 skipped 
 Its log is `state/response-typography-regression.log`; this does not replace the earlier failed
 formatting reports or the missing full live qualification matrix.
 
+The code-panel refinement replaces the bright translucent gradient with an opaque dark slate
+surface, muted borders/header text, and neutral scrollbars/selection. Code-copy buttons have no
+focus outline and use subtle neutral hover/focus backgrounds. The shared copied checkmark is white,
+including message-copy feedback. Copy behavior, timers, code contents and syntax highlighting are
+unchanged. Existing UI/completion verification passed 64 tests and 5 subtests; the clicked and
+focused button is shown in `state/codeblock-appearance-preview.png`.
+The code-panel full regression passed 830 tests and 5 subtests, with 54 skipped live tests
+(`state/codeblock-appearance-regression.log`). The candidate remains separate from main.
+
 Verification on `codex/response-formatting`, based on main `030f83d`:
 
 - Final focused run: 75 passed, 5 subtests passed. Actual Qt selection, narrow/wide window layout,
