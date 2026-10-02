@@ -78,6 +78,15 @@ def test_approved_edit_then_model_failure_is_known_to_next_turn_without_replay(t
         if restart:
             assert resumed_approvals == []
         assert [turn.turn_id for turn in service.store.turns()] == ["turn-1", "turn-2"]
+        requests_before = len(service.inference.requests)
+        service.new_session(preserve_history=True)
+        archived_path, = (service.store.path.parent / "archives").glob("*.json")
+        archived = json.loads(archived_path.read_text(encoding="utf-8"))
+        assert archived["turns"][0]["outcome"]["status"] == "model_unavailable"
+        assert archived["turns"][0]["settled_calls"][0]["result"]["success"]
+        assert service.store.session_id != session_id and service.store.messages() == []
+        assert len(service.inference.requests) == requests_before
+        assert target.read_bytes() == b"new\r\nkeep\r\n"
     finally:
         service.shutdown()
 
@@ -237,7 +246,11 @@ def test_unknown_mutation_is_retained_and_blocks_next_turn_and_restart(tmp_path,
             service.run("Try the edit again")
         assert not service.inference.requests and resumed_approvals == []
         assert target.read_bytes() == b"new" and len(service.agent_runtime.executor.journal.records) == 1
-        service.new_session()
+        service.new_session(preserve_history=True)
+        archives = list((service.store.path.parent / "archives").glob("*.json"))
+        assert len(archives) == 1
+        archived = json.loads(archives[0].read_text(encoding="utf-8"))
+        assert archived["turns"][0]["settled_calls"][0]["result"]["error"]["code"] == "outcome_unknown"
         with pytest.raises(RuntimeError, match="review"):
             service.run("Try the edit after resetting the conversation")
         assert not service.inference.requests and resumed_approvals == []

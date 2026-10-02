@@ -283,9 +283,19 @@ class ConversationStore:
                 for message in self._conversation.messages
             ]
 
-    def new_session(self) -> None:
-        """Replace the only stored conversation; no session archive is retained."""
+    def new_session(self, *, preserve_history: bool = False) -> None:
+        """Start empty; startup archives the prior session before replacing it."""
         with self._lock:
+            if preserve_history and (self._conversation.messages or self._conversation.turns):
+                archived = self._conversation.model_copy(deep=True)
+                archived.session_status = "closed"
+                archive_path = self.path.parent / "archives" / f"{uuid.uuid4().hex}.json"
+                try:
+                    JsonStore(archive_path).save(archived.model_dump(mode="json", exclude_none=True))
+                except OSError as exc:
+                    raise TurnHistoryError(
+                        "The previous conversation could not be archived safely. History was preserved."
+                    ) from exc
             self._commit(Conversation())
 
     def _save(self) -> None:

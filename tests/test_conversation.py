@@ -8,6 +8,8 @@ import pytest
 from app.conversation.prompt import SYSTEM_PROMPT
 from app.conversation.orchestrator import ConversationService
 from app.conversation.store import ConversationStore
+from app.conversation.store import TurnHistoryError
+from app.state.storage import JsonStore
 
 
 class RecordingInference:
@@ -54,6 +56,43 @@ def test_new_session_erases_previous_conversation_without_an_archive(tmp_path: P
     assert service.estimated_context_tokens() == 0
 
 
+@pytest.mark.parametrize("failure_stage", ["archive", "active"])
+def test_preserved_session_rotation_failure_retains_active_history(tmp_path, monkeypatch, failure_stage):
+    path = tmp_path / "conversation.json"
+    service = ConversationService(RecordingInference(), ConversationStore(path))
+    service.run("Keep the previous task")
+    before = path.read_bytes()
+    previous_id = service.store.session_id
+    native_save = JsonStore.save
+
+    def failing_save(store, value):
+        is_archive = store.path.parent.name == "archives"
+        if is_archive == (failure_stage == "archive"):
+            raise PermissionError("replacement denied")
+        return native_save(store, value)
+
+    monkeypatch.setattr(JsonStore, "save", failing_save)
+    with pytest.raises(TurnHistoryError, match="preserved|persisted safely"):
+        service.new_session(preserve_history=True)
+    assert path.read_bytes() == before
+    assert service.store.session_id == previous_id
+    assert service.store.messages()[0]["content"] == "Keep the previous task"
+    assert service._agent_history[0]["content"] == "Keep the previous task"
+    archives = list((tmp_path / "archives").glob("*.json"))
+    assert len(archives) == int(failure_stage == "active")
+    if archives:
+        assert json.loads(archives[0].read_text())["conversation_id"] == previous_id
+
+
+def test_empty_startup_sessions_do_not_accumulate_archives(tmp_path):
+    path = tmp_path / "conversation.json"
+    for _ in range(3):
+        service = ConversationService(RecordingInference(), ConversationStore(path))
+        service.new_session(preserve_history=True)
+        service.shutdown()
+    assert not (tmp_path / "archives").exists()
+
+
 def test_history_uses_token_budget_and_saturates_context_meter(tmp_path: Path):
     class ExactCharacterTokenizer(RecordingInference):
         context_length = 2000
@@ -85,7 +124,7 @@ def test_system_prompt_explicitly_denies_computer_access():
 
 
 @pytest.mark.parametrize("corrupted", [False, True])
-def test_bootstrap_restores_durable_conversation_state(monkeypatch, tmp_path: Path, corrupted):
+def test_bootstrap_archives_previous_conversation_and_starts_empty(monkeypatch, tmp_path: Path, corrupted):
     import app.startup as main
     from app.inference.engine import InferenceUnavailable
 
@@ -127,10 +166,18 @@ def test_bootstrap_restores_durable_conversation_state(monkeypatch, tmp_path: Pa
     assert host["hostname"] and error is None and isinstance(inference, FakeHybrid)
     assert state_path.is_file()
     payload = json.loads(state_path.read_text(encoding="utf-8"))
-    assert payload["conversation_id"] == previous_id
-    assert payload["messages"][0]["content"] == "This previous-window context remains known"
-    assert service.store.messages() == previous.messages()
-    assert service.estimated_context_tokens() > 0
+    assert payload["conversation_id"] != previous_id
+    assert payload["messages"] == service.store.messages() == []
+    assert service.estimated_context_tokens() == 0
+    archives = list((state_path.parent / "archives").glob("*.json"))
+    assert len(archives) == 1
+    archived = json.loads(archives[0].read_text(encoding="utf-8"))
+    assert archived["conversation_id"] == previous_id
+    assert archived["session_status"] == "closed"
+    assert archived["messages"][0]["content"] == "This previous-window context remains known"
+    service.run("A new task")
+    assert service._agent_history[0] == {"role": "user", "content": "A new task"}
+    assert all("previous-window" not in message["content"] for message in service._agent_history)
     assert not (tmp_path / "runtime_v4").exists()
 
 

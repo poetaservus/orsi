@@ -295,11 +295,11 @@ class ConversationService:
         source.cancel("The response was stopped.")
         return True
 
-    def new_session(self) -> None:
+    def new_session(self, *, preserve_history: bool = False) -> None:
         if not self._run_lock.acquire(blocking=False):
             raise RuntimeError("Stop the current response before starting a new session.")
         try:
-            self.store.new_session()
+            self.store.new_session(preserve_history=preserve_history)
             self._session_id = self.store.session_id
             self._history_persistence_failed = False
             self._agent_history = []

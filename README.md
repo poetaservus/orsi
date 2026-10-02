@@ -92,10 +92,12 @@ Unfinished code fences still appear in code boxes. Incomplete tool generation is
 argument repair or execution. The UI releases its controls even when the context meter cannot
 refresh. See [completion-state verification](docs/completion-state-2026-10-02.md).
 
-The active session now survives restart, including settled tool results and stopped turn outcomes.
-A successful edit stays known when a later model step fails. Unknown mutations require review and
-are never resumed or replayed automatically. Conversation history retains tool arguments/results,
-which can include file contents; **New session** clears that history. The execution journal and
+Each launch opens an empty conversation. The previous session, including settled tool results and
+stopped turn outcomes, is preserved under `state/conversation_v1/archives/`; archives are local files
+and are not loaded into the new chat. Within a session, a successful edit stays known when a later
+model step fails. Unknown mutations still require review across launches and are never replayed
+automatically. Conversation history and archives retain tool arguments/results, which can include
+file contents; **New session** clears only the active conversation. The execution journal and
 diagnostic snapshots remain content-free. See [durable turn verification](docs/turn-outcomes-2026-10-02.md).
 
 Normal provider responses may contain text alongside multiple calls. Calls settle sequentially

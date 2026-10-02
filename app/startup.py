@@ -195,6 +195,8 @@ def build_application(
                 host_access_policy=host_access_policy,
                 agent_error=agent_error,
             )
+            # Reconcile old outcomes first, then preserve them outside the new chat.
+            service.new_session(preserve_history=True)
         except (TurnHistoryError, OSError):
             log.exception("Durable conversation outcomes could not be reconciled safely.")
             if agent_runtime is not None:

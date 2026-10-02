@@ -157,6 +157,38 @@ class UiTests(unittest.TestCase):
         self.assertIn("Remaining: 6,424", tooltip)
         window.close()
 
+    def test_archived_startup_session_shows_empty_chat_and_intro(self):
+        from app.conversation.orchestrator import ConversationService
+        from app.conversation.store import ConversationStore
+        from tests.test_conversation import RecordingInference
+
+        class UiInference(RecordingInference):
+            available_modes = ("local",)
+            mode = "local"
+            context_length = 8192
+
+            @staticmethod
+            def consume_notice():
+                return None
+
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "conversation.json"
+            previous = ConversationStore(path)
+            previous.append("user", "Old chat")
+            service = ConversationService(UiInference(), ConversationStore(path))
+            service.new_session(preserve_history=True)
+            window = MainWindow(service, "TEST-HOST", inference=service.inference)
+            try:
+                window.show()
+                QApplication.processEvents()
+                self.assertEqual(window.chat._messages, [])
+                self.assertEqual(window.context_window.bar.value(), 0)
+                self.assertTrue(window._intro_active)
+                self.assertFalse(window.startup_greeting.isHidden())
+                self.assertEqual(len(list((path.parent / "archives").glob("*.json"))), 1)
+            finally:
+                window.close()
+
     def test_new_session_button_clears_chat_context_and_persisted_session(self):
         class FakeService:
             used = 1200
