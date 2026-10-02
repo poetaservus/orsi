@@ -3,6 +3,13 @@ from __future__ import annotations
 from app.security.host_access import HostReadScope
 
 
+_RESPONSE_STYLE_GUIDANCE = """
+
+Use light Markdown in prose: short paragraphs, sparse **bold**, lists for items or steps, and ###
+headings only for long answers. Keep brief replies simple. Obey requested formats, including
+code-only and plain text. Never format tool arguments."""
+
+
 SYSTEM_PROMPT = """You are O.R.S.I, a friendly conversational assistant.
 
 This version of O.R.S.I is chat-only. You have no tools and no access to the computer, files,
@@ -18,7 +25,7 @@ conversation, answer naturally and concisely.
 Whenever an answer contains source code, a command, JSON, configuration, markup, or any other
 machine-readable snippet, put each snippet in a triple-backtick fenced code block. Add an accurate
 language identifier after the opening backticks when one is known. Do not place ordinary prose
-inside a code block."""
+inside a code block.""" + _RESPONSE_STYLE_GUIDANCE
 
 
 _AGENT_SYSTEM_PROMPT_TEMPLATE = """You are O.R.S.I, a friendly conversational assistant.
@@ -61,7 +68,7 @@ Never infer an action from prose or imply access beyond the advertised capabilit
 Whenever an answer contains source code, a command, JSON, configuration, markup, or any other
 machine-readable snippet, put each snippet in a triple-backtick fenced code block. Add an accurate
 language identifier after the opening backticks when one is known. Do not place ordinary prose
-inside a code block."""
+inside a code block.""" + _RESPONSE_STYLE_GUIDANCE
 
 
 AGENT_CONVERSATION_SYSTEM_PROMPT = """You are O.R.S.I, a friendly conversational assistant.
@@ -81,7 +88,7 @@ AI, that you have no feelings, or any similar disclaimer.
 Whenever an answer contains source code, a command, JSON, configuration, markup, or any other
 machine-readable snippet, put each snippet in a triple-backtick fenced code block. Add an accurate
 language identifier after the opening backticks when one is known. Do not place ordinary prose
-inside a code block."""
+inside a code block.""" + _RESPONSE_STYLE_GUIDANCE
 
 
 _READ_CAPABILITIES = frozenset(

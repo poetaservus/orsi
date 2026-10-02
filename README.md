@@ -88,6 +88,9 @@ effective flags, model hash, targets, actual limits and GPU memory. See
 [baseline verification](docs/model-baseline-2026-10-01.md) and [Git workflow](docs/git-workflow.md).
 
 Replies that hit their output limit are shown as **incomplete**, with the received text retained.
+Assistant prose supports Markdown emphasis, lists, headings and inline code. Replies use light
+formatting where helpful and respect explicit code-only or plain-text requests. User messages stay
+literal; copying a full response retains its original Markdown and code.
 Unfinished code fences still appear in code boxes. Incomplete tool generation is rejected before
 argument repair or execution. The UI releases its controls even when the context meter cannot
 refresh. See [completion-state verification](docs/completion-state-2026-10-02.md).

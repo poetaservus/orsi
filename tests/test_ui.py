@@ -898,6 +898,45 @@ class UiTests(unittest.TestCase):
         )
         chat.close()
 
+    def test_formatted_reply_renders_prose_and_copies_original_code_and_markdown(self):
+        content = (
+            "### Controls\n\nUse **arrow keys** to move and `Space` to restart.\n\n"
+            "- Stay inside the window.\n- Keep the ball above the paddle.\n\n"
+            "```python\nprint('**literal code**')\n```"
+        )
+        window = MainWindow(None, "TEST-HOST")
+        window.resize(760, 600)
+        window.show()
+        window.chat.add_message("Agent", content)
+        QApplication.processEvents()
+        message = window.chat._messages[-1]
+        label = message.label
+        label.setSelection(0, len(label.plain_text()))
+        selected = label.selectedText()
+        self.assertIn("Controls", selected)
+        self.assertIn("arrow keys", selected)
+        self.assertNotIn("###", selected)
+        self.assertNotIn("**", selected)
+        self.assertNotIn("`Space`", selected)
+        self.assertEqual(message._code_blocks[0].editor.toPlainText(), "print('**literal code**')")
+        for width in (760, 1280):
+            window.resize(width, 700)
+            QApplication.processEvents()
+            self.assertGreaterEqual(label.height(), label.heightForWidth(label.width()))
+        window.chat._message_bands[-1].copy_button.click()
+        self.assertEqual(QApplication.clipboard().text(), content)
+        window.close()
+
+    def test_markdown_response_does_not_embed_images_or_raw_html(self):
+        from app.ui.markdown import MarkdownLabel
+        content = "**Answer**\n\n![image](file:///private.png)\n\n<img src='file:///private.png'>"
+        label = MarkdownLabel(content)
+        self.assertIn("Answer", label.plain_text())
+        self.assertIn("[Image]", label.plain_text())
+        self.assertNotIn("<img", QLabel.text(label))
+        self.assertEqual(label.text(), content)
+        label.close()
+
     def test_user_fenced_text_remains_a_plain_message(self):
         chat = ChatView()
         content = "```python\nprint('not generated')\n```"

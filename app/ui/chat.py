@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 from app.ui.status import ThinkingDots
 from app.ui.code_highlighting import CodeHighlighter
 from app.ui.copy_button import CopyButton
+from app.ui.markdown import MarkdownLabel
 from app.inference.completion import CompletionMetadata
 
 
@@ -164,9 +165,11 @@ class _Message(QFrame):
                 self._code_blocks.append(block)
                 layout.addWidget(block)
             else:
-                label = QLabel(value)
+                formatted = not from_user and (not error or self.completion.incomplete)
+                label = MarkdownLabel(value) if formatted else QLabel(value)
                 label.setObjectName("messageText")
-                label.setTextFormat(Qt.TextFormat.PlainText)
+                if not formatted:
+                    label.setTextFormat(Qt.TextFormat.PlainText)
                 label.setWordWrap(True)
                 label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
                 label.setAlignment(
@@ -205,6 +208,9 @@ class _Message(QFrame):
         labels = self._text_labels + (
             [self.completion_label] if self.completion_label is not None else []
         )
+        for label in labels:
+            if isinstance(label, MarkdownLabel):
+                label.refresh_formatting()
 
         # QLabel's word-wrapped size hint often prefers a nearly square, very
         # narrow column. Size from the longest logical line instead, then wrap
@@ -213,7 +219,8 @@ class _Message(QFrame):
             (
                 label.fontMetrics().horizontalAdvance(line.expandtabs(4))
                 for label in labels
-                for line in (label.text().splitlines() or [label.text()])
+                for line in ((label.plain_text() if isinstance(label, MarkdownLabel) else label.text()).splitlines()
+                             or [""])
             ),
             default=0,
         )
@@ -246,6 +253,12 @@ class _Message(QFrame):
         self.setFixedWidth(target)
         for label in labels:
             label.setFixedWidth(content_width)
+            if isinstance(label, MarkdownLabel):
+                # Rich text includes paragraph margins, list indents and heading sizes.
+                label.setFixedHeight(max(label.fontMetrics().lineSpacing(),
+                                         label.heightForWidth(content_width))
+                                     + max(2, label.fontMetrics().descent()))
+                continue
             bounds = label.fontMetrics().boundingRect(
                 QRect(0, 0, content_width, 100_000),
                 int(Qt.TextFlag.TextWordWrap | Qt.TextFlag.TextExpandTabs),
