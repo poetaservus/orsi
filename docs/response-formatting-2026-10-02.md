@@ -12,6 +12,14 @@ the code bytes. User messages and ordinary error messages remain literal. The te
 embedded HTML and resource loading, replacing Markdown image objects with a text placeholder.
 Rendered paragraph/list/heading height is measured at the actual available width.
 
+The user's typography refinement lowers strong emphasis and heading weight from bold (700) to
+medium (500). Prose line height is 128%, with extra paragraph/heading margins and light spacing
+between list items. This is a presentation change; response text, prompts, code boxes and inference
+are unchanged. The existing UI/completion checks passed: 64 tests and 5 subtests.
+The typography full regression passed 830 tests and 5 subtests, with 54 skipped live tests.
+Its log is `state/response-typography-regression.log`; this does not replace the earlier failed
+formatting reports or the missing full live qualification matrix.
+
 Verification on `codex/response-formatting`, based on main `030f83d`:
 
 - Final focused run: 75 passed, 5 subtests passed. Actual Qt selection, narrow/wide window layout,
