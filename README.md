@@ -103,6 +103,11 @@ with independent validation and approval; separate limits bound consecutive form
 semantic corrections and total model requests. See
 [provider response verification](docs/provider-response-recovery-2026-10-02.md).
 
+An opt-in context recovery candidate preserves requirements and tool pairings while projecting
+large results. It remains **disabled**: deterministic sessions improved, but routine estimated
+input cost increased 4.74 times and live GPU acceptance is incomplete. See
+[context recovery measurements](docs/context-recovery-2026-10-02.md).
+
 Cloud credentials are accepted only from the configured environment variable or the in-memory GUI
 prompt. Do not place API keys in JSON or headers. Cloud mode may send conversation text and requested
 tool results—including file names or file content—to the configured provider after the GUI

@@ -165,6 +165,10 @@ class ConversationService:
                         model_requests=prior_outcome.model_requests if prior_outcome else 0,
                         consecutive_format_failures=prior_outcome.consecutive_format_failures if prior_outcome else 0,
                         semantic_corrections=prior_outcome.semantic_corrections if prior_outcome else 0,
+                        inference_requests=prior_outcome.inference_requests if prior_outcome else 0,
+                        estimated_input_tokens=prior_outcome.estimated_input_tokens if prior_outcome else 0,
+                        context_projections=prior_outcome.context_projections if prior_outcome else 0,
+                        context_compactions=prior_outcome.context_compactions if prior_outcome else 0,
                         completion=prior_outcome.completion if prior_outcome else value.completion,
                         completion_history=prior_outcome.completion_history if prior_outcome else value.completion_history,
                         partial_text=prior_outcome.assistant_text if prior_outcome else str(value) or None,
@@ -237,6 +241,9 @@ class ConversationService:
             capability_names=capabilities,
         )
         if not request.budget.fits:
+            self._turn_result = AgentRunResult(status=AgentRunStatus.CONTEXT_LIMIT,
+                message="The current requirements and capability catalog cannot fit the active model context window.",
+                steps=0, capability_calls=0, protocol_failures=0)
             raise RuntimeError("The agent request cannot fit the active model context window.")
         result = self.agent_runtime.run(
             request.messages,
@@ -417,6 +424,7 @@ class ConversationService:
             system_prompt=prompt,
             history=history,
             reserved_tokens=schema_reserve,
+            recovery_enabled=bool(self.agent_runtime and self.agent_runtime.context_recovery_enabled),
         )
 
     def _planner_capabilities(self) -> tuple[str, ...]:
@@ -427,6 +435,9 @@ class ConversationService:
         if self.agent_runtime is None:
             return ()
         available = self.agent_capabilities
+        if self.agent_runtime.context_recovery_enabled:
+            # Registry visibility and policy define reachability; phrases are only legacy hints.
+            return available
         selected = set(select_turn_capabilities(latest_user_text, available))
         history_names = self._history_capability_names()
         selected.update(history_names)

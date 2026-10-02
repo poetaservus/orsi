@@ -90,6 +90,10 @@ class _RecoveryUsage:
     model_requests: int = 0
     consecutive_format_failures: int = 0
     semantic_corrections: int = 0
+    context_projections: int = 0
+    context_compactions: int = 0
+    inference_requests: int = 0
+    estimated_input_tokens: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -150,6 +154,7 @@ class AgentRuntime:
         call_id_factory: Callable[[], str] = lambda: uuid4().hex,
         fallback_call_id_factory: Callable[[], str] = lambda: f"fallback-{uuid4().hex}",
         approval_requester: Callable[[ApprovalRecord], None] | None = None,
+        context_recovery_enabled: bool = False,
     ):
         if not isinstance(model, InferenceEngine):
             raise TypeError("AgentRuntime requires an InferenceEngine.")
@@ -179,6 +184,9 @@ class AgentRuntime:
         self._call_id_factory = call_id_factory
         self._fallback_call_id_factory = fallback_call_id_factory
         self._approval_requester = approval_requester
+        if type(context_recovery_enabled) is not bool:
+            raise TypeError("Context recovery requires an explicit boolean.")
+        self.context_recovery_enabled = context_recovery_enabled
 
     def purge_terminal_records(self) -> tuple[str, ...]:
         """Apply the journal's explicit privacy retention policy."""
@@ -299,6 +307,10 @@ class AgentRuntime:
             "model_requests": recovery.model_requests,
             "consecutive_format_failures": recovery.consecutive_format_failures,
             "semantic_corrections": recovery.semantic_corrections,
+            "context_projections": recovery.context_projections,
+            "context_compactions": recovery.context_compactions,
+            "inference_requests": recovery.inference_requests,
+            "estimated_input_tokens": recovery.estimated_input_tokens,
             "completion": result.completion if result.completion.incomplete or not history else history[-1]})
 
     def _run(
@@ -448,6 +460,10 @@ class AgentRuntime:
                     steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
             if planned_response is None:
                 recovery.model_requests += 1
+                if not self._recover_transcript(transcript, definitions, recovery):
+                    return self._stopped(AgentRunStatus.INTERNAL_FAILURE,
+                        "Context recovery failed safely; settled operations were retained.",
+                        steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
             if planned_response is not None:
                 response = planned_response
                 planned_response = None
@@ -459,6 +475,7 @@ class AgentRuntime:
                     started,
                     user_cancellation,
                     deadline_cancellation,
+                    _request_usage=recovery,
                 )
             else:
                 response, model_stop = self._model_step(
@@ -467,6 +484,7 @@ class AgentRuntime:
                     started,
                     user_cancellation,
                     deadline_cancellation,
+                    _request_usage=recovery,
                 )
                 if (
                     model_stop is None
@@ -490,6 +508,7 @@ class AgentRuntime:
                         started,
                         user_cancellation,
                         deadline_cancellation,
+                        _request_usage=recovery,
                     )
             if model_stop is not None:
                 status, message = model_stop
@@ -780,8 +799,35 @@ class AgentRuntime:
                     capability_calls,
                     protocol_failures,
                 )
+            if not self._recover_transcript(transcript, definitions, recovery):
+                return self._stopped(AgentRunStatus.INTERNAL_FAILURE,
+                    "Context recovery failed safely; settled operations were retained.",
+                    steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
             if not self._transcript_within_limit(transcript):
                 return self._transcript_limited(steps, capability_calls, protocol_failures)
+
+    def _recover_transcript(self, transcript, definitions, usage):
+        if not self.context_recovery_enabled:
+            return True
+        from app.conversation.context import capability_schema_reserve
+        from app.conversation.recovery import recover_context_request
+        try:
+            recovered = recover_context_request(self.model, transcript,
+                reserved_tokens=capability_schema_reserve(definitions))
+        except Exception:
+            log.exception("Context request projection failed safely.")
+            return False
+        transcript[:] = recovered.messages
+        usage.context_projections += recovered.projected_results
+        usage.context_compactions += int(recovered.compacted)
+        return True
+
+    @staticmethod
+    def _record_request_usage(usage, budget):
+        if usage is not None:
+            usage.inference_requests += 1
+            usage.estimated_input_tokens += (budget.system_message_tokens + budget.conversation_tokens
+                + budget.structured_tool_history_tokens + budget.capability_schema_reserve)
 
     def _process_call(
         self,
@@ -1032,6 +1078,7 @@ class AgentRuntime:
         started: float,
         user_cancellation: CancellationToken,
         deadline_cancellation: _DeadlineCancellationToken,
+        *, _request_usage: _RecoveryUsage | None = None,
     ) -> tuple[
         ModelResponse | None,
         tuple[AgentRunStatus, str] | None,
@@ -1053,6 +1100,7 @@ class AgentRuntime:
                 "The agent stopped before sending a request that exceeded the active model "
                 "context window.",
             )
+        self._record_request_usage(_request_usage, budget)
         future: Future[ModelResponse] = Future()
 
         def invoke() -> None:
@@ -1113,6 +1161,7 @@ class AgentRuntime:
         started: float,
         user_cancellation: CancellationToken,
         deadline_cancellation: _DeadlineCancellationToken,
+        *, _request_usage: _RecoveryUsage | None = None,
     ) -> tuple[str | None, tuple[AgentRunStatus, str] | None]:
         from app.conversation.context import calculate_context_budget
 
@@ -1124,6 +1173,7 @@ class AgentRuntime:
                 "The agent stopped before sending a request that exceeded the active model "
                 "context window.",
             )
+        self._record_request_usage(_request_usage, budget)
         future: Future[str] = Future()
 
         def invoke() -> None:
@@ -1173,6 +1223,7 @@ class AgentRuntime:
         started: float,
         user_cancellation: CancellationToken,
         deadline_cancellation: _DeadlineCancellationToken,
+        *, _request_usage: _RecoveryUsage | None = None,
     ) -> tuple[ModelResponse | None, tuple[AgentRunStatus, str] | None]:
         fallback_messages = constrained_fallback_messages(transcript, definitions)
         raw, stop = self._text_model_step(
@@ -1180,6 +1231,7 @@ class AgentRuntime:
             started,
             user_cancellation,
             deadline_cancellation,
+            _request_usage=_request_usage,
         )
         if stop is not None:
             return None, stop

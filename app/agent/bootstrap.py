@@ -85,4 +85,5 @@ def build_agent_runtime(
         approval_manager=ApprovalManager(),
         executor=executor,
         limits=config.runtime_limits,
+        context_recovery_enabled=config.context_recovery_enabled,
     )

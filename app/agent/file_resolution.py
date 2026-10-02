@@ -70,6 +70,10 @@ def filename_disambiguation_feedback(
         "filesystem.list",
         directory,
     ):
+        projection = last_result.get("result", {}).get("metadata", {}).get("context_projection")
+        if isinstance(projection, dict) and projection.get("complete") is False:
+            # A projected list cannot establish that a matching name is unique.
+            return None
         if _has_following_result(transcript, "filesystem.read_text", directory):
             return None
         candidates = _matching_files(requested_name, list(output.get("entries") or []))
@@ -122,6 +126,8 @@ def _pending_disambiguation(
     transcript: list[dict[str, Any]],
 ) -> _PendingFilenameDisambiguation | None:
     for message in reversed(transcript):
+        if message.get("role") == "user":
+            break
         pending = _pending_from_result(transcript, message)
         if pending is not None:
             return pending
@@ -183,10 +189,13 @@ def _result_call_arguments(
     result_message: dict[str, Any],
 ) -> dict[str, Any] | None:
     provider_call_id = result_message.get("provider_call_id")
+    provider_message_id = result_message.get("provider_message_id")
     capability = result_message.get("capability")
     if not isinstance(provider_call_id, str) or not isinstance(capability, str):
         return None
     for message in reversed(transcript):
+        if message.get("provider_message_id") != provider_message_id:
+            continue
         calls = message.get("capability_calls") if message.get("role") == "assistant" else None
         if not isinstance(calls, list):
             continue

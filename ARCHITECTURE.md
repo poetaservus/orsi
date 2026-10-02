@@ -253,3 +253,12 @@ tool call remain model decisions against those exported schemas, normalized in
 `agent/file_resolution.py` may list the same directory after an extensionless read/find miss and
 accept one obvious exact name/stem/extension match. Test-only command parsers live under
 `tests/support/` and cannot enter production startup.
+
+The optional `context_recovery_enabled` policy defaults to false. When enabled, registry visibility
+replaces phrase routing, and `conversation/recovery.py` projects large result payloads before
+shortening old assistant material under context pressure. System/user requirements, call arguments
+and scoped call/result pairs are protected; durable evidence stays unchanged. Unfit protected
+content stops admission. No summarizing model or automatic mutation replay is used. Turn outcomes
+retain admitted inference counts and estimated input costs. The candidate failed its measured
+routine cost gate and has not passed live GPU acceptance; see
+[context recovery verification](docs/context-recovery-2026-10-02.md).

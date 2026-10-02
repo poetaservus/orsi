@@ -79,11 +79,19 @@ def select_context_request(
     history: list[dict[str, Any]],
     reserved_tokens: int = 0,
     safety_buffer: int = DEFAULT_SAFETY_BUFFER_TOKENS,
+    recovery_enabled: bool = False,
 ) -> ContextSelection:
     """Select complete turns and return the exact budget used for admission."""
     reserved_tokens = _validated_reserved_tokens(reserved_tokens)
     safety_buffer = _validated_safety_buffer(safety_buffer)
     system = {"role": "system", "content": system_prompt}
+    if type(recovery_enabled) is not bool:
+        raise TypeError("Context recovery selection requires an explicit boolean.")
+    if recovery_enabled:
+        from app.conversation.recovery import recover_context_request
+        recovered = recover_context_request(inference, [system, *history], reserved_tokens=reserved_tokens,
+                                            safety_buffer=safety_buffer)
+        return ContextSelection(messages=recovered.messages, budget=recovered.budget)
     count_message_tokens(inference, [system])
     budget = max(
         1,

@@ -76,6 +76,7 @@ class AgentFeatureConfig(BaseModel):
     filesystem_trash_enabled: bool = False
     application_launch_enabled: bool = False
     full_local_read_enabled: bool = False
+    context_recovery_enabled: bool = False
     runtime_limits: AgentRuntimeLimits = Field(default_factory=AgentRuntimeLimits)
 
     @model_validator(mode="after")
