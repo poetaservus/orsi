@@ -132,7 +132,7 @@ class _Message(QFrame):
             vertical_margin,
         )
         layout.setSpacing(8)
-        self._text_labels: list[QLabel] = []
+        self._text_labels: list[QLabel | MarkdownLabel] = []
         self._code_blocks: list[_CodeBlock] = []
         self.label = None
 

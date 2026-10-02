@@ -1,7 +1,12 @@
-"""Text-only Markdown presentation; original response text remains copyable."""
-from PySide6.QtGui import QColor, QFont, QImage, QTextBlockFormat, QTextCharFormat, QTextCursor, QTextDocument
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QLabel
+"""Selectable Markdown text with rounded backgrounds for inline references."""
+from math import ceil
+
+from PySide6.QtGui import QColor, QFont, QFontMetricsF, QImage, QPainter, QTextBlockFormat, QTextCharFormat, QTextCursor, QTextDocument, QTextFormat
+from PySide6.QtCore import QRectF, Qt
+from PySide6.QtWidgets import QFrame, QTextEdit
+
+
+_INLINE_REFERENCE = QTextFormat.Property.UserProperty.value + 1
 
 
 class _TextDocument(QTextDocument):
@@ -10,17 +15,49 @@ class _TextDocument(QTextDocument):
         return QImage()
 
 
-class MarkdownLabel(QLabel):
+class MarkdownLabel(QTextEdit):
     def __init__(self, source: str):
         super().__init__()
         self._source = str(source)
         self._rendered_font = None
+        self._inline_spans = []
         self.document = _TextDocument(self)
-        self.setTextFormat(Qt.TextFormat.RichText)
+        self.document.setDocumentMargin(3)
+        self.setDocument(self.document)
+        self.setReadOnly(True)
+        self.setUndoRedoEnabled(False)
+        self.setAcceptRichText(False)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setCursorWidth(0)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.viewport().setAutoFillBackground(False)
+        self.setStyleSheet("background: transparent; border: none; padding: 0;")
         self.refresh_formatting()
 
     def text(self) -> str:
         return self._source
+
+    def setWordWrap(self, enabled: bool) -> None:  # noqa: N802
+        self.setLineWrapMode(QTextEdit.LineWrapMode.WidgetWidth if enabled else QTextEdit.LineWrapMode.NoWrap)
+
+    def setSelection(self, start: int, length: int) -> None:  # noqa: N802
+        cursor = QTextCursor(self.document)
+        limit = self.document.characterCount() - 1
+        cursor.setPosition(min(max(0, start), limit))
+        cursor.setPosition(min(max(0, start + length), limit), QTextCursor.MoveMode.KeepAnchor)
+        self.setTextCursor(cursor)
+
+    def selectedText(self) -> str:  # noqa: N802
+        return self.textCursor().selectedText().replace("\u2029", "\n")
+
+    def heightForWidth(self, width: int) -> int:  # noqa: N802
+        self.document.setTextWidth(max(1, width))
+        return ceil(self.document.size().height())
+
+    def wheelEvent(self, event) -> None:  # noqa: N802
+        # Only the outer conversation scrolls; inline text has no nested scroll area.
+        event.ignore()
 
     def refresh_formatting(self) -> None:
         font = self.font()
@@ -30,7 +67,7 @@ class MarkdownLabel(QLabel):
         self.document.setMarkdown(self._source,
             QTextDocument.MarkdownFeature.MarkdownDialectGitHub
             | QTextDocument.MarkdownFeature.MarkdownNoHTML)
-        # Remove image objects before passing the document to QLabel's renderer.
+        # Image and HTML responses cannot load local or remote resources.
         images = []
         inline_code = []
         emphasis = []
@@ -55,7 +92,7 @@ class MarkdownLabel(QLabel):
                     emphasis.append((fragment.position(), fragment.length()))
                 if fragment.isValid() and fragment.charFormat().isImageFormat():
                     images.append((fragment.position(), fragment.length()))
-                elif fragment.isValid() and fragment.charFormat().fontFamilies() == ["monospace"]:
+                elif fragment.isValid() and fragment.charFormat().fontFixedPitch():
                     inline_code.append((fragment.position(), fragment.length()))
                 iterator += 1
             block = block.next()
@@ -69,7 +106,7 @@ class MarkdownLabel(QLabel):
         code_format = QTextCharFormat()
         code_format.setFontFamilies(font.families())
         code_format.setFontFixedPitch(font.fixedPitch())
-        code_format.setBackground(QColor("#343434"))
+        code_format.setProperty(_INLINE_REFERENCE, True)
         for position, length in inline_code:
             cursor = QTextCursor(self.document)
             cursor.setPosition(position)
@@ -80,8 +117,56 @@ class MarkdownLabel(QLabel):
             cursor.setPosition(position)
             cursor.setPosition(position + length, QTextCursor.MoveMode.KeepAnchor)
             cursor.insertText("[Image]", QTextCharFormat())
-        super().setText(self.document.toHtml())
+        # Replacing image objects changes positions; read the surviving text formats.
+        self._inline_spans = []
+        block = self.document.begin()
+        while block.isValid():
+            iterator = block.begin()
+            while not iterator.atEnd():
+                fragment = iterator.fragment()
+                if fragment.isValid() and fragment.charFormat().boolProperty(_INLINE_REFERENCE):
+                    self._inline_spans.append((fragment.position(), fragment.length()))
+                iterator += 1
+            block = block.next()
         self._rendered_font = font
+        self.viewport().update()
 
     def plain_text(self) -> str:
         return self.document.toPlainText()
+
+    def _inline_backgrounds(self) -> list[QRectF]:
+        """Follow the actual laid-out text across lines, including UTF-16 positions."""
+        rectangles = []
+        for position, length in self._inline_spans:
+            block = self.document.findBlock(position)
+            layout = block.layout()
+            start, end = position - block.position(), position + length - block.position()
+            for index in range(layout.lineCount()):
+                line = layout.lineAt(index)
+                first = max(start, line.textStart())
+                last = min(end, line.textStart() + line.textLength())
+                if last <= first:
+                    continue
+                cursor = QTextCursor(self.document)
+                cursor.setPosition(block.position() + first)
+                origin = self.cursorRect(cursor)
+                metrics = QFontMetricsF(cursor.charFormat().font().resolve(self.document.defaultFont()))
+                left, right = line.cursorToX(first), line.cursorToX(last)
+                left = left[0] if isinstance(left, tuple) else left
+                right = right[0] if isinstance(right, tuple) else right
+                delta = right - left
+                baseline = origin.top() + metrics.ascent()
+                rectangles.append(QRectF(origin.left() + min(0, delta) - 3,
+                    baseline - metrics.capHeight() - 2, abs(delta) + 6,
+                    metrics.capHeight() + metrics.descent() + 4))
+        return rectangles
+
+    def paintEvent(self, event) -> None:  # noqa: N802
+        painter = QPainter(self.viewport())
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor("#303030"))
+        for rectangle in self._inline_backgrounds():
+            painter.drawRoundedRect(rectangle, 4, 4)
+        painter.end()
+        super().paintEvent(event)

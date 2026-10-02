@@ -937,8 +937,36 @@ class UiTests(unittest.TestCase):
         label = MarkdownLabel(content)
         self.assertIn("Answer", label.plain_text())
         self.assertIn("[Image]", label.plain_text())
-        self.assertNotIn("<img", QLabel.text(label))
+        self.assertNotIn("<img", label.document.toHtml())
         self.assertEqual(label.text(), content)
+        label.close()
+
+    def test_inline_references_wrap_and_copy_as_text_after_image_removal(self):
+        from app.ui.markdown import MarkdownLabel
+        source = "![image](file:///private.png)\n\n😀 Use `main`, `.png`, and `a long image filename with spaces.png`."
+        label = MarkdownLabel(source)
+        label.setFont(QFont("Arial", 14))
+        label.refresh_formatting()
+        label.resize(190, label.heightForWidth(190) + 8)
+        label.show()
+        QApplication.processEvents()
+        self.assertTrue(label.isReadOnly())
+        self.assertEqual(len(label._inline_spans), 3)
+        selected_codes = []
+        from PySide6.QtGui import QTextCursor
+        for position, length in label._inline_spans:
+            cursor = QTextCursor(label.document)
+            cursor.setPosition(position)
+            cursor.setPosition(position + length, QTextCursor.MoveMode.KeepAnchor)
+            selected_codes.append(cursor.selectedText())
+            self.assertEqual(cursor.charFormat().fontFamilies(), label.font().families())
+        self.assertEqual(selected_codes, ["main", ".png", "a long image filename with spaces.png"])
+        self.assertGreater(len(label._inline_backgrounds()), 3)  # Long reference spans multiple lines.
+        label.selectAll()
+        label.copy()
+        self.assertEqual(QApplication.clipboard().text(), label.plain_text())
+        self.assertIn("😀 Use main", label.selectedText())
+        self.assertEqual(label.text(), source)
         label.close()
 
     def test_user_fenced_text_remains_a_plain_message(self):

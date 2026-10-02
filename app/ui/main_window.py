@@ -1431,14 +1431,14 @@ QFrame#userMessage {
     border-radius: 12px;
 }
 QFrame#orsiMessage, QFrame#errorMessage { background: transparent; border: none; }
-QFrame#userMessage QLabel, QFrame#orsiMessage QLabel {
+QFrame#userMessage QLabel, QFrame#orsiMessage QLabel, QFrame#orsiMessage QTextEdit#messageText {
     color: #e3e3e4;
     font-family: Saira;
     font-size: 18px;
     font-weight: 400;
 }
 QFrame#userMessage QLabel { color: #dce2ee; font-size: 12.5pt; }
-QFrame#errorMessage QLabel {
+QFrame#errorMessage QLabel, QFrame#errorMessage QTextEdit#messageText {
     color: #ff8d86;
     font-family: Saira;
     font-size: 15px;
