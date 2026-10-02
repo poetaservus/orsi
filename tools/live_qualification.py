@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import subprocess
 import sys
+import traceback
 from time import monotonic, sleep
 from urllib.request import Request, urlopen
 import xml.etree.ElementTree as ET
@@ -30,6 +31,20 @@ def code_is_complete(answer) -> bool:
     classes = {n.name for n in ast.walk(tree) if isinstance(n, ast.ClassDef)}
     imports = {a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
     return {"Player", "Bullet", "Enemy", "Game"} <= classes and "pygame" in imports
+
+
+def asks_for_color(answer: str) -> bool:
+    """Accept an actual request for a color without requiring question punctuation."""
+    normalized = " ".join(answer.casefold().split())
+    return bool(re.search(r"\b(?:which|what|specify|provide|choose|tell me|need|would you like)\b.{0,100}\bcolou?r\b"
+                         r"|\bcolou?r\b.{0,80}\b(?:want|prefer|should|would you like)\b", normalized))
+
+
+def completed_stat(turn) -> bool:
+    # Persisted outcomes deliberately omit calls; the turn owns their durable evidence.
+    return (turn.outcome is not None and turn.outcome.status.value == "completed"
+        and len(turn.settled_calls) == 1 and turn.settled_calls[0].call.capability == "filesystem.stat"
+        and turn.settled_calls[0].result.success)
 
 
 def run(root: Path, workspace: Path, report_path: Path, *, regression=True) -> dict:
@@ -193,7 +208,7 @@ def run(root: Path, workspace: Path, report_path: Path, *, regression=True) -> d
                                 changed = original.replace(b"#123456", b"#ffffff", 1)
                                 assert target.read_bytes() == changed
                                 _, answer = submit(window, service, q.CLARIFY.format(target=target))
-                                assert target.read_bytes() == changed and "?" in answer
+                                assert target.read_bytes() == changed and asks_for_color(answer)
                                 assert not any(c.call.capability == "filesystem.edit_text" for c in service.store.turns()[-1].settled_calls)
                                 submit(window, service, q.FOLLOWUP)
                                 assert target.read_bytes() == changed.replace(b"#ffffff", b"#abcdef", 1)
@@ -218,7 +233,7 @@ def run(root: Path, workspace: Path, report_path: Path, *, regression=True) -> d
                                 assert ConversationStore(service.store.path).turns()[-1].outcome == cancelled.outcome
                                 outcome, answer = submit(window, service, q.AFTER_CANCEL)
                                 assert "83" in answer and note.read_bytes() == b"A" * 83
-                                assert len(outcome.settled_calls) == 1 and outcome.settled_calls[0].result.success
+                                assert completed_stat(service.store.turns()[-1])
                                 cell.update(bytes_verified=True, ui_released=True)
                             else:
                                 submit(window, service, q.ROUNDTRIP)
@@ -241,6 +256,8 @@ def run(root: Path, workspace: Path, report_path: Path, *, regression=True) -> d
                             cell.update(status="passed", terminal_verified=True)
                         except Exception as exc:
                             cell["error_type"] = type(exc).__name__  # No exception text/private content.
+                            sites = [frame for frame in traceback.extract_tb(exc.__traceback__) if frame.filename == __file__]
+                            cell["error_check_line"] = sites[-1].lineno if sites else None
                         cell["terminal_outcomes"] = [{"status": t.outcome.status.value if t.outcome else "unsettled",
                             "ended": t.ended_at is not None,
                             "finish_reason": t.outcome.completion.finish_reason if t.outcome else None,
@@ -248,6 +265,11 @@ def run(root: Path, workspace: Path, report_path: Path, *, regression=True) -> d
                             "settled_calls": len(t.settled_calls)} for t in service.store.turns()]
                         if workflow in {"read_edit_clarify_followup", "cancel_then_task"}:
                             cell["fixture_sha256"] = q.digest((target if workflow == "read_edit_clarify_followup" else note).read_bytes())
+                        # Synthetic content belongs in separate fixture artifacts, never diagnostics.
+                        # Copy only while this UI turn is idle; no external reader races atomic writes.
+                        (folder / f"{workflow}.history.json").write_bytes(service.store.path.read_bytes())
+                        if workflow == "read_edit_clarify_followup":
+                            (folder / "read_edit_clarify_followup.actual.css").write_bytes(target.read_bytes())
                         save()
                         print(profile["model_id"], repetition, workflow, cell["status"], flush=True)
                 finally:

@@ -64,10 +64,20 @@ The context-recovery flag additionally requires its separate measured acceptance
 does not qualify enabling that previously rejected policy.
 
 Reports contain only identities/hashes, flags/limits, statuses, terminal/finish/usage counters,
-fixture hashes and exception types. Synthetic session history and regression logs live separately
-in the ignored workspace. Reports are local trusted workflow artifacts, not cryptographic
+fixture hashes, exception types and failed-check line numbers. Synthetic session history,
+per-workflow history snapshots, actual stylesheet bytes and regression logs live separately
+in the ignored workspace. Snapshots are written while the UI workflow is idle, without an external
+reader racing application persistence. Reports are local trusted workflow artifacts, not cryptographic
 attestations against an owner editing both code and evidence. Raw Git can bypass process policy;
 only the supported promotion/build entry points create a qualified baseline/release.
+
+The first candidate matrix is retained as failed/superseded. It exposed a verifier error: durable
+outcomes intentionally omit duplicated calls, so post-cancellation validation must inspect the
+turn's settled calls. The corrected verifier is covered by a real-store regression. Clarification
+is checked as a request for a color, including declarative requests, rather than requiring a question
+mark. No prompts, model settings or production behavior were changed. Qualification requires a
+fresh complete live matrix after verifier changes; individual passing checks are never spliced
+into an earlier failed report.
 
 ## Commands
 

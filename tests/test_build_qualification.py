@@ -6,7 +6,7 @@ import pytest
 
 from app.infrastructure import qualification as q
 from app.inference.completion import CompletionMetadata, CompletionText
-from tools.live_qualification import code_is_complete
+from tools.live_qualification import code_is_complete, asks_for_color, completed_stat
 from tools.promote_working_baseline import verify
 
 
@@ -130,3 +130,32 @@ def test_live_preflight_downgrade_blocks_without_allocating_a_model(tmp_path, mo
     result = run(tmp_path, tmp_path / "workspace", tmp_path / "report.json", regression=False)
     assert result["qualified"] is False and result["no_model_allocated"] is True
     assert result["cells"] == [] and len(result["blockers"]) == 3
+
+
+@pytest.mark.parametrize("answer", ["Which color would you like?", "Please specify the desired color.",
+                                   "Tell me the colour you prefer."])
+def test_clarification_is_a_request_for_input_with_or_without_question_punctuation(answer):
+    assert asks_for_color(answer)
+
+
+@pytest.mark.parametrize("answer", ["Done.", "I changed the color to white.", "What file?"])
+def test_acknowledgement_or_unrelated_question_is_not_color_clarification(answer):
+    assert not asks_for_color(answer)
+
+
+def test_stat_verifier_reads_durable_turn_calls_after_outcome_deduplication(tmp_path):
+    from app.agent.contracts import AgentRunResult, AgentRunStatus, SettledCall
+    from app.capabilities.contracts import CapabilityResult
+    from app.conversation.store import ConversationStore
+    from app.inference.protocol import ModelCapabilityCall
+    store = ConversationStore(tmp_path / "conversation.json")
+    turn_id = store.begin_turn(q.AFTER_CANCEL)
+    call = ModelCapabilityCall(provider_call_id="call-0", capability="filesystem.stat", arguments={"path": "acceptance-note.txt"})
+    result = CapabilityResult(call_id="settled-1", capability="filesystem.stat", success=True, output={"size_bytes":83}, duration_ms=1)
+    settled = SettledCall(provider_message_id="message-1", call=call, result=result)
+    store.record_settled(turn_id, settled)
+    store.finish_turn(turn_id, AgentRunResult(status=AgentRunStatus.COMPLETED, assistant_text="83", steps=2,
+        capability_calls=1, protocol_failures=0, settled_calls=(settled,)))
+    restored = ConversationStore(store.path).turns()[-1]
+    assert restored.outcome.settled_calls == ()  # Accepted storage format, not missing work.
+    assert completed_stat(restored)
