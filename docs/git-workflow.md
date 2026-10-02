@@ -25,3 +25,24 @@ its tag; do not move `main` backwards or reset an active checkout to recover old
 Source configuration defines accepted/qualified profile targets. Ignored runtime state records
 which model is selected. A clean Git status must not be confused with a matching runtime baseline:
 use the diagnostic snapshot for revision, effective flags, model identity and effective limits.
+
+## User-approved UI integration, 2 October 2026
+
+The user approved the response formatting, borderless window and fixed transparent top controls
+at UI revision `0253456`, then explicitly requested integration into main and GitHub branch cleanup.
+This integration includes that working UI and this record. It is user-approved promotion, not a
+claim that skipped per-model live qualification gates passed. The latest UI/native-window checks
+passed 45 tests and 15 subtests; the full follow-up suite recorded 833 passed, 1 intermittent Windows
+history-save failure and 54 skipped, with the failing test group passing its 15-test isolated recheck.
+See [window verification](frameless-window-2026-10-02.md).
+
+Before cleanup, all Git refs were saved and verified in the ignored backup bundle
+`state/backups/branch-hygiene-20261002-ui/all-refs-before.bundle`, with ref and worktree maps alongside
+it. The previous main is preserved at `archive/2026-10-02/main-before-response-ui`.
+Unmerged qualification work is preserved at `archive/2026-10-02/codex/live-qualification-gate`
+(`a9fb566`); the older remote integration tip is preserved at
+`archive/2026-10-02/remote/codex/phase-integration-test` (`ecd70d6`). These archive tags are published
+before the obsolete branches are removed. Neither unmerged tip is incorporated into main.
+
+Eight other remote phase/UI branches are ancestors of the approved working state and can be
+removed after publishing main. The original archive checkout remains on its existing branch.
