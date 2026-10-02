@@ -58,14 +58,14 @@ class UiTests(unittest.TestCase):
             "O.R.S.I. v0.4.0-dev // Local // Context Window: 0%",
         )
         self.assertEqual(window.context_window.bar.maximum(), 32768)
-        self.assertIs(window.context_window.parentWidget(), window.topbar)
+        self.assertIs(window.context_window.parentWidget(), window._root)
         self.assertFalse(window.context_window.isHidden())
         window.settings_button.click()
         self.assertFalse(window.settings_panel.isHidden())
-        self.assertIs(window.context_window.parentWidget(), window.topbar)
+        self.assertIs(window.context_window.parentWidget(), window._root)
         window.close()
 
-    def test_history_control_is_removed_and_top_bar_smoothly_reveals(self):
+    def test_corner_controls_remain_visible_without_a_retracting_header(self):
         window = MainWindow(None, "TEST-HOST")
         window.resize(1280, 800)
         window.show()
@@ -74,22 +74,20 @@ class UiTests(unittest.TestCase):
         self.assertFalse(hasattr(window, "history_button"))
         self.assertNotIn(
             "History",
-            [button.accessibleName() for button in window.topbar.findChildren(QWidget)],
+            [button.accessibleName() for button in window.app_controls.findChildren(QWidget)],
         )
 
-        self.assertFalse(window._topbar_expanded)
-        self.assertEqual(window.topbar.y(), -62)
-        self.assertEqual(window.topbar.geometry().bottom() + 1, 6)
-
-        QApplication.sendEvent(window.topbar, QEvent(QEvent.Type.Enter))
-        QTest.qWait(260)
+        self.assertFalse(hasattr(window, "topbar"))
+        self.assertFalse(hasattr(window, "_topbar_hide_timer"))
+        self.assertTrue(window.new_session_button.isVisible())
+        self.assertTrue(window.settings_button.isVisible())
+        QApplication.sendEvent(window.app_controls, QEvent(QEvent.Type.Leave))
         QApplication.processEvents()
-        self.assertEqual(window.topbar.y(), 0)
-
-        QApplication.sendEvent(window.topbar, QEvent(QEvent.Type.Leave))
-        QTest.qWait(720)
-        QApplication.processEvents()
-        self.assertEqual(window.topbar.y(), -62)
+        self.assertEqual(window.app_controls.pos(), QPoint(8, 8))
+        window.settings_button.click()
+        self.assertTrue(window.settings_panel.isVisible())
+        window.settings_button.click()
+        self.assertFalse(window.settings_panel.isVisible())
         window.close()
 
     def test_context_window_bar_uses_conversation_estimate(self):
@@ -273,7 +271,7 @@ class UiTests(unittest.TestCase):
         window.show()
         QApplication.processEvents()
 
-        self.assertEqual(window.topbar.height(), 68)
+        self.assertEqual(window.app_controls.height(), 28)
         self.assertEqual(window.composer.width(), 799)
         self.assertEqual(window.composer.height(), 54)
         self.assertEqual(window.composer.y(), (window._content.height() - 54) // 2)
@@ -297,10 +295,8 @@ class UiTests(unittest.TestCase):
         self.assertFalse(window._content._background.isNull())
         self.assertEqual(middle_panel.width(), 1120)
         self.assertEqual(middle_panel.x(), 400)
-        self.assertEqual(
-            window.topbar.width() - window.context_window.geometry().right() - 1,
-            130,
-        )
+        self.assertLessEqual(abs(window.context_window.geometry().center().x()
+                                 - window._root.rect().center().x()), 1)
         self.assertIn("O.R.S.I. v0.4.0-dev // Local", window.context_window.status.text())
         self.assertTrue(window.settings_panel.isHidden())
         window.close()
@@ -400,9 +396,17 @@ class UiTests(unittest.TestCase):
         window.show()
         QApplication.processEvents()
 
-        self.assertEqual(window._content_layout.contentsMargins().top(), 0)
-        self.assertEqual(window.topbar.height(), 68)
-        self.assertLess(window.context_window.geometry().bottom(), window.topbar.height())
+        self.assertEqual(window._content_layout.contentsMargins().top(), 44)
+        for width in (760, 1280, 1920):
+            window.resize(width, 700)
+            QApplication.processEvents()
+            self.assertLessEqual(abs(window.context_window.geometry().center().x()
+                                     - window._root.rect().center().x()), 1)
+            self.assertLess(window.app_controls.geometry().right(), window.context_window.x())
+            self.assertLess(window.context_window.geometry().right(), window.window_controls.x())
+            self.assertGreater(window.chat.y(), window.context_window.geometry().bottom())
+        window.resize(1280, 700)
+        QApplication.processEvents()
         middle_panel = window._content.middle_panel_rect()
         panel_right_space = window._content.width() - middle_panel.right() - 1
         self.assertLessEqual(abs(middle_panel.x() - panel_right_space), 1)

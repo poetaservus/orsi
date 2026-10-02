@@ -89,7 +89,9 @@ effective flags, model hash, targets, actual limits and GPU memory. See
 
 Replies that hit their output limit are shown as **incomplete**, with the received text retained.
 The desktop window has no separate title bar. Small controls in its top-right corner minimize,
-maximize/restore and close it; drag the empty top strip or resize from its edges. Windows keeps
+maximize/restore and close it. New-session and settings controls stay at the top left, with
+version/mode/context status centered above the conversation. These overlays have no header strip
+or retracting behavior; drag the empty top spaces or resize from the edges. Windows keeps
 native caption/resize handling and Snap styles. Closing uses the existing model/worker cleanup.
 Assistant prose supports Markdown emphasis, lists, headings and inline code. Replies use light
 formatting where helpful and respect explicit code-only or plain-text requests. User messages stay

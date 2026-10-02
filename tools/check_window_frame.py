@@ -53,16 +53,18 @@ def check():
         outer, client = rectangles()
         assert outer.right - outer.left == client.right, (outer.right - outer.left, client.right)
         assert outer.bottom - outer.top == client.bottom, (outer.bottom - outer.top, client.bottom)
-        assert hit(QPoint(500, 20)) == 2
+        assert hit(QPoint(120, 20)) == 2
         for point, expected in [(QPoint(1, 1), 13), (QPoint(window.width()-2, 1), 14),
             (QPoint(1, window.height()-2), 16), (QPoint(window.width()-2, window.height()-2), 17)]:
             assert hit(point) == expected, (point, hit(point), expected)
         for button in (window.window_controls.minimize, window.window_controls.maximize,
                        window.window_controls.close_button):
             assert hit(button.mapTo(window, button.rect().center())) == 1
-        api.SendMessageW(hwnd, 0x00A0, 2, 0)
-        QTest.qWait(260)
-        assert window.topbar.y() == 0 and window._topbar_expanded
+        for button in (window.new_session_button, window.settings_button):
+            assert hit(button.mapTo(window, button.rect().center())) == 1
+        assert hit(window.context_window.mapTo(window, window.context_window.rect().center())) == 1
+        assert window.app_controls.pos() == QPoint(8, 8)
+        assert abs(window.context_window.geometry().center().x() - window.rect().center().x()) <= 1
         original = window.geometry()
         # Native caption double-click, rather than merely toggling the Qt state.
         api.SendMessageW(hwnd, 0x00A3, 2, 0)

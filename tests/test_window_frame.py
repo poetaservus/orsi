@@ -23,14 +23,12 @@ class WindowFrameTests(unittest.TestCase):
         window.show()
         self.app.processEvents()
         self.assertTrue(window.windowFlags() & Qt.WindowType.FramelessWindowHint)
-        self.assertTrue(window._window_frame.is_caption(QPoint(500, 20)))
+        self.assertTrue(window._window_frame.is_caption(QPoint(120, 20)))
         self.assertFalse(window._window_frame.is_caption(QPoint(500, 100)))
         for button in (window.window_controls.minimize, window.window_controls.maximize,
                        window.window_controls.close_button):
             center = button.mapTo(window, button.rect().center())
             self.assertFalse(window._window_frame.is_caption(center))
-        window._set_topbar_expanded(True, animate=False)
-        self.app.processEvents()
         self.assertFalse(window._window_frame.is_caption(
             window.settings_button.mapTo(window, window.settings_button.rect().center())))
         self.assertLess(window.context_window.mapTo(window, window.context_window.rect().topRight()).x(),

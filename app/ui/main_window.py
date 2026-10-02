@@ -66,12 +66,10 @@ log = logging.getLogger(__name__)
 
 _ICON_DIRECTORY = Path(__file__).with_name("assets")
 _FONT_DIRECTORY = _ICON_DIRECTORY / "fonts"
-_TOP_BAR_HEIGHT = 68
-_TOP_BAR_REVEAL_HEIGHT = 6
-_TOP_BAR_ANIMATION_MS = 220
-_TOP_BAR_HIDE_DELAY_MS = 450
-_TOP_BUTTON_SIZE = 42
-_TOP_ICON_SIZE = 30
+_TOP_BUTTON_WIDTH = 34
+_TOP_BUTTON_HEIGHT = 28
+_TOP_ICON_SIZE = 22
+_CHAT_TOP_INSET = 44
 _COMPOSER_WIDTH = 799
 _COMPOSER_HEIGHT = 54
 _COMPOSER_BOTTOM_MARGIN = 42
@@ -404,58 +402,44 @@ class MainWindow(QMainWindow):
         self.drag_strip = DragStrip(root)
         self.window_controls = WindowControls(self, root)
 
-        topbar = QWidget(root)
-        self.topbar = topbar
-        topbar.setObjectName("topBar")
-        topbar.setFixedHeight(_TOP_BAR_HEIGHT)
-        topbar.installEventFilter(self)
-        topbar_layout = QHBoxLayout(topbar)
-        topbar_layout.setContentsMargins(21, 0, 130, 0)
-        topbar_layout.setSpacing(17)
+        self.app_controls = QWidget(root)
+        self.app_controls.setObjectName("appControls")
+        controls_layout = QHBoxLayout(self.app_controls)
+        controls_layout.setContentsMargins(0, 0, 0, 0)
+        controls_layout.setSpacing(2)
 
         self.new_session_button = QPushButton()
         self.new_session_button.setObjectName("topBarButton")
-        self.new_session_button.setFixedSize(_TOP_BUTTON_SIZE, _TOP_BUTTON_SIZE)
+        self.new_session_button.setFixedSize(_TOP_BUTTON_WIDTH, _TOP_BUTTON_HEIGHT)
         self.new_session_button.setIcon(QIcon(str(_ICON_DIRECTORY / "new_message_icon_cropped.png")))
         self.new_session_button.setIconSize(QSize(_TOP_ICON_SIZE, _TOP_ICON_SIZE))
         self.new_session_button.setToolTip("New session — permanently clears this conversation")
         self.new_session_button.setAccessibleName("New session")
         self.new_session_button.setEnabled(service is not None)
 
-        first_separator = QFrame()
-        first_separator.setObjectName("topBarSeparator")
-        first_separator.setFixedSize(1, 28)
-
         self.settings_button = QPushButton()
         self.settings_button.setObjectName("topBarButton")
-        self.settings_button.setFixedSize(_TOP_BUTTON_SIZE, _TOP_BUTTON_SIZE)
+        self.settings_button.setFixedSize(_TOP_BUTTON_WIDTH, _TOP_BUTTON_HEIGHT)
         self.settings_button.setIcon(QIcon(str(_ICON_DIRECTORY / "settings_icon_cropped.png")))
         self.settings_button.setIconSize(QSize(_TOP_ICON_SIZE, _TOP_ICON_SIZE))
         self.settings_button.setToolTip("Settings")
         self.settings_button.setAccessibleName("Settings")
 
-        topbar_layout.addWidget(self.new_session_button, 0, Qt.AlignmentFlag.AlignVCenter)
-        topbar_layout.addWidget(first_separator, 0, Qt.AlignmentFlag.AlignVCenter)
-        topbar_layout.addWidget(self.settings_button, 0, Qt.AlignmentFlag.AlignVCenter)
-        topbar_layout.addStretch(1)
+        controls_layout.addWidget(self.new_session_button)
+        controls_layout.addWidget(self.settings_button)
+        self.app_controls.setFixedSize(70, _TOP_BUTTON_HEIGHT)
         self.context_window = ContextWindowBar(
             int(getattr(inference, "context_length", 0)),
-            topbar,
+            root,
         )
-        topbar_layout.addWidget(self.context_window, 0, Qt.AlignmentFlag.AlignVCenter)
-
-        self._topbar_expanded = False
-        self._topbar_animation = QPropertyAnimation(topbar, b"pos", self)
-        self._topbar_hide_timer = QTimer(self)
-        self._topbar_hide_timer.setSingleShot(True)
-        self._topbar_hide_timer.timeout.connect(self._hide_topbar_if_idle)
+        self.context_window.setFixedHeight(_TOP_BUTTON_HEIGHT)
 
         content = ChatSurface()
         self._content = content
         content.installEventFilter(self)
         content_layout = QVBoxLayout(content)
         self._content_layout = content_layout
-        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setContentsMargins(0, _CHAT_TOP_INSET, 0, 0)
         content_layout.setSpacing(0)
         root_layout.addWidget(content, 1)
 
@@ -651,50 +635,12 @@ class MainWindow(QMainWindow):
             self.window_controls.refresh()
 
     def eventFilter(self, watched, event) -> bool:  # noqa: N802 - Qt API name
-        if watched is getattr(self, "topbar", None):
-            if event.type() == QEvent.Type.Enter:
-                self._topbar_hide_timer.stop()
-                self._set_topbar_expanded(True)
-            elif event.type() == QEvent.Type.Leave:
-                self._schedule_topbar_hide()
         if watched in {
             getattr(self, "_root", None),
             getattr(self, "_content", None),
         } and event.type() == QEvent.Type.Resize:
             self._position_overlays()
         return super().eventFilter(watched, event)
-
-    def _schedule_topbar_hide(self) -> None:
-        if self.settings_panel.isVisible():
-            return
-        self._topbar_hide_timer.start(_TOP_BAR_HIDE_DELAY_MS)
-
-    def _hide_topbar_if_idle(self) -> None:
-        if self.settings_panel.isVisible() or self.topbar.underMouse():
-            return
-        self._set_topbar_expanded(False)
-
-    def _set_topbar_expanded(self, expanded: bool, *, animate: bool = True) -> None:
-        if expanded:
-            self._topbar_hide_timer.stop()
-        elif self.settings_panel.isVisible():
-            return
-        self._topbar_expanded = expanded
-        target = QPoint(
-            0,
-            0 if expanded else -(_TOP_BAR_HEIGHT - _TOP_BAR_REVEAL_HEIGHT),
-        )
-        self._topbar_animation.stop()
-        if not animate or not self.isVisible():
-            self.topbar.move(target)
-            return
-        self._topbar_animation.setDuration(_TOP_BAR_ANIMATION_MS)
-        self._topbar_animation.setStartValue(self.topbar.pos())
-        self._topbar_animation.setEndValue(target)
-        self._topbar_animation.setEasingCurve(
-            QEasingCurve.Type.OutCubic if expanded else QEasingCurve.Type.InCubic
-        )
-        self._topbar_animation.start()
 
     def _load_greeting_message(self) -> str:
         store = self._preferences_store
@@ -745,14 +691,6 @@ class MainWindow(QMainWindow):
     def _position_overlays(self) -> None:
         if not hasattr(self, "composer"):
             return
-        self.topbar.resize(self._root.width(), _TOP_BAR_HEIGHT)
-        if self._topbar_animation.state() != QPropertyAnimation.State.Running:
-            self.topbar.move(
-                0,
-                0
-                if self._topbar_expanded
-                else -(_TOP_BAR_HEIGHT - _TOP_BAR_REVEAL_HEIGHT),
-            )
         content = self.composer.parentWidget()
         target = self._composer_target_geometry()
         glass_y = max(0, target.y())
@@ -770,10 +708,13 @@ class MainWindow(QMainWindow):
         self.composer.raise_()
         self.drag_strip.setGeometry(7, 7, max(0, self._root.width() - 130), CAPTION_HEIGHT - 7)
         self.drag_strip.raise_()
-        self.topbar.raise_()
+        self.app_controls.move(8, 8)
+        self.app_controls.raise_()
+        self.context_window.move((self._root.width() - self.context_window.width()) // 2, 8)
+        self.context_window.raise_()
         self.window_controls.move(self._root.width() - self.window_controls.width() - 8, 8)
         self.window_controls.raise_()
-        self.settings_panel.move(92, _TOP_BAR_HEIGHT + 12)
+        self.settings_panel.move(8, _CHAT_TOP_INSET)
         if self.settings_panel.isVisible():
             self.settings_panel.raise_()
 
@@ -893,10 +834,7 @@ class MainWindow(QMainWindow):
         visible = not self.settings_panel.isVisible()
         self.settings_panel.setVisible(visible)
         if visible:
-            self._set_topbar_expanded(True)
             self.settings_panel.raise_()
-        else:
-            self._schedule_topbar_hide()
 
     def submit(self) -> None:
         message = self.input.toPlainText().strip()
@@ -1424,23 +1362,16 @@ QMainWindow#mainWindow, QWidget#root {
     font-weight: 400;
 }
 QWidget#mainContent, QWidget#chatContent { background: transparent; }
-QWidget#topBar {
-    background: #050506;
-    border-bottom: 1px solid #101217;
-}
+QWidget#appControls { background: transparent; border: none; }
 QPushButton#topBarButton {
     background: transparent;
     border: none;
-    border-radius: 10px;
+    border-radius: 5px;
     padding: 0;
 }
-QPushButton#topBarButton:hover { background: #15161a; }
-QPushButton#topBarButton:pressed { background: #202128; }
+QPushButton#topBarButton:hover { background: rgba(255,255,255,18); }
+QPushButton#topBarButton:pressed { background: rgba(255,255,255,30); }
 QPushButton#topBarButton:disabled { background: transparent; }
-QFrame#topBarSeparator {
-    background: #15161a;
-    border: none;
-}
 QFrame#settingsPanel {
     background: #252627;
     border: 1px solid #3a3b3c;

@@ -34,7 +34,7 @@ class ContextWindowBar(QWidget):
 
         self.status = QLabel()
         self.status.setObjectName("contextStatusLine")
-        self.status.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        self.status.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.status)
 
         labels = QHBoxLayout()

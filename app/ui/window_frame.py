@@ -166,11 +166,6 @@ class WindowsFrame:
         if not self.enabled:
             return False, 0
         msg = wintypes.MSG.from_address(int(message))
-        if msg.message == 0x00A0 and msg.wParam in (2, 12, 13, 14):  # WM_NCMOUSEMOVE
-            if hasattr(self.window, "topbar"):
-                if not self.window._topbar_expanded:
-                    self.window._set_topbar_expanded(True)
-                self.window._schedule_topbar_hide()
         if msg.message == 0x0083:  # WM_NCCALCSIZE; first RECT for either parameter form
             if self.api.IsZoomed(msg.hWnd):
                 class MonitorInfo(ctypes.Structure):
