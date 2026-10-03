@@ -1,5 +1,11 @@
-"""Public instruction-only skill parsing API."""
-from app.runtime.skills.contracts import SkillDefinition, SkillParseError, SkillParseErrorCode
+"""Public instruction-only skill parsing and file-loading API."""
+from app.runtime.skills.contracts import (
+    SkillDefinition, SkillLoadError, SkillLoadErrorCode, SkillParseError, SkillParseErrorCode,
+)
+from app.runtime.skills.loader import MAX_SKILL_SIZE, load_skill
 from app.runtime.skills.parser import parse_skill
 
-__all__ = ["SkillDefinition", "SkillParseError", "SkillParseErrorCode", "parse_skill"]
+__all__ = [
+    "SkillDefinition", "SkillLoadError", "SkillLoadErrorCode", "SkillParseError", "SkillParseErrorCode",
+    "MAX_SKILL_SIZE", "load_skill", "parse_skill",
+]
