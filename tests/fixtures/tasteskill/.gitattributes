@@ -1,0 +1,3 @@
+# Preserve upstream snapshot hashes on Windows regardless of checkout settings.
+skills/**/SKILL.md -text
+LICENSE -text

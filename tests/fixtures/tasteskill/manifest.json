@@ -1,0 +1,149 @@
+{
+  "url": "https://github.com/Leonxlnx/taste-skill.git",
+  "revision": "ce26fc25c0e5e8cab638f883de62d9a86ee5e45b",
+  "records": [
+    {
+      "path": "skills/brandkit/SKILL.md",
+      "object_id": "d76399f666af97ac8c142928e02602d9732e78aa",
+      "file_bytes": 15992,
+      "sha256": "b0c4837e1bd140ca816ae54948754ddd2ac1e2a4d3619363777a80caf00b2ede",
+      "name": "brandkit",
+      "accepted": true,
+      "body_bytes": 15491,
+      "metadata_keys": [],
+      "unsupported_metadata": []
+    },
+    {
+      "path": "skills/brutalist-skill/SKILL.md",
+      "object_id": "f5375b908340e1376ed391232a31c5d82d5babfb",
+      "file_bytes": 8456,
+      "sha256": "fffbaac8597f07679e9d87145533567658aedba3b5eca6f16a7075a333048caa",
+      "name": "industrial-brutalist-ui",
+      "accepted": true,
+      "body_bytes": 8118,
+      "metadata_keys": [],
+      "unsupported_metadata": []
+    },
+    {
+      "path": "skills/gpt-tasteskill/SKILL.md",
+      "object_id": "03ed209b8fdc0a3cd6bccf8a5b3bfffe56aa4558",
+      "file_bytes": 7857,
+      "sha256": "2e64c269953f2656c21bf5a0fa6b4568e82fe0c72b36e8f84758e090349966a5",
+      "name": "gpt-taste",
+      "accepted": true,
+      "body_bytes": 7507,
+      "metadata_keys": [],
+      "unsupported_metadata": []
+    },
+    {
+      "path": "skills/image-to-code-skill/SKILL.md",
+      "object_id": "d19f8de112252ea88724c540647cad85b7653d46",
+      "file_bytes": 36442,
+      "sha256": "4c060a8064a8b13380bc2ef3d6e6a1d0b1e316aa093cd9807d0ce9e4eeb037fa",
+      "name": "image-to-code",
+      "accepted": true,
+      "body_bytes": 35845,
+      "metadata_keys": [],
+      "unsupported_metadata": []
+    },
+    {
+      "path": "skills/imagegen-frontend-mobile/SKILL.md",
+      "object_id": "9d8d55f3ca7a77e18329922ea8a67694dee52ebb",
+      "file_bytes": 40326,
+      "sha256": "8a33389979f3074fa0926678e266ad2eb9234624472254469fc1ad916b9caa24",
+      "name": "imagegen-frontend-mobile",
+      "accepted": true,
+      "body_bytes": 39635,
+      "metadata_keys": [],
+      "unsupported_metadata": []
+    },
+    {
+      "path": "skills/imagegen-frontend-web/SKILL.md",
+      "object_id": "26b293b8d0088631c41ebefde4a650768d01cf22",
+      "file_bytes": 36854,
+      "sha256": "6b5c2256522fdba1e3313eafa3d743b960a7b13ec029d3e6586e04b23327c1f8",
+      "name": "imagegen-frontend-web",
+      "accepted": true,
+      "body_bytes": 36141,
+      "metadata_keys": [],
+      "unsupported_metadata": []
+    },
+    {
+      "path": "skills/minimalist-skill/SKILL.md",
+      "object_id": "44ead27ef04ffe79ade0c6df7fd696dbcf7b246b",
+      "file_bytes": 7901,
+      "sha256": "36bc7328f085405f43b476938e62460fa573bf7e984e949e072bcf014831a44c",
+      "name": "minimalist-ui",
+      "accepted": true,
+      "body_bytes": 7714,
+      "metadata_keys": [],
+      "unsupported_metadata": []
+    },
+    {
+      "path": "skills/output-skill/SKILL.md",
+      "object_id": "d983bbcf040b6f433c624ce2212a2c044ad2da3c",
+      "file_bytes": 2592,
+      "sha256": "e5bf48b1ae561511439cf71672209a10a88cee0968cc925909ff861dfa0a96a7",
+      "name": "full-output-enforcement",
+      "accepted": true,
+      "body_bytes": 2337,
+      "metadata_keys": [],
+      "unsupported_metadata": []
+    },
+    {
+      "path": "skills/redesign-skill/SKILL.md",
+      "object_id": "c8304f0c9301385e3641b052d6b25b8af11cb6c1",
+      "file_bytes": 15060,
+      "sha256": "98ad3e5b051bfb71b2795f7e8a6aa0d32b51ee095606c098a4b2822ac07926c9",
+      "name": "redesign-existing-projects",
+      "accepted": true,
+      "body_bytes": 14780,
+      "metadata_keys": [],
+      "unsupported_metadata": []
+    },
+    {
+      "path": "skills/soft-skill/SKILL.md",
+      "object_id": "4038f41ec0137ec92e98ed0151fe3b7038b9329e",
+      "file_bytes": 10561,
+      "sha256": "e1e32f5e2d420872c6c7332b53d5ff7721946766b78c4822b424c2d512c8fdbc",
+      "name": "high-end-visual-design",
+      "accepted": true,
+      "body_bytes": 10276,
+      "metadata_keys": [],
+      "unsupported_metadata": []
+    },
+    {
+      "path": "skills/stitch-skill/SKILL.md",
+      "object_id": "19d958cdb5f83d14e4021fac942c1bcf8395c042",
+      "file_bytes": 11851,
+      "sha256": "46bdb08fee2dded38b6ba0a051230a502d6ac6e4044afd47592cb40c256028b5",
+      "name": "stitch-design-taste",
+      "accepted": true,
+      "body_bytes": 11544,
+      "metadata_keys": [],
+      "unsupported_metadata": []
+    },
+    {
+      "path": "skills/taste-skill-v1/SKILL.md",
+      "object_id": "4054982cd292c7fe6d01170c2372e986a427d776",
+      "file_bytes": 21195,
+      "sha256": "033d45af1ed23832730642f95f40ab49db7fb5222848489a6c5656144bfc6dae",
+      "name": "design-taste-frontend-v1",
+      "accepted": true,
+      "body_bytes": 20888,
+      "metadata_keys": [],
+      "unsupported_metadata": []
+    },
+    {
+      "path": "skills/taste-skill/SKILL.md",
+      "object_id": "b72132fcd466da605623ffe96e370b3991fc5285",
+      "file_bytes": 87253,
+      "sha256": "aa194351b246b8b4799099d4ed7b033d29eab6e6e3d58d8d2172978be7b3ec89",
+      "name": "design-taste-frontend",
+      "accepted": true,
+      "body_bytes": 86934,
+      "metadata_keys": [],
+      "unsupported_metadata": []
+    }
+  ]
+}
