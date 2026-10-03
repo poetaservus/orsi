@@ -2,7 +2,7 @@ from copy import deepcopy
 
 import pytest
 
-from tools.compare_context_acceptance import BASELINE_FINGERPRINT, compare
+from tools.compare_context_acceptance import BASELINE_FINGERPRINT, compare, compare_experiment
 
 
 def arm(kind="live", enabled=False):
@@ -63,3 +63,16 @@ def test_acceptance_gate_rejects_regressions_and_unmatched_or_unmeasured_work(ch
             value["effective_model"]["context_length"] = 4096
             value["running_limits"]["context_length"] = 4096
     assert compare(baseline, candidate)["rollout_qualified"] is False
+
+
+def test_matched_candidate_experiment_cannot_promote_an_unaccepted_build():
+    baseline, candidate = arm(), arm(enabled=True)
+    baseline["source_fingerprint"] = candidate["source_fingerprint"] = "same-candidate-source"
+    result = compare_experiment(baseline, candidate)
+    assert result["comparable"] and result["experiment_passed"]
+    assert result["rollout_qualified"] is False and result["accepted_baseline_comparison"] is False
+    candidate["source_fingerprint"] = "another-source"
+    assert compare_experiment(baseline, candidate)["experiment_passed"] is False
+    candidate["source_fingerprint"] = baseline["source_fingerprint"]
+    candidate["prompt_source_sha256"] = "changed-prompt"
+    assert compare_experiment(baseline, candidate)["experiment_passed"] is False

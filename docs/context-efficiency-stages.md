@@ -92,3 +92,43 @@ tokens**, while retaining all 12 definitions. Stage-three full regression passed
 30ms timeout-start assertion failed while live model tests were running; all 32
 runtime checks and the full suite passed when rechecked without that contention.
 Neither the timeout nor its assertions were relaxed.
+
+## Stage 4: measured recovery and revision-bound qualification
+
+Recovery remains **off** in the accepted configuration. The existing projection
+preserves user requirements, exact arguments, scoped call/result pairing and
+durable raw results. It projects large results before compacting older assistant
+material under pressure; it stops rather than dropping protected requirements.
+Its on/off acceptance arms now use the same provider-specific accounting as the
+application. `--experiment-only` compares recovery on/off on identical candidate
+source and prompt hashes, with fixed live cost/success thresholds. It can report
+an experimental pass but **cannot qualify rollout** or replace the accepted-source
+comparison.
+
+The preserved live qualification harness is now versioned in
+`app/infrastructure/qualification.py` and `tools/live_qualification.py`.
+The ordinary, long-code, read/edit/clarify/follow-up, cancellation/next-task and
+model round-trip prompt templates remain unchanged. Every chooser profile must
+run all five workflows twice. The report binds revision, source, prompts,
+effective flags, model bytes/profiles, sampling and runtime binaries. Required
+missing/skipped/failed cells, incomplete outcomes, changed limits, process leaks,
+unverified file bytes or a failed full regression block qualification. Routine
+workflow costs count every physical request; missing usage stays unknown.
+
+`python -m tools.verify_live_qualification --report <report>` is read-only. It
+changes no branch, build, model selection or remote. No automatic promotion or
+feature activation was added. A deterministic pass with legacy skips cannot
+substitute for any required live cell.
+
+The frozen accepted source `0c58c13` completed **20/30 live cells** (14B 9/10,
+3B 5/10, VL 4B 6/10); all owned servers exited. These failures are retained as
+baseline observations, not retrospectively certified as a qualified build.
+The candidate matrix and recovery experiments write content-free counters under
+ignored `state/`; their separate synthetic fixture histories contain validation
+content. All final live results must be reported separately from unit-suite passes.
+
+Stage-four full regression passed **920 tests and 15 subtests**, with **54 skipped
+legacy live checks**. Gate tests explicitly reject replacing any of the 30
+required live cells with skipped or deterministic evidence. Final live candidate
+results are recorded in `state/context-stage-candidate-matrix.json`; recovery
+off/on experiments and the numeric summary remain separate ignored artifacts.

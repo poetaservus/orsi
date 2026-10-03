@@ -64,13 +64,34 @@ def compare(baseline: dict, candidate: dict) -> dict:
         "rollout_qualified": bool(matches and paired and success and cost and closed and live and usage_complete and accepted_limits)}
 
 
+def compare_experiment(baseline: dict, candidate: dict) -> dict:
+    """Measure recovery on/off on one candidate source; never certify promotion.
+
+    The accepted-baseline comparison above remains unchanged. This isolates only
+    recovery, after separately staged prompt/estimate changes, instead of treating
+    a different prompt as evidence for the recovery feature.
+    """
+    reference = baseline.get("source_fingerprint")
+    same_source = reference is not None and reference == candidate.get("source_fingerprint")
+    result = compare({**baseline, "source_fingerprint": BASELINE_FINGERPRINT}, candidate)
+    experiment_passed = same_source and result["rollout_qualified"]
+    result.update(baseline_revision=None, reference_source_fingerprint=reference,
+                  comparable=same_source and result["comparable"],
+                  experiment_passed=bool(experiment_passed),
+                  accepted_baseline_comparison=False, rollout_qualified=False)
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("baseline", type=Path)
     parser.add_argument("candidate", type=Path)
     parser.add_argument("--report", type=Path, required=True)
+    parser.add_argument("--experiment-only", action="store_true",
+                        help="Compare recovery off/on on identical candidate source; cannot qualify rollout.")
     args = parser.parse_args()
-    result = compare(json.loads(args.baseline.read_text()), json.loads(args.candidate.read_text()))
+    comparator = compare_experiment if args.experiment_only else compare
+    result = comparator(json.loads(args.baseline.read_text()), json.loads(args.candidate.read_text()))
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(result, indent=2))

@@ -149,9 +149,13 @@ def main():
         def count_message_tokens(self, messages):
             return backend.count_message_tokens(messages)
 
+        def count_capability_schema_tokens(self, definitions):
+            counter = getattr(backend, "count_capability_schema_tokens", None)
+            return counter(definitions) if callable(counter) else capability_schema_reserve(definitions)
+
         def _call(self, messages, definitions=None):
             budget = calculate_context_budget(self, messages,
-                reserved_tokens=capability_schema_reserve(definitions or ()))
+                reserved_tokens=self.count_capability_schema_tokens(definitions or ()))
             entry = {"estimated_input_tokens": budget.system_message_tokens + budget.conversation_tokens
                 + budget.structured_tool_history_tokens + budget.capability_schema_reserve,
                 "input_tokens": None, "output_tokens": None, "total_tokens": None, "failed": False}
