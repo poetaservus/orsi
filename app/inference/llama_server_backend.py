@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from hashlib import sha256
 import logging
 import os
 import secrets
@@ -111,6 +112,7 @@ class LlamaServerInferenceEngine(InferenceEngine):
         self._lifecycle_lock = RLock()
         self._request_lock = Lock()
         self._request_active = Event()
+        self._token_count_cache: dict[str, int] = {}
 
     @property
     def is_running(self) -> bool:
@@ -118,12 +120,68 @@ class LlamaServerInferenceEngine(InferenceEngine):
             return self._process is not None and self._process.poll() is None
 
     def count_message_tokens(self, messages: list[dict[str, str]]) -> int:
-        """Conservative count that does not start or duplicate-load the model."""
+        """Tokenize content on an idle owned server, retaining wrapper allowances.
+
+        This is still a request estimate: template/schema headroom is separate.
+        Offline/failed counting keeps the existing byte heuristic and never loads
+        a model solely to refresh the UI or estimate admission.
+        """
         encoded_bytes = sum(
             len(str(message.get("content", "")).encode("utf-8", errors="replace"))
             for message in messages
         )
-        return max(1, (encoded_bytes + 3) // 4 + 16 * len(messages) + 256)
+        text = "\n".join(str(message.get("content", "")) for message in messages)
+        tokens = self._live_token_count(text)
+        content_tokens = (encoded_bytes + 3) // 4 if tokens is None else tokens
+        return max(1, content_tokens + 16 * len(messages) + 256)
+
+    def count_capability_schema_tokens(self, definitions) -> int:
+        values = tuple(definitions)
+        if not values:
+            return 0
+        # Count the same projected function envelopes that inference submits;
+        # runtime-only validation hints are not sent to the native provider.
+        encoded = json.dumps(_llama_server_function_tools(values), ensure_ascii=False,
+                             sort_keys=True, separators=(",", ":"))
+        tokens = self._live_token_count(encoded)
+        return (tokens if tokens is not None else (len(encoded.encode("utf-8")) + 2) // 3) + 48 * len(values)
+
+    def _live_token_count(self, content: str) -> int | None:
+        if not hasattr(self, "_lifecycle_lock"):
+            return None
+        with self._lifecycle_lock:
+            process, url, key = self._process, self._base_url, self._api_key
+            if self._closed or process is None or process.poll() is not None or self._request_active.is_set():
+                return None
+            digest = sha256(content.encode("utf-8")).hexdigest()
+            cached = self._token_count_cache.get(digest)
+            if cached is not None:
+                return cached
+        payload = json.dumps({"content": content, "add_special": False,
+                              "parse_special": False, "with_pieces": False}, ensure_ascii=False).encode("utf-8")
+        if len(payload) > 1024 * 1024:
+            return None
+        request = Request(url + "/tokenize", data=payload, method="POST", headers={
+            "Authorization": "Bearer " + key, "Content-Type": "application/json"})
+        try:
+            with urlopen(request, timeout=0.5) as response:
+                raw = response.read(_MAX_HTTP_RESPONSE_BYTES + 1)
+            if len(raw) > _MAX_HTTP_RESPONSE_BYTES:
+                return None
+            value = json.loads(raw.decode("utf-8"))
+            tokens = value.get("tokens") if isinstance(value, dict) else None
+            if (not isinstance(tokens, list) or (content and not tokens)
+                    or any(type(token) is not int or token < 0 for token in tokens)):
+                return None
+            count = len(tokens)
+            with self._lifecycle_lock:
+                if self._process is process and not self._closed:
+                    if len(self._token_count_cache) >= 128:
+                        self._token_count_cache.clear()
+                    self._token_count_cache[digest] = count
+            return count
+        except (OSError, URLError, ValueError, UnicodeError, RecursionError):
+            return None
 
     def respond(self, messages: list[dict[str, str]]) -> str:
         if not messages:
@@ -210,6 +268,7 @@ class LlamaServerInferenceEngine(InferenceEngine):
             self._process = None
             self._base_url = None
             self._api_key = None
+            self._token_count_cache.clear()
         if process is not None:
             self._stop_process(process)
 

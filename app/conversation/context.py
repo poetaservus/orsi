@@ -221,11 +221,14 @@ def estimated_context_tokens(
     ).total_estimated_request_tokens
 
 
-def capability_schema_reserve(definitions) -> int:
+def capability_schema_reserve(definitions, *, inference=None) -> int:
     """Conservatively reserve context for native tool schemas and wrappers."""
     values = tuple(definitions)
     if not values:
         return 0
+    counter = getattr(inference, "count_capability_schema_tokens", None)
+    if callable(counter):
+        return _validated_reserved_tokens(counter(values))
     payload = [value.model_dump(mode="json") for value in values]
     encoded = json.dumps(
         payload,

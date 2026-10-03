@@ -454,4 +454,4 @@ class ConversationService:
             for definition in self.agent_runtime.registry.model_definitions()
             if definition.name in selected
         )
-        return capability_schema_reserve(definitions)
+        return capability_schema_reserve(definitions, inference=self.inference)

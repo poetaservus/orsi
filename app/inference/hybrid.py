@@ -104,6 +104,10 @@ class LazyInferenceEngine(InferenceEngine):
         counter = getattr(engine, "count_message_tokens", None)
         return counter(messages) if callable(counter) else super().count_message_tokens(messages)
 
+    def count_capability_schema_tokens(self, definitions) -> int:
+        from app.conversation.context import capability_schema_reserve
+        return capability_schema_reserve(definitions, inference=self._get_engine())
+
 
 class HybridInferenceEngine(InferenceEngine):
     """Selects the local or cloud conversational model."""
@@ -341,6 +345,10 @@ class HybridInferenceEngine(InferenceEngine):
         count = counter(messages) if callable(counter) else super().count_message_tokens(messages)
         self._refresh_limits(engine)
         return count
+
+    def count_capability_schema_tokens(self, definitions) -> int:
+        from app.conversation.context import capability_schema_reserve
+        return capability_schema_reserve(definitions, inference=self._engine_for(self.mode))
 
     def _refresh_limits(self, engine: InferenceEngine) -> None:
         with self._lock:

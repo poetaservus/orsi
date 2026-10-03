@@ -65,3 +65,30 @@ file-byte verification, cancellation and model round trips, repeated per profile
 Stage-two full regression: **861 passed, 54 skipped, 15 subtests passed**.
 Live qualification remains separate and pending; a deterministic pass cannot
 promote this branch.
+
+## Stage 3: provider-specific estimates
+
+The local schema reserve now counts the exact projected native function JSON
+submitted to llama-server, rather than runtime-only validation annotations.
+When its owned server is already idle, content is tokenized with that model's
+`/tokenize` endpoint, with a 500ms deadline and bounded response size. Literal
+special-token-looking content is counted as text. Counting never starts or
+duplicate-loads a model. Only SHA-256 keys and integer counts are cached, with a
+128-entry bound; no content, credentials or token IDs enter diagnostics/cache.
+
+Unavailable, busy, timed-out or malformed tokenizer responses retain byte-based
+fallback estimates. Wrapper allowances, answer reserve, safety margin and the
+accepted model limits are retained. These remain estimates of a request, not an
+exact application of every native chat template. Invalid provider counters cannot
+weaken admission. Both initial selection and subsequent agent steps use the same
+provider-specific schema accounting, including recovery projections.
+
+The pinned tokenizer contract is documented in the
+[llama.cpp b9976 server API](https://github.com/ggml-org/llama.cpp/blob/e3546c794/tools/server/README.md#post-tokenize-tokenize-a-given-text).
+
+Offline full-catalog schema reserve decreases from **4,388 to 3,912 estimated
+tokens**, while retaining all 12 definitions. Stage-three full regression passed
+**872 tests and 15 subtests**, with **54 skipped live checks**. An earlier run's
+30ms timeout-start assertion failed while live model tests were running; all 32
+runtime checks and the full suite passed when rechecked without that contention.
+Neither the timeout nor its assertions were relaxed.

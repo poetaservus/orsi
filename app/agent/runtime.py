@@ -813,7 +813,7 @@ class AgentRuntime:
         from app.conversation.recovery import recover_context_request
         try:
             recovered = recover_context_request(self.model, transcript,
-                reserved_tokens=capability_schema_reserve(definitions))
+                reserved_tokens=capability_schema_reserve(definitions, inference=self.model))
         except Exception:
             log.exception("Context request projection failed safely.")
             return False
@@ -1091,7 +1091,7 @@ class AgentRuntime:
         budget = calculate_context_budget(
             self.model,
             transcript,
-            reserved_tokens=capability_schema_reserve(definitions),
+            reserved_tokens=capability_schema_reserve(definitions, inference=self.model),
         )
         record_context_budget(log, budget, request_kind="agent-capability-step")
         if not budget.fits:
