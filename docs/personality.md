@@ -41,5 +41,6 @@ calls verified actual fixture size and unchanged bytes. All owned model servers 
 responses and reports stay under ignored `state/personality-live-v2/`. These results are bound to
 the new personality source on baseline `28482ae`; they are not a baseline-versus-feature benchmark.
 The long-code, edit/clarify/follow-up, cancellation and model-round-trip qualification matrix was
-not repeated for this personality change. The feature remains on `codex/composed-personality`
-pending full qualification or an explicit user-approved integration.
+not repeated for this personality change. After reviewing these results, the user explicitly
+requested integration into `main` and publication to GitHub on 3 October 2026. This user-approved
+integration does not establish full qualification or resolve the recorded failures.

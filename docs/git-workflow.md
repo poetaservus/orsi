@@ -69,3 +69,11 @@ The three failures were Windows access-denied errors during atomic conversation 
 all three passed their isolated recheck. These failures and skipped gates remain unresolved
 qualification evidence. The user's explicit merge instruction authorizes this integration;
 it does not turn these results into a fully qualified baseline.
+
+## User-approved personality integration, 3 October 2026
+
+The user explicitly requested merging and pushing personality revision `8d95e03` after reviewing
+its results. The previous main is `28482ae`. The shared voice guidance and its tests are integrated
+without changes to model profiles or runtime authorization. See [personality verification](personality.md)
+for the full regression and repeated live smoke results, including failures and omitted qualification
+gates. User-approved integration does not change those results into full qualification.
