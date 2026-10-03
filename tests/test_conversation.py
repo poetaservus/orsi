@@ -95,7 +95,8 @@ def test_empty_startup_sessions_do_not_accumulate_archives(tmp_path):
 
 def test_history_uses_token_budget_and_saturates_context_meter(tmp_path: Path):
     class ExactCharacterTokenizer(RecordingInference):
-        context_length = 2000
+        # Leave a fixed history allowance regardless of the production prompt length.
+        context_length = len(SYSTEM_PROMPT) + 1000
         max_response_tokens = 200
 
         @staticmethod
@@ -108,10 +109,10 @@ def test_history_uses_token_budget_and_saturates_context_meter(tmp_path: Path):
 
     selected = service._model_messages()
 
-    assert service.inference.count_message_tokens(selected) <= 1800
+    assert service.inference.count_message_tokens(selected) <= ExactCharacterTokenizer.context_length - 200
     assert selected[-1]["content"].startswith("[Earlier content truncated]")
     assert selected[-1]["content"].endswith("A" * 100)
-    assert service.estimated_context_tokens() == 2000
+    assert service.estimated_context_tokens() == ExactCharacterTokenizer.context_length
 
 
 def test_system_prompt_explicitly_denies_computer_access():
