@@ -1486,17 +1486,17 @@ QPushButton#copyMessageButton {
 }
 QPushButton#copyMessageButton:hover { color: #ededee; background: #292a30; }
 QPushButton#copyMessageButton:pressed { background: #1e1f24; }
-QFrame#codeBlock {
+QFrame#codeBlock, QFrame#skillPicker {
     background: #20242d;
     border: 1px solid rgba(153, 165, 184, 36);
     border-radius: 12px;
 }
-QWidget#codeHeader {
+QWidget#codeHeader, QWidget#skillPickerHeader {
     background: transparent;
     border: none;
     border-bottom: 1px solid rgba(153, 165, 184, 25);
 }
-QLabel#codeLanguage {
+QLabel#codeLanguage, QLabel#skillPickerTitle {
     color: #b9bfcc;
     background: transparent;
     border: none;
@@ -1527,14 +1527,21 @@ QPlainTextEdit#codeEditor {
     selection-color: #ffffff;
     selection-background-color: #3e4551;
 }
-QPlainTextEdit#codeEditor QScrollBar:vertical { width: 11px; margin: 4px 1px; background: transparent; }
+QPlainTextEdit#codeEditor QScrollBar:vertical,
+QListWidget#skillPickerList QScrollBar:vertical { width: 11px; margin: 4px 1px; background: transparent; }
 QPlainTextEdit#codeEditor QScrollBar:horizontal { height: 11px; margin: 1px 4px; background: transparent; }
 QPlainTextEdit#codeEditor QScrollBar::handle:vertical,
+QListWidget#skillPickerList QScrollBar::handle:vertical,
 QPlainTextEdit#codeEditor QScrollBar::handle:horizontal { background: rgba(153, 161, 177, 90); border-radius: 4px; min-width: 28px; min-height: 28px; }
-QPlainTextEdit#codeEditor QScrollBar::handle:hover { background: rgba(153, 161, 177, 140); }
+QPlainTextEdit#codeEditor QScrollBar::handle:hover,
+QListWidget#skillPickerList QScrollBar::handle:hover { background: rgba(153, 161, 177, 140); }
 QPlainTextEdit#codeEditor QScrollBar::add-line,
+QListWidget#skillPickerList QScrollBar::add-line,
+QListWidget#skillPickerList QScrollBar::sub-line,
 QPlainTextEdit#codeEditor QScrollBar::sub-line { width: 0; height: 0; background: transparent; }
 QPlainTextEdit#codeEditor QScrollBar::add-page,
+QListWidget#skillPickerList QScrollBar::add-page,
+QListWidget#skillPickerList QScrollBar::sub-page,
 QPlainTextEdit#codeEditor QScrollBar::sub-page { background: transparent; }
 QLabel#conversationStatus {
     color: #929292;
@@ -1572,20 +1579,14 @@ QPushButton#skillChip {
     font-size: 14px;
 }
 QPushButton#skillChip:hover { background: rgba(74, 133, 208, 110); }
-QFrame#skillPicker {
-    background: #252b38;
-    border: 1px solid #46556d;
-    border-radius: 12px;
-}
-QLabel#skillPickerTitle { color: #b8c9e2; font-size: 13px; background: transparent; border: none; }
-QLabel#skillPickerEmpty { color: #a2aec1; background: transparent; border: none; padding: 8px; }
+QLabel#skillPickerEmpty { color: #b9bfcc; background: transparent; border: none; padding: 6px 8px; }
 QListWidget#skillPickerList {
-    color: #dde8fa; background: transparent; border: none; outline: none;
+    color: #d9dce3; background: transparent; border: none; outline: none;
     font-family: Saira; font-size: 14px;
 }
-QListWidget#skillPickerList::item { padding: 7px 10px; border-radius: 7px; }
-QListWidget#skillPickerList::item:selected { background: #354965; color: #e3eeff; }
-QListWidget#skillPickerList::item:hover { background: #303c50; }
+QListWidget#skillPickerList::item { padding: 6px 8px; border-radius: 6px; }
+QListWidget#skillPickerList::item:selected { background: #3e4551; color: #ffffff; }
+QListWidget#skillPickerList::item:hover:!selected { background: rgba(255, 255, 255, 8); }
 QPushButton#sendButton, QPushButton#stopButton {
     background: transparent;
     border: none;

@@ -4,7 +4,10 @@ from html import escape
 
 from PySide6.QtCore import QEvent, QObject, Qt
 from PySide6.QtGui import QTextCursor
-from PySide6.QtWidgets import QApplication, QFrame, QLabel, QListWidget, QListWidgetItem, QPushButton, QVBoxLayout
+from PySide6.QtWidgets import (
+    QApplication, QFrame, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
+    QPushButton, QVBoxLayout, QWidget,
+)
 
 
 _COMMAND = re.compile(r"(?:^|\s)(?P<command>/skill(?:[ \t]+(?P<query>[^\r\n]*))?)$")
@@ -37,24 +40,33 @@ class SkillPicker(QObject):
         self.popup.setObjectName("skillPicker")
         self.popup.setAccessibleName("Choose a skill for this message")
         layout = QVBoxLayout(self.popup)
-        layout.setContentsMargins(12, 10, 12, 10)
-        layout.setSpacing(6)
-        self.title = QLabel("Skills", self.popup)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        self.header = QWidget(self.popup)
+        self.header.setObjectName("skillPickerHeader")
+        header_layout = QHBoxLayout(self.header)
+        header_layout.setContentsMargins(16, 7, 10, 7)
+        self.title = QLabel("Skills", self.header)
         self.title.setObjectName("skillPickerTitle")
-        layout.addWidget(self.title)
-        self.items = QListWidget(self.popup)
+        header_layout.addWidget(self.title)
+        layout.addWidget(self.header)
+        body = QWidget(self.popup)
+        body_layout = QVBoxLayout(body)
+        body_layout.setContentsMargins(8, 6, 8, 8)
+        self.items = QListWidget(body)
         self.items.setObjectName("skillPickerList")
         self.items.setAccessibleName("Installed skills")
         self.items.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.items.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.items.setWordWrap(False)
         self.items.itemClicked.connect(self._choose)
-        layout.addWidget(self.items)
-        self.empty = QLabel("No skills installed", self.popup)
+        body_layout.addWidget(self.items)
+        self.empty = QLabel("No skills installed", body)
         self.empty.setObjectName("skillPickerEmpty")
         self.empty.setTextFormat(Qt.TextFormat.PlainText)
         self.empty.setWordWrap(True)
-        layout.addWidget(self.empty)
+        body_layout.addWidget(self.empty)
+        layout.addWidget(body)
         self.popup.hide()
         editor.installEventFilter(self)
         editor.textChanged.connect(self._refresh)
@@ -85,11 +97,9 @@ class SkillPicker(QObject):
         self.items.clear()
         for skill in skills:
             name = " ".join(skill.name.split())[:128]
-            description = " ".join(skill.description.split())[:160]
             metrics = self.items.fontMetrics()
             name = metrics.elidedText(name, Qt.TextElideMode.ElideRight, self.popup.width() - 50)
-            description = metrics.elidedText(description, Qt.TextElideMode.ElideRight, self.popup.width() - 50)
-            item = QListWidgetItem(name + "\n" + description)
+            item = QListWidgetItem(name)
             item.setData(Qt.ItemDataRole.UserRole, skill.name)
             item.setToolTip("<qt>" + escape(" ".join(skill.description.split())[:512]) + "</qt>")
             self.items.addItem(item)
@@ -98,7 +108,9 @@ class SkillPicker(QObject):
         self.empty.setText("No matching skills" if catalog else "No skills installed")
         if skills:
             self.items.setCurrentRow(0)
-        self.popup.setFixedHeight(min(320, 48 + max(1, min(len(skills), 5)) * 52))
+        row_height = max(32, self.items.sizeHintForRow(0))
+        self.popup.setFixedHeight(self.header.sizeHint().height() + 14 + 2 * self.popup.frameWidth()
+                                  + max(1, min(len(skills), 5)) * row_height)
         self.reposition()
         self.popup.show()
         self.popup.raise_()

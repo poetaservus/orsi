@@ -63,6 +63,11 @@ def test_typing_trigger_opens_cached_catalog_and_enter_attaches_without_sending(
     type_command(ui)
     picker = ui.skill_picker
     assert picker.popup.isVisible() and picker.items.count() == 2
+    assert picker.items.verticalScrollBar().maximum() == 0
+    for index in range(picker.items.count()):
+        item = picker.items.item(index)
+        assert item.text() == item.data(Qt.ItemDataRole.UserRole)
+        assert "Test guidance." in item.toolTip()
     QTest.keyClick(ui.input, Qt.Key.Key_Down)
     assert picker.items.currentItem().data(Qt.ItemDataRole.UserRole) == "style"
     QTest.keyClick(ui.input, Qt.Key.Key_Return)

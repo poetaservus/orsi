@@ -15,6 +15,9 @@ application. It is not merged, pushed or promoted into `main`.
 
 Escape closes the selector. Shift+Enter still inserts a newline. A new session
 clears both the draft and its chip. Choosing another skill replaces the chip.
+The list displays names only; hover a name to read its description. The popup
+shares the code blocks' background, border, rounded corners, header and scrollbar
+styling, with a compact layout and neutral selection highlight.
 Clicking Send while choosing attaches the highlighted skill and returns focus
 to the input; it does not submit the command or run a model request.
 Filtering and choosing read only cached names/descriptions; they perform no
@@ -93,4 +96,33 @@ Focused reproduction:
 ```text
 runtime/python/python.exe -B -m pytest tests/test_message_skill.py tests/test_skill_picker_ui.py tests/test_ui.py tests/test_completion_state.py tests/test_skill_activation.py tests/test_skill_selection.py tests/test_skill_diagnostics.py tests/test_default_14b_context.py -p no:cacheprovider --basetemp=.pytest-tmp-skill-picker-final-native --junitxml=state/test-artifacts/skill-picker/final-native-focused.xml
 runtime/python/python.exe -B -m pytest -p no:cacheprovider --basetemp=.pytest-tmp-message-skill-final-full --junitxml=state/test-artifacts/skill-picker/final-full.xml
+```
+
+## Picker appearance refinement, 4 October 2026
+
+The follow-up stays on the same unmerged feature branch. Rows display only skill
+names, with the existing escaped descriptions available on hover. Description
+search and exact selection identifiers are preserved. The popup shares the
+existing code-block stylesheet declarations for its frame, header, title and
+scrollbar; the code blocks' style values are unchanged. Row sizing accounts for
+the popup border so short catalogs show completely without a scrollbar.
+
+The relevant UI, completion and message-scope checks passed 92 tests and five
+subtests in 9.08 seconds. Existing picker checks now verify names-only rows,
+description tooltips and a fully visible two-skill catalog. A separate Qt preview
+used the installed brand-guidelines and frontend-design metadata, verified that
+the frontend hover tooltip appears, and captured the picker alongside a code
+block for visual review. The ignored screenshots are under
+`state/test-artifacts/skill-picker/style-preview/`. No inference was needed for
+this presentation change; earlier live evidence is unchanged.
+
+The follow-up full suite passed 1,436 tests and 15 subtests, with the same 58
+existing skips, in 184.54 seconds. Skipped gates remain separate from passed
+checks. Native Windows handle access and repository-local temporary directories
+were used. Authored-file whitespace checks passed; application behavior and
+model configuration are unchanged by this refinement.
+
+```text
+runtime/python/python.exe -B -m pytest tests/test_skill_picker_ui.py tests/test_ui.py tests/test_completion_state.py tests/test_message_skill.py -p no:cacheprovider --basetemp=.pytest-tmp-skill-picker-style-final-focused --junitxml=state/test-artifacts/skill-picker/style-final-focused.xml
+runtime/python/python.exe -B -m pytest -p no:cacheprovider --basetemp=.pytest-tmp-skill-picker-style-full --junitxml=state/test-artifacts/skill-picker/style-full.xml
 ```
