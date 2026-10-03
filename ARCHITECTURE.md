@@ -4,7 +4,7 @@
 
 O.R.S.I is a local-first Windows desktop assistant. The Qt GUI submits a message to the
 conversation orchestrator. The orchestrator builds bounded context and asks the agent runtime for
-either ordinary assistant text or one provider-native capability call. A capability call is schema
+ordinary assistant text or normalized provider-native capability calls. A capability call is schema
 validated, authorized by deterministic policy, optionally approved in the GUI, executed through the
 journaled executor, and returned to the model as structured data.
 
@@ -66,6 +66,7 @@ app/
   infrastructure/        application logging
   state/                  atomic generic JSON storage
   runtime/                cancellation primitives
+    skills/               instruction parsing, discovery, registry, installation and selection
   ui/                     Qt presentation, worker, approvals, and widgets
 config/                   non-secret checked-in runtime configuration
 docs/                     status, roadmap, design history, and threat reviews
@@ -239,26 +240,50 @@ context refresh, and thread cleanup independently restores controls if that refr
 - The executor enforces permission/execution compatibility and bounded cancellation/timeouts.
 - Unknown write outcomes block retries until reviewed.
 
-There is no shell/console tool, general process launcher, clipboard/window automation, plugin loader,
-or skills runtime in this repository. `application.launch` currently supports only its explicit
+Skill guidance is lower-priority context and cannot change tool registration, permission rules,
+model configuration or approvals. There is no shell/console tool, general process launcher,
+clipboard/window automation or plugin loader. `application.launch` currently supports only its explicit
 allowlist and still requires approval.
 
 ## 10. Natural-language resolution
 
-`conversation/capability_routing.py` deterministically selects a small, turn-scoped visibility set
-from the enabled catalog. It may retain schemas needed by active tool history or a short follow-up,
-but it cannot create arguments, grant authority, or execute anything. General intent and the actual
+`conversation/capability_routing.py` returns the full enabled, model-visible registry catalog
+for every agent turn, independently of wording and skill selection. It cannot create arguments,
+grant authority, or execute anything. General intent and the actual
 tool call remain model decisions against those exported schemas, normalized in
 `inference/protocol.py`, and continued by `agent/runtime.py`. The narrow recovery in
 `agent/file_resolution.py` may list the same directory after an extensionless read/find miss and
 accept one obvious exact name/stem/extension match. Test-only command parsers live under
 `tests/support/` and cannot enter production startup.
 
-The optional `context_recovery_enabled` policy defaults to false. When enabled, registry visibility
-replaces phrase routing, and `conversation/recovery.py` projects large result payloads before
+The optional `context_recovery_enabled` policy defaults to false. Registry visibility is already
+used in both modes. When enabled, `conversation/recovery.py` projects large result payloads before
 shortening old assistant material under context pressure. System/user requirements, call arguments
 and scoped call/result pairs are protected; durable evidence stays unchanged. Unfit protected
 content stops admission. No summarizing model or automatic mutation replay is used. Turn outcomes
 retain admitted inference counts and estimated input costs. The candidate failed its measured
 routine cost gate and has not passed live GPU acceptance; see
 [context recovery verification](docs/context-recovery-2026-10-02.md).
+
+## 11. Skill and extension boundaries
+
+`app/runtime/skills/` supplies validated instruction definitions independently of the callable
+`CapabilityRegistry`. Startup discovers a `SkillRegistry` and passes it to `ConversationService`.
+Explicit session activation or a metadata-only automatic selector chooses zero or one skill;
+conversation orchestration renders its exact body into a labelled, escaped, lower-priority prompt
+section through the existing admission policy. Provider adapters and the executor retain their
+existing interfaces. Optional skill metadata is inert and cannot register code or configuration.
+
+The local and public HTTPS Git installers publish only validated `SKILL.md` bytes to global
+storage. They do not execute package content or import scripts/assets/references. Project scopes
+must be explicit; registry construction and cached lookup do not read arbitrary project folders.
+Normal conversation remains available without any skill selected.
+
+A **skill** is instructions/context, a **tool** is a callable capability, **MCP** is an external
+tool/resource protocol, and a **plugin** is a package that may group those components with hooks,
+configuration and metadata. MCP transport, plugin loading, lifecycle hooks, an umbrella Capability
+Manager and Claude compatibility remain future work. Their implementation must not turn skill
+metadata or Markdown into an execution or authority channel.
+
+See [Phase 6.2](docs/skill-runtime-phase6-2.md) for the frozen v1 interfaces and future adapter
+boundaries, and [Phase 6.1](docs/skill-runtime-phase6-1.md) for content-free skill observability.

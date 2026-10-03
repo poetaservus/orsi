@@ -39,22 +39,48 @@ runtime\python\python.exe -m app.main
   explicit warning is accepted for that launch.
 - Crash-journaled tool lifecycle, cancellation, bounded retries/steps, strict schemas, and
   single-use expiring approvals.
+- Instruction-only skills: validated local/public HTTPS Git installation, explicit or automatic
+  selection, one lower-priority prompt section, and content-free diagnostics.
 
 O.R.S.I has no shell tool, arbitrary process execution, permanent-delete tool, clipboard/window
-automation, background indexing, plugin loader, or skills runtime. Network shares and device paths
+automation, background indexing, or plugin loader. Network shares and device paths
 are denied. Writes to application/state, AppData, operating-system, recovery, installed-application,
 redirected, reparse, or ambiguous paths are denied.
 
+## Skills
+
+Skills add instructions/context; tools remain separately registered and authorized callable
+capabilities. MCP is an external tool/resource protocol, while a plugin may bundle skills, tools,
+MCP definitions, hooks and configuration. MCP/plugin loading and Claude compatibility are future
+work. See the [frozen extension boundaries](docs/skill-runtime-phase6-2.md).
+
+```text
+ORSI.cmd skill list
+ORSI.cmd skill install "C:\path\to\small-skill"
+ORSI.cmd skill info "exact-skill-name"
+```
+
+Installation copies `SKILL.md` only, preserving upstream bytes. Scripts, assets, references and
+dependencies are not installed or executed. The default global storage is `~/.orsi/skills/`.
+Project discovery requires an explicitly supplied project root; startup does not infer one.
+Restart O.R.S.I after CLI installation/removal to refresh the application's startup catalog.
+
+In chat, `/skill exact-skill-name` activates the metadata name shown by `skill list`; `/skill`
+clears it. A new chat clears selection. Automatic selection can choose one skill or no match for
+the current turn. Skills cannot add tools, change model configuration, or grant permissions.
+Skill decision/injection events appear in `state/orsi.log` without prompt contents or hidden
+reasoning; see [observability](docs/skill-runtime-phase6-1.md).
+
 ## How tool requests work
 
-The active model receives a turn-scoped subset of the enabled capability catalog and can return
-ordinary text or one native tool call. The visibility selector only narrows schemas; it never
+The active model receives the full enabled, model-visible capability catalog on each agent turn
+and can return ordinary text alongside native tool calls. Registry visibility never
 constructs arguments, grants permission, or executes an operation. O.R.S.I validates the model's
 tool name and arguments, applies deterministic permissions, asks for approval when required,
 journals the lifecycle, executes the tool once, and returns its structured result to the model.
 
-There is no production regex command executor. A deterministic visibility selector keeps unrelated
-schemas out of each prompt, while a narrow same-folder filename recovery can resolve one obvious
+There is no production regex command executor. Skill selection leaves tool visibility unchanged,
+while a narrow same-folder filename recovery can resolve one obvious
 extension/stem variant after an extensionless file read misses. See
 [ARCHITECTURE.md](ARCHITECTURE.md#10-natural-language-resolution).
 
