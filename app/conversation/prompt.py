@@ -588,6 +588,10 @@ def compact_agent_system_prompt(
     relative = (" Relative paths are relative to the current Windows user's home directory."
                 if read_scope == HostReadScope.FULL_LOCAL else
                 " Relative paths are relative to the portable root; never prefix its directory name.")
+    relative += (
+        " For read or metadata requests, pass the supplied path verbatim, including relative paths; "
+        "never prepend Desktop, a guessed directory, or an absolute prefix. The runtime resolves it."
+    )
     if read_scope == HostReadScope.FULL_LOCAL and user_home:
         home = user_home.rstrip("\\/")
         aliases = (
@@ -597,7 +601,8 @@ def compact_agent_system_prompt(
     names = ", ".join(capability_names)
     edit_guidance = (
         " Prefer filesystem.edit_text for existing files and filesystem.write_text for new files "
-        "or deliberate full replacement. Read first; copy its absolute path and a unique exact old_text "
+        "or deliberate full replacement. Before each edit, read the current file again; do not reuse "
+        "an earlier excerpt after a successful mutation. Copy its absolute path and a unique exact old_text "
         "excerpt with surrounding context (for CSS, include the selector). Preserve that context and "
         "line endings in new_text, including every unchanged declaration and closing brace. "
         "Use replace_all only for requested all-occurrence edits and expected_sha256 only from "

@@ -132,3 +132,29 @@ legacy live checks**. Gate tests explicitly reject replacing any of the 30
 required live cells with skipped or deterministic evidence. Final live candidate
 results are recorded in `state/context-stage-candidate-matrix.json`; recovery
 off/on experiments and the numeric summary remain separate ignored artifacts.
+
+## Follow-up prompt correction after live evidence
+
+The first candidate at `b3cf936` passed 19/30 live cells (14B 8/10, 3B 5/10,
+VL 4B 6/10), despite passing the 920-test regression. It is explicitly **not
+qualified**. All owned servers exited. The 14B's failed edit workflow produced
+the exact expected bytes, but first attempted a stale excerpt and required a
+semantic correction. Its post-cancellation metadata request invented a Desktop
+prefix and correctly returned not-found for that wrong path. Clarification itself
+passed. Raw traces and unsuccessful outcomes remain preserved.
+
+A separate prompt-only correction restores two explicit contracts: pass supplied
+read/metadata paths verbatim (let the runtime resolve relative paths), and obtain
+a fresh excerpt before each edit after a mutation. No tool behavior, permission,
+sampler, context limit, prompt template or acceptance assertion is changed to
+turn these failures green. The unchanged full matrix must run again for this
+new revision. The first candidate's evidence remains in
+`state/context-stage-candidate-matrix.json`; the retest uses a separate artifact.
+
+The corrected full-local shared prompt is **4,909 bytes**, versus 17,345 for the
+accepted full prompt (71.7% smaller). Its full regression passed **920 tests and
+15 subtests**, with **54 skipped legacy live checks**. The retest report is
+`state/context-stage-corrected-matrix.json`; live success must be judged from that
+report independently of the deterministic pass. Across successful paired routine
+cells only, the first candidate used 52.5% of baseline request tokens; its failed
+or unmeasured work was excluded from savings and it still could not qualify.
