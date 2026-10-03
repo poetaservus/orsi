@@ -590,13 +590,15 @@ def compact_agent_system_prompt(
                 " Relative paths are relative to the portable root; never prefix its directory name.")
     relative += (
         " For read or metadata requests, pass the supplied path verbatim, including relative paths; "
-        "never prepend Desktop, a guessed directory, or an absolute prefix. The runtime resolves it."
+        "never prepend Home, Desktop, a guessed directory, or an absolute prefix. The runtime resolves it."
     )
     if read_scope == HostReadScope.FULL_LOCAL and user_home:
         home = user_home.rstrip("\\/")
         aliases = (
-            f" Known-folder aliases are exact: Desktop={home}\\Desktop, "
-            f"Downloads={home}\\Downloads, Documents={home}\\Documents, Home={home}."
+            f" The current relative read root is exactly {home}. "
+            f"Known-folder paths are exact: Desktop={home}\\Desktop, "
+            f"Downloads={home}\\Downloads, Documents={home}\\Documents. "
+            "Folder labels are not path prefixes; do not attach them to a supplied filename."
         )
     names = ", ".join(capability_names)
     edit_guidance = (

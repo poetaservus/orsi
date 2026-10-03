@@ -158,3 +158,12 @@ accepted full prompt (71.7% smaller). Its full regression passed **920 tests and
 report independently of the deterministic pass. Across successful paired routine
 cells only, the first candidate used 52.5% of baseline request tokens; its failed
 or unmeasured work was excluded from savings and it still could not qualify.
+
+The `b53d492` retest passed 21/30 cells (14B 9/10, 3B 6/10, VL 4B 6/10).
+Both 14B edit sessions passed. Its remaining post-cancel failure used
+`Home/acceptance-note.txt`, confusing the shared prompt's virtual `Home=` label
+with a real directory. All owned servers exited and the full regression passed
+920 tests, but qualification remained blocked. The next isolated prompt correction
+names one canonical relative read root, removes the virtual Home label, and makes
+explicit that folder labels are not filename prefixes. No acceptance prompt,
+assertion, tool path resolver, permission or profile is changed.
