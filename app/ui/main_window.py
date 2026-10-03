@@ -58,6 +58,7 @@ from app.ui.chat import ChatView
 from app.ui.context_window import ContextWindowBar
 from app.ui.status import ConversationStatus
 from app.ui.worker import ConversationWorker, ModelSwitchWorker
+from app.ui.skill_picker import SkillPicker
 from app.ui.window_frame import CAPTION_HEIGHT, DragStrip, WindowControls, WindowsFrame
 
 
@@ -579,6 +580,8 @@ class MainWindow(QMainWindow):
 
         composer_layout.addWidget(self.input, 1)
         composer_layout.addWidget(self.action_slot)
+        self.skill_picker = SkillPicker(self.input, self.composer,
+                                        getattr(service, "skill_registry", None), send_button=self.send)
 
         self.setCentralWidget(root)
         self.setStyleSheet(_STYLE)
@@ -706,6 +709,7 @@ class MainWindow(QMainWindow):
         self.bottom_glass.raise_()
         self.startup_greeting.raise_()
         self.composer.raise_()
+        self.skill_picker.reposition()
         self.drag_strip.setGeometry(7, 7, max(0, self._root.width() - 130), CAPTION_HEIGHT - 7)
         self.drag_strip.raise_()
         self.app_controls.move(8, 8)
@@ -837,6 +841,8 @@ class MainWindow(QMainWindow):
             self.settings_panel.raise_()
 
     def submit(self) -> None:
+        if self.thread is None and self.skill_picker.accept_current():
+            return
         message = self.input.toPlainText().strip()
         if not message or self.thread is not None:
             return
@@ -846,12 +852,14 @@ class MainWindow(QMainWindow):
         if self.inference is not None and self.inference.mode == "cloud" and not self._ensure_cloud_ready():
             return
 
+        skill_name = self.skill_picker.selected_name
+        self.skill_picker.clear_selection()
         self.input.clear()
         self._leave_intro_mode()
         self.chat.add_message("User", message)
         self._set_busy(True)
         self.thread = QThread()
-        self.worker = ConversationWorker(self.service, message)
+        self.worker = ConversationWorker(self.service, message, skill_name=skill_name)
         self.worker.moveToThread(self.thread)
         self.thread.started.connect(self.worker.run)
         self.worker.finished.connect(self._worker_succeeded)
@@ -956,6 +964,7 @@ class MainWindow(QMainWindow):
             self.chat.add_message("Agent", str(exc), True)
             return
         self.chat.clear_messages()
+        self.skill_picker.clear_selection()
         self.input.clear()
         self._activate_intro_mode()
         self._update_context_window()
@@ -1553,6 +1562,30 @@ QTextEdit#messageInput {
 }
 QTextEdit#messageInput:focus { border: none; }
 QTextEdit#messageInput:disabled { color: #777777; background: transparent; }
+QPushButton#skillChip {
+    color: #c1dbff;
+    background: rgba(63, 116, 188, 82);
+    border: 1px solid rgba(112, 166, 233, 100);
+    border-radius: 8px;
+    padding: 2px 10px;
+    font-family: Saira;
+    font-size: 14px;
+}
+QPushButton#skillChip:hover { background: rgba(74, 133, 208, 110); }
+QFrame#skillPicker {
+    background: #252b38;
+    border: 1px solid #46556d;
+    border-radius: 12px;
+}
+QLabel#skillPickerTitle { color: #b8c9e2; font-size: 13px; background: transparent; border: none; }
+QLabel#skillPickerEmpty { color: #a2aec1; background: transparent; border: none; padding: 8px; }
+QListWidget#skillPickerList {
+    color: #dde8fa; background: transparent; border: none; outline: none;
+    font-family: Saira; font-size: 14px;
+}
+QListWidget#skillPickerList::item { padding: 7px 10px; border-radius: 7px; }
+QListWidget#skillPickerList::item:selected { background: #354965; color: #e3eeff; }
+QListWidget#skillPickerList::item:hover { background: #303c50; }
 QPushButton#sendButton, QPushButton#stopButton {
     background: transparent;
     border: none;

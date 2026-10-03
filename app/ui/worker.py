@@ -16,15 +16,19 @@ class ConversationWorker(QObject):
     failed = Signal(object)
     activity = Signal(str)
 
-    def __init__(self, service, message: str):
+    def __init__(self, service, message: str, *, skill_name: str | None = None):
         super().__init__()
         self.service = service
         self.message = message
+        self.skill_name = skill_name
 
     @Slot()
     def run(self) -> None:
         try:
-            response = self.service.run(self.message, self.activity.emit)
+            if self.skill_name is None:
+                response = self.service.run(self.message, self.activity.emit)
+            else:
+                response = self.service.run(self.message, self.activity.emit, skill_name=self.skill_name)
             if isinstance(response, str) and getattr(response, "completion", None) is not None:
                 if response.completion.incomplete and not response.strip():
                     raise IncompleteResponseError("The response was cut off.", response.completion,

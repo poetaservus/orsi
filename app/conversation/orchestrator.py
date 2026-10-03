@@ -183,7 +183,8 @@ class ConversationService:
         finally:
             self._run_lock.release()
 
-    def run(self, user_message: str, activity=None) -> str:
+    def run(self, user_message: str, activity=None, *, skill_name: str | None = None) -> str:
+        """Run one turn; an optional explicit skill applies only to this message."""
         text = str(user_message).strip()
         if not text:
             raise ValueError("Enter a message first.")
@@ -192,15 +193,20 @@ class ConversationService:
 
         source = CancellationSource()
         turn_id = None
+        previous_explicit_skill = self._active_skill_name
+        previous_automatic_skill = self._automatic_skill
+        message_skill = None
         try:
             with self._cancellation_lock:
                 if self._closed:
                     raise RuntimeError("The conversation is closed.")
                 self._cancellation = source
+            if skill_name is not None:
+                message_skill = self._activate_skill_locked(skill_name)
             # Local control commands are acknowledged without inference or durable
             # model history. '/skill' alone clears the current session selection.
             command = text.split(maxsplit=1)
-            if command[0] == "/skill":
+            if command[0] == "/skill" and skill_name is None:
                 if len(command) == 1:
                     self._record_skill_event("deactivated", skill=self.active_skill, injected=False)
                     self._active_skill_name = None
@@ -317,6 +323,11 @@ class ConversationService:
             with self._cancellation_lock:
                 if self._cancellation is source:
                     self._cancellation = None
+            if skill_name is not None:
+                self._active_skill_name = previous_explicit_skill
+                self._automatic_skill = None if message_skill is not None else previous_automatic_skill
+                if message_skill is not None:
+                    self._record_skill_event("deactivated", skill=message_skill, method="explicit", injected=False)
             self._active_turn_id = None
             self._run_lock.release()
 
