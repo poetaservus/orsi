@@ -1,10 +1,10 @@
-"""Instruction-only skill definitions and content-free parsing/loading failures."""
+"""Instruction-only skill definitions, discovery results and content-free failures."""
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,3 +77,17 @@ class SkillLoadError(ValueError):
         super().__init__(message)
         self.code = code
         self.source_path = source_path
+
+
+@dataclass(frozen=True, slots=True)
+class SkillDiscoveryIssue:
+    scope: Literal["global", "project"]
+    source_path: Path
+    code: str
+    message: str
+
+
+@dataclass(frozen=True, slots=True)
+class SkillDiscoveryReport:
+    skills: tuple[SkillDefinition, ...] = ()
+    issues: tuple[SkillDiscoveryIssue, ...] = ()
