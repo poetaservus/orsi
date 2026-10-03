@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import json
 from copy import deepcopy
+from dataclasses import replace
 from pathlib import Path
 from threading import Lock
 
@@ -31,6 +32,7 @@ from app.inference.diagnostics import record_context_budget
 from app.runtime.cancellation import CancellationSource, TaskCancelled
 from app.runtime.skills import (
     SkillDefinition, SkillRegistry, SkillActivationError, SkillActivationErrorCode, with_active_skill,
+    SkillCandidate, SkillSelection, select_skill,
 )
 from app.inference.completion import CompletionText, IncompleteResponseError
 
@@ -52,7 +54,10 @@ class ConversationService:
         host_access_policy: HostAccessPolicy | None = None,
         agent_error: str | None = None,
         skill_registry: SkillRegistry | None = None,
+        automatic_skills_enabled: bool = True,
     ):
+        if type(automatic_skills_enabled) is not bool:
+            raise TypeError("Automatic skill selection must be an explicit boolean.")
         if skill_registry is not None and not isinstance(skill_registry, SkillRegistry):
             raise TypeError("Conversation skills must use a SkillRegistry.")
         if agent_runtime is not None and not isinstance(agent_runtime, AgentRuntime):
@@ -70,6 +75,7 @@ class ConversationService:
         self.inference = inference
         self.store = store
         self.skill_registry = skill_registry if skill_registry is not None else SkillRegistry()
+        self.automatic_skills_enabled = automatic_skills_enabled
         self.agent_runtime = agent_runtime
         self.portable_root = portable_root
         self.allowed_read_roots = (
@@ -94,6 +100,8 @@ class ConversationService:
         self._session_id = self.store.session_id
         self._active_turn_id: str | None = None
         self._active_skill_name: str | None = None
+        self._automatic_skill: SkillDefinition | None = None
+        self.skill_selection = SkillSelection()
         self._turn_result: AgentRunResult | None = None
         self._history_persistence_failed = False
         # Measurements describe the latest physical request, never cumulative work.
@@ -122,8 +130,8 @@ class ConversationService:
 
     @property
     def active_skill(self) -> SkillDefinition | None:
-        """Resolve the session selection through the authoritative current catalog."""
-        return self.skill_registry.get(self._active_skill_name) if self._active_skill_name is not None else None
+        """Return the current explicit definition or this turn's automatic snapshot."""
+        return self.skill_registry.get(self._active_skill_name) if self._active_skill_name is not None else deepcopy(self._automatic_skill)
 
     def activate_skill(self, name: str) -> SkillDefinition:
         """Explicitly select one catalog skill for this session, never during a turn."""
@@ -146,6 +154,8 @@ class ConversationService:
             raise SkillActivationError(SkillActivationErrorCode.MISSING_SKILL,
                                        "Requested skill is unavailable in the current catalog.")
         self._active_skill_name = skill.name
+        self._automatic_skill = None
+        self.skill_selection = SkillSelection(name=skill.name, reason="explicit")
         self._context_measurement = None
         return skill
 
@@ -157,6 +167,8 @@ class ConversationService:
                 if self._closed:
                     raise RuntimeError("The conversation is closed.")
             self._active_skill_name = None
+            self._automatic_skill = None
+            self.skill_selection = SkillSelection()
             self._context_measurement = None
         finally:
             self._run_lock.release()
@@ -181,6 +193,8 @@ class ConversationService:
             if command[0] == "/skill":
                 if len(command) == 1:
                     self._active_skill_name = None
+                    self._automatic_skill = None
+                    self.skill_selection = SkillSelection()
                     self._context_measurement = None
                     return "Skill deactivated."
                 skill = self._activate_skill_locked(command[1])
@@ -193,6 +207,27 @@ class ConversationService:
             self._active_turn_id = turn_id
             self._turn_result = None
             self._agent_history.append({"role": "user", "content": text})
+            self._automatic_skill = None
+            self.skill_selection = SkillSelection()
+            if self._active_skill_name is not None:
+                self.skill_selection = SkillSelection(name=self._active_skill_name, reason="explicit")
+            elif self.automatic_skills_enabled:
+                candidates = tuple(SkillCandidate(skill.name, skill.description) for skill in self.skill_registry.list())
+                if candidates and activity:
+                    activity("Choosing a skill...")
+                self.skill_selection = select_skill(self.inference, candidates=candidates, request=text,
+                                                   cancellation=source.token)
+                if self.skill_selection.reason == "stop_failed":
+                    raise RuntimeError("Skill selection could not stop its model request safely.")
+                if self.skill_selection.name is not None:
+                    selected = self.skill_registry.get(self.skill_selection.name)
+                    if selected is not None and SkillCandidate(selected.name, selected.description) in candidates:
+                        self._automatic_skill = selected
+                    else:
+                        self.skill_selection = replace(self.skill_selection, name=None, reason="catalog_changed")
+            else:
+                self.skill_selection = SkillSelection(reason="disabled")
+            source.token.raise_if_cancelled()
             if self.agent_runtime is None:
                 answer = self._run_chat_turn(source, activity)
                 value = CompletionText(answer)
@@ -376,6 +411,8 @@ class ConversationService:
             self._history_persistence_failed = False
             self._agent_history = []
             self._active_skill_name = None
+            self._automatic_skill = None
+            self.skill_selection = SkillSelection()
             self._context_measurement = None
             if self.agent_runtime is not None:
                 self.agent_runtime.purge_terminal_records()
@@ -430,7 +467,7 @@ class ConversationService:
         return measurement[1]
 
     def context_budget(self) -> ContextBudget:
-        if not self.store.messages() and self._active_skill_name is None:
+        if not self.store.messages() and self._active_skill_name is None and self._automatic_skill is None:
             return empty_context_budget(self.inference)
         capabilities = self.agent_capabilities
         if self.agent_enabled:
@@ -493,7 +530,8 @@ class ConversationService:
         if self._active_skill_name is not None and skill is None:
             raise SkillActivationError(SkillActivationErrorCode.MISSING_SKILL,
                                        "Active skill is unavailable. Select another skill or use /skill to clear it.")
-        prompt = with_active_skill(prompt, skill)
+        core_prompt = prompt
+        prompt = with_active_skill(core_prompt, skill)
         if skill is not None:
             latest_user = next((message for message in reversed(history) if message.get("role") == "user"), None)
             # Added guidance must not displace or truncate the current user task.
@@ -501,8 +539,14 @@ class ConversationService:
             if latest_user is not None:
                 required.append(latest_user)
             if not calculate_context_budget(self.inference, required, reserved_tokens=schema_reserve).fits:
-                raise SkillActivationError(SkillActivationErrorCode.CONTEXT_LIMIT,
-                                           "The active skill and current task cannot fit the model context. Use /skill to clear it.")
+                if self._active_skill_name is not None:
+                    raise SkillActivationError(SkillActivationErrorCode.CONTEXT_LIMIT,
+                                               "The active skill and current task cannot fit the model context. Use /skill to clear it.")
+                # Optional automatic guidance cannot make an otherwise admissible
+                # task fail. Explicit activation retains its Phase 3.1 contract.
+                self._automatic_skill = None
+                self.skill_selection = replace(self.skill_selection, name=None, reason="skill_context_limit")
+                prompt = core_prompt
         return select_context_request(
             self.inference,
             system_prompt=prompt,

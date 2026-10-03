@@ -372,7 +372,7 @@ def test_unactivated_catalog_leaves_exact_existing_prompt_and_no_selection(tmp_p
     try:
         service.run("Use style for this ordinary request")
         assert service.active_skill is None
-        assert model.requests[0][0] == [{"role": "system", "content": SYSTEM_PROMPT},
+        assert model.requests[-1][0] == [{"role": "system", "content": SYSTEM_PROMPT},
                                       {"role": "user", "content": "Use style for this ordinary request"}]
         assert with_active_skill(SYSTEM_PROMPT, None) == SYSTEM_PROMPT
     finally:
