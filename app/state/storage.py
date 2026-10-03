@@ -6,6 +6,8 @@ from pathlib import Path
 from threading import RLock
 from typing import Any
 
+from app.state.atomic import replace_state_file
+
 
 class JsonStore:
     def __init__(self, path: Path): self.path = path; self._lock = RLock()
@@ -22,4 +24,4 @@ class JsonStore:
                 handle.write("\n")
                 handle.flush()
                 os.fsync(handle.fileno())
-            os.replace(temporary, self.path)
+            replace_state_file(temporary, self.path)

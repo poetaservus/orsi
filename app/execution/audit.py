@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.state.atomic import replace_state_file
+
 import hashlib
 import json
 import os
@@ -628,7 +630,7 @@ def _atomic_replace(path: Path, encoded: bytes) -> None:
             handle.write(encoded)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary, path)
+        replace_state_file(temporary, path)
         _sync_directory(path.parent)
     except BaseException:
         try:

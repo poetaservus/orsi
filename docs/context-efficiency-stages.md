@@ -30,3 +30,13 @@ The full run recorded 851 passes, three Windows `WinError 5` atomic-save failure
 groups reproduced one journal replacement failure. This is not a green full run
 and provides no permission to promote the candidate. A separate bounded persistence
 fix precedes further context changes.
+
+## Persistence prerequisite
+
+Atomic state replacement now retries only Windows errors 5, 32 and 33, for at
+most 900ms, using the same already-flushed bytes. No filesystem tool action is
+replayed. Permanent denial still propagates and the journal remains fail closed.
+Fault-injection checks verify exact bytes, bounded exhaustion and immediate
+propagation of unrelated errors. The full regression run passed **860 tests and
+15 subtests**, with **54 skipped live checks**. The repeated continuous-session
+failure passed with this fix. These results do not constitute live qualification.
