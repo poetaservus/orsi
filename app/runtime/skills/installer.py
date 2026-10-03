@@ -41,6 +41,14 @@ class SkillInstallErrorCode(StrEnum):
     REFRESH_FAILED = "refresh_failed"
     ROLLBACK_FAILED = "rollback_failed"
     UNSUPPORTED_PLATFORM = "unsupported_platform"
+    INVALID_REMOTE = "invalid_remote"
+    GIT_UNAVAILABLE = "git_unavailable"
+    DOWNLOAD_FAILED = "download_failed"
+    DOWNLOAD_LIMIT = "download_limit"
+    TIMED_OUT = "timed_out"
+    CANCELLED = "cancelled"
+    UNSAFE_REPOSITORY = "unsafe_repository"
+    CLEANUP_FAILED = "cleanup_failed"
 
 
 class SkillInstallError(ValueError):
@@ -95,6 +103,10 @@ class SkillInstaller:
         if on_discovered is not None and not callable(on_discovered):
             raise TypeError("Installation preview must be callable.")
         packages = _inspect_package(source, self.registry)
+        return self._install_packages(packages, on_discovered=on_discovered)
+
+    def _install_packages(self, packages: tuple[_Package, ...], *, on_discovered=None) -> SkillInstallResult:
+        """Publish immutable validated snapshots, including inspected Git blobs."""
         if on_discovered is not None:
             # Detached preview data cannot mutate the validated snapshots.
             from copy import deepcopy

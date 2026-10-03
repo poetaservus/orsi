@@ -531,7 +531,7 @@ def test_cli_all_four_commands_and_failure_exit_codes(tmp_path, capsys):
     assert cli(args + ["remove", "frontend"]) == 0
     assert cli(args + ["info", "frontend"]) == 1
     assert "not_found" in capsys.readouterr().err
-    assert cli(args + ["install", "https://example.test/repo"]) == 1
+    assert cli(args + ["install", "http://example.test/repo"]) == 1
 
 
 def test_cli_list_reports_rejected_entries_separately(tmp_path, capsys):

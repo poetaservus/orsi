@@ -1,4 +1,4 @@
-"""Local skill management commands, independent of UI and inference startup."""
+"""Skill management commands, independent of UI and inference startup."""
 from __future__ import annotations
 
 import argparse
@@ -15,12 +15,12 @@ def _label(value, limit=512):
 
 
 def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(prog="orsi skill", description="Manage local instruction-only skills.")
+    parser = argparse.ArgumentParser(prog="orsi skill", description="Manage instruction-only skills.")
     parser.add_argument("--storage", type=Path, help="Explicit global skill storage (default: ~/.orsi/skills).")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("list", help="List available skills.")
-    install = commands.add_parser("install", help="Inspect and install a local directory; copy SKILL.md only.")
-    install.add_argument("path", type=Path)
+    install = commands.add_parser("install", help="Install a local directory or public HTTPS Git repository; copy SKILL.md only.")
+    install.add_argument("path")
     remove = commands.add_parser("remove", help="Remove a global skill containing SKILL.md alone.")
     remove.add_argument("name")
     info = commands.add_parser("info", help="Show skill metadata without loading its instructions into a model.")
@@ -43,11 +43,17 @@ def main(argv=None) -> int:
                               "source_path": str(skill.source_path), "supported_files": ["SKILL.md"]},
                              ensure_ascii=True, indent=2))
         elif args.command == "install":
+            remote = "://" in args.path or args.path.startswith("git@")
             def preview(skills):
-                print("Validated local skills (SKILL.md only):")
+                print(f"Validated {'Git' if remote else 'local'} skills (SKILL.md only):")
                 for skill in skills:
                     print(f"{_label(skill.name, 128)}: {_label(skill.description)}")
-            result = installer.install(args.path, on_discovered=preview)
+            if remote:
+                from app.runtime.skills.git_installer import GitSkillInstaller
+                result = GitSkillInstaller(installer).install(args.path, on_discovered=preview)
+                print(f"Repository revision: {result.revision}")
+            else:
+                result = installer.install(Path(args.path), on_discovered=preview)
             for name in result.installed:
                 print(f"Installed {_label(name, 128)}.")
             for name in result.already_installed:
