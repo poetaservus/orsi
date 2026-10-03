@@ -978,6 +978,50 @@ class UiTests(unittest.TestCase):
         self.assertEqual(chat._messages[0].label.text(), content)
         chat.close()
 
+    def test_bullets_stay_small_and_aligned_with_wrapped_nested_items(self):
+        from PySide6.QtGui import QFontMetricsF, QTextCursor, QTextListFormat
+        from app.ui.markdown import MarkdownLabel
+        source = (
+            "- **First:** a long sentence that wraps over several lines at a narrow width.\n"
+            "    - Nested `report.json`\n\n"
+            "1. Numbered item\n2. Another numbered item\n\n"
+            "- [x] Finished task\n- [ ] Pending task"
+        )
+        label = MarkdownLabel(source)
+        try:
+            for pixels in (18, 24):
+                font = QFont("Saira")
+                font.setPixelSize(pixels)
+                label.setFont(font)
+                label.refresh_formatting()
+                for width in (220, 520):
+                    label.resize(width, label.heightForWidth(width) + 8)
+                    label.show()
+                    QApplication.processEvents()
+                    markers = label._bullet_markers()
+                    self.assertEqual(len(markers), 2)  # Numbered and task markers remain native.
+                    self.assertGreater(markers[1][0].left(), markers[0][0].left())
+                    block = label.document.begin()
+                    cursor = QTextCursor(block)
+                    origin = label.cursorRect(cursor)
+                    metrics = QFontMetricsF(cursor.charFormat().font().resolve(label.document.defaultFont()))
+                    rectangle = markers[0][0]
+                    self.assertLess(rectangle.width(), metrics.capHeight() / 2)
+                    self.assertGreaterEqual(origin.left() - rectangle.right(), 7)
+                    self.assertAlmostEqual(rectangle.center().y(),
+                        origin.top() + block.layout().lineAt(0).ascent() - metrics.capHeight() / 2)
+                    self.assertEqual(block.textList().format().style(), QTextListFormat.Style.ListDisc)
+                    if width == 220:
+                        self.assertGreater(block.layout().lineCount(), 1)
+                    label.selectAll()
+                    label.copy()
+                    self.assertEqual(QApplication.clipboard().text(), label.plain_text())
+                    self.assertEqual(label.text(), source)
+                    self.assertIn("report.json", label.selectedText())
+                    self.assertEqual(label._bullet_markers(), markers)
+        finally:
+            label.close()
+
     def test_user_bubbles_fit_wrapped_lines_without_extra_right_space(self):
         window = MainWindow(None, "PREVIEW")
         window.resize(1280, 900)

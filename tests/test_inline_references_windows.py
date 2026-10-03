@@ -40,6 +40,28 @@ assert label.selectedText() == label.plain_text()
 assert "orsi_node_2.png" in label.selectedText()
 assert label.isReadOnly()
 label.close()
+
+# Native Windows list layout must keep hanging indents, numbering and task markers.
+from PySide6.QtGui import QTextCursor, QTextListFormat
+bullets = MarkdownLabel("- **First:** a sentence that wraps at a narrow width.\n    - Nested `main`\n\n1. Numbered\n\n- [x] Done")
+bullets.setFont(QFont("Segoe UI", 12))
+bullets.refresh_formatting()
+bullets.resize(180, bullets.heightForWidth(180) + 8)
+bullets.ensurePolished()
+app.processEvents()
+markers = bullets._bullet_markers()
+assert len(markers) == 2
+assert all(3 <= rect.width() <= 6 for rect, style in markers)
+assert markers[1][0].left() > markers[0][0].left()
+first = bullets.document.begin()
+assert first.layout().lineCount() > 1
+assert first.textList().format().style() == QTextListFormat.Style.ListDisc
+assert bullets.cursorRect(QTextCursor(first)).left() - markers[0][0].right() >= 7
+assert "1. " in bullets.document.toMarkdown()
+bullets.selectAll()
+assert bullets.selectedText() == bullets.plain_text()
+assert len(bullets._bullet_markers()) == 2
+bullets.close()
 '''
     result = subprocess.run([sys.executable, "-c", script],
         env={**os.environ, "QT_QPA_PLATFORM": "windows"}, capture_output=True, text=True,
