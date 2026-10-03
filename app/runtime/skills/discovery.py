@@ -15,6 +15,7 @@ from app.runtime.skills.contracts import (
     SkillLoadError, SkillLoadErrorCode, SkillParseError,
 )
 from app.runtime.skills.loader import MAX_SKILL_SIZE, _inspect_chain, _validate_path, load_skill
+from app.runtime.skills.diagnostics import record_skill_event
 
 
 log = logging.getLogger(__name__)
@@ -47,6 +48,7 @@ def discover_skills(
         scopes.append(("project", project_root / ".orsi" / "skills"))
 
     effective: dict[str, SkillDefinition] = {}
+    effective_sources: dict[str, str] = {}
     issues: list[SkillDiscoveryIssue] = []
     for scope, root in scopes:
         skills, rejected = _scan_scope(root, scope, max_bytes, max_entries)
@@ -68,6 +70,12 @@ def discover_skills(
                 label = name if len(name) <= 128 else name[:125] + "..."
                 log.info("[skill] project override: name=%s replaces=global", json.dumps(label, ensure_ascii=True))
             effective[name] = candidates[0]
+            effective_sources[name] = scope
+    for name in sorted(effective):
+        record_skill_event("discovered", skill=effective[name], source=effective_sources[name])
+    for issue in issues:
+        record_skill_event("load_error", source=issue.scope, error_code=issue.code,
+                           location=issue.source_path)
     return SkillDiscoveryReport(
         skills=tuple(effective[name] for name in sorted(effective)),
         issues=tuple(sorted(issues, key=lambda issue: (issue.scope, str(issue.source_path).casefold(),

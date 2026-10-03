@@ -12,6 +12,7 @@ from app.runtime.skills.contracts import (
 )
 from app.runtime.skills.discovery import MAX_DISCOVERY_ENTRIES, discover_skills
 from app.runtime.skills.loader import MAX_SKILL_SIZE, _validate_path
+from app.runtime.skills.diagnostics import record_skill_event
 
 
 class SkillRegistry:
@@ -59,6 +60,7 @@ class SkillRegistry:
                 self._report = deepcopy(report)
             except Exception:
                 self._report = SkillDiscoveryReport()
+                record_skill_event("catalog_error", error_code="refresh_failed")
                 raise
             return deepcopy(self._report)
 
@@ -82,6 +84,11 @@ class SkillRegistry:
     def global_root(self) -> Path:
         """The anchored global storage directory; no filesystem access."""
         return self._global_root
+
+    @property
+    def project_root(self) -> Path | None:
+        """The optional anchored project scope; no filesystem access."""
+        return self._project_root
 
     @property
     def max_bytes(self) -> int:

@@ -35,6 +35,7 @@ from app.runtime.skills import (
     SkillCandidate, SkillSelection, select_skill,
 )
 from app.inference.completion import CompletionText, IncompleteResponseError
+from app.runtime.skills.diagnostics import record_skill_event, skill_source
 
 
 log = logging.getLogger(__name__)
@@ -147,17 +148,25 @@ class ConversationService:
 
     def _activate_skill_locked(self, name: str) -> SkillDefinition:
         if not isinstance(name, str) or not name.strip():
+            record_skill_event("activation_error", method="explicit", injected=False, error_code="invalid_name")
             raise SkillActivationError(SkillActivationErrorCode.INVALID_NAME,
                                        "Skill activation requires a non-empty string name.")
         skill = self.skill_registry.get(name)
         if skill is None:
+            record_skill_event("activation_error", method="explicit", injected=False, error_code="missing_skill")
             raise SkillActivationError(SkillActivationErrorCode.MISSING_SKILL,
                                        "Requested skill is unavailable in the current catalog.")
         self._active_skill_name = skill.name
         self._automatic_skill = None
         self.skill_selection = SkillSelection(name=skill.name, reason="explicit")
         self._context_measurement = None
+        self._record_skill_event("activated", skill=skill, method="explicit", injected=False)
         return skill
+
+    def _record_skill_event(self, event: str, *, skill: SkillDefinition | None = None, **fields) -> None:
+        record_skill_event(event, skill=skill,
+            source=skill_source(skill, global_root=self.skill_registry.global_root,
+                                project_root=self.skill_registry.project_root), **fields)
 
     def deactivate_skill(self) -> None:
         if not self._run_lock.acquire(blocking=False):
@@ -166,6 +175,7 @@ class ConversationService:
             with self._cancellation_lock:
                 if self._closed:
                     raise RuntimeError("The conversation is closed.")
+            self._record_skill_event("deactivated", skill=self.active_skill, injected=False)
             self._active_skill_name = None
             self._automatic_skill = None
             self.skill_selection = SkillSelection()
@@ -192,6 +202,7 @@ class ConversationService:
             command = text.split(maxsplit=1)
             if command[0] == "/skill":
                 if len(command) == 1:
+                    self._record_skill_event("deactivated", skill=self.active_skill, injected=False)
                     self._active_skill_name = None
                     self._automatic_skill = None
                     self.skill_selection = SkillSelection()
@@ -215,8 +226,15 @@ class ConversationService:
                 candidates = tuple(SkillCandidate(skill.name, skill.description) for skill in self.skill_registry.list())
                 if candidates and activity:
                     activity("Choosing a skill...")
-                self.skill_selection = select_skill(self.inference, candidates=candidates, request=text,
-                                                   cancellation=source.token)
+                try:
+                    self.skill_selection = select_skill(self.inference, candidates=candidates, request=text,
+                                                       cancellation=source.token)
+                except TaskCancelled:
+                    record_skill_event("router", method="automatic", router_result="cancelled", injected=False)
+                    raise
+                self._record_skill_event("router", skill=self.skill_registry.get(self.skill_selection.name)
+                    if self.skill_selection.name is not None else None, method="automatic",
+                    router_result=self.skill_selection.reason, injected=False)
                 if self.skill_selection.reason == "stop_failed":
                     raise RuntimeError("Skill selection could not stop its model request safely.")
                 if self.skill_selection.name is not None:
@@ -225,8 +243,10 @@ class ConversationService:
                         self._automatic_skill = selected
                     else:
                         self.skill_selection = replace(self.skill_selection, name=None, reason="catalog_changed")
+                        record_skill_event("router", method="automatic", router_result="catalog_changed", injected=False)
             else:
                 self.skill_selection = SkillSelection(reason="disabled")
+                record_skill_event("router", method="none", router_result="disabled", injected=False)
             source.token.raise_if_cancelled()
             if self.agent_runtime is None:
                 answer = self._run_chat_turn(source, activity)
@@ -308,6 +328,7 @@ class ConversationService:
         if not request.budget.fits:
             raise RuntimeError("The conversation cannot fit the active model context window.")
         record_context_budget(log, request.budget, request_kind="conversation")
+        self._record_skill_injection(request)
         response = self.inference.respond(request.messages)
         source.token.raise_if_cancelled()
         if isinstance(response, str) and getattr(response, "completion", None) is not None:
@@ -352,6 +373,7 @@ class ConversationService:
                 message="The current requirements and capability catalog cannot fit the active model context window.",
                 steps=0, capability_calls=0, protocol_failures=0)
             raise RuntimeError("The agent request cannot fit the active model context window.")
+        self._record_skill_injection(request)
         result = self.agent_runtime.run(
             request.messages,
             session_id=self._session_id,
@@ -407,6 +429,8 @@ class ConversationService:
             raise RuntimeError("Stop the current response before starting a new session.")
         try:
             self.store.new_session(preserve_history=preserve_history)
+            if self.active_skill is not None:
+                self._record_skill_event("deactivated", skill=self.active_skill, injected=False)
             self._session_id = self.store.session_id
             self._history_persistence_failed = False
             self._agent_history = []
@@ -528,6 +552,7 @@ class ConversationService:
             history = self.store.agent_messages(capability_names=())
         skill = self.active_skill
         if self._active_skill_name is not None and skill is None:
+            record_skill_event("activation_error", method="explicit", injected=False, error_code="missing_skill")
             raise SkillActivationError(SkillActivationErrorCode.MISSING_SKILL,
                                        "Active skill is unavailable. Select another skill or use /skill to clear it.")
         core_prompt = prompt
@@ -539,6 +564,9 @@ class ConversationService:
             if latest_user is not None:
                 required.append(latest_user)
             if not calculate_context_budget(self.inference, required, reserved_tokens=schema_reserve).fits:
+                self._record_skill_event("rejected", skill=skill,
+                    method="explicit" if self._active_skill_name is not None else "automatic",
+                    router_result="skill_context_limit", injected=False, error_code="context_limit")
                 if self._active_skill_name is not None:
                     raise SkillActivationError(SkillActivationErrorCode.CONTEXT_LIMIT,
                                                "The active skill and current task cannot fit the model context. Use /skill to clear it.")
@@ -554,6 +582,24 @@ class ConversationService:
             reserved_tokens=schema_reserve,
             recovery_enabled=bool(self.agent_runtime and self.agent_runtime.context_recovery_enabled),
         )
+
+    def _record_skill_injection(self, request: ContextSelection) -> None:
+        """Record only admitted answer inputs, never context-meter projections."""
+        system = request.messages[0]["content"]
+        if "\nACTIVE SKILL\n" not in system:
+            return
+        # Use the rendered snapshot: a concurrent reload may replace or remove
+        # the catalog definition after the request is constructed.
+        payload = json.loads(system.rsplit("\nACTIVE SKILL\n", 1)[1].split("\nEND ACTIVE SKILL\n", 1)[0])
+        skill = self.skill_registry.get(payload["name"])
+        if skill is not None and skill.instructions != payload["instructions"]:
+            skill = None
+        record_skill_event("injected", name=payload["name"], instructions=payload["instructions"],
+            source=skill_source(skill, global_root=self.skill_registry.global_root,
+                                project_root=self.skill_registry.project_root),
+            method="explicit" if self._active_skill_name is not None else "automatic",
+            router_result=self.skill_selection.reason, injected=True,
+            system_message_tokens=request.budget.system_message_tokens)
 
     def _planner_capabilities(self) -> tuple[str, ...]:
         """Return the full registry catalog without applying semantic routing."""
