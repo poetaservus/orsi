@@ -1,9 +1,13 @@
 # Isolated context-efficiency work
 
 The user-accepted starting state is `0c58c13`, preserved on
-`codex/list-marker-spacing`. Work takes place on `codex/context-efficiency-stages`.
-Neither `main` nor the remote is promoted by these experiments. Runtime model
-selection and the accepted model profiles remain unchanged.
+`archive/2026-10-03/accepted-working-before-context-efficiency`. Work was staged on
+`codex/context-efficiency-stages`; the tested source is preserved at
+`archive/2026-10-03/context-efficiency-tested` (`b481941`). The user subsequently
+tested the isolated preview, approved the changes, and explicitly requested merging
+and pushing them. See [the integration record](git-workflow.md). This approval does
+not change failed qualification evidence into a pass. Runtime model selection,
+accepted model profiles and the disabled recovery setting remain unchanged.
 
 ## Stage 1: display occupancy separately from admission
 
@@ -178,3 +182,32 @@ construction reads limits after message counting. Focused tests simulate a
 admission must use the actual lower values. No accepted profile or guard changes.
 Malformed Unicode falls back to bounded byte counting without a tokenizer request
 or cache entry. These corrections are separate from prompt and recovery changes.
+
+## Final measurements and user-approved integration
+
+At `b481941`, the full regression passed **923 tests and 15 subtests**, with
+**54 skipped legacy live checks**. The unchanged repeated live matrix passed
+**21/30** cells: 14B 9/10, 3B 6/10 and VL 4B 6/10, versus 20/30 for frozen accepted
+source `0c58c13`. It remains **not live-qualified**. The 14B's second long-code
+result compiled but attempted an unnecessary denied write. Both smaller profiles
+failed long-code and edit workflows; VL long code ended at its output limit.
+All owned validation servers exited.
+
+The exact Monster Energy question displayed **84%** in two accepted-source runs
+and **25%** in two candidate runs. Provider input decreased from **5,895 to 3,587
+tokens**. The old percentage included reserved capacity; it is not itself a token
+savings measurement. Successful paired ordinary/edit workflows with complete
+physical-request usage used **55.5% of accepted-source total request tokens**.
+Failed and unmeasured work was excluded from that savings figure.
+
+Matched recovery off/on trials passed both routine sessions but neither pressure
+session. Pressure-turn successes decreased from **10/16 off to 6/16 on**; routine
+total tokens were 42,043 off and 42,063 on. The executor replaces a 66,618-byte
+serialized read result with an 8,192-byte prefix before projection, losing the
+requested midpoint marker. Recovery-on retained the token value but failed its
+required exact prefix. Recovery therefore remains **disabled** and unqualified.
+
+The user tested the separately labelled preview and explicitly approved integration
+despite the recorded remaining failures. Raw fixture histories, numeric reports
+and the independent preview state remain local under ignored directories. They
+are not published with application source or used to claim passing live gates.

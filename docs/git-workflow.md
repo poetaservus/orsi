@@ -77,3 +77,27 @@ its results. The previous main is `28482ae`. The shared voice guidance and its t
 without changes to model profiles or runtime authorization. See [personality verification](personality.md)
 for the full regression and repeated live smoke results, including failures and omitted qualification
 gates. User-approved integration does not change those results into full qualification.
+
+## User-approved context-efficiency integration, 3 October 2026
+
+After testing the isolated `TEST b481941` preview, the user explicitly approved
+the changes and requested merging into main and pushing. Main is fast-forwarded
+from `aa0bf7c` to the tested source `b481941`, including accepted list-marker
+revision `0c58c13`. The following documentation commit records that approval;
+application source matches the tested candidate.
+
+The full regression passed 923 tests and 15 subtests, with 54 legacy skips. The
+required repeated live matrix passed 21/30 cells and remained unqualified.
+User-approved integration does not relabel those failures or enable recovery.
+Accepted model profiles, limits, sampling and runtime selection are unchanged.
+See [context-efficiency measurements](context-efficiency-stages.md).
+
+Before integration, refs were preserved in the verified ignored bundle
+`state/backups/context-efficiency-integration-20261003/all-refs-before.bundle`.
+Local archive tags preserve `main-before-context-efficiency`,
+`accepted-working-before-context-efficiency` and `context-efficiency-tested`
+under `archive/2026-10-03/`. Merged local feature branches can be removed after
+publication; no unrelated active checkout or remote feature branch is changed.
+The detached preview remains available with independent state. Its launcher,
+runtime/model links, conversations, settings and validation artifacts are local
+only; normal `ORSI.cmd` and `ORSI_TEST.cmd` launch main after integration.
