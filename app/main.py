@@ -13,12 +13,24 @@ if __package__ in {None, ""}:
 from app.infrastructure.logging import configure_logging
 from app.settings.agent import load_agent_feature_config
 from app.settings.paths import PATHS
-from app.startup import build_application, request_full_local_read_acknowledgement
 from app.state.storage import JsonStore
+
+
+def build_application(*args, **kwargs):
+    from app.startup import build_application as build
+    return build(*args, **kwargs)
+
+
+def request_full_local_read_acknowledgement(*args, **kwargs):
+    from app.startup import request_full_local_read_acknowledgement as request
+    return request(*args, **kwargs)
 
 
 def main() -> int:
     """Initialize runtime directories, compose the backend, and start the Qt UI."""
+    if len(sys.argv) > 1 and sys.argv[1].casefold() == "skill":
+        from app.runtime.skills.cli import main as skill_main
+        return skill_main(sys.argv[2:])
     PATHS.ensure_directories()
     configure_logging(PATHS.state / "orsi.log")
 

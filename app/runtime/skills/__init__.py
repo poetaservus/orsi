@@ -9,6 +9,7 @@ from app.runtime.skills.parser import parse_skill
 from app.runtime.skills.registry import SkillRegistry
 from app.runtime.skills.activation import SkillActivationError, SkillActivationErrorCode, with_active_skill
 from app.runtime.skills.selection import SkillCandidate, SkillSelection, select_skill
+from app.runtime.skills.installer import SkillInstaller, SkillInstallResult, SkillInstallError, SkillInstallErrorCode
 
 __all__ = [
     "SkillDefinition", "SkillLoadError", "SkillLoadErrorCode", "SkillParseError", "SkillParseErrorCode",
@@ -17,4 +18,5 @@ __all__ = [
     "SkillRegistry",
     "SkillActivationError", "SkillActivationErrorCode", "with_active_skill",
     "SkillCandidate", "SkillSelection", "select_skill",
+    "SkillInstaller", "SkillInstallResult", "SkillInstallError", "SkillInstallErrorCode",
 ]

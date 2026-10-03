@@ -79,6 +79,19 @@ class SkillRegistry:
         return self.discover()
 
     @property
+    def global_root(self) -> Path:
+        """The anchored global storage directory; no filesystem access."""
+        return self._global_root
+
+    @property
+    def max_bytes(self) -> int:
+        return self._max_bytes
+
+    @property
+    def max_entries(self) -> int:
+        return self._max_entries
+
+    @property
     def report(self) -> SkillDiscoveryReport:
         """Return the latest detached catalog and structured rejection report."""
         with self._lock:
