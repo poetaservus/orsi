@@ -153,7 +153,10 @@ class LlamaServerInferenceEngine(InferenceEngine):
             process, url, key = self._process, self._base_url, self._api_key
             if self._closed or process is None or process.poll() is not None or self._request_active.is_set():
                 return None
-            digest = sha256(content.encode("utf-8")).hexdigest()
+            try:
+                digest = sha256(content.encode("utf-8")).hexdigest()
+            except UnicodeError:
+                return None
             cached = self._token_count_cache.get(digest)
             if cached is not None:
                 return cached

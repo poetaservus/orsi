@@ -161,12 +161,13 @@ def calculate_context_budget(
     """Calculate the one provider-neutral budget used by admission and display."""
     reserved_tokens = _validated_reserved_tokens(reserved_tokens)
     safety_buffer = _validated_safety_buffer(safety_buffer)
-    limit = context_length(inference)
-    output_reserve = response_reserve(inference)
     system_tokens, conversation_tokens, tool_tokens = _message_token_breakdown(
         inference,
         messages,
     )
+    # Counting can initialize a guarded lazy backend and discover lower limits.
+    limit = context_length(inference)
+    output_reserve = response_reserve(inference)
     total = (
         system_tokens
         + conversation_tokens

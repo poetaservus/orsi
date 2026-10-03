@@ -6,7 +6,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from app.conversation.context import capability_schema_reserve
+from app.conversation.context import calculate_context_budget, capability_schema_reserve
+from app.inference.hybrid import HybridInferenceEngine, LazyInferenceEngine
 from app.inference.llama_server_backend import LlamaServerInferenceEngine, _llama_server_function_tools
 from tests.test_llama_server_inference import definition
 
@@ -91,3 +92,33 @@ def test_invalid_provider_counter_cannot_weaken_admission(invalid):
     with pytest.raises((ValueError, TypeError)):
         capability_schema_reserve((definition(),), inference=SimpleNamespace(
             count_capability_schema_tokens=lambda _: invalid))
+
+
+def test_schema_count_refreshes_guarded_lazy_limits_before_admission():
+    loaded = SimpleNamespace(context_length=2048, max_response_tokens=128,
+        count_capability_schema_tokens=lambda _: 100, count_message_tokens=lambda _: 100)
+    lazy = LazyInferenceEngine(lambda: loaded, context_length=16384, max_response_tokens=4096)
+    hybrid = HybridInferenceEngine(local=lazy, cloud=None)
+    reserve = capability_schema_reserve((definition(),), inference=hybrid)
+    assert (hybrid.context_length, hybrid.max_response_tokens) == (2048, 128)
+    budget = calculate_context_budget(hybrid, [{"role": "user", "content": "hello"}],
+                                      reserved_tokens=reserve)
+    assert (budget.model_context_limit, budget.requested_output_reserve) == (2048, 128)
+
+
+def test_cold_budget_uses_limits_discovered_while_counting_without_tools():
+    loaded = SimpleNamespace(context_length=2048, max_response_tokens=128,
+        count_message_tokens=lambda _: 100)
+    lazy = LazyInferenceEngine(lambda: loaded, context_length=16384, max_response_tokens=4096)
+    hybrid = HybridInferenceEngine(local=lazy, cloud=None)
+    budget = calculate_context_budget(hybrid, [{"role": "user", "content": "hello"}])
+    assert (budget.model_context_limit, budget.requested_output_reserve) == (2048, 128)
+
+
+def test_invalid_unicode_count_falls_back_without_network_or_cache(monkeypatch):
+    value = engine()
+    request = Mock(side_effect=AssertionError("Invalid Unicode must not be submitted"))
+    monkeypatch.setattr("app.inference.llama_server_backend.urlopen", request)
+    assert value.count_message_tokens([{"role": "user", "content": "hello\ud800"}]) == 274
+    assert not value._token_count_cache
+    request.assert_not_called()

@@ -167,3 +167,14 @@ with a real directory. All owned servers exited and the full regression passed
 names one canonical relative read root, removes the virtual Home label, and makes
 explicit that folder labels are not filename prefixes. No acceptance prompt,
 assertion, tool path resolver, permission or profile is changed.
+
+## Estimator failure safety
+
+Code inspection found that a cold lazy backend could discover memory-guarded
+limits during counting while the budget had already copied its advertised limits.
+Schema counting now refreshes the hybrid wrapper's effective limits, and budget
+construction reads limits after message counting. Focused tests simulate a
+16,384/4,096 advertised profile loading at 2,048/128 without allocating a model;
+admission must use the actual lower values. No accepted profile or guard changes.
+Malformed Unicode falls back to bounded byte counting without a tokenizer request
+or cache entry. These corrections are separate from prompt and recovery changes.

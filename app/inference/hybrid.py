@@ -348,7 +348,10 @@ class HybridInferenceEngine(InferenceEngine):
 
     def count_capability_schema_tokens(self, definitions) -> int:
         from app.conversation.context import capability_schema_reserve
-        return capability_schema_reserve(definitions, inference=self._engine_for(self.mode))
+        engine = self._engine_for(self.mode)
+        count = capability_schema_reserve(definitions, inference=engine)
+        self._refresh_limits(engine)
+        return count
 
     def _refresh_limits(self, engine: InferenceEngine) -> None:
         with self._lock:
