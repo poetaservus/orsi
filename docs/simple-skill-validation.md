@@ -1,5 +1,9 @@
 # Small open-source skill validation, 3 October 2026
 
+This report records the pre-repair results at `8318bfd`. The subsequent
+[default 14B context repair](default-14b-context-fix.md) records the user's
+requested fix and its separate native verification.
+
 The unchanged Anthropic `brand-guidelines` skill works when explicitly activated
 on the existing Qwen 3B profile. Automatic activation works for the CSS task but
 misses the font-only task. Qwen 14B selected its existing CPU fallback, where the

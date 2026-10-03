@@ -102,8 +102,11 @@ class LlamaCppInferenceEngine(InferenceEngine):
         if config.gpu_layers != 0 and gpu_offload_available is False:
             log.warning("GPU layers were requested, but this llama-cpp-python build has no GPU offload backend.")
         try:
+            cache_options = ({"type_k": llama_cpp.GGML_TYPE_Q8_0,
+                              "type_v": llama_cpp.GGML_TYPE_Q8_0, "flash_attn": True}
+                             if config.cache_type == "q8_0" else {})
             self.model = Llama(model_path=str(path), n_ctx=self.context_length,
-                               n_gpu_layers=config.gpu_layers, verbose=False)
+                               n_gpu_layers=config.gpu_layers, verbose=False, **cache_options)
         except Exception as exc:
             raise InferenceUnavailable(
                 "The local model could not be initialized on this computer. "

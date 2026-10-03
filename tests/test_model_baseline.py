@@ -73,6 +73,24 @@ def test_cpu_fallback_never_attempts_gpu_when_minimum_context_cannot_fit(profile
     assert (config.gpu_layers, config.context_length, config.max_tokens) == (0, 4096, 1024)
 
 
+def test_quantized_cache_guard_counts_scales_and_matches_allocation_diagnostic(profiles, monkeypatch):
+    monkeypatch.setattr("app.settings.local_models.detect_nvidia_memory_mib", lambda: (16384, 2900))
+    f16 = profiles.configuration("old.gguf")
+    assert f16.context_length == 8192
+    old = profiles.profiles.get("old.gguf")
+    q8 = old.model_copy(update={"configuration": old.configuration.model_copy(update={"cache_type": "q8_0"})})
+    profiles.profiles = profiles.profiles.model_copy(update={"profiles": (q8, profiles.profiles.get("new.gguf"))})
+    effective = profiles.configuration("old.gguf")
+    assert (effective.context_length, effective.max_tokens, effective.gpu_layers) == (16384, 4096, -1)
+    assert effective.estimated_kv_bytes_per_token == 78336  # 147456 FP16 bytes * 34/64
+    record = profiles._resolutions["old.gguf"]
+    assert record["memory_guard"]["estimated_kv_bytes_per_token"] == 78336
+    expected = (record["size_bytes"] / 1048576 * effective.context_model_size_multiplier
+                + effective.context_fixed_reserve_mib + 16384 * 78336 / 1048576)
+    assert record["estimated_allocation_mib"] == round(expected, 2)
+    assert effective.sampling_parameters() == f16.sampling_parameters()
+
+
 def test_replaced_weights_rejected_even_when_metadata_is_unchanged(profiles):
     old = profiles.models_directory / "old.gguf"
     data = old.read_bytes()

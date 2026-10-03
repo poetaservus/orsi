@@ -212,11 +212,15 @@ class LocalModelCatalog:
             raise ValueError("This model file does not match its versioned profile.")
         gpu = detect_nvidia_memory_mib()
         target = profile.configuration
+        # GGUF dimensions describe FP16 K/V storage. Q8_0 stores 32 values
+        # plus a two-byte scale in 34 bytes; FP16 uses 64 bytes for 32 values.
+        kv_bytes_per_token = ((model.kv_bytes_per_token * 17 + 31) // 32
+                              if target.cache_type == "q8_0" else model.kv_bytes_per_token)
         maximum = min(target.context_length, target.maximum_context_length, model.native_context)
         config = target.model_copy(update={"model_path": str(model.path.resolve()),
             "context_length": "auto", "maximum_context_length": maximum,
             "minimum_context_length": min(target.minimum_context_length, maximum),
-            "estimated_kv_bytes_per_token": model.kv_bytes_per_token})
+            "estimated_kv_bytes_per_token": kv_bytes_per_token})
         selection = config.select_context(native_context=model.native_context,
                                           gpu_offload_available=gpu is not None and target.gpu_layers != 0,
                                           gpu_memory_mib=gpu, model_size_bytes=identity["size_bytes"])
@@ -226,7 +230,7 @@ class LocalModelCatalog:
             "max_tokens": min(profile.cpu_max_tokens if cpu else target.max_tokens, selection.length // 2)})
         estimated_mib = (identity["size_bytes"] / 1048576 * config.context_model_size_multiplier
                          + config.context_fixed_reserve_mib
-                         + selection.length * model.kv_bytes_per_token / 1048576)
+                         + selection.length * kv_bytes_per_token / 1048576)
         self._resolutions[model_id] = {
             **identity, "qualification": profile.qualification,
             "profiles_sha256": self.profiles_sha256,
