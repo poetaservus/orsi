@@ -90,6 +90,10 @@ class ConversationService:
         self._active_turn_id: str | None = None
         self._turn_result: AgentRunResult | None = None
         self._history_persistence_failed = False
+        # Measurements describe the latest physical request, never cumulative work.
+        # Keep them scoped to this session/backend revision; legacy history has no
+        # reliable model provenance and must use an explicitly labelled estimate.
+        self._context_measurement = None
         if agent_runtime is not None:
             self.store.reconcile_journal(agent_runtime.executor.journal.records)
         self._agent_history = self.store.agent_messages(capability_names=self.agent_capabilities)
@@ -127,6 +131,7 @@ class ConversationService:
             if self._history_persistence_failed:
                 raise TurnHistoryError("A settled turn could not be retained safely. Review its outcomes before retrying.")
             turn_id = self.store.begin_turn(text)
+            self._context_measurement = None
             self._active_turn_id = turn_id
             self._turn_result = None
             self._agent_history.append({"role": "user", "content": text})
@@ -182,10 +187,18 @@ class ConversationService:
                     log.exception("Stopped turn outcomes could not be persisted.")
                 if isinstance(exc, TurnHistoryError):
                     self._history_persistence_failed = True
+                self._turn_result = outcome
             if isinstance(exc, TaskCancelled):
                 return "The response was stopped."
             raise
         finally:
+            if turn_id is not None and self._turn_result is not None:
+                usage = self._turn_result.completion.usage
+                used = usage.total_tokens
+                if used is None and usage.input_tokens is not None and usage.output_tokens is not None:
+                    used = usage.input_tokens + usage.output_tokens
+                if used is not None:
+                    self._context_measurement = (self._context_measurement_key(), used)
             with self._cancellation_lock:
                 if self._cancellation is source:
                     self._cancellation = None
@@ -341,6 +354,18 @@ class ConversationService:
 
     def estimated_context_tokens(self) -> int:
         return self.context_budget().total_estimated_request_tokens
+
+    def _context_measurement_key(self) -> tuple:
+        return (self.store.session_id, id(self.inference),
+                getattr(self.inference, "context_revision", 0),
+                getattr(self.inference, "mode", None), context_length(self.inference))
+
+    def reported_context_tokens(self) -> int | None:
+        """Latest reported request occupancy, or unknown after session/model changes."""
+        measurement = self._context_measurement
+        if measurement is None or measurement[0] != self._context_measurement_key():
+            return None
+        return measurement[1]
 
     def context_budget(self) -> ContextBudget:
         if not self.store.messages():

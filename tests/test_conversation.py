@@ -22,6 +22,52 @@ class RecordingInference:
         return self.reply
 
 
+def test_context_measurement_is_latest_request_scoped_to_session_and_model(tmp_path):
+    from app.inference.completion import CompletionMetadata, CompletionText, TokenUsage
+    first = CompletionMetadata(usage=TokenUsage(input_tokens=100, output_tokens=20, total_tokens=120))
+    last = CompletionMetadata(finish_reason="length", usage=TokenUsage(input_tokens=300, output_tokens=40))
+    inference = RecordingInference(CompletionText("partial code", last, (first, last)))
+    inference.context_revision = 0
+    service = ConversationService(inference, ConversationStore(tmp_path / "conversation.json"))
+    assert service.reported_context_tokens() is None
+    service.run("Generate code")
+    assert service.reported_context_tokens() == 340  # Not cumulative across physical requests.
+    assert service.store.turns()[-1].outcome.status.value == "incomplete"
+    inference.context_revision += 1
+    assert service.reported_context_tokens() is None
+    inference.context_revision += 1  # Away and back does not resurrect stale usage.
+    assert service.reported_context_tokens() is None
+    inference.reply = CompletionText("done", first)
+    service.run("Next task")
+    assert service.reported_context_tokens() == 120
+    service.new_session()
+    assert service.reported_context_tokens() is None
+    service.run("Fresh task")
+    assert service.reported_context_tokens() == 120
+    reopened = ConversationService(inference, ConversationStore(service.store.path))
+    assert reopened.reported_context_tokens() is None  # Legacy usage lacks model provenance.
+
+
+def test_unreported_or_failed_request_does_not_reuse_previous_usage(tmp_path):
+    from app.inference.completion import CompletionMetadata, CompletionText, TokenUsage
+    inference = RecordingInference(CompletionText("done", CompletionMetadata(
+        usage=TokenUsage(total_tokens=500))))
+    service = ConversationService(inference, ConversationStore(tmp_path / "conversation.json"))
+    service.run("First")
+    assert service.reported_context_tokens() == 500
+    inference.reply = "No usage supplied"
+    service.run("Second")
+    assert service.reported_context_tokens() is None
+    inference.reply = CompletionText("done", CompletionMetadata(usage=TokenUsage(total_tokens=200)))
+    service.run("Third")
+    def fail(messages):
+        raise RuntimeError("provider failed")
+    inference.respond = fail
+    with pytest.raises(RuntimeError, match="provider failed"):
+        service.run("Fourth")
+    assert service.reported_context_tokens() is None
+
+
 def test_conversation_is_text_only_and_persists(tmp_path: Path):
     path = tmp_path / "conversation.json"
     inference = RecordingInference()

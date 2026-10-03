@@ -1316,7 +1316,8 @@ class MainWindow(QMainWindow):
         self.context_window.set_context_length(length)
         budgeter = getattr(self.service, "context_budget", None)
         if callable(budgeter):
-            self.context_window.set_budget(budgeter())
+            reporter = getattr(self.service, "reported_context_tokens", None)
+            self.context_window.set_budget(budgeter(), reported_tokens=reporter() if callable(reporter) else None)
             return
         estimate = getattr(self.service, "estimated_context_tokens", None)
         used = estimate() if callable(estimate) else 0

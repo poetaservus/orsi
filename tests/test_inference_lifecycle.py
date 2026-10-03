@@ -81,6 +81,19 @@ def test_hybrid_closes_every_backend_even_when_one_fails():
             operation()
 
 
+def test_model_mode_round_trip_invalidates_context_measurements():
+    local, cloud = backend(), backend()
+    engine = HybridInferenceEngine(local=local, cloud=cloud)
+    assert engine.context_revision == 0
+    engine.set_mode("local")
+    assert engine.context_revision == 0
+    engine.set_mode("cloud")
+    assert engine.context_revision == 1
+    engine.set_mode("local")
+    assert engine.context_revision == 2
+    engine.close()
+
+
 @pytest.mark.parametrize("failure", ["cancel", "runtime", None])
 def test_service_shutdown_releases_inference_even_on_cleanup_failure(tmp_path, failure):
     inference = backend()

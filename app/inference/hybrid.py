@@ -118,6 +118,7 @@ class HybridInferenceEngine(InferenceEngine):
         self.fallback_to_local = fallback_to_local
         self._lock = RLock()
         self._closed = False
+        self.context_revision = 0
         self.model_catalog = model_catalog
         self._local_factory = local_factory
         self._switch_lock = Lock()
@@ -158,6 +159,8 @@ class HybridInferenceEngine(InferenceEngine):
             if callable(unload):
                 unload()
         with self._lock:
+            if normalized != self._mode:
+                self.context_revision += 1
             self._mode = normalized
             self.context_length = int(getattr(self._engine_for(normalized), "context_length", 8192))
             self.max_response_tokens = int(
@@ -254,6 +257,7 @@ class HybridInferenceEngine(InferenceEngine):
                         raise InferenceUnavailable("Inference is closed.")
                     self.model_catalog.save(getattr(backend, "config", config))
                     self.local = candidate
+                    self.context_revision += 1
                     self.context_length = candidate.context_length
                     self.max_response_tokens = candidate.max_response_tokens
                     self._pending_local = None
@@ -352,6 +356,7 @@ class HybridInferenceEngine(InferenceEngine):
         if self.local is None:
             raise InferenceUnavailable("Local fallback is unavailable.")
         with self._lock:
+            self.context_revision += 1
             self._mode = "local"
             self.context_length = int(getattr(self.local, "context_length", 8192))
             self.max_response_tokens = int(

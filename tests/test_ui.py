@@ -108,7 +108,7 @@ class UiTests(unittest.TestCase):
         window = MainWindow(FakeService(), "TEST-HOST", inference=FakeInference())
         self.assertEqual(window.context_window.bar.value(), 1200)
         self.assertIn("1,200 of 8,192 tokens", window.context_window.toolTip())
-        self.assertIn("Context Window: 15%", window.context_window.status.text())
+        self.assertIn("Context Window: ~15%", window.context_window.status.text())
         window.close()
 
     def test_context_window_bar_uses_the_shared_budget_breakdown(self):
@@ -145,14 +145,19 @@ class UiTests(unittest.TestCase):
         window = MainWindow(FakeService(), "TEST-HOST", inference=FakeInference())
 
         self.assertEqual(window.context_window.bar.maximum(), 8_192)
-        self.assertEqual(window.context_window.bar.value(), 1_768)
+        self.assertEqual(window.context_window.bar.value(), 1_000)
         tooltip = window.context_window.toolTip()
-        self.assertIn("Estimated request use: 1,768 of 8,192 tokens", tooltip)
+        self.assertIn("Estimated next input: 1,000 of 8,192 tokens", tooltip)
         self.assertIn("System: 100", tooltip)
         self.assertIn("Tool history: 400", tooltip)
         self.assertIn("Capability schemas: 200", tooltip)
         self.assertIn("Safety buffer: 256", tooltip)
-        self.assertIn("Remaining: 6,424", tooltip)
+        self.assertIn("Remaining after reserves: 6,424", tooltip)
+        window.context_window.set_budget(budget, reported_tokens=2_000)
+        self.assertEqual(window.context_window.bar.value(), 2_000)
+        self.assertIn("Context Window: 24%", window.context_window.status.text())
+        self.assertIn("Latest reported request use: 2,000", window.context_window.toolTip())
+        self.assertIn("Output reserve: 512", window.context_window.toolTip())
         window.close()
 
     def test_archived_startup_session_shows_empty_chat_and_intro(self):
