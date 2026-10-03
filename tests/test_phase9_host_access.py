@@ -200,7 +200,7 @@ def test_full_local_stat_reads_host_metadata_outside_portable_root(tmp_path: Pat
         assert private_content not in json.dumps(model.requests)
         assert runtime.executor.journal.records[0].state == CallLifecycleState.COMPLETED
         prompt = model.requests[0][0]["content"].casefold()
-        assert "enabled local filesystem drive" in prompt
+        assert "enabled local filesystem drives" in prompt
         assert "current windows user's home directory" in prompt
         assert policy.permission_roots()
     finally:

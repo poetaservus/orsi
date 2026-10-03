@@ -63,3 +63,30 @@ def test_personality_survives_request_selection_without_changing_catalog_or_user
         assert list(tmp_path.glob("report.json")) == []
     finally:
         service.shutdown()
+
+
+def test_full_native_catalog_uses_shared_policy_without_duplicating_tool_contracts(tmp_path):
+    from app.conversation.prompt import agent_system_prompt
+    from app.security.host_access import HostReadScope
+    names = ("stat", "find", "list", "read_text", "search", "mkdir", "write_text",
+             "edit_text", "copy", "move", "trash")
+    flags = AgentFeatureConfig(**{f"filesystem_{name}_enabled": True for name in names},
+                              application_launch_enabled=True)
+    model = RequestRecorder(16384)
+    runtime = build_agent_runtime(model, config=flags, portable_root=tmp_path, state_directory=tmp_path / "state")
+    service = ConversationService(model, ConversationStore(tmp_path / "conversation.json"),
+                                  agent_runtime=runtime, portable_root=tmp_path)
+    try:
+        for user_text in ("Explain game loops.", "confirmed", "List your available tools."):
+            service.run(user_text)
+            messages, catalog = model.requests[-1]
+            assert catalog == runtime.registry.model_visible_names and len(catalog) == 12
+            assert messages[-1] == {"role": "user", "content": user_text}
+            system = messages[0]["content"]
+            full = agent_system_prompt(HostReadScope.PORTABLE_ROOT, catalog)
+            assert len(system.encode()) < len(full.encode()) / 2
+            assert system.startswith(PERSONALITY_GUIDANCE)
+            assert "external approval" in system and "unknown write outcome" in system
+            assert "untrusted data" in system
+    finally:
+        service.shutdown()

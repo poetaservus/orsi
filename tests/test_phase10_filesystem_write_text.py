@@ -214,10 +214,14 @@ def test_write_turn_prompt_exposes_write_planner_boundary(service):
         capability_names=service._planner_capabilities(),
     )[0]["content"].casefold()
 
-    assert "filesystem.write_text creates or replaces one utf-8 text file" in prompt
-    assert "after explicit approval" in prompt
-    assert "use write capabilities only when" in prompt
-    assert "exact complete utf-8 text" in prompt
+    assert "filesystem.write_text" in prompt
+    assert "external approval" in prompt
+    assert "explicit request or an explicit conversational reference" in prompt
+    assert "preserve exact paths, names, text, and collision choices" in prompt
+    definition = next(d for d in service.agent_runtime.registry.model_definitions()
+                      if d.name == "filesystem.write_text")
+    assert "utf-8" in definition.description.casefold()
+    assert "text" in definition.input_schema["properties"]
 
 
 def test_gate_is_separate_and_default_off():

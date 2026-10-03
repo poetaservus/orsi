@@ -8,21 +8,17 @@ from threading import Lock
 from app.agent.runtime import AgentRunStatus, AgentRuntime
 from app.agent.contracts import AgentRunResult, SettledCall
 from app.conversation.context import (
-    DEFAULT_SAFETY_BUFFER_TOKENS,
     ContextBudget,
     ContextSelection,
     capability_schema_reserve,
     context_length,
-    count_message_tokens,
     empty_context_budget,
-    response_reserve,
     select_context_request,
 )
 from app.conversation.capability_routing import select_turn_capabilities
 from app.conversation.prompt import (
     AGENT_CONVERSATION_SYSTEM_PROMPT,
     SYSTEM_PROMPT,
-    agent_system_prompt,
     compact_agent_system_prompt,
 )
 from app.conversation.result_grounding import grounded_text_read_answer
@@ -411,7 +407,7 @@ class ConversationService:
         schema_reserve = 0
         if use_agent:
             schema_reserve = self._capability_schema_reserve(capabilities)
-            prompt = agent_system_prompt(
+            prompt = compact_agent_system_prompt(
                 self.host_read_scope or HostReadScope.PORTABLE_ROOT,
                 capabilities,
                 user_home=(
@@ -420,25 +416,9 @@ class ConversationService:
                     else None
                 ),
             )
-            full_system = {"role": "system", "content": prompt}
-            count_message_tokens(self.inference, [full_system])
-            budget = max(
-                1,
-                context_length(self.inference)
-                - response_reserve(self.inference)
-                - schema_reserve
-                - DEFAULT_SAFETY_BUFFER_TOKENS,
-            )
-            if count_message_tokens(self.inference, [full_system]) >= budget:
-                prompt = compact_agent_system_prompt(
-                    self.host_read_scope or HostReadScope.PORTABLE_ROOT,
-                    capabilities,
-                    user_home=(
-                        str(self.host_access_policy.user_home)
-                        if self.host_access_policy is not None
-                        else None
-                    ),
-                )
+            # Native tool descriptions/schemas already carry per-tool contracts.
+            # Keep one shared policy prompt at every context size, rather than
+            # repeating the complete catalog as prose until space runs out.
             history = self._agent_history
         else:
             prompt = AGENT_CONVERSATION_SYSTEM_PROMPT if self.agent_enabled else SYSTEM_PROMPT

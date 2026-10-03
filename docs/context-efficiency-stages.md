@@ -40,3 +40,28 @@ Fault-injection checks verify exact bytes, bounded exhaustion and immediate
 propagation of unrelated errors. The full regression run passed **860 tests and
 15 subtests**, with **54 skipped live checks**. The repeated continuous-session
 failure passed with this fix. These results do not constitute live qualification.
+
+## Stage 2: one shared native-tool policy
+
+Agent requests now use the shared compact policy at every context size. Tool
+descriptions and strict argument schemas still come from the unchanged registry;
+there is no phrase-based filtering and no change to permissions or sampling.
+The policy retains personality, latest-user intent, path scope and relative-path
+rules, untrusted-content handling, external approvals, exact edits, failure
+honesty and stopping on unknown mutation outcomes. Chat-only prompts are unchanged.
+
+For the full local catalog and current home path, the system prompt decreases
+from **17,345 to 4,631 UTF-8 bytes**, with the existing heuristic estimating
+**4,609 versus 1,430 tokens**. These are prompt-size measurements, not measured
+total task savings. Historical full-prompt generators remain available for
+baseline comparison; inference uses the shared policy.
+
+Six historical tests asserted duplicated prose inside the submitted prompt.
+Their functional assertions remain intact. The text assertions now verify the
+shared policy and authoritative native tool descriptions/argument schemas.
+The live acceptance prompt suite is unchanged, including code, clarification,
+file-byte verification, cancellation and model round trips, repeated per profile.
+
+Stage-two full regression: **861 passed, 54 skipped, 15 subtests passed**.
+Live qualification remains separate and pending; a deterministic pass cannot
+promote this branch.
