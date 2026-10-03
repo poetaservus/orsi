@@ -32,6 +32,7 @@ from app.settings.model import detect_nvidia_memory_mib, load_model_config
 from app.settings.local_models import LocalModelCatalog
 from app.settings.paths import PATHS
 from app.infrastructure.baseline import BaselineRecorder
+from app.runtime.skills import SkillRegistry
 
 
 log = logging.getLogger(__name__)
@@ -41,8 +42,15 @@ def build_application(
     *,
     agent_config_override: AgentFeatureConfig | None = None,
     full_local_read_acknowledged: bool = False,
+    skill_registry_override: SkillRegistry | None = None,
 ):
-    """Build inference, private conversation state, and the optional capability agent."""
+    """Build inference, private conversation state, skills and the optional agent.
+
+    Default skill discovery is global-only. An explicit registry override can
+    supply a chosen project scope; the application's checkout is not inferred.
+    """
+    if skill_registry_override is not None and not isinstance(skill_registry_override, SkillRegistry):
+        raise TypeError("Application skills must use a SkillRegistry.")
     if not isinstance(full_local_read_acknowledged, bool):
         raise TypeError("Full local read acknowledgement must be a boolean.")
     if agent_config_override is not None and not isinstance(
@@ -182,9 +190,12 @@ def build_application(
             host_access_policy = None
             agent_error = _AGENT_STARTUP_ERROR
         try:
+            skill_registry = skill_registry_override if skill_registry_override is not None else SkillRegistry()
+            skill_registry.discover()
             service = ConversationService(
                 inference,
                 store,
+                skill_registry=skill_registry,
                 agent_runtime=agent_runtime,
                 portable_root=PATHS.root if agent_runtime is not None else None,
                 allowed_read_roots=(

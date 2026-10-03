@@ -27,6 +27,7 @@ from app.security.host_access import HostAccessPolicy, HostReadScope
 from app.inference.engine import InferenceUnavailable
 from app.inference.diagnostics import record_context_budget
 from app.runtime.cancellation import CancellationSource, TaskCancelled
+from app.runtime.skills import SkillRegistry
 from app.inference.completion import CompletionText, IncompleteResponseError
 
 
@@ -46,7 +47,10 @@ class ConversationService:
         allowed_read_roots: tuple[Path, ...] = (),
         host_access_policy: HostAccessPolicy | None = None,
         agent_error: str | None = None,
+        skill_registry: SkillRegistry | None = None,
     ):
+        if skill_registry is not None and not isinstance(skill_registry, SkillRegistry):
+            raise TypeError("Conversation skills must use a SkillRegistry.")
         if agent_runtime is not None and not isinstance(agent_runtime, AgentRuntime):
             raise TypeError("The conversation agent must be an AgentRuntime.")
         if agent_runtime is not None and not isinstance(portable_root, Path):
@@ -61,6 +65,7 @@ class ConversationService:
 
         self.inference = inference
         self.store = store
+        self.skill_registry = skill_registry if skill_registry is not None else SkillRegistry()
         self.agent_runtime = agent_runtime
         self.portable_root = portable_root
         self.allowed_read_roots = (
