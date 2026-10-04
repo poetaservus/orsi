@@ -1,9 +1,9 @@
 # Skills in Settings
 
-This follow-up lives on the unmerged `codex/message-skill-picker` branch, after
-picker revision `e3467f9`. The user's separate-branch instruction continues to
-protect the working application: local `main` remains at `9afeaf5`. This change
-is not promoted or published.
+This follow-up was verified on `codex/message-skill-picker`, after picker
+revision `e3467f9`, and committed as `9d41df3`. On 4 October 2026, the user
+explicitly approved merging it into main and pushing to GitHub. The previous
+local main is `9afeaf5`; see [the integration record](git-workflow.md).
 
 ## User workflow
 

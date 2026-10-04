@@ -101,3 +101,30 @@ publication; no unrelated active checkout or remote feature branch is changed.
 The detached preview remains available with independent state. Its launcher,
 runtime/model links, conversations, settings and validation artifacts are local
 only; normal `ORSI.cmd` and `ORSI_TEST.cmd` launch main after integration.
+
+## User-approved skills UI integration, 4 October 2026
+
+After reviewing the message picker and Settings-only installer, the user explicitly
+requested merging into main and pushing to GitHub. Local main fast-forwards from
+`9afeaf5` to the verified feature history: `78ce269` adds per-message attachments,
+`e3467f9` simplifies the picker styling, and `9d41df3` adds Settings management.
+The integration record changes documentation only; application source remains
+the tested candidate.
+
+The final regression passed 1,479 tests and 15 subtests, with 58 existing skips.
+Two isolated Settings audits installed the real frontend-design and handoff
+sources without model requests or changes to the user's skills/model profile.
+An earlier full-run Git temporary-folder cleanup failure and its passing 60-test
+recheck remain recorded in [Settings verification](skill-settings.md). Existing
+skipped qualification gates are not relabeled as passes.
+
+At integration, GitHub main `3da153d` was an ancestor of local main, 14 commits
+behind it. The normal main push includes those already integrated skill-runtime
+commits and the approved UI work. No force push, remote branch deletion or
+other worktree modification is authorized or needed.
+
+Before integration, all refs were preserved in the verified ignored bundle
+`state/backups/skill-ui-integration-20261004/all-refs-before.bundle`, with ref
+and worktree maps alongside it. The merged local `codex/message-skill-picker`
+branch is removed after successful publication. Historical tips remain in the
+bundle and existing archive refs; other checkouts retain their current branches.

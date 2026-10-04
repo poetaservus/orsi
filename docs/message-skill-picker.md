@@ -1,8 +1,9 @@
 # Message skill picker
 
-This change lives on `codex/message-skill-picker`, based on local `main`
-`9afeaf5`. The user explicitly requested a separate branch to protect the working
-application. It is not merged, pushed or promoted into `main`.
+This change was developed and verified on `codex/message-skill-picker`, based
+on local `main` `9afeaf5`, to protect the working application during review.
+On 4 October 2026, the user explicitly approved merging and pushing the picker,
+styling and Settings installer. See [the integration record](git-workflow.md).
 
 ## Using the composer
 
