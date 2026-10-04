@@ -1,9 +1,12 @@
 # OpenAI cloud migration
 
-The migration stays on `codex/cloud-openai`, starting at local main
+The migration was developed on `codex/cloud-openai`, starting at local main
 `b22b904f792f2d393b7e1ccc19ed483e86d0baf4`. The user's explicit instruction
 is to leave main unchanged throughout all phases. This overrides the normal
-fast-forward/branch-cleanup step in `AGENTS.md` for this migration.
+fast-forward/branch-cleanup step in `AGENTS.md` during implementation. After
+testing the cloud update, the user explicitly approved merging into main and
+pushing to GitHub on 4 October 2026. That later approval authorizes integration;
+see the [integration record](git-workflow.md#user-approved-openai-cloud-integration-4-october-2026).
 
 ## Four phases
 

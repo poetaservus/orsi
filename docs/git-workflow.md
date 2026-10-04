@@ -128,3 +128,45 @@ Before integration, all refs were preserved in the verified ignored bundle
 and worktree maps alongside it. The merged local `codex/message-skill-picker`
 branch is removed after successful publication. Historical tips remain in the
 bundle and existing archive refs; other checkouts retain their current branches.
+
+## User-approved OpenAI cloud integration, 4 October 2026
+
+After testing the separate cloud launcher and the Luna output-budget adjustment,
+the user explicitly requested merging the cloud update into main and pushing to
+GitHub. This supersedes the implementation-period instruction to leave main
+unchanged. Main fast-forwards from `b22b904` through tested application source
+`45fccb1`; the following integration record changes documentation only.
+
+The integration includes the pinned OpenAI Responses SDK, native strict tools,
+durable stateless response/encrypted-reasoning replay, streaming and cancellation,
+context/cache measurements, packaging verification, the cloud model selector and
+the 16,384-token Luna output reserve. Luna remains the cloud default; normal
+startup remains local where available, with automatic fallback disabled. Ignored
+runtime selection, conversations, UI preferences, local models and user skills
+are preserved rather than replaced by test-fixture state.
+
+The last focused check passed 193 tests. The full suite recorded 1,700 passed,
+1 failed, 49 skipped and 15 subtests passed. The Skill Settings worker timeout
+also reproduced on a pre-budget-change source snapshot. The real large-write
+fixture completed a 9,110-token call; its separate exact-copy assertion failed
+because the model omitted the final newline. See the retained
+[output-budget verification](cloud-openai-output-budget.md). User approval does
+not relabel either failure or skipped gates as a pass.
+
+Both cloud profiles remain unqualified. Phase 4.1 recorded Luna 28/30 and Sol
+30 blocked due to API permission; those measurements used the old output budget.
+Legacy deletion remains gated on successful qualification. This integration
+does not change prompts, permissions or profile qualification flags to bypass
+those limits.
+
+GitHub main was `b22b904` before integration. All refs are preserved in the
+verified ignored bundle under
+`state/backups/cloud-openai-integration-20261004/`, alongside configuration
+copies and the normal runtime's distribution-version inventory. The normal
+runtime needs `openai==2.54.0`; its dependency plan is checked before installation,
+without replacing existing satisfied dependencies or local inference packages.
+
+Only main is published. After successful publication, the merged local
+`codex/cloud-openai` branch is removed and its test checkout remains detached at
+the integrated tip, preserving its independent state and test launcher. No
+remote feature branches or unrelated active checkouts are changed.
