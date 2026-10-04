@@ -15,6 +15,7 @@ from PySide6.QtCore import (
     Qt,
     QThread,
     QTimer,
+    QVariantAnimation,
     Signal,
     Slot,
 )
@@ -80,6 +81,7 @@ _GREETING_MAX_LENGTH = 80
 _STARTUP_GREETING_HEIGHT = 64
 _STARTUP_GREETING_GAP = 24
 _STARTUP_TRANSITION_MS = 340
+_APPROVAL_TRANSITION_MS = 240
 _BOTTOM_GLASS_BLUR_RADIUS = 18.0
 _BOTTOM_GLASS_BLUR_PADDING = 80
 _BOTTOM_GLASS_TOP_FEATHER = 34
@@ -379,6 +381,7 @@ class MainWindow(QMainWindow):
         self.thread = None
         self.worker = None
         self._approval_panel = None
+        self._approval_transition = None
         self.approval_requested.connect(self._show_approval, Qt.ConnectionType.QueuedConnection)
         bind_approval = getattr(service, "set_approval_requester", None)
         if callable(bind_approval):
@@ -573,6 +576,7 @@ class MainWindow(QMainWindow):
         composer_layout = QHBoxLayout(self._message_composer)
         composer_layout.setContentsMargins(22, 7, 20, 7)
         composer_layout.setSpacing(6)
+        composer_layout.setAlignment(Qt.AlignmentFlag.AlignBottom)
 
         self.input = MessageInput()
         self.input.setObjectName("messageInput")
@@ -817,6 +821,7 @@ class MainWindow(QMainWindow):
         group.start()
 
     def _activate_intro_mode(self) -> None:
+        self._animate_composer_height(_COMPOSER_HEIGHT, animated=False)
         if self._intro_transition is not None:
             self._intro_transition.stop()
             self._intro_transition.deleteLater()
@@ -938,10 +943,13 @@ class MainWindow(QMainWindow):
         self.startup_greeting.hide()
         self.settings_panel.hide()
         self.skill_picker.popup.hide()
+        height = 154 if record.capability == "filesystem.mkdir" else 280
+        # Reveal the review at its natural size instead of squeezing its text
+        # fields into thin strips while the outer composer is growing.
+        panel.setMinimumHeight(height)
         self._composer_stack.addWidget(panel)
         self._composer_stack.setCurrentWidget(panel)
-        self.composer.setFixedHeight(154 if record.capability == "filesystem.mkdir" else 280)
-        self._position_overlays()
+        self._animate_composer_height(height)
         panel.setFocus()
         self.activity.set_activity("Waiting for approval...")
 
@@ -952,10 +960,42 @@ class MainWindow(QMainWindow):
             self._composer_stack.removeWidget(panel)
             panel.hide()
         self._composer_stack.setCurrentWidget(self._message_composer)
-        self.composer.setFixedHeight(_COMPOSER_HEIGHT)
-        self._position_overlays()
+        self._animate_composer_height(_COMPOSER_HEIGHT)
         if self.input.isEnabled():
             self.input.setFocus()
+
+    def _animate_composer_height(self, height: int, *, animated: bool = True) -> None:
+        if self._approval_transition is not None:
+            self._approval_transition.stop()
+            self._approval_transition.deleteLater()
+            self._approval_transition = None
+
+        def resize(value: int) -> None:
+            self.composer.setFixedHeight(value)
+            # Recompute the top edge on every frame, keeping the bottom anchored
+            # and adapting to window resizes during the transition.
+            self._position_overlays()
+
+        if (not animated or not self.isVisible() or getattr(self, "_closing", False)
+                or self.composer.height() == height):
+            resize(height)
+            return
+        animation = QVariantAnimation(self)
+        animation.setDuration(_APPROVAL_TRANSITION_MS)
+        animation.setStartValue(self.composer.height())
+        animation.setEndValue(height)
+        animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
+        animation.valueChanged.connect(resize)
+
+        def finish() -> None:
+            self._approval_transition = None
+            resize(height)
+            animation.deleteLater()
+
+        animation.finished.connect(finish)
+        self._approval_transition = animation
+        self._position_overlays()
+        animation.start()
 
     @Slot(object)
     def _worker_succeeded(self, text: str) -> None:
@@ -1283,6 +1323,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt API name
         self._closing = True
+        self._animate_composer_height(_COMPOSER_HEIGHT, animated=False)
         try:
             if self._greeting_save_timer.isActive():
                 self._greeting_save_timer.stop()

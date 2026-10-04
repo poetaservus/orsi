@@ -47,3 +47,31 @@ ignored `state/backups/inline-approvals-20261004/`. After verification, the
 bounded change is committed, local main fast-forwards, and the merged feature
 branch is removed according to the repository workflow. Other worktrees and
 remote branches retain their existing state.
+
+## Composer animation follow-up
+
+The `codex/approval-composer-animation` follow-up starts from local main
+`c5e0c53`. Approval review grows and retracts with a 240 ms cubic easing curve.
+The composer's bottom edge stays anchored while its height changes, including
+when the window is resized. Review content retains its natural size and is
+revealed by the growing composer. The restored message row stays at the bottom
+during retraction.
+
+Decisions remain immediate. A decision during growth reverses from the current
+height; a new approval during retraction starts from the current height as well.
+New-session and shutdown cleanup stop the height transition. The existing
+approval validation and keyboard shortcuts are unchanged.
+
+Verification passed 248 focused tests and 5 subtests, with 1 existing skip, and
+13 native Windows animation/approval checks. Native intermediate and completed
+frames were inspected under ignored `state/approval-animation-review/`.
+The full unrestricted regression passed 1,721 tests and 15 subtests, with 49
+existing skips and no failures. Live model/provider gates were not rerun for
+this presentation-only follow-up.
+
+Pre-integration refs and the worktree map are preserved in the verified ignored
+bundle under `state/backups/approval-animation-20261004/`. The preceding main
+is tagged at `archive/2026-10-04/main-before-approval-animation`. After
+verification, the bounded change is committed and local main fast-forwards;
+the merged feature branch is removed. Remote refs and other checkouts are
+unchanged.

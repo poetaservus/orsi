@@ -239,3 +239,23 @@ main is also preserved at `archive/2026-10-04/main-before-inline-tool-approvals`
 Following the repository working baseline, verification is followed by a local
 commit, fast-forward of main, and removal of the merged local feature branch.
 Remote refs and other active checkouts are not changed or published.
+
+## Approval composer animation, 4 October 2026
+
+The user requested smooth composer growth and retraction for approval review.
+The bounded `codex/approval-composer-animation` follow-up starts from local main
+`c5e0c53` and adds a 240 ms eased height transition with a fixed bottom edge.
+Decisions remain immediate, and interrupted animations resume from the current
+height. Model and runtime authorization behavior are unchanged.
+
+Verification passed 248 focused tests and 5 subtests, with 1 existing skip;
+13 native Windows animation/approval checks; and the full regression of 1,721
+tests and 15 subtests, with 49 existing skips and no failures. See
+[animation verification](inline-tool-approvals.md#composer-animation-follow-up).
+
+The pre-integration refs and worktree map are preserved in a verified ignored
+bundle under `state/backups/approval-animation-20261004/`. The previous main is
+preserved at `archive/2026-10-04/main-before-approval-animation`. Following the
+working baseline, the verified change is committed, local main fast-forwards,
+and the merged feature branch is removed. Other active worktrees and remote
+refs are unchanged.

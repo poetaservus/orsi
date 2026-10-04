@@ -613,6 +613,7 @@ def test_window_approval_end_to_end(service, tmp_path, action):
         assert not target.exists()
         assert panel.findChild(QPlainTextEdit, "approvalPath").toPlainText() == str(target)
         if action == "approve":
+            wait_until(lambda: window._approval_transition is None)
             assert window.grab().save(str(tmp_path / "approval-window.png"))
             assert panel.grab().save(str(tmp_path / "approval-panel.png"))
             QTest.keyClick(panel, Qt.Key.Key_Return)
