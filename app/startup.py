@@ -74,12 +74,29 @@ def build_application(
         and not full_local_read_acknowledged
     ):
         agent_config = agent_config.model_copy(update={"full_local_read_enabled": False})
-    if agent_config is not None and agent_config.filesystem_stat_enabled:
-        server_executable = PATHS.root / "runtime" / "llama-server" / "llama-server.exe"
-        if not server_executable.is_file():
-            agent_config = AgentFeatureConfig()
-            agent_config_error = _AGENT_STARTUP_ERROR
-
+    cloud_engine = None
+    cloud_config = None
+    cloud_error = None
+    try:
+        cloud_config = load_cloud_config()
+        cloud_engine = (
+            OpenAIResponsesInferenceEngine(
+                cloud_config,
+                selection_path=PATHS.state / "cloud_model_selection_v1.json",
+            )
+            if isinstance(cloud_config, OpenAICloudConfig)
+            else OpenAICompatibleInferenceEngine(cloud_config)
+        )
+    except Exception as exc:
+        log.exception("Cloud inference could not be configured.")
+        cloud_error = f"Cloud model configuration failed: {exc}"
+    if (agent_config is not None and agent_config.filesystem_stat_enabled
+            and not (PATHS.root / "runtime/llama-server/llama-server.exe").is_file()
+            and not (isinstance(cloud_config, OpenAICloudConfig) and cloud_engine is not None)):
+        # Preserve the established local/legacy chat-only fallback. Responses
+        # tools need no local server and keep their separate capability runtime.
+        agent_config = AgentFeatureConfig()
+        agent_config_error = _AGENT_STARTUP_ERROR
     local_engine = None
     local_error = None
     model_catalog = None
@@ -106,6 +123,10 @@ def build_application(
         backend_factory = (LlamaServerInferenceEngine
                            if agent_config is not None and agent_config.filesystem_stat_enabled
                            else LlamaCppInferenceEngine)
+        if backend_factory is LlamaServerInferenceEngine and not (
+            PATHS.root / "runtime" / "llama-server" / "llama-server.exe"
+        ).is_file():
+            raise InferenceUnavailable("The pinned local tool-call server is missing.")
         initial_model_id = model_catalog.current_id
         def local_factory():
             # Check current free memory again when the lazy backend actually loads.
@@ -127,23 +148,6 @@ def build_application(
             if isinstance(exc, InferenceUnavailable)
             else f"Local model configuration failed: {exc}"
         )
-
-    cloud_engine = None
-    cloud_config = None
-    cloud_error = None
-    try:
-        cloud_config = load_cloud_config()
-        cloud_engine = (
-            OpenAIResponsesInferenceEngine(
-                cloud_config,
-                selection_path=PATHS.state / "cloud_model_selection_v1.json",
-            )
-            if isinstance(cloud_config, OpenAICloudConfig)
-            else OpenAICompatibleInferenceEngine(cloud_config)
-        )
-    except Exception as exc:
-        log.exception("Cloud inference could not be configured.")
-        cloud_error = f"Cloud model configuration failed: {exc}"
 
     inference = None
     startup_error = None

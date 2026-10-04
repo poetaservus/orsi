@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("cuda", "cpu")]
+    [ValidateSet("cuda", "cpu", "cloud")]
     [string]$Backend = "cuda"
 )
 
@@ -50,6 +50,7 @@ Write-Host "Installing O.R.S.I dependencies inside the portable folder..."
 & $portablePython -m pip install --disable-pip-version-check --no-cache-dir -r (Join-Path $projectRoot "requirements.txt")
 if ($LASTEXITCODE -ne 0) { throw "Base dependency installation failed with exit code $LASTEXITCODE." }
 
+if ($Backend -ne "cloud") {
 $inferenceRequirements = if ($Backend -eq "cuda") {
     Join-Path $projectRoot "requirements-inference-cuda.txt"
 } else {
@@ -61,20 +62,26 @@ if ($LASTEXITCODE -ne 0) { throw "Inference dependency installation failed with 
 Write-Host "Packaging the pinned native tool-call server..."
 & (Join-Path $PSScriptRoot "build-llama-server.ps1") -Backend $Backend
 if ($LASTEXITCODE -ne 0) { throw "llama-server packaging failed with exit code $LASTEXITCODE." }
+}
 
 Write-Host "Verifying the portable runtime..."
 if ($Backend -eq "cuda") {
     $cudaBin = Join-Path $pythonRoot "Lib\site-packages\nvidia\cu13\bin\x86_64"
     $env:PATH = "$cudaBin;$env:PATH"
 }
+$cloudVerificationOptions = if ($Backend -eq "cloud") { @("--cloud-only") } else { @() }
+& $portablePython -m tools.verify_openai_runtime @cloudVerificationOptions
+if ($LASTEXITCODE -ne 0) { throw "OpenAI runtime verification failed with exit code $LASTEXITCODE." }
+if ($Backend -ne "cloud") {
 & $portablePython -c "import sys; import PySide6, pydantic; from app.inference.llama_backend import _configure_portable_cuda_dlls; _configure_portable_cuda_dlls(); from llama_cpp import llama_cpp; print('Python:', sys.version.split()[0]); print('GPU offload:', llama_cpp.llama_supports_gpu_offload())"
 if ($LASTEXITCODE -ne 0) { throw "Portable runtime verification failed with exit code $LASTEXITCODE." }
+}
 
 Set-Content -LiteralPath (Join-Path $runtimeRoot "READY.txt") -Encoding UTF8 -Value @"
 O.R.S.I portable runtime
 Python: 3.12.10 x64
 Inference backend: $Backend
-Native tool-call server: llama.cpp b9976 (e3546c794)
+Native tool-call server: $(if ($Backend -eq "cloud") { "not included (cloud-only runtime)" } else { "llama.cpp b9976 (e3546c794)" })
 Created: $([DateTimeOffset]::Now.ToString("O"))
 "@
 

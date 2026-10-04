@@ -26,6 +26,8 @@ tool gate below is historical. See [native tools](cloud-openai-tools.md) and
 [response-item replay verification](cloud-openai-replay.md) and
 [streaming/cancellation verification](cloud-openai-streaming.md) and
 [context/cache/measurement verification](cloud-openai-efficiency.md).
+Phase 4.1 adds the separate [OpenAI acceptance and packaging gate](cloud-openai-qualification.md);
+its measured results do not automatically promote either configured profile.
 
 ## Phase 1 implementation
 
