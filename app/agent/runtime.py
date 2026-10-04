@@ -272,7 +272,7 @@ class AgentRuntime:
             ).model_copy(update={"model_requests": 1})
         if isinstance(response, str) and CompletionText(response).completion.incomplete:
             text = CompletionText(response)
-            return self._stopped(AgentRunStatus.INCOMPLETE,
+            return self._stopped(self._incomplete_status(text.completion),
                 "The response is incomplete.", steps=1, capability_calls=0, protocol_failures=0,
                 completion=text.completion, partial_text=str(text) if text.strip() else None).model_copy(update={"model_requests": 1})
         if not isinstance(response, str) or not response.strip():
@@ -534,7 +534,7 @@ class AgentRuntime:
             if _completion_history is not None:
                 _completion_history.append(response.completion)
             if response.completion.incomplete:
-                return self._stopped(AgentRunStatus.INCOMPLETE,
+                return self._stopped(self._incomplete_status(response.completion),
                     "The response was cut off. The incomplete tool generation was not executed."
                     if response.kind != ModelResponseKind.ASSISTANT_TEXT else "The response is incomplete.",
                     steps=steps, capability_calls=capability_calls,
@@ -1094,6 +1094,16 @@ class AgentRuntime:
                 )
             cancellation.wait(self.limits.poll_interval_seconds)
 
+    @staticmethod
+    def _incomplete_status(completion):
+        return {"cancelled": AgentRunStatus.CANCELLED, "deadline": AgentRunStatus.TIMED_OUT}.get(
+            completion.finish_reason, AgentRunStatus.INCOMPLETE)
+
+    @staticmethod
+    def _stop_completion(completion, stop):
+        reason = "deadline" if stop[0] == AgentRunStatus.TIMED_OUT else "cancelled"
+        return completion.model_copy(update={"finish_reason": reason, "interrupted": True})
+
     def _model_step(
         self,
         transcript: list[dict[str, Any]],
@@ -1128,6 +1138,8 @@ class AgentRuntime:
 
         def invoke() -> None:
             try:
+                user_cancellation.raise_if_cancelled()
+                deadline_cancellation.raise_if_cancelled()
                 future.set_result(
                     self.model.respond_with_capabilities(
                         deepcopy(transcript),
@@ -1148,6 +1160,17 @@ class AgentRuntime:
                             cancel()
                         except Exception:
                             log.debug("Model cancellation cleanup failed.", exc_info=True)
+                if getattr(self.model, "supports_text_streaming", False) is True:
+                    try:
+                        interrupted = future.result(timeout=0.5)
+                        if isinstance(interrupted, ModelResponse) and interrupted.completion.incomplete:
+                            return interrupted.model_copy(update={"completion": self._stop_completion(interrupted.completion, stop)}), None
+                    except IncompleteResponseError as exc:
+                        return ModelResponse.failure(ModelProtocolFailureCode.OUTPUT_TRUNCATED,
+                            "The model generation was stopped.").model_copy(
+                                update={"completion": self._stop_completion(exc.completion, stop), "partial_text": exc.partial_text}), None
+                    except Exception:
+                        pass
                 return None, stop
             remaining = self._remaining(started)
             try:
@@ -1201,6 +1224,8 @@ class AgentRuntime:
 
         def invoke() -> None:
             try:
+                user_cancellation.raise_if_cancelled()
+                deadline_cancellation.raise_if_cancelled()
                 future.set_result(self.model.respond(deepcopy(transcript)))
             except BaseException as exc:
                 future.set_exception(exc)
@@ -1216,6 +1241,15 @@ class AgentRuntime:
                             cancel()
                         except Exception:
                             log.debug("Model cancellation cleanup failed.", exc_info=True)
+                if getattr(self.model, "supports_text_streaming", False) is True:
+                    try:
+                        interrupted = future.result(timeout=0.5)
+                        if isinstance(interrupted, str) and CompletionText(interrupted).completion.incomplete:
+                            return CompletionText(interrupted, self._stop_completion(CompletionText(interrupted).completion, stop)), None
+                    except IncompleteResponseError as exc:
+                        return CompletionText(exc.partial_text or "", self._stop_completion(exc.completion, stop)), None
+                    except Exception:
+                        pass
                 return None, stop
             remaining = self._remaining(started)
             try:

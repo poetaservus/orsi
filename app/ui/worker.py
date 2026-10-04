@@ -15,6 +15,7 @@ class ConversationWorker(QObject):
     finished = Signal(object)
     failed = Signal(object)
     activity = Signal(str)
+    text_updated = Signal(str)
 
     def __init__(self, service, message: str, *, skill_name: str | None = None):
         super().__init__()
@@ -25,10 +26,12 @@ class ConversationWorker(QObject):
     @Slot()
     def run(self) -> None:
         try:
-            if self.skill_name is None:
-                response = self.service.run(self.message, self.activity.emit)
-            else:
-                response = self.service.run(self.message, self.activity.emit, skill_name=self.skill_name)
+            kwargs = {}
+            if self.skill_name is not None:
+                kwargs["skill_name"] = self.skill_name
+            if getattr(self.service, "supports_text_streaming", False) is True:
+                kwargs["text_observer"] = self.text_updated.emit
+            response = self.service.run(self.message, self.activity.emit, **kwargs)
             if isinstance(response, str) and getattr(response, "completion", None) is not None:
                 if response.completion.incomplete and not response.strip():
                     raise IncompleteResponseError("The response was cut off.", response.completion,

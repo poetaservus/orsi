@@ -22,7 +22,12 @@ OpenCode.
   function/message item IDs, argument strings and assistant phase fields. The
   Python adaptation adds O.R.S.I.-specific pre-execution persistence and bounded,
   restart-safe settlement; it never resumes provider calls as an execution plan.
+- Cloud Phase 3.1 adapts that same revision's typed Responses terminal-event
+  handling in `app/inference/openai_stream.py`. OpenAI documentation governs
+  streaming and connection cancellation. Retry ownership uses the pinned
+  official Python SDK rather than an additional OpenCode retry loop.
 - Upstream files used as references:
+  - `packages/llm/src/protocols/openai-responses.ts`
   - `packages/opencode/src/session/tools.ts`
   - `packages/opencode/src/session/llm.ts`
   - `packages/opencode/src/session/llm/request.ts`
@@ -45,6 +50,7 @@ O.R.S.I. files containing substantially derived behavior are:
 - `app/inference/openai_backend.py` (cloud Phase 1 reference)
 - `app/inference/openai_tools.py` (cloud Phase 2.1 reference)
 - `app/inference/openai_replay.py` (cloud Phase 2.2 reference)
+- `app/inference/openai_stream.py` (cloud Phase 3.1 reference)
 
 The implementation is a Python/Pydantic adaptation for O.R.S.I.; no block of upstream TypeScript
 was copied verbatim.

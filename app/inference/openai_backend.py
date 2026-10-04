@@ -6,6 +6,8 @@ OpenAI documentation is authoritative for request and response semantics.
 """
 from __future__ import annotations
 
+import asyncio
+from concurrent.futures import CancelledError
 import logging
 import os
 from math import ceil
@@ -19,6 +21,8 @@ from app.inference.engine import InferenceEngine
 from app.inference.protocol import ModelCapabilityDefinition, ModelResponse, ModelProtocolFailureCode, model_capability_definitions
 from app.inference.openai_tools import responses_function_tools, responses_input, normalize_responses_calls
 from app.inference.openai_replay import OpenAIReplay, REPLAY_KEY, neutral_messages
+from app.inference.openai_stream import ResponsesStreamState
+from app.inference.openai_transport import OpenAIRequestRunner
 from app.settings.openai_cloud import OpenAICloudConfig, OpenAIModelCatalog
 
 
@@ -181,13 +185,16 @@ def normalize_tool_response(payload: dict[str, Any], definitions, *, previous_id
 
 class OpenAIResponsesInferenceEngine(InferenceEngine):
     supports_openai_replay = True
+    supports_text_streaming = True
     def __init__(self, config: OpenAICloudConfig, api_key: str | None = None, *,
                  selection_path: Path | None = None):
         self.config = config
         self.catalog = OpenAIModelCatalog(config, selection_path)
         self._api_key = (api_key if api_key is not None else os.environ.get(config.api_key_environment, "")).strip()
         self._lock = RLock()
-        self._client = None
+        self._runner = None
+        self._text_observer = None
+        self._request_cancellation = None
         self._closed = False
         self._refresh_limits()
 
@@ -215,10 +222,36 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
     def set_api_key(self, api_key: str) -> None:
         with self._lock:
             self._ensure_open()
-            client, self._client = self._client, None
+            runner, self._runner = self._runner, None
             self._api_key = str(api_key).strip()
-            if client is not None:
-                client.close()
+        self._close_runner(runner)
+
+    @property
+    def _client(self):
+        return self._runner.client if self._runner is not None else None
+
+    def set_text_observer(self, observer=None):
+        with self._lock:
+            self._text_observer = observer
+
+    def set_request_cancellation(self, token=None):
+        with self._lock:
+            self._request_cancellation = token
+
+    def cancel_current_request(self):
+        with self._lock:
+            runner = self._runner
+        if runner is not None:
+            runner.cancel()
+
+    @staticmethod
+    def _close_runner(runner):
+        if runner is None:
+            return
+        async def close_client():
+            if runner.client is not None:
+                await runner.client.close()
+        runner.close(close_client)
 
     def _ensure_open(self) -> None:
         if self._closed:
@@ -262,16 +295,15 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
                 import openai
             except ImportError:
                 raise CloudInferenceError("The OpenAI SDK is missing from this runtime.", code=CloudErrorCode.PROVIDER_UNAVAILABLE) from None
-            if self._client is None:
-                self._client = openai.OpenAI(api_key=self._api_key, base_url=self.config.base_url,
-                                             timeout=self.config.timeout_seconds,
-                                             max_retries=self.config.max_retries)
-            client = self._client
+            if self._runner is None:
+                self._runner = OpenAIRequestRunner()
+            runner, api_key, observer = self._runner, self._api_key, self._text_observer
+            cancellation = self._request_cancellation
         body: dict[str, Any] = {
             "model": profile.id,
             "input": inputs,
             "store": False,
-            "stream": False,
+            "stream": True,
             "truncation": "disabled",
             "max_output_tokens": profile.max_output_tokens,
             "reasoning": {"effort": profile.reasoning_effort},
@@ -281,23 +313,73 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
             body["temperature"] = profile.temperature
         if tools is not None:
             body.update(tools=tools, tool_choice="auto", parallel_tool_calls=True)
-        # Let the SDK own retries once. Do not wrap it in the old model pool.
+        state = ResponsesStreamState(observer)
+        stream_opened = False
+        async def no_quota_retry(response):
+            # The SDK's public response hook runs before status retry handling.
+            # Quota is permanent even though its HTTP status can be 429.
+            if response.status_code == 429:
+                await response.aread()
+                try:
+                    code = _error_code(response.json())
+                except ValueError:
+                    code = None
+                if code in _QUOTA_ERROR_CODES:
+                    response.headers["x-should-retry"] = "false"
+
+        async def request():
+            nonlocal stream_opened
+            import httpx
+            try:
+                # One deadline includes connection, SDK backoff and stream reads.
+                async with asyncio.timeout(self.config.timeout_seconds):
+                    if cancellation is not None and cancellation.is_cancelled:
+                        raise state.interrupted("cancelled", "The OpenAI response was stopped.")
+                    if runner.client is None:
+                        http_client = openai.DefaultAsyncHttpxClient(event_hooks={"response": [no_quota_retry]})
+                        runner.client = openai.AsyncOpenAI(api_key=api_key, base_url=self.config.base_url,
+                            timeout=self.config.timeout_seconds, max_retries=self.config.max_retries,
+                            http_client=http_client)
+                    stream = await runner.client.responses.create(**body)
+                    stream_opened = True
+                    async with stream:
+                        async for event in stream:
+                            payload = state.accept(event)
+                            if payload is not None:
+                                if payload.get("status") == "failed":
+                                    if state.partial_text:
+                                        raise state.interrupted()
+                                    raise _provider_error(None, _error_code(payload))
+                                return payload
+                    raise state.interrupted()
+            except asyncio.CancelledError:
+                raise state.interrupted("cancelled", "The OpenAI response was stopped.") from None
+            except (TimeoutError, openai.APITimeoutError, httpx.TimeoutException):
+                if stream_opened:
+                    raise state.interrupted(message="The OpenAI stream timed out before completion.") from None
+                raise CloudInferenceError("The OpenAI request timed out.", code=CloudErrorCode.TIMEOUT,
+                    retryable=True, allow_local_fallback=True) from None
+            except (openai.APIConnectionError, httpx.RequestError):
+                if stream_opened:
+                    raise state.interrupted() from None
+                raise CloudInferenceError("OpenAI could not connect. Check the internet connection.",
+                    code=CloudErrorCode.CONNECTION, retryable=True, allow_local_fallback=True) from None
+            except openai.APIStatusError as exc:
+                raise _provider_error(exc.status_code, _error_code(exc.body)) from None
+            except (openai.APIError, ValueError, TypeError, AttributeError):
+                if stream_opened:
+                    raise state.interrupted(message="OpenAI returned an invalid response stream.") from None
+                raise _malformed() from None
+        # The SDK owns pre-stream retries. Never reconnect/replay a started stream.
         try:
-            response = client.responses.create(**body)
-            payload = response.model_dump(mode="json")
-        except openai.APITimeoutError:
-            raise CloudInferenceError("The OpenAI request timed out.", code=CloudErrorCode.TIMEOUT,
-                                      retryable=True, allow_local_fallback=True) from None
-        except openai.APIConnectionError:
-            raise CloudInferenceError("OpenAI could not connect. Check the internet connection.",
-                                      code=CloudErrorCode.CONNECTION, retryable=True,
-                                      allow_local_fallback=True) from None
-        except openai.APIStatusError as exc:
-            raise _provider_error(exc.status_code, _error_code(exc.body)) from None
-        except (openai.APIError, ValueError, TypeError, AttributeError):
-            raise _malformed() from None
-        if not isinstance(payload, dict):
-            raise _malformed()
+            payload = runner.run(request)
+        except CancelledError:
+            raise state.interrupted("cancelled", "The OpenAI response was stopped.") from None
+        except (CloudInferenceError, IncompleteResponseError):
+            raise
+        except RuntimeError:
+            self._ensure_open()
+            raise CloudInferenceError("The OpenAI transport is unavailable.", code=CloudErrorCode.PROVIDER_UNAVAILABLE) from None
         return _ResponsePayload(payload, profile.id)
 
     def respond_with_capabilities(self, messages: list[dict[str, str]],
@@ -306,7 +388,12 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
         tools = responses_function_tools(definitions)
         inputs = responses_input(messages, definitions, model_id=self.active_model)
         previous_ids = {item["call_id"] for item in inputs if item.get("type") == "function_call"}
-        payload = self._request(inputs, tools=tools)
+        try:
+            payload = self._request(inputs, tools=tools)
+        except IncompleteResponseError as exc:
+            return ModelResponse.failure(ModelProtocolFailureCode.OUTPUT_TRUNCATED,
+                "The OpenAI stream ended before completing its response; no tool calls can execute.").model_copy(
+                    update={"completion": exc.completion, "partial_text": exc.partial_text})
         result = normalize_tool_response(payload, definitions, previous_ids=previous_ids)
         if result.protocol_failure is None and not result.completion.incomplete:
             result = result.model_copy(update={"openai_response": self._replay(payload)})
@@ -324,7 +411,8 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
             if self._closed:
                 return
             self._closed = True
-            client, self._client = self._client, None
+            runner, self._runner = self._runner, None
             self._api_key = ""
-        if client is not None:
-            client.close()
+            self._text_observer = None
+            self._request_cancellation = None
+        self._close_runner(runner)

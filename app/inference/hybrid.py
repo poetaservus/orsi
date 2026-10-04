@@ -157,6 +157,21 @@ class HybridInferenceEngine(InferenceEngine):
         with self._lock:
             return getattr(self._engine_for(self._mode), "supports_openai_replay", False) is True
 
+    @property
+    def supports_text_streaming(self) -> bool:
+        with self._lock:
+            return getattr(self._engine_for(self._mode), "supports_text_streaming", False) is True
+
+    def set_text_observer(self, observer=None):
+        setter = getattr(self.cloud, "set_text_observer", None)
+        if callable(setter):
+            setter(observer)
+
+    def set_request_cancellation(self, token=None):
+        setter = getattr(self.cloud, "set_request_cancellation", None)
+        if callable(setter):
+            setter(token)
+
     def set_mode(self, mode: str) -> None:
         normalized = str(mode).strip().casefold()
         if normalized not in self.available_modes:

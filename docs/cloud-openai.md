@@ -19,11 +19,12 @@ implementation patterns adapted to O.R.S.I.'s existing Python interfaces;
 it does not override OpenAI's documented contract or O.R.S.I.'s permissions.
 Existing acceptance prompts remain unchanged.
 
-Current branch status: Phases 1, 2.1 and 2.2 are implemented. Native tools now
+Current branch status: Phases 1, 2.1, 2.2 and 3.1 are implemented. Native tools now
 support reasoning profiles and durable stateless output-item replay. Profile
 defaults are unchanged and both models remain unqualified. The Phase 1-only
 tool gate below is historical. See [native tools](cloud-openai-tools.md) and
-[response-item replay verification](cloud-openai-replay.md).
+[response-item replay verification](cloud-openai-replay.md) and
+[streaming/cancellation verification](cloud-openai-streaming.md).
 
 ## Phase 1 implementation
 

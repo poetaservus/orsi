@@ -27,7 +27,7 @@ from app.inference.protocol import (ModelCapabilityCall, ModelCapabilityDefiniti
 from app.security.permissions import ApprovalStatus, PermissionDecision
 from app.settings.agent import AgentFeatureConfig
 from tests.test_agent_runtime import EchoCapability, BatchEchoCapability, build_runtime, run
-from tests.test_openai_phase1 import config, response
+from tests.test_openai_phase1 import config, response, sse_response
 from tests.test_cloud_inference import capability_definition
 
 
@@ -58,11 +58,15 @@ def scripted_sdk(monkeypatch, payloads):
     def handle(request):
         bodies.append(json.loads(request.content))
         assert len(bodies) <= len(payloads), "Unexpected extra SDK request"
-        return httpx.Response(200, json=payloads[len(bodies) - 1])
-    client = openai.OpenAI(api_key="fake-never-live", max_retries=0,
-                          http_client=httpx.Client(transport=httpx.MockTransport(handle)))
+        return sse_response(payloads[len(bodies) - 1])
+    transport = httpx.AsyncClient(transport=httpx.MockTransport(handle))
+    client = openai.AsyncOpenAI(api_key="fake-never-live", max_retries=0, http_client=transport)
+    def http_factory(**kwargs):
+        transport.event_hooks = kwargs["event_hooks"]
+        return transport
+    monkeypatch.setattr(openai, "DefaultAsyncHttpxClient", http_factory)
     factory = Mock(return_value=client)
-    monkeypatch.setattr(openai, "OpenAI", factory)
+    monkeypatch.setattr(openai, "AsyncOpenAI", factory)
     return OpenAIResponsesInferenceEngine(config(), api_key="fake-never-live"), client, bodies, factory
 
 

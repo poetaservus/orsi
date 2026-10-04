@@ -51,15 +51,29 @@ def engine_with_transport(monkeypatch, payload=None, *, status=200, failure=None
         requests.append(request)
         if failure:
             raise failure(request)
-        return httpx.Response(status, json=payload if payload is not None else response(),
-                              headers={"x-request-id": "request-test"})
+        value = payload if payload is not None else response()
+        return sse_response(value) if status == 200 else httpx.Response(status, json=value)
 
-    client = openai.OpenAI(api_key="test-key-never-live", base_url="https://api.openai.com/v1",
-                          max_retries=0, http_client=httpx.Client(transport=httpx.MockTransport(handle)))
+    transport = httpx.AsyncClient(transport=httpx.MockTransport(handle))
+    client = openai.AsyncOpenAI(api_key="test-key-never-live", base_url="https://api.openai.com/v1",
+                          max_retries=0, http_client=transport)
+    def http_factory(**kwargs):
+        transport.event_hooks = kwargs["event_hooks"]
+        return transport
+    monkeypatch.setattr(openai, "DefaultAsyncHttpxClient", http_factory)
     factory = Mock(return_value=client)
-    monkeypatch.setattr(openai, "OpenAI", factory)
+    monkeypatch.setattr(openai, "AsyncOpenAI", factory)
     engine = OpenAIResponsesInferenceEngine(engine_config or config(), api_key="test-key-never-live")
     return engine, client, requests, factory
+
+
+def sse_response(payload):
+    created = {**payload, "status": "in_progress", "output": []}
+    events = [{"type": "response.created", "sequence_number": 0, "response": created},
+              {"type": "response." + payload.get("status", "completed"),
+               "sequence_number": 1, "response": payload}]
+    return httpx.Response(200, content="".join("data: " + json.dumps(event) + "\n\n" for event in events),
+                          headers={"content-type": "text/event-stream", "x-request-id": "request-test"})
 
 
 def test_checked_in_configuration_uses_luna_and_unqualified_bounded_profiles():
@@ -153,12 +167,12 @@ def test_real_sdk_sends_responses_contract_without_tools_or_secrets_in_body(monk
     assert requests[0].url == "https://api.openai.com/v1/responses"
     body = json.loads(requests[0].content)
     assert body == {"model": "gpt-6-luna", "input": messages, "store": False,
-                    "stream": False, "truncation": "disabled", "max_output_tokens": 4096,
+                    "stream": True, "truncation": "disabled", "max_output_tokens": 4096,
                     "reasoning": {"effort": "none"}, "temperature": 0.1,
                     "include": ["reasoning.encrypted_content"]}
     assert requests[0].headers["authorization"] == "Bearer test-key-never-live"
     factory.assert_called_once_with(api_key="test-key-never-live", base_url="https://api.openai.com/v1",
-                                    timeout=90, max_retries=0)
+                                    timeout=90, max_retries=0, http_client=client._client)
     assert all(value not in caplog.text for value in ("private-input", "private-policy", "test-key-never-live"))
     engine.close()
     assert client.is_closed()
@@ -345,7 +359,7 @@ def test_bootstrap_selects_responses_without_constructing_a_network_client(monke
     monkeypatch.setattr(startup, "load_cloud_config", lambda: config(default_mode="cloud"))
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     factory = Mock(side_effect=AssertionError("SDK must be lazy"))
-    monkeypatch.setattr(openai, "OpenAI", factory)
+    monkeypatch.setattr(openai, "AsyncOpenAI", factory)
     service, _, error, hybrid = startup.build_application(agent_config_override=AgentFeatureConfig())
     assert error is None and isinstance(hybrid.cloud, OpenAIResponsesInferenceEngine)
     assert hybrid.mode == "cloud" and not hybrid.cloud_has_api_key

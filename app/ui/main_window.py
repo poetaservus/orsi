@@ -887,6 +887,7 @@ class MainWindow(QMainWindow):
         self.worker.finished.connect(self._worker_succeeded)
         self.worker.failed.connect(self._worker_failed)
         self.worker.activity.connect(self.activity.set_activity)
+        self.worker.text_updated.connect(self._stream_preview)
         self.worker.finished.connect(self.thread.quit)
         self.worker.failed.connect(self.thread.quit)
         self.thread.finished.connect(self._thread_finished)
@@ -914,6 +915,11 @@ class MainWindow(QMainWindow):
     @Slot(object)
     def _worker_succeeded(self, text: str) -> None:
         self._done(text, False)
+
+    @Slot(str)
+    def _stream_preview(self, text: str) -> None:
+        if not getattr(self, "_closing", False) and getattr(self, "_preview_active", False):
+            self.chat.set_stream_preview(text)
 
     @Slot(object)
     def _worker_failed(self, text: str) -> None:
@@ -951,6 +957,7 @@ class MainWindow(QMainWindow):
             self.close()
 
     def _set_busy(self, busy: bool) -> float | None:
+        self._preview_active = busy
         self.send.setEnabled(not busy)
         self.stop.setEnabled(busy and self.service is not None)
         self.send.setVisible(not busy)
@@ -1470,7 +1477,7 @@ QFrame#userMessage {
     border-radius: 12px;
 }
 QFrame#orsiMessage, QFrame#errorMessage { background: transparent; border: none; }
-QFrame#userMessage QLabel, QFrame#orsiMessage QLabel, QFrame#orsiMessage QTextEdit#messageText {
+QFrame#userMessage QLabel, QFrame#orsiMessage QLabel, QFrame#orsiMessage QTextEdit#messageText, QLabel#streamPreview {
     color: #e3e3e4;
     font-family: Saira;
     font-size: 18px;

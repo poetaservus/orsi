@@ -234,7 +234,11 @@ class ConversationService:
         finally:
             self._run_lock.release()
 
-    def run(self, user_message: str, activity=None, *, skill_name: str | None = None) -> str:
+    @property
+    def supports_text_streaming(self):
+        return getattr(self.inference, "supports_text_streaming", False) is True
+
+    def run(self, user_message: str, activity=None, *, skill_name: str | None = None, text_observer=None) -> str:
         """Run one turn; an optional explicit skill applies only to this message."""
         text = str(user_message).strip()
         if not text:
@@ -247,11 +251,18 @@ class ConversationService:
         previous_explicit_skill = self._active_skill_name
         previous_automatic_skill = self._automatic_skill
         message_skill = None
+        preview_setter = getattr(self.inference, "set_text_observer", None)
+        preview_attached = False
+        cancellation_setter = getattr(self.inference, "set_request_cancellation", None)
+        cancellation_attached = False
         try:
             with self._cancellation_lock:
                 if self._closed:
                     raise RuntimeError("The conversation is closed.")
                 self._cancellation = source
+            if self.supports_text_streaming and callable(cancellation_setter):
+                cancellation_setter(source.token)
+                cancellation_attached = True
             if skill_name is not None:
                 message_skill = self._activate_skill_locked(skill_name)
             # Local control commands are acknowledged without inference or durable
@@ -305,6 +316,9 @@ class ConversationService:
                 self.skill_selection = SkillSelection(reason="disabled")
                 record_skill_event("router", method="none", router_result="disabled", injected=False)
             source.token.raise_if_cancelled()
+            if text_observer is not None and callable(preview_setter):
+                preview_setter(text_observer)
+                preview_attached = True
             if self.agent_runtime is None:
                 answer = self._run_chat_turn(source, activity)
                 value = CompletionText(answer)
@@ -328,7 +342,8 @@ class ConversationService:
                     prior_outcome = outcome
                     value = CompletionText(exc.partial_text or "", exc.completion, exc.completion_history) \
                         if isinstance(exc, IncompleteResponseError) else CompletionText("")
-                    status = (AgentRunStatus.CANCELLED if isinstance(exc, TaskCancelled) else
+                    status = (AgentRunStatus.CANCELLED if isinstance(exc, TaskCancelled) or
+                              isinstance(exc, IncompleteResponseError) and exc.completion.finish_reason == "cancelled" else
                               AgentRunStatus.INCOMPLETE if isinstance(exc, IncompleteResponseError) else
                               AgentRunStatus.MODEL_UNAVAILABLE if isinstance(exc, InferenceUnavailable) else
                               AgentRunStatus.CONTEXT_LIMIT if isinstance(exc, SkillActivationError)
@@ -350,7 +365,7 @@ class ConversationService:
                         partial_text=prior_outcome.assistant_text if prior_outcome else str(value) or None,
                         settled_calls=prior_outcome.settled_calls if prior_outcome else ())
                 try:
-                    self.store.finish_turn(turn_id, outcome)
+                    self.store.finish_turn(turn_id, outcome, outcome.partial_text)
                     self._agent_history = self._stored_agent_history()
                 except Exception:
                     self._history_persistence_failed = True
@@ -364,6 +379,10 @@ class ConversationService:
                 return "The response was stopped."
             raise
         finally:
+            if cancellation_attached:
+                cancellation_setter(None)
+            if preview_attached:
+                preview_setter(None)
             if turn_id is not None and self._turn_result is not None:
                 usage = self._turn_result.completion.usage
                 used = usage.total_tokens
@@ -452,6 +471,9 @@ class ConversationService:
         )
         self._turn_result = result
         if result.status == AgentRunStatus.CANCELLED:
+            if result.partial_text:
+                raise IncompleteResponseError("The response was stopped.", result.completion,
+                    result.partial_text, result.completion_history)
             raise TaskCancelled("The response was stopped.")
         if result.status == AgentRunStatus.INCOMPLETE:
             if result.partial_text is not None:
@@ -487,6 +509,9 @@ class ConversationService:
         if source is None:
             return False
         source.cancel("The response was stopped.")
+        cancel = getattr(self.inference, "cancel_current_request", None)
+        if callable(cancel):
+            cancel()
         return True
 
     def new_session(self, *, preserve_history: bool = False) -> None:

@@ -406,6 +406,12 @@ class ChatView(QScrollArea):
         self.working_label = QLabel("Working for 0.0s")
         self.working_label.setObjectName("responseTiming")
         self.thinking_dots = ThinkingDots()
+        self.stream_preview = QLabel()
+        self.stream_preview.setObjectName("streamPreview")
+        self.stream_preview.setTextFormat(Qt.TextFormat.PlainText)
+        self.stream_preview.setWordWrap(True)
+        self.stream_preview.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self.stream_preview.hide()
         self._thinking_layout.addWidget(
             self.working_label,
             0,
@@ -417,6 +423,7 @@ class ChatView(QScrollArea):
             Qt.AlignmentFlag.AlignLeft,
         )
         self._thinking_row.hide()
+        self._thinking_layout.addWidget(self.stream_preview)
         self._response_elapsed = QElapsedTimer()
         self._response_timer = QTimer(self)
         self._response_timer.setInterval(100)
@@ -488,6 +495,8 @@ class ChatView(QScrollArea):
         QTimer.singleShot(0, self._scroll_to_bottom)
 
     def set_thinking(self, thinking: bool) -> float | None:
+        self.stream_preview.clear()
+        self.stream_preview.hide()
         self._thinking_row.setVisible(thinking)
         if thinking:
             self._response_elapsed.start()
@@ -506,6 +515,14 @@ class ChatView(QScrollArea):
         self._response_elapsed.invalidate()
         self.thinking_dots.stop()
         return elapsed
+
+    def set_stream_preview(self, text: str) -> None:
+        if not self._response_elapsed.isValid():
+            return
+        self.stream_preview.setText(text)
+        self.stream_preview.setVisible(bool(text))
+        if self._follow_tail:
+            QTimer.singleShot(0, self._scroll_to_bottom)
 
     def _update_working_label(self) -> None:
         elapsed = (
