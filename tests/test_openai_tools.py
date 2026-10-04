@@ -41,6 +41,8 @@ def function(definition=None, arguments=None, **changes):
             "name": name(definition), "arguments": json.dumps(arguments or {"path": "probe.txt"}),
             "status": "completed"}
     item.update(changes)
+    if "id" not in changes:
+        item["id"] = "fc_" + item["call_id"] if isinstance(item["call_id"], str) else "fc_invalid"
     return item
 
 
@@ -236,17 +238,17 @@ def test_partial_text_and_empty_partial_messages_have_safe_completion_state():
     assert normalize_tool_response(payload, (capability_definition(),)).protocol_failure.code == ModelProtocolFailureCode.OUTPUT_TRUNCATED
 
 
-def test_reasoning_profile_and_returned_reasoning_items_fail_closed_before_execution(monkeypatch):
-    engine, _, bodies, factory = scripted_sdk(monkeypatch, [])
+def test_reasoning_profile_supports_native_calls_with_replay_evidence(monkeypatch):
+    payload = response(model="gpt-6.1-sol", output=[{"type": "reasoning", "id": "rs_1", "summary": [],
+                                                   "encrypted_content": "opaque"}, function()])
+    engine, _, bodies, factory = scripted_sdk(monkeypatch, [payload])
     engine.select_model("gpt-6.1-sol")
-    with pytest.raises(CloudInferenceError) as failure:
-        engine.respond_with_capabilities([{"role": "user", "content": "Inspect"}], (capability_definition(),))
-    assert failure.value.code == CloudErrorCode.TOOLS_NOT_READY and not failure.value.allow_local_fallback
-    assert not bodies
-    factory.assert_not_called()
-    with pytest.raises(CloudInferenceError) as failure:
-        normalize_tool_response(response(output=[{"type": "reasoning", "encrypted_content": "opaque"}, function()]), (capability_definition(),))
-    assert failure.value.code == CloudErrorCode.TOOLS_NOT_READY
+    result = engine.respond_with_capabilities([{"role": "user", "content": "Inspect"}], (capability_definition(),))
+    assert result.kind == ModelResponseKind.CAPABILITY_CALLS
+    assert result.openai_response.items() == payload["output"]
+    assert bodies[0]["reasoning"] == {"effort": "medium"}
+    assert bodies[0]["include"] == ["reasoning.encrypted_content"]
+    assert "temperature" not in bodies[0]
     engine.close()
 
 

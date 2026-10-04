@@ -43,6 +43,9 @@ model sampling, model limits or qualification flags changed.
 
 ## Boundary with Phase 2.2
 
+The following boundary records Phase 2.1. Phase 2.2 now implements durable item
+and encrypted-reasoning replay; see [its verification](cloud-openai-replay.md).
+
 Native tools are enabled for profiles using reasoning effort `none`, including
 the chosen Luna default. Reasoning-enabled profiles fail before any tool request.
 If the provider nevertheless returns reasoning items alongside calls, the
@@ -93,8 +96,12 @@ explicitly uses strict mode following OpenAI documentation. Attribution is in
 
 An initial filesystem live smoke was rejected before execution by automatic
 approval review because it would export an absolute local path to OpenAI.
-It was not retried or routed around that restriction. That live gate remains
-unrun; permission to export local path metadata is needed before running it.
+It was not retried or routed around that restriction during Phase 2.1. The user
+subsequently explicitly authorized the fixture path/metadata export. Before
+Phase 2.2 changes, the unchanged filesystem smoke passed: one completed stat
+call, correct size, exact call/result pairing, followed by a fresh no-tool chat.
+The client was released. Input/output/total usage was 3009/73/3082, 3306/11/3317
+and 2960/7/2967. This is narrow smoke evidence; full qualification remains pending.
 
 A separate live protocol smoke sent only synthetic strings and a pure echo
 result, without filesystem paths, file content or host metadata. It passed a

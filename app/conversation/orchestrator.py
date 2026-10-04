@@ -6,6 +6,7 @@ from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
 from threading import Lock
+from uuid import uuid4
 
 from app.agent.runtime import AgentRunStatus, AgentRuntime
 from app.agent.contracts import AgentRunResult, SettledCall
@@ -43,6 +44,17 @@ log = logging.getLogger(__name__)
 
 class ConversationService:
     """UI-facing conversation session and the sole owner of agent turn lifecycle."""
+
+    def _stored_agent_history(self, *, capability_names=None):
+        return self.store.agent_messages(capability_names=self.agent_capabilities if capability_names is None else capability_names,
+            openai_replay=getattr(self.inference, "supports_openai_replay", False) is True)
+
+    def _retain_provider_response(self, scope, replay):
+        try:
+            self.store.record_response(self._active_turn_id, scope, replay)
+        except Exception:
+            self._history_persistence_failed = True
+            raise TurnHistoryError("The model response could not be retained durably. Review this turn before retrying.") from None
 
     def __init__(
         self,
@@ -111,7 +123,7 @@ class ConversationService:
         self._context_measurement = None
         if agent_runtime is not None:
             self.store.reconcile_journal(agent_runtime.executor.journal.records)
-        self._agent_history = self.store.agent_messages(capability_names=self.agent_capabilities)
+        self._agent_history = self._stored_agent_history()
 
     @property
     def agent_enabled(self) -> bool:
@@ -262,7 +274,7 @@ class ConversationService:
             self._context_measurement = None
             self._active_turn_id = turn_id
             self._turn_result = None
-            self._agent_history.append({"role": "user", "content": text})
+            self._agent_history = self._stored_agent_history()
             self._automatic_skill = None
             self.skill_selection = SkillSelection()
             if self._active_skill_name is not None:
@@ -307,7 +319,7 @@ class ConversationService:
             else:
                 answer = self._run_agent_turn(text, source, activity)
             self.store.finish_turn(turn_id, self._turn_result, answer)
-            self._agent_history = self.store.agent_messages(capability_names=self.agent_capabilities)
+            self._agent_history = self._stored_agent_history()
             return answer
         except Exception as exc:
             if turn_id is not None:
@@ -339,7 +351,7 @@ class ConversationService:
                         settled_calls=prior_outcome.settled_calls if prior_outcome else ())
                 try:
                     self.store.finish_turn(turn_id, outcome)
-                    self._agent_history = self.store.agent_messages(capability_names=self.agent_capabilities)
+                    self._agent_history = self._stored_agent_history()
                 except Exception:
                     self._history_persistence_failed = True
                     self._agent_history.append({"role": "assistant", "content":
@@ -388,8 +400,10 @@ class ConversationService:
         if not isinstance(response, str) or not response.strip():
             raise RuntimeError("The model returned an empty response.")
         text = CompletionText(response)
+        if text.openai_response is not None and not text.completion.incomplete:
+            self._retain_provider_response(uuid4().hex, text.openai_response)
         return CompletionText(str(text) if text.completion.incomplete else text.strip(),
-                              text.completion, text.completion_history)
+                              text.completion, text.completion_history, openai_response=text.openai_response)
 
     def _run_agent_turn(
         self,
@@ -433,6 +447,7 @@ class ConversationService:
             host_access_policy=self.host_access_policy,
             cancellation=source.token,
             settled_observer=retain_settled,
+            response_observer=self._retain_provider_response,
             capability_names=capabilities,
         )
         self._turn_result = result
@@ -599,7 +614,7 @@ class ConversationService:
             history = self._agent_history
         else:
             prompt = AGENT_CONVERSATION_SYSTEM_PROMPT if self.agent_enabled else SYSTEM_PROMPT
-            history = self.store.agent_messages(capability_names=())
+            history = self._stored_agent_history(capability_names=())
         skill = self.active_skill
         if self._active_skill_name is not None and skill is None:
             record_skill_event("activation_error", method="explicit", injected=False, error_code="missing_skill")

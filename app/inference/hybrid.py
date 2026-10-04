@@ -6,6 +6,7 @@ from typing import Callable, Iterable
 
 from app.inference.cloud_backend import CloudInferenceError
 from app.inference.engine import InferenceEngine, InferenceUnavailable
+from app.inference.openai_replay import neutral_messages
 from app.inference.protocol import (
     ModelCapabilityDefinition,
     ModelResponse,
@@ -151,6 +152,11 @@ class HybridInferenceEngine(InferenceEngine):
         with self._lock:
             return self._mode
 
+    @property
+    def supports_openai_replay(self) -> bool:
+        with self._lock:
+            return getattr(self._engine_for(self._mode), "supports_openai_replay", False) is True
+
     def set_mode(self, mode: str) -> None:
         normalized = str(mode).strip().casefold()
         if normalized not in self.available_modes:
@@ -278,7 +284,7 @@ class HybridInferenceEngine(InferenceEngine):
         mode = self.mode
         engine = self._engine_for(mode)
         if mode != "cloud":
-            result = engine.respond(messages)
+            result = engine.respond(neutral_messages(messages))
             self._refresh_limits(engine)
             return result
         try:
@@ -293,7 +299,7 @@ class HybridInferenceEngine(InferenceEngine):
             ):
                 raise
             try:
-                result = self._engine_for("local").respond(messages)
+                result = self._engine_for("local").respond(neutral_messages(messages))
             except Exception as local_exc:
                 raise CloudInferenceError(
                     f"{exc} Local fallback was also unavailable: {local_exc}"
@@ -313,7 +319,7 @@ class HybridInferenceEngine(InferenceEngine):
         mode = self.mode
         engine = self._engine_for(mode)
         if mode != "cloud":
-            result = engine.respond_with_capabilities(messages, definitions)
+            result = engine.respond_with_capabilities(neutral_messages(messages), definitions)
             self._refresh_limits(engine)
             return result
         try:
@@ -329,7 +335,7 @@ class HybridInferenceEngine(InferenceEngine):
                 raise
             try:
                 result = self._engine_for("local").respond_with_capabilities(
-                    messages,
+                    neutral_messages(messages),
                     definitions,
                 )
             except Exception as local_exc:

@@ -333,6 +333,7 @@ class AgentRuntime:
         _completion_history: list[CompletionMetadata] | None = None,
         _settled_calls: list[SettledCall] | None = None,
         settled_observer: Callable[[SettledCall], None] | None = None,
+        response_observer: Callable[[str, Any], None] | None = None,
         _recovery: _RecoveryUsage | None = None,
     ) -> AgentRunResult:
         if not safe_identifier(session_id) or not safe_identifier(turn_id):
@@ -353,6 +354,8 @@ class AgentRuntime:
             raise TypeError("Agent result observers must be callable when supplied.")
         if settled_observer is not None and not callable(settled_observer):
             raise TypeError("Settled-call observers must be callable when supplied.")
+        if response_observer is not None and not callable(response_observer):
+            raise TypeError("Response observers must be callable when supplied.")
         if self.executor.review_required:
             return self._stopped(AgentRunStatus.INTERNAL_FAILURE,
                 "A previous write outcome requires review before another operation can run.",
@@ -538,12 +541,24 @@ class AgentRuntime:
                     protocol_failures=protocol_failures + int(response.kind == ModelResponseKind.PROTOCOL_FAILURE),
                     completion=response.completion,
                     partial_text=response.partial_text or response.assistant_text)
+            provider_message_id = uuid4().hex
+            if response.openai_response is not None:
+                try:
+                    if response_observer is not None:
+                        response_observer(provider_message_id, response.openai_response)
+                except Exception:
+                    # Persistence exceptions can contain response data. Never log them.
+                    log.error("OpenAI response evidence could not be retained durably.")
+                    return self._stopped(AgentRunStatus.INTERNAL_FAILURE,
+                        "The model response could not be retained durably. No new tool calls were executed.",
+                        steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
             if response.kind == ModelResponseKind.ASSISTANT_TEXT:
                 filename_feedback = filename_disambiguation_feedback(
                     transcript,
                     advertised_names,
                 )
                 if filename_feedback is not None:
+                    self._retain_response_text(transcript, response)
                     recovery.consecutive_format_failures = 0
                     recovery.semantic_corrections += 1
                     transcript.append(filename_feedback)
@@ -555,6 +570,7 @@ class AgentRuntime:
                         )
                     continue
                 if required_set - completed_required:
+                    self._retain_response_text(transcript, response)
                     recovery.consecutive_format_failures = 0
                     recovery.semantic_corrections += 1
                     transcript.append(required_calls_feedback())
@@ -699,7 +715,6 @@ class AgentRuntime:
 
             capability_calls += len(calls)
             repeated = staged_repeated
-            provider_message_id = uuid4().hex
             results: list[CapabilityResult] = []
             for call, internal_call_id in zip(calls, internal_call_ids, strict=True):
                 outcome = self._process_call(
@@ -785,6 +800,8 @@ class AgentRuntime:
 
             try:
                 transcript.append(model_capability_calls_message(calls, provider_message_id=provider_message_id, assistant_text=response.assistant_text))
+                if response.openai_response is not None:
+                    transcript[-1]["openai_response"] = response.openai_response.model_dump(mode="python")
                 for call, result in zip(calls, results, strict=True):
                     transcript.append(
                         model_capability_result_message(
@@ -805,6 +822,12 @@ class AgentRuntime:
                     steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
             if not self._transcript_within_limit(transcript):
                 return self._transcript_limited(steps, capability_calls, protocol_failures)
+
+    @staticmethod
+    def _retain_response_text(transcript, response):
+        if response.openai_response is not None:
+            transcript.append({"role": "assistant", "content": response.assistant_text,
+                               "openai_response": response.openai_response.model_dump(mode="python")})
 
     def _recover_transcript(self, transcript, definitions, usage):
         if not self.context_recovery_enabled:
@@ -1225,7 +1248,8 @@ class AgentRuntime:
         deadline_cancellation: _DeadlineCancellationToken,
         *, _request_usage: _RecoveryUsage | None = None,
     ) -> tuple[ModelResponse | None, tuple[AgentRunStatus, str] | None]:
-        fallback_messages = constrained_fallback_messages(transcript, definitions)
+        from app.inference.openai_replay import neutral_messages
+        fallback_messages = constrained_fallback_messages(neutral_messages(transcript), definitions)
         raw, stop = self._text_model_step(
             fallback_messages,
             started,

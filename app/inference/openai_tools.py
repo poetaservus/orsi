@@ -157,7 +157,44 @@ def _arguments(schema: dict, value: Any, root: dict, *, from_wire: bool, depth: 
     return deepcopy(value)
 
 
-def responses_input(messages: Iterable[dict], definitions: Iterable[ModelCapabilityDefinition]) -> list[dict]:
+def responses_input(messages: Iterable[dict], definitions: Iterable[ModelCapabilityDefinition], *, model_id=None) -> list[dict]:
+    from app.inference.openai_replay import OpenAIReplay, REPLAY_KEY, neutral_messages
+    definitions = model_capability_definitions(definitions, require_nonempty=True)
+    transcript = tuple(messages)
+    plain = neutral_messages(transcript)
+    converted = _neutral_responses_input(plain, definitions)
+    result, offset, item_ids = [], 0, set()
+    latest_user = max((i for i, m in enumerate(plain) if m.get("role") == "user"), default=-1)
+    for index, (source, message) in enumerate(zip(transcript, plain, strict=True)):
+        width = len(message["capability_calls"]) + int("content" in message) if "capability_calls" in message else 1
+        segment = converted[offset:offset + width]
+        offset += width
+        if REPLAY_KEY in source:
+            replay = OpenAIReplay.model_validate(source[REPLAY_KEY])
+            raw_calls = [item for item in replay.items() if item["type"] == "function_call"]
+            if raw_calls:
+                response = normalize_responses_calls(raw_calls, definitions, CompletionMetadata())
+                expected = tuple(ModelCapabilityCall.model_validate(call) for call in message.get("capability_calls", []))
+                if response.protocol_failure is not None or response.capability_calls != expected:
+                    raise ValueError("OpenAI call evidence does not match its settled transcript.")
+            elif "capability_calls" in message:
+                raise ValueError("OpenAI call evidence is missing its generating calls.")
+            if replay.text.strip() != message.get("content", "").strip():
+                raise ValueError("OpenAI text evidence does not match its transcript.")
+            if model_id is not None and replay.model != model_id:
+                if index > latest_user:
+                    raise ValueError("An OpenAI tool turn cannot change model during continuation.")
+            else:
+                segment = replay.items()
+                for item in segment:
+                    if item["id"] in item_ids:
+                        raise ValueError("OpenAI replay items require unique identities.")
+                    item_ids.add(item["id"])
+        result.extend(segment)
+    return result
+
+
+def _neutral_responses_input(messages: Iterable[dict], definitions: Iterable[ModelCapabilityDefinition]) -> list[dict]:
     values = model_capability_definitions(definitions, require_nonempty=True)
     transcript = tuple(messages)
     if not transcript:

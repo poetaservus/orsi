@@ -11,6 +11,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.inference.contracts import ModelCapabilityDefinition
 from app.inference.completion import CompletionMetadata
+from app.inference.openai_replay import OpenAIReplay, neutral_messages
 from app.inference.tool_repair import StructuredCallDecodeError, decode_json_object
 
 
@@ -113,6 +114,7 @@ class ModelResponse(BaseModel):
     )
     protocol_failure: ModelProtocolFailure | None = None
     completion: CompletionMetadata = Field(default_factory=CompletionMetadata)
+    openai_response: OpenAIReplay | None = Field(default=None, repr=False)
     partial_text: str | None = Field(default=None, min_length=1, max_length=_MAX_ASSISTANT_TEXT_CHARS)
 
     @model_validator(mode="after")
@@ -306,7 +308,7 @@ def native_chat_messages(
     outstanding: dict[str, str] = {}
     seen_provider_call_ids: set[str] = set()
 
-    for raw_message in tuple(messages):
+    for raw_message in neutral_messages(tuple(messages)):
         if not isinstance(raw_message, dict):
             raise TypeError("Model transcripts accept only message objects.")
         role = raw_message.get("role")

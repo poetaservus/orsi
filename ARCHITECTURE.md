@@ -159,8 +159,12 @@ grants write or execute authority.
 - `config/cloud.json`: OpenAI Responses configuration and immutable explicit model profiles.
   GPT-6 Luna is the default; ignored `state/cloud_model_selection_v1.json` stores the selected
   model ID. The SDK owns configured retries; the adapter never silently changes models.
-  Phase 1 supplies text requests; Phase 2.1 adds native tool workflows for profiles
-  with reasoning disabled. Reasoning tools stay gated until response-item replay in 2.2.
+  Phase 1 supplies text requests; Phase 2 supplies native tools and durable stateless
+  output-item/encrypted-reasoning replay. Accepted output is saved before execution;
+  the existing journal and permissions remain the execution authority. Complete
+  batches replay in order; interrupted batches retain evidence and only settled
+  neutral pairs enter later turns. Private items never enter local requests or UI
+  history. See [replay verification](docs/cloud-openai-replay.md).
   The legacy pool adapter remains for compatibility tests during migration.
   See [OpenAI migration](docs/cloud-openai.md) for the phased contract and verification.
 - `app/settings/`: strict loaders and models. Environment overrides are applied here, not in tools.

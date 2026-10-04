@@ -311,6 +311,7 @@ def _is_structured_tool_message(message: dict[str, Any]) -> bool:
         role in {"capability", "tool"}
         or "capability_calls" in message
         or "tool_calls" in message
+        or "openai_response" in message
     )
 
 

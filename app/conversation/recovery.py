@@ -135,6 +135,12 @@ def recover_context_request(inference, messages: list[dict], *, reserved_tokens:
     silently discard a requirement, split a tool exchange or send an empty request.
     """
     projected = deepcopy(messages)
+    if any("openai_response" in message for message in messages):
+        # Stateless provider evidence and the results paired with it must stay
+        # untouched. Phase 3 can add provider-aware context management; today
+        # admission stops safely if the complete selected transcript cannot fit.
+        return RecoveredContext(projected, calculate_context_budget(inference, projected,
+            reserved_tokens=reserved_tokens, safety_buffer=safety_buffer))
     anchors = _anchors(messages)
     count = sum(_project_result(m, text_limit=4096, item_limit=16, anchors=anchors) for m in projected)
     def budget(values):

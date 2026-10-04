@@ -154,7 +154,8 @@ def test_real_sdk_sends_responses_contract_without_tools_or_secrets_in_body(monk
     body = json.loads(requests[0].content)
     assert body == {"model": "gpt-6-luna", "input": messages, "store": False,
                     "stream": False, "truncation": "disabled", "max_output_tokens": 4096,
-                    "reasoning": {"effort": "none"}, "temperature": 0.1}
+                    "reasoning": {"effort": "none"}, "temperature": 0.1,
+                    "include": ["reasoning.encrypted_content"]}
     assert requests[0].headers["authorization"] == "Bearer test-key-never-live"
     factory.assert_called_once_with(api_key="test-key-never-live", base_url="https://api.openai.com/v1",
                                     timeout=90, max_retries=0)
@@ -303,12 +304,8 @@ def test_missing_usage_is_not_reported_as_zero_and_invalid_counts_are_ignored():
     assert result.completion.usage.model_dump() == {"input_tokens": None, "output_tokens": None, "total_tokens": None}
 
 
-def test_reasoning_tools_and_text_only_structured_history_stop_before_any_request(monkeypatch):
+def test_text_only_structured_history_stops_before_any_request(monkeypatch):
     engine, _, requests, factory = engine_with_transport(monkeypatch)
-    engine.select_model("gpt-6.1-sol")
-    with pytest.raises(CloudInferenceError) as failure:
-        engine.respond_with_capabilities([{"role": "user", "content": "stat file"}], (capability_definition(),))
-    assert failure.value.code == CloudErrorCode.TOOLS_NOT_READY
     with pytest.raises(ValueError):
         engine.respond([{"role": "capability", "provider_call_id": "call_1", "result": {}}])
     assert not requests

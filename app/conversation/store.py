@@ -13,6 +13,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from app.state.storage import JsonStore
 from app.inference.completion import CompletionMetadata, CompletionText
 from app.agent.contracts import AgentRunResult, AgentRunStatus, SettledCall
+from app.inference.openai_replay import OpenAIReplay, StoredOpenAIResponse, REPLAY_KEY
+from app.inference.protocol import model_capability_calls_message, model_capability_result_message
 
 
 class TurnHistoryError(RuntimeError):
@@ -46,7 +48,7 @@ class RecoveredCall(BaseModel):
 
 
 class TurnRecord(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
     turn_id: str = Field(pattern=r"^turn-[1-9][0-9]*$")
     user_index: int = Field(ge=0)
     assistant_index: int | None = Field(default=None, ge=0)
@@ -55,10 +57,11 @@ class TurnRecord(BaseModel):
     outcome: AgentRunResult | None = None
     settled_calls: list[SettledCall] = Field(default_factory=list, max_length=32)
     recovered_calls: list[RecoveredCall] = Field(default_factory=list, max_length=32)
+    provider_responses: list[StoredOpenAIResponse] = Field(default_factory=list, max_length=32, repr=False)
 
 
 class Conversation(BaseModel):
-    model_config = ConfigDict(extra="forbid", strict=True)
+    model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
 
     conversation_id: str = Field(default_factory=lambda: str(uuid.uuid4()),
                                 pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
@@ -88,6 +91,14 @@ class Conversation(BaseModel):
                     raise ValueError("Settled calls require unique internal and scoped provider identities.")
                 call_ids.add(settled.result.call_id)
                 provider_ids.add(identity)
+            scopes = set()
+            for response in turn.provider_responses:
+                if response.provider_message_id in scopes:
+                    raise ValueError("Provider response scopes must be unique.")
+                scopes.add(response.provider_message_id)
+                paired = [item for item in turn.settled_calls if item.provider_message_id == response.provider_message_id]
+                if not set(item.call.provider_call_id for item in paired).issubset(response.replay.call_ids):
+                    raise ValueError("Settled evidence must match its generating provider response.")
         return self
 
 
@@ -163,6 +174,16 @@ class ConversationStore:
             turn.settled_calls.append(settled)
             self._commit(proposed)
 
+    def record_response(self, turn_id: str, provider_message_id: str, replay: OpenAIReplay) -> None:
+        """Persist accepted output before permission evaluation or tool execution."""
+        with self._lock:
+            proposed = self._conversation.model_copy(deep=True)
+            turn = self._turn(proposed, turn_id)
+            if turn.outcome is not None:
+                raise TurnHistoryError("A stopped turn cannot retain another model response.")
+            turn.provider_responses.append(StoredOpenAIResponse(provider_message_id=provider_message_id, replay=replay))
+            self._commit(proposed)
+
     def finish_turn(self, turn_id: str, outcome: AgentRunResult, answer: str | None = None) -> str:
         with self._lock:
             proposed = self._conversation.model_copy(deep=True)
@@ -203,36 +224,75 @@ class ConversationStore:
             if changed:
                 self._commit(proposed)
 
-    def agent_messages(self, *, capability_names: tuple[str, ...] | None = None) -> list[dict]:
+    def agent_messages(self, *, capability_names: tuple[str, ...] | None = None, openai_replay: bool = False) -> list[dict]:
         with self._lock:
             turns = {turn.user_index: turn for turn in self._conversation.turns}
             stopped = {turn.assistant_index: turn for turn in self._conversation.turns
                        if turn.outcome is not None and turn.outcome.partial_text is not None}
             history = []
+            replayed_assistants = set()
             for index, message in enumerate(self._conversation.messages):
+                if index in replayed_assistants:
+                    continue
                 if index in stopped:
                     history.append({"role": "assistant", "content": self._stopped_text(stopped[index].outcome)})
                 history.append({"role": message.role, "content": message.content})
                 turn = turns.get(index)
                 if turn is not None:
+                    retained = set()
+                    if openai_replay:
+                        for response in turn.provider_responses:
+                            replay = response.replay
+                            paired = [item for item in turn.settled_calls
+                                      if item.provider_message_id == response.provider_message_id]
+                            complete = tuple(item.call.provider_call_id for item in paired) == replay.call_ids
+                            visible = capability_names is None or all(item.call.capability in capability_names for item in paired)
+                            if replay.call_ids and complete and visible:
+                                calls = tuple(item.call for item in paired)
+                                value = model_capability_calls_message(calls, provider_message_id=response.provider_message_id,
+                                    assistant_text=replay.text.strip() or None)
+                                value[REPLAY_KEY] = replay.model_dump(mode="python")
+                                history.append(value)
+                                history.extend(model_capability_result_message(item.call, item.result.model_dump(mode="json"),
+                                    provider_message_id=response.provider_message_id) for item in paired)
+                                retained.update(item.result.call_id for item in paired)
+                            elif not replay.call_ids and replay.text.strip():
+                                history.append({"role": "assistant", "content": replay.text,
+                                                REPLAY_KEY: replay.model_dump(mode="python")})
+                                if (response == turn.provider_responses[-1] and turn.assistant_index is not None
+                                        and self._conversation.messages[turn.assistant_index].content.strip() == replay.text.strip()):
+                                    replayed_assistants.add(turn.assistant_index)
+                            else:
+                                for settled in paired:
+                                    history.extend(self._settled_messages(settled, capability_names))
+                                    retained.add(settled.result.call_id)
+                            # Incomplete/unadvertised batches remain durable evidence.
+                            # Only their settled neutral pairs are eligible on a later user turn.
                     for settled in turn.settled_calls:
-                        if capability_names is None or settled.call.capability in capability_names:
-                            history.extend(settled.messages())
-                        else:
-                            if settled.assistant_text is not None:
-                                history.append({"role": "assistant", "content": settled.assistant_text})
-                            result = settled.result
-                            output = json.dumps(result.output, ensure_ascii=False)[:2_000]
-                            history.append({"role": "assistant", "content":
-                                f"Retained settled call: {result.capability}, call {result.call_id}, "
-                                f"success {result.success}, error {result.error.code.value if result.error else None}. "
-                                f"Reported output (bounded): {output}. Do not replay this operation automatically."})
+                        if settled.result.call_id in retained:
+                            continue
+                        history.extend(self._settled_messages(settled, capability_names))
                     for recovered in turn.recovered_calls:
                         history.append({"role": "assistant", "content":
                             f"Retained call outcome: {recovered.capability}, call {recovered.call_id}, "
                             f"state {recovered.state}, success {recovered.result_success}. "
                             "Detailed trace was interrupted. Do not replay this operation automatically."})
             return history
+
+    @staticmethod
+    def _settled_messages(settled, capability_names):
+        if capability_names is None or settled.call.capability in capability_names:
+            return settled.messages()
+        history = []
+        if settled.assistant_text is not None:
+            history.append({"role": "assistant", "content": settled.assistant_text})
+        result = settled.result
+        output = json.dumps(result.output, ensure_ascii=False)[:2_000]
+        history.append({"role": "assistant", "content":
+            f"Retained settled call: {result.capability}, call {result.call_id}, "
+            f"success {result.success}, error {result.error.code.value if result.error else None}. "
+            f"Reported output (bounded): {output}. Do not replay this operation automatically."})
+        return history
 
     def close_session(self) -> None:
         with self._lock:

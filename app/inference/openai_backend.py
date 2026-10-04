@@ -1,4 +1,4 @@
-"""OpenAI Responses text and non-reasoning native tools. Item replay follows in 2.2.
+"""OpenAI Responses text and native tools with stateless response-item replay.
 
 Responses selection, capability-gated sampling and disabled response storage
 port the corresponding OpenCode implementation choices; see THIRD_PARTY_NOTICES.
@@ -18,6 +18,7 @@ from app.inference.completion import CompletionMetadata, CompletionText, Incompl
 from app.inference.engine import InferenceEngine
 from app.inference.protocol import ModelCapabilityDefinition, ModelResponse, ModelProtocolFailureCode, model_capability_definitions
 from app.inference.openai_tools import responses_function_tools, responses_input, normalize_responses_calls
+from app.inference.openai_replay import OpenAIReplay, REPLAY_KEY, neutral_messages
 from app.settings.openai_cloud import OpenAICloudConfig, OpenAIModelCatalog
 
 
@@ -25,6 +26,13 @@ log = logging.getLogger(__name__)
 _MAX_TEXT_CHARS = 1_000_000
 _CONTEXT_ERROR_CODES = {"context_length_exceeded", "context_window_exceeded", "input_too_long"}
 _QUOTA_ERROR_CODES = {"insufficient_quota", "billing_hard_limit_reached", "billing_not_active"}
+
+
+class _ResponsePayload(dict):
+    """Bind replay to the requested profile even when an alias resolves to a snapshot."""
+    def __init__(self, payload, requested_model):
+        super().__init__(payload)
+        self.requested_model = requested_model
 
 
 def _count(value: Any) -> int | None:
@@ -97,7 +105,7 @@ def normalize_text_response(payload: dict[str, Any]) -> CompletionText:
         if not isinstance(item, dict):
             raise _malformed()
         if item.get("type") == "reasoning":
-            continue  # Opaque item persistence and replay belong to Phase 2.
+            continue  # Private reasoning is retained separately from visible text.
         if item.get("type") != "message" or item.get("role") != "assistant":
             raise _malformed()  # No tools were supplied: a call cannot execute.
         if status == "completed" and item.get("status") != "completed":
@@ -154,9 +162,6 @@ def normalize_tool_response(payload: dict[str, Any], definitions, *, previous_id
     if not calls:
         result = normalize_text_response(payload)
         return ModelResponse.text(str(result)).model_copy(update={"completion": result.completion})
-    if any(item.get("type") == "reasoning" for item in output):
-        raise CloudInferenceError("OpenAI reasoning tool items require the replay support in Phase 2.2.",
-                                  code=CloudErrorCode.TOOLS_NOT_READY)
     if text is not None and text.completion.finish_reason == "refusal":
         return ModelResponse.failure(ModelProtocolFailureCode.MIXED_RESPONSE,
                                     "OpenAI returned both a refusal and tool calls; no calls can execute.").model_copy(
@@ -175,6 +180,7 @@ def normalize_tool_response(payload: dict[str, Any], definitions, *, previous_id
 
 
 class OpenAIResponsesInferenceEngine(InferenceEngine):
+    supports_openai_replay = True
     def __init__(self, config: OpenAICloudConfig, api_key: str | None = None, *,
                  selection_path: Path | None = None):
         self.config = config
@@ -219,22 +225,37 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
             raise CloudInferenceError("The OpenAI backend is closed.", code=CloudErrorCode.CLOSED)
 
     def respond(self, messages: list[dict[str, str]]) -> str:
-        # Phase 1 supports complete text transcripts only. Reject provider-neutral
-        # tool history before any request rather than losing it in conversion.
-        if not messages or any(not isinstance(message, dict)
+        neutral = neutral_messages(messages)
+        if not neutral or any(not isinstance(message, dict)
                 or set(message) != {"role", "content"}
                 or message["role"] not in {"system", "user", "assistant"}
-                or not isinstance(message["content"], str) for message in messages):
+                or not isinstance(message["content"], str) for message in neutral):
             raise ValueError("OpenAI text requests require a non-empty text-only transcript.")
-        return normalize_text_response(self._request([dict(message) for message in messages]))
+        inputs = []
+        for message, plain in zip(messages, neutral, strict=True):
+            if REPLAY_KEY in message:
+                replay = OpenAIReplay.model_validate(message[REPLAY_KEY])
+                if replay.call_ids or replay.text.strip() != plain["content"].strip():
+                    raise ValueError("OpenAI text evidence does not match its transcript.")
+                inputs.extend(replay.items() if replay.model == self.active_model else [plain])
+            else:
+                inputs.append(plain)
+        payload = self._request(inputs)
+        result = normalize_text_response(payload)
+        if not result.completion.incomplete:
+            result = CompletionText(result, openai_response=self._replay(payload))
+        return result
+
+    def _replay(self, payload):
+        try:
+            return OpenAIReplay.from_payload(payload, getattr(payload, "requested_model", self.active_model))
+        except (TypeError, ValueError):
+            raise _malformed() from None
 
     def _request(self, inputs: list[dict], *, tools: list[dict] | None = None) -> dict:
         with self._lock:
             self._ensure_open()
             profile = self.catalog.current_profile
-            if tools is not None and profile.reasoning_effort != "none":
-                raise CloudInferenceError("OpenAI reasoning tool workflows require the replay support in Phase 2.2.",
-                                          code=CloudErrorCode.TOOLS_NOT_READY)
             if not self._api_key:
                 raise CloudInferenceError("Cloud mode needs an OpenAI API key for this session.", code=CloudErrorCode.AUTHENTICATION)
             try:
@@ -254,6 +275,7 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
             "truncation": "disabled",
             "max_output_tokens": profile.max_output_tokens,
             "reasoning": {"effort": profile.reasoning_effort},
+            "include": ["reasoning.encrypted_content"],
         }
         if profile.temperature is not None:
             body["temperature"] = profile.temperature
@@ -276,15 +298,19 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
             raise _malformed() from None
         if not isinstance(payload, dict):
             raise _malformed()
-        return payload
+        return _ResponsePayload(payload, profile.id)
 
     def respond_with_capabilities(self, messages: list[dict[str, str]],
                                   capabilities: Iterable[ModelCapabilityDefinition]) -> ModelResponse:
         definitions = model_capability_definitions(capabilities, require_nonempty=True)
         tools = responses_function_tools(definitions)
-        inputs = responses_input(messages, definitions)
+        inputs = responses_input(messages, definitions, model_id=self.active_model)
         previous_ids = {item["call_id"] for item in inputs if item.get("type") == "function_call"}
-        return normalize_tool_response(self._request(inputs, tools=tools), definitions, previous_ids=previous_ids)
+        payload = self._request(inputs, tools=tools)
+        result = normalize_tool_response(payload, definitions, previous_ids=previous_ids)
+        if result.protocol_failure is None and not result.completion.incomplete:
+            result = result.model_copy(update={"openai_response": self._replay(payload)})
+        return result
 
     def count_capability_schema_tokens(self, definitions) -> int:
         from app.inference.protocol import _canonical_json

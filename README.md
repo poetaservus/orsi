@@ -113,8 +113,8 @@ extension/stem variant after an extensionless file read misses. See
   launch mode. Phase 1 supports text chat and skill selection. Neither profile is
   live-qualified yet. Existing
   OpenRouter adapter tests remain as compatibility coverage during the migration.
-  Phase 2.1 adds native tools for the default non-reasoning Luna profile; reasoning
-  tool workflows await Phase 2.2. See [OpenAI cloud migration](docs/cloud-openai.md)
+  Phase 2 adds native tools and durable stateless response-item/encrypted-reasoning
+  replay. See [OpenAI cloud migration](docs/cloud-openai.md)
   and [native tool verification](docs/cloud-openai-tools.md) for scope and results.
 
 Feature flags can be overridden with explicit `ORSI_ENABLE_...` environment variables. Full-local

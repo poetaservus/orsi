@@ -16,6 +16,12 @@ OpenCode.
   tool preparation patterns. `app/inference/openai_tools.py` adapts flat function
   definitions and exact call/result ID pairing. It explicitly uses strict schemas
   per OpenAI documentation; the upstream protocol's non-strict default is not ported.
+- Cloud Phase 2.2 adapts the same pinned Responses protocol's provider-metadata
+  and encrypted-reasoning replay patterns in `app/inference/openai_replay.py`.
+  OpenAI documentation governs preservation of complete output items, including
+  function/message item IDs, argument strings and assistant phase fields. The
+  Python adaptation adds O.R.S.I.-specific pre-execution persistence and bounded,
+  restart-safe settlement; it never resumes provider calls as an execution plan.
 - Upstream files used as references:
   - `packages/opencode/src/session/tools.ts`
   - `packages/opencode/src/session/llm.ts`
@@ -38,6 +44,7 @@ O.R.S.I. files containing substantially derived behavior are:
 - `app/inference/tool_repair.py`
 - `app/inference/openai_backend.py` (cloud Phase 1 reference)
 - `app/inference/openai_tools.py` (cloud Phase 2.1 reference)
+- `app/inference/openai_replay.py` (cloud Phase 2.2 reference)
 
 The implementation is a Python/Pydantic adaptation for O.R.S.I.; no block of upstream TypeScript
 was copied verbatim.
