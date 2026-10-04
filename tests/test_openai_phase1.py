@@ -303,8 +303,9 @@ def test_missing_usage_is_not_reported_as_zero_and_invalid_counts_are_ignored():
     assert result.completion.usage.model_dump() == {"input_tokens": None, "output_tokens": None, "total_tokens": None}
 
 
-def test_phase1_tools_and_structured_history_stop_before_any_request(monkeypatch):
+def test_reasoning_tools_and_text_only_structured_history_stop_before_any_request(monkeypatch):
     engine, _, requests, factory = engine_with_transport(monkeypatch)
+    engine.select_model("gpt-6.1-sol")
     with pytest.raises(CloudInferenceError) as failure:
         engine.respond_with_capabilities([{"role": "user", "content": "stat file"}], (capability_definition(),))
     assert failure.value.code == CloudErrorCode.TOOLS_NOT_READY

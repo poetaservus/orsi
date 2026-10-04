@@ -1,4 +1,4 @@
-"""OpenAI Responses text adapter. Native tools and item replay follow in Phase 2.
+"""OpenAI Responses text and non-reasoning native tools. Item replay follows in 2.2.
 
 Responses selection, capability-gated sampling and disabled response storage
 port the corresponding OpenCode implementation choices; see THIRD_PARTY_NOTICES.
@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
+from math import ceil
 from pathlib import Path
 from threading import RLock
 from typing import Any, Iterable
@@ -15,7 +16,8 @@ from typing import Any, Iterable
 from app.inference.cloud_backend import CloudErrorCode, CloudInferenceError
 from app.inference.completion import CompletionMetadata, CompletionText, IncompleteResponseError, TokenUsage
 from app.inference.engine import InferenceEngine
-from app.inference.protocol import ModelCapabilityDefinition, ModelResponse, model_capability_definitions
+from app.inference.protocol import ModelCapabilityDefinition, ModelResponse, ModelProtocolFailureCode, model_capability_definitions
+from app.inference.openai_tools import responses_function_tools, responses_input, normalize_responses_calls
 from app.settings.openai_cloud import OpenAICloudConfig, OpenAIModelCatalog
 
 
@@ -60,11 +62,11 @@ def _malformed() -> CloudInferenceError:
     return CloudInferenceError("OpenAI returned an invalid Responses payload.", code=CloudErrorCode.MALFORMED_RESPONSE)
 
 
-def normalize_text_response(payload: dict[str, Any]) -> CompletionText:
+def _completion_metadata(payload: dict[str, Any]) -> CompletionMetadata:
     status = payload.get("status")
     if status == "failed":
         raise _provider_error(None, _error_code(payload))
-    if status not in {"completed", "incomplete", "cancelled"}:
+    if not isinstance(status, str) or status not in {"completed", "incomplete", "cancelled"}:
         raise _malformed()
     finish_reason = "stop"
     if status == "incomplete":
@@ -75,11 +77,16 @@ def normalize_text_response(payload: dict[str, Any]) -> CompletionText:
         finish_reason = "cancelled"
     usage = payload.get("usage")
     usage = usage if isinstance(usage, dict) else {}
-    completion = CompletionMetadata(finish_reason=finish_reason, usage=TokenUsage(
+    return CompletionMetadata(finish_reason=finish_reason, usage=TokenUsage(
         input_tokens=_count(usage.get("input_tokens")),
         output_tokens=_count(usage.get("output_tokens")),
         total_tokens=_count(usage.get("total_tokens")),
     ))
+
+
+def normalize_text_response(payload: dict[str, Any]) -> CompletionText:
+    completion = _completion_metadata(payload)
+    status = payload["status"]
     output = payload.get("output")
     if not isinstance(output, list):
         raise _malformed()
@@ -120,6 +127,51 @@ def normalize_text_response(payload: dict[str, Any]) -> CompletionText:
              completion.finish_reason, completion.usage.input_tokens,
              completion.usage.output_tokens, completion.usage.total_tokens)
     return CompletionText(content, completion)
+
+
+def normalize_tool_response(payload: dict[str, Any], definitions, *, previous_ids=None) -> ModelResponse:
+    completion = _completion_metadata(payload)
+    output = payload.get("output")
+    if not isinstance(output, list) or any(not isinstance(item, dict) for item in output):
+        raise _malformed()
+    calls = [item for item in output if item.get("type") == "function_call"]
+    messages = [item for item in output if item.get("type") == "message"]
+    text = None
+    if messages:
+        try:
+            text = normalize_text_response({**payload, "output": messages})
+        except IncompleteResponseError:
+            if not completion.incomplete:
+                raise
+    if completion.incomplete:
+        if calls or text is None:
+            return ModelResponse.failure(ModelProtocolFailureCode.OUTPUT_TRUNCATED,
+                "OpenAI ended before completing its tool response; no tool calls can execute.").model_copy(
+                    update={"completion": completion, "partial_text": str(text) if text is not None else None})
+        return ModelResponse.text(str(text)).model_copy(update={"completion": completion, "partial_text": str(text)})
+    if any(item.get("type") not in {"message", "function_call", "reasoning"} for item in output):
+        raise _malformed()
+    if not calls:
+        result = normalize_text_response(payload)
+        return ModelResponse.text(str(result)).model_copy(update={"completion": result.completion})
+    if any(item.get("type") == "reasoning" for item in output):
+        raise CloudInferenceError("OpenAI reasoning tool items require the replay support in Phase 2.2.",
+                                  code=CloudErrorCode.TOOLS_NOT_READY)
+    if text is not None and text.completion.finish_reason == "refusal":
+        return ModelResponse.failure(ModelProtocolFailureCode.MIXED_RESPONSE,
+                                    "OpenAI returned both a refusal and tool calls; no calls can execute.").model_copy(
+                                        update={"completion": completion})
+    if any(item.get("status") is not None and item.get("status") != "completed" for item in calls):
+        return ModelResponse.failure(ModelProtocolFailureCode.OUTPUT_TRUNCATED,
+                                    "OpenAI returned an unfinished tool call; no calls can execute.").model_copy(
+            update={"completion": completion.model_copy(update={"finish_reason": "error", "interrupted": True})})
+    result = normalize_responses_calls(calls, definitions, completion,
+                                      assistant_text=str(text) if text is not None else None,
+                                      previous_ids=previous_ids)
+    log.info("OpenAI tool completion: outcome=%s call_count=%s input_tokens=%s output_tokens=%s total_tokens=%s",
+             result.kind.value, len(result.capability_calls), completion.usage.input_tokens,
+             completion.usage.output_tokens, completion.usage.total_tokens)
+    return result
 
 
 class OpenAIResponsesInferenceEngine(InferenceEngine):
@@ -174,15 +226,21 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
                 or message["role"] not in {"system", "user", "assistant"}
                 or not isinstance(message["content"], str) for message in messages):
             raise ValueError("OpenAI text requests require a non-empty text-only transcript.")
+        return normalize_text_response(self._request([dict(message) for message in messages]))
+
+    def _request(self, inputs: list[dict], *, tools: list[dict] | None = None) -> dict:
         with self._lock:
             self._ensure_open()
+            profile = self.catalog.current_profile
+            if tools is not None and profile.reasoning_effort != "none":
+                raise CloudInferenceError("OpenAI reasoning tool workflows require the replay support in Phase 2.2.",
+                                          code=CloudErrorCode.TOOLS_NOT_READY)
             if not self._api_key:
                 raise CloudInferenceError("Cloud mode needs an OpenAI API key for this session.", code=CloudErrorCode.AUTHENTICATION)
             try:
                 import openai
             except ImportError:
                 raise CloudInferenceError("The OpenAI SDK is missing from this runtime.", code=CloudErrorCode.PROVIDER_UNAVAILABLE) from None
-            profile = self.catalog.current_profile
             if self._client is None:
                 self._client = openai.OpenAI(api_key=self._api_key, base_url=self.config.base_url,
                                              timeout=self.config.timeout_seconds,
@@ -190,7 +248,7 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
             client = self._client
         body: dict[str, Any] = {
             "model": profile.id,
-            "input": [dict(message) for message in messages],
+            "input": inputs,
             "store": False,
             "stream": False,
             "truncation": "disabled",
@@ -199,6 +257,8 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
         }
         if profile.temperature is not None:
             body["temperature"] = profile.temperature
+        if tools is not None:
+            body.update(tools=tools, tool_choice="auto", parallel_tool_calls=True)
         # Let the SDK own retries once. Do not wrap it in the old model pool.
         try:
             response = client.responses.create(**body)
@@ -216,17 +276,22 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
             raise _malformed() from None
         if not isinstance(payload, dict):
             raise _malformed()
-        return normalize_text_response(payload)
+        return payload
 
     def respond_with_capabilities(self, messages: list[dict[str, str]],
                                   capabilities: Iterable[ModelCapabilityDefinition]) -> ModelResponse:
-        model_capability_definitions(capabilities, require_nonempty=True)
-        with self._lock:
-            self._ensure_open()
-        # Raise, rather than UNSUPPORTED_CAPABILITY_CALLS: that outcome activates
-        # the harness's constrained text-to-call fallback. Phase 1 must not do so.
-        raise CloudInferenceError("OpenAI tool workflows are not enabled yet; they are implemented in Phase 2.",
-                                  code=CloudErrorCode.TOOLS_NOT_READY)
+        definitions = model_capability_definitions(capabilities, require_nonempty=True)
+        tools = responses_function_tools(definitions)
+        inputs = responses_input(messages, definitions)
+        previous_ids = {item["call_id"] for item in inputs if item.get("type") == "function_call"}
+        return normalize_tool_response(self._request(inputs, tools=tools), definitions, previous_ids=previous_ids)
+
+    def count_capability_schema_tokens(self, definitions) -> int:
+        from app.inference.protocol import _canonical_json
+        tools = responses_function_tools(definitions)
+        # Keep the existing conservative byte-based reserve, using actual wire
+        # schemas after strict/nullable conversion instead of domain schemas.
+        return ceil(len(_canonical_json(tools).encode("utf-8")) / 3) + 48 * len(tools)
 
     def close(self) -> None:
         with self._lock:

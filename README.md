@@ -110,10 +110,12 @@ extension/stem variant after an extensionless file read misses. See
   selection stores only the model ID in ignored `state/cloud_model_selection_v1.json`.
   Keys come from `OPENAI_API_KEY` or the in-memory session prompt. Requests use `store: false`;
   the SDK is the sole retry owner and `max_retries` is initially zero. Local remains the default
-  launch mode. Phase 1 supports text chat and skill selection; OpenAI tool workflows deliberately
-  stop before inference until Phase 2. Neither profile is live-qualified yet. Existing
+  launch mode. Phase 1 supports text chat and skill selection. Neither profile is
+  live-qualified yet. Existing
   OpenRouter adapter tests remain as compatibility coverage during the migration.
-  See [OpenAI cloud migration](docs/cloud-openai.md) for scope and verification.
+  Phase 2.1 adds native tools for the default non-reasoning Luna profile; reasoning
+  tool workflows await Phase 2.2. See [OpenAI cloud migration](docs/cloud-openai.md)
+  and [native tool verification](docs/cloud-openai-tools.md) for scope and results.
 
 Feature flags can be overridden with explicit `ORSI_ENABLE_...` environment variables. Full-local
 read authority is still not created until the launch warning is accepted.

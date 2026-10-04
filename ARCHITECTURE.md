@@ -51,7 +51,8 @@ app/
     tool_repair.py        constrained repair for text-only providers
     llama_*.py            local backends
     cloud_backend.py      OpenAI-compatible cloud backend
-    openai_backend.py     OpenAI SDK Responses adapter (Phase 1: text only)
+    openai_backend.py     OpenAI SDK Responses adapter
+    openai_tools.py       strict tool schemas, exact call IDs and validated results
     hybrid.py             local/cloud selection and lazy initialization
   security/
     host_access.py        acknowledged read scope and drive allowlisting
@@ -158,7 +159,8 @@ grants write or execute authority.
 - `config/cloud.json`: OpenAI Responses configuration and immutable explicit model profiles.
   GPT-6 Luna is the default; ignored `state/cloud_model_selection_v1.json` stores the selected
   model ID. The SDK owns configured retries; the adapter never silently changes models.
-  Phase 1 supports text requests and rejects native tool workflows before inference.
+  Phase 1 supplies text requests; Phase 2.1 adds native tool workflows for profiles
+  with reasoning disabled. Reasoning tools stay gated until response-item replay in 2.2.
   The legacy pool adapter remains for compatibility tests during migration.
   See [OpenAI migration](docs/cloud-openai.md) for the phased contract and verification.
 - `app/settings/`: strict loaders and models. Environment overrides are applied here, not in tools.

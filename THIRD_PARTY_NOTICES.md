@@ -12,6 +12,10 @@ OpenCode.
   Responses selection (`provider/provider.ts`), capability-gated sampling
   (`session/llm/request.ts`), and disabled response storage (`provider/transform.ts`)
   are adapted in the Python OpenAI backend. OpenAI documentation governs API behavior.
+- Cloud Phase 2.1 uses that same revision's Responses protocol, input converter and
+  tool preparation patterns. `app/inference/openai_tools.py` adapts flat function
+  definitions and exact call/result ID pairing. It explicitly uses strict schemas
+  per OpenAI documentation; the upstream protocol's non-strict default is not ported.
 - Upstream files used as references:
   - `packages/opencode/src/session/tools.ts`
   - `packages/opencode/src/session/llm.ts`
@@ -33,6 +37,7 @@ O.R.S.I. files containing substantially derived behavior are:
 - `app/agent/feedback.py`
 - `app/inference/tool_repair.py`
 - `app/inference/openai_backend.py` (cloud Phase 1 reference)
+- `app/inference/openai_tools.py` (cloud Phase 2.1 reference)
 
 The implementation is a Python/Pydantic adaptation for O.R.S.I.; no block of upstream TypeScript
 was copied verbatim.

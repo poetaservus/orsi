@@ -19,6 +19,10 @@ implementation patterns adapted to O.R.S.I.'s existing Python interfaces;
 it does not override OpenAI's documented contract or O.R.S.I.'s permissions.
 Existing acceptance prompts remain unchanged.
 
+Current branch status: Phase 1 and Phase 2.1 are implemented. The default
+non-reasoning Luna profile now supports native tools; the Phase 1-only tool gate
+described below is historical. See [Phase 2.1 verification](cloud-openai-tools.md).
+
 ## Phase 1 implementation
 
 `config/cloud.json` now selects the official Responses endpoint with two explicit,

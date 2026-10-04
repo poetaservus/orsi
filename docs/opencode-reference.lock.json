@@ -11,7 +11,10 @@
     "files_sha256": {
       "packages/opencode/src/provider/provider.ts": "9fb8958a521bbc5a70e5e6d4ecb130149115fe891fb78bca0ae73a966b9f547a",
       "packages/opencode/src/session/llm/request.ts": "90077551a9a46e11a37f44279c584832918d722c0ba0407ff8cad8d3437dd0de",
-      "packages/opencode/src/provider/transform.ts": "ddfea009d85f61172d056216addeeabd920cd368d4d27b2f652629f7e3bcb0d2"
+      "packages/opencode/src/provider/transform.ts": "ddfea009d85f61172d056216addeeabd920cd368d4d27b2f652629f7e3bcb0d2",
+      "packages/llm/src/protocols/openai-responses.ts": "616b4fb54fe5645586b92b584b5d41c6f92f815335205d3efd0fa2f438c64b59",
+      "packages/core/src/github-copilot/responses/convert-to-openai-responses-input.ts": "04b5fd45f500136c18e9c5192c0e5ef9e1664c2ead1ffe41b91f6301010f15c2",
+      "packages/core/src/github-copilot/responses/openai-responses-prepare-tools.ts": "fac2a2bd30c772408b5b6bef33fdb22a3268c994504ef104e49af1e9e5e18473"
     }
   }
 }
