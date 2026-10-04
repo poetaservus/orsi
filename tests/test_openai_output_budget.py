@@ -33,22 +33,23 @@ def test_large_complete_write_call_uses_expanded_checked_in_luna_budget(monkeypa
         assert result.completion.usage.output_tokens > 4096
         assert bodies[0]["max_output_tokens"] == 128000
         assert bodies[0]["reasoning"] == {"effort": "none"} and bodies[0]["temperature"] == 0.1
-        assert engine.context_length == 156672
-        assert settings.profile("gpt-6-luna").max_input_tokens == 28672
+        assert engine.context_length == 1050000
+        assert settings.profile("gpt-6-luna").max_input_tokens == 922000
         assert factory.call_args.kwargs["timeout"] == 1800
     finally:
         engine.close()
     assert client.is_closed()
 
 
-def test_maximum_output_reserve_preserves_the_existing_input_budget():
+def test_maximum_output_reserve_leaves_the_full_available_input_budget():
     engine = OpenAIResponsesInferenceEngine(load_cloud_config())
     try:
         budget = calculate_context_budget(engine, [{"role": "user", "content": "Synthetic budget probe."}])
         assert budget.requested_output_reserve == 128000
-        assert budget.model_context_limit - budget.requested_output_reserve == 28672
-        # Admission must reject what the old half-context clamp would admit.
-        oversized = calculate_context_budget(engine, [{"role": "user", "content": "x" * 120000}])
+        assert budget.model_context_limit - budget.requested_output_reserve == 922000
+        expanded = calculate_context_budget(engine, [{"role": "user", "content": "x" * 120000}])
+        assert expanded.fits
+        oversized = calculate_context_budget(engine, [{"role": "user", "content": "x" * 2800000}])
         assert not oversized.fits
         local = SimpleNamespace(context_length=8192, max_response_tokens=8000)
         assert response_reserve(local) == 4096

@@ -192,3 +192,27 @@ verification the bounded change is committed, local main fast-forwards and the
 merged local feature branch is removed. Other active worktrees retain their
 original tips. The earlier detached test checkout retains `a4aba0c`; test the
 new allowance by restarting the normal main launcher.
+
+## Maximum cloud input budgets, 4 October 2026
+
+The user requested the maximum possible cloud input cap while leaving local
+mode unchanged. The bounded `codex/cloud-max-input` branch starts from local
+main `35eb8eb`. Both cloud profiles use their full documented 1,050,000-token
+context window, with remaining space allocated to input after their unchanged
+output reserves: Luna 922,000 and Sol 1,045,904, each including the existing
+256-token safety margin. Local configuration and agent policy are unchanged.
+
+Verification passed 270 focused checks and the full Windows regression: 1,709
+tests and 15 subtests passed, 49 skipped, no failures. Two synthetic live Luna
+requests used more than 45,000 input tokens, exceeding the former cap; the
+isolated Qt selector verified cloud switching and effective limits. Owned
+resources were released. Maximum-context live qualification and Sol permission
+gates remain separate from these checks. See
+[maximum-input verification](cloud-openai-max-input.md).
+
+Configuration copies, ref/worktree maps and a verified all-ref recovery bundle
+are preserved under ignored `state/backups/cloud-max-input-20261004/`. After
+verification the change is committed, local main fast-forwards and its merged
+local branch is removed. Other worktrees retain their prior heads, including
+the detached older cloud test checkout. Restart the normal main launcher to
+load the new budgets.

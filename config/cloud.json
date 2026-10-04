@@ -8,8 +8,8 @@
   "profiles": [
     {
       "id": "gpt-6-luna",
-      "context_length": 156672,
-      "max_input_tokens": 28672,
+      "context_length": 1050000,
+      "max_input_tokens": 922000,
       "max_output_tokens": 128000,
       "reasoning_effort": "none",
       "temperature": 0.1,
@@ -17,8 +17,8 @@
     },
     {
       "id": "gpt-6.1-sol",
-      "context_length": 32768,
-      "max_input_tokens": 28672,
+      "context_length": 1050000,
+      "max_input_tokens": 1045904,
       "max_output_tokens": 4096,
       "reasoning_effort": "medium",
       "temperature": null,

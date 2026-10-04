@@ -83,10 +83,13 @@ def test_checked_in_configuration_uses_luna_and_unqualified_bounded_profiles():
     assert settings.default_mode == "local" and not settings.fallback_to_local
     assert settings.max_retries == 0
     assert all(not item.qualified for item in settings.profiles)
-    assert settings.profile(settings.default_model).effective_context_length == 156672
-    assert settings.profile(settings.default_model).max_input_tokens == 28672
+    assert settings.profile(settings.default_model).effective_context_length == 1050000
+    assert settings.profile(settings.default_model).max_input_tokens == 922000
     assert settings.profile(settings.default_model).max_output_tokens == 128000
     assert settings.timeout_seconds == 1800
+    sol = settings.profile("gpt-6.1-sol")
+    assert sol.effective_context_length == 1050000
+    assert sol.max_input_tokens == 1045904 and sol.max_output_tokens == 4096
 
 
 @pytest.mark.parametrize("overrides", [

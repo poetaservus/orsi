@@ -1,5 +1,9 @@
 # Luna maximum output allowance, 4 October 2026
 
+This records the maximum-output change and its original verification. The later
+[maximum-input update](cloud-openai-max-input.md) expands the active cloud input
+budgets separately; the output allowances recorded here remain current.
+
 The user's normal cloud app reached the 16,384-token output limit during native
 tool generation. Content-free diagnostics recorded 6,012 input tokens, 16,384
 output tokens, zero reasoning tokens and an incomplete response after 85.609
