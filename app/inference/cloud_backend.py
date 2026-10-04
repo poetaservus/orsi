@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+from enum import StrEnum
 from random import random
 from threading import Lock
 from time import monotonic, sleep
@@ -27,6 +28,21 @@ from app.inference.completion import CompletionMetadata, CompletionText, Incompl
 log = logging.getLogger(__name__)
 
 
+class CloudErrorCode(StrEnum):
+    AUTHENTICATION = "authentication"
+    PERMISSION = "permission"
+    QUOTA = "quota"
+    RATE_LIMIT = "rate_limit"
+    CONNECTION = "connection"
+    TIMEOUT = "timeout"
+    CONTEXT_OVERFLOW = "context_overflow"
+    BAD_REQUEST = "bad_request"
+    PROVIDER_UNAVAILABLE = "provider_unavailable"
+    MALFORMED_RESPONSE = "malformed_response"
+    TOOLS_NOT_READY = "tools_not_ready"
+    CLOSED = "closed"
+
+
 class CloudInferenceError(InferenceUnavailable):
     def __init__(
         self,
@@ -34,10 +50,12 @@ class CloudInferenceError(InferenceUnavailable):
         *,
         allow_local_fallback: bool = False,
         retryable: bool = False,
+        code: CloudErrorCode | None = None,
     ):
         super().__init__(message)
         self.allow_local_fallback = allow_local_fallback
         self.retryable = retryable
+        self.code = code
 
 
 def _response_text(message: dict) -> str | None:

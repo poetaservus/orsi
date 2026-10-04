@@ -51,6 +51,7 @@ app/
     tool_repair.py        constrained repair for text-only providers
     llama_*.py            local backends
     cloud_backend.py      OpenAI-compatible cloud backend
+    openai_backend.py     OpenAI SDK Responses adapter (Phase 1: text only)
     hybrid.py             local/cloud selection and lazy initialization
   security/
     host_access.py        acknowledged read scope and drive allowlisting
@@ -154,11 +155,12 @@ grants write or execute authority.
   Memory reductions preserve the target for later loads. CPU fallback explicitly disables GPU
   offload when the minimum GPU context cannot fit. Response limits are independent profile targets,
   capped to half the effective context; CPU uses its separately specified response limit.
-- `config/cloud.json`: provider endpoint, ordered model pool, safe headers, and the name of the
-  API-key environment variable. Cloud pool failover is bounded by the configured candidates;
-  malformed native tool responses never execute, and the first successful model remains sticky.
-  Retryable provider failures use a configured attempt cap with exponential backoff. Candidate
-  requests and the complete pool/retry step have separate configured time budgets.
+- `config/cloud.json`: OpenAI Responses configuration and immutable explicit model profiles.
+  GPT-6 Luna is the default; ignored `state/cloud_model_selection_v1.json` stores the selected
+  model ID. The SDK owns configured retries; the adapter never silently changes models.
+  Phase 1 supports text requests and rejects native tool workflows before inference.
+  The legacy pool adapter remains for compatibility tests during migration.
+  See [OpenAI migration](docs/cloud-openai.md) for the phased contract and verification.
 - `app/settings/`: strict loaders and models. Environment overrides are applied here, not in tools.
 
 Secrets are never accepted in checked-in headers or JSON. Cloud keys come from the configured

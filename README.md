@@ -105,14 +105,15 @@ extension/stem variant after an extensionless file read misses. See
   chosen ID under ignored `state/local_model_selection_v1.json`; it never rewrites accepted profiles.
   See [local model selection](docs/local-model-selection.md)
   for supported models and the experimental Qwen3-VL 4B limitations.
-- `config/cloud.json`: OpenAI-compatible endpoint, ordered provider model pool, safe headers, and
-  API-key environment-variable name. `model` is the primary model and `fallback_models` are tried
-  in order when a cloud request is unavailable or returns a malformed tool-call response. The
-  first successful model remains pinned for later steps. Transient network, timeout, rate-limit,
-  conflict, and server failures use bounded exponential-backoff retries controlled by
-  `max_retries`; malformed calls switch models without retrying the same malformed response.
-  `timeout_seconds` bounds each candidate and `model_step_timeout_seconds` bounds the complete
-  pool/retry operation. The cloud response budget is also 4,096 tokens.
+- `config/cloud.json`: OpenAI Responses configuration and explicit Luna/Sol profiles. The default
+  is GPT-6 Luna, with 32,768 effective context tokens and a 4,096-token output reserve. Runtime
+  selection stores only the model ID in ignored `state/cloud_model_selection_v1.json`.
+  Keys come from `OPENAI_API_KEY` or the in-memory session prompt. Requests use `store: false`;
+  the SDK is the sole retry owner and `max_retries` is initially zero. Local remains the default
+  launch mode. Phase 1 supports text chat and skill selection; OpenAI tool workflows deliberately
+  stop before inference until Phase 2. Neither profile is live-qualified yet. Existing
+  OpenRouter adapter tests remain as compatibility coverage during the migration.
+  See [OpenAI cloud migration](docs/cloud-openai.md) for scope and verification.
 
 Feature flags can be overridden with explicit `ORSI_ENABLE_...` environment variables. Full-local
 read authority is still not created until the launch warning is accepted.
@@ -171,7 +172,8 @@ behavior, natural-language tool use, and off-screen Qt integration.
 Opt-in live-model tests remain skipped unless their documented environment gates and model runtime
 are available.
 
-To re-certify every configured OpenRouter pool member independently, set
+The existing OpenRouter gate applies only when using a legacy `CloudConfig`; it does not qualify
+the new OpenAI Responses profiles. With that legacy configuration, set
 `ORSI_RUN_LIVE_CLOUD_MODEL_ACCEPTANCE=1` and `OPENROUTER_API_KEY`, then run
 `runtime\python\python.exe -m pytest tests\test_cloud_live_model.py --basetemp .pytest-tmp`.
 The gate disables pool failover for each candidate and independently exercises listing, reading,

@@ -4,7 +4,7 @@ import logging
 from threading import Event, Lock, RLock
 from typing import Callable, Iterable
 
-from app.inference.cloud_backend import CloudInferenceError, OpenAICompatibleInferenceEngine
+from app.inference.cloud_backend import CloudInferenceError
 from app.inference.engine import InferenceEngine, InferenceUnavailable
 from app.inference.protocol import (
     ModelCapabilityDefinition,
@@ -113,7 +113,7 @@ class HybridInferenceEngine(InferenceEngine):
     """Selects the local or cloud conversational model."""
 
     def __init__(self, *, local: InferenceEngine | None,
-                 cloud: OpenAICompatibleInferenceEngine | None,
+                 cloud: InferenceEngine | None,
                  default_mode: str = "local", local_error: str | None = None,
                  fallback_to_local: bool = True, model_catalog=None, local_factory=None):
         self.local = local

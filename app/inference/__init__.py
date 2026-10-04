@@ -1,4 +1,6 @@
 from app.inference.cloud_backend import CloudInferenceError, OpenAICompatibleInferenceEngine
+from app.inference.openai_backend import OpenAIResponsesInferenceEngine
+from app.settings.openai_cloud import OpenAICloudConfig, OpenAIModelProfile
 from app.settings.cloud import CloudConfig, load_cloud_config
 from app.inference.engine import InferenceEngine, InferenceUnavailable
 from app.inference.hybrid import HybridInferenceEngine, LazyInferenceEngine
@@ -23,6 +25,9 @@ __all__ = [
     "LlamaServerInferenceEngine",
     "LazyInferenceEngine",
     "OpenAICompatibleInferenceEngine",
+    "OpenAIResponsesInferenceEngine",
+    "OpenAICloudConfig",
+    "OpenAIModelProfile",
     "ModelCapabilityCall",
     "ModelCapabilityDefinition",
     "ModelProtocolFailure",

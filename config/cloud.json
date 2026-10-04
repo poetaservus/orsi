@@ -1,24 +1,32 @@
 {
-  "provider_name": "OpenRouter Free",
-  "base_url": "https://openrouter.ai/api/v1",
-  "model": "nvidia/nemotron-3-ultra-550b-a55b:free",
-  "fallback_models": [
-    "inclusionai/ling-3.0-flash-fin:free",
-    "nvidia/nemotron-3.5-lightning:free"
+  "schema_version": 2,
+  "api": "responses",
+  "provider_name": "OpenAI",
+  "base_url": "https://api.openai.com/v1",
+  "api_key_environment": "OPENAI_API_KEY",
+  "default_model": "gpt-6-luna",
+  "profiles": [
+    {
+      "id": "gpt-6-luna",
+      "context_length": 32768,
+      "max_input_tokens": 28672,
+      "max_output_tokens": 4096,
+      "reasoning_effort": "none",
+      "temperature": 0.1,
+      "qualified": false
+    },
+    {
+      "id": "gpt-6.1-sol",
+      "context_length": 32768,
+      "max_input_tokens": 28672,
+      "max_output_tokens": 4096,
+      "reasoning_effort": "medium",
+      "temperature": null,
+      "qualified": false
+    }
   ],
-  "api_key_environment": "OPENROUTER_API_KEY",
-  "extra_headers": {
-    "HTTP-Referer": "https://github.com/poetaservus/orsi",
-    "X-OpenRouter-Title": "O.R.S.I"
-  },
-  "include_tool_strict": false,
-  "tool_choice": null,
-  "context_length": 32768,
-  "temperature": 0.1,
-  "max_tokens": 4096,
   "timeout_seconds": 90,
-  "model_step_timeout_seconds": 300,
-  "max_retries": 2,
+  "max_retries": 0,
   "default_mode": "local",
   "fallback_to_local": false
 }

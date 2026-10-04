@@ -3,5 +3,15 @@
   "branch": "dev",
   "commit": "d870e22c70f27103016dcd479edcfebf86136d93",
   "pinned_on": "2026-09-20",
-  "purpose": "MIT-licensed reference for O.R.S.I's model-first capability routing, structured repair, invalid-call feedback, and continuation flow."
+  "purpose": "MIT-licensed reference for O.R.S.I's model-first capability routing, structured repair, invalid-call feedback, and continuation flow.",
+  "cloud_reference": {
+    "commit": "907b3bc518fa48e90e8ec24dd327d13eee71c36c",
+    "pinned_on": "2026-10-04",
+    "authority": "OpenAI documentation overrides reference implementation behavior.",
+    "files_sha256": {
+      "packages/opencode/src/provider/provider.ts": "9fb8958a521bbc5a70e5e6d4ecb130149115fe891fb78bca0ae73a966b9f547a",
+      "packages/opencode/src/session/llm/request.ts": "90077551a9a46e11a37f44279c584832918d722c0ba0407ff8cad8d3437dd0de",
+      "packages/opencode/src/provider/transform.ts": "ddfea009d85f61172d056216addeeabd920cd368d4d27b2f652629f7e3bcb0d2"
+    }
+  }
 }

@@ -14,6 +14,7 @@ from app.inference import (
     LlamaCppInferenceEngine,
     LlamaServerInferenceEngine,
     OpenAICompatibleInferenceEngine,
+    OpenAIResponsesInferenceEngine,
     load_cloud_config,
 )
 from app.security.host_access import (
@@ -31,6 +32,7 @@ from app.settings.agent import AgentFeatureConfig, load_agent_feature_config
 from app.settings.model import detect_nvidia_memory_mib, load_model_config
 from app.settings.local_models import LocalModelCatalog
 from app.settings.paths import PATHS
+from app.settings.openai_cloud import OpenAICloudConfig
 from app.infrastructure.baseline import BaselineRecorder
 from app.runtime.skills import SkillRegistry
 
@@ -131,7 +133,14 @@ def build_application(
     cloud_error = None
     try:
         cloud_config = load_cloud_config()
-        cloud_engine = OpenAICompatibleInferenceEngine(cloud_config)
+        cloud_engine = (
+            OpenAIResponsesInferenceEngine(
+                cloud_config,
+                selection_path=PATHS.state / "cloud_model_selection_v1.json",
+            )
+            if isinstance(cloud_config, OpenAICloudConfig)
+            else OpenAICompatibleInferenceEngine(cloud_config)
+        )
     except Exception as exc:
         log.exception("Cloud inference could not be configured.")
         cloud_error = f"Cloud model configuration failed: {exc}"

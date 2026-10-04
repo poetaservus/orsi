@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from app.settings.loader import load_json
 from app.settings.paths import PATHS
+from app.settings.openai_cloud import OpenAICloudConfig
 
 
 class CloudConfig(BaseModel):
@@ -116,5 +117,9 @@ class CloudConfig(BaseModel):
         return self.base_url + "/chat/completions"
 
 
-def load_cloud_config() -> CloudConfig:
-    return CloudConfig.model_validate(load_json(PATHS.config / "cloud.json", default={}))
+def load_cloud_config() -> CloudConfig | OpenAICloudConfig:
+    payload = load_json(PATHS.config / "cloud.json", default={})
+    if payload.get("api") == "responses":
+        return OpenAICloudConfig.model_validate(payload)
+    # Keep the old adapter available until its replacement completes Phase 4.
+    return CloudConfig.model_validate(payload)

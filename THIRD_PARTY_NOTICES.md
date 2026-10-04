@@ -8,6 +8,10 @@ OpenCode.
 
 - Upstream repository: <https://github.com/anomalyco/opencode>
 - Revision used: `d870e22c70f27103016dcd479edcfebf86136d93`
+- Cloud Phase 1 reference: `907b3bc518fa48e90e8ec24dd327d13eee71c36c`.
+  Responses selection (`provider/provider.ts`), capability-gated sampling
+  (`session/llm/request.ts`), and disabled response storage (`provider/transform.ts`)
+  are adapted in the Python OpenAI backend. OpenAI documentation governs API behavior.
 - Upstream files used as references:
   - `packages/opencode/src/session/tools.ts`
   - `packages/opencode/src/session/llm.ts`
@@ -28,6 +32,7 @@ O.R.S.I. files containing substantially derived behavior are:
 - `app/agent/runtime.py`
 - `app/agent/feedback.py`
 - `app/inference/tool_repair.py`
+- `app/inference/openai_backend.py` (cloud Phase 1 reference)
 
 The implementation is a Python/Pydantic adaptation for O.R.S.I.; no block of upstream TypeScript
 was copied verbatim.

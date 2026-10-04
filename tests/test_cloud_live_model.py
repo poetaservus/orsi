@@ -18,7 +18,8 @@ from app.settings.cloud import CloudConfig, load_cloud_config
 
 _LIVE_CLOUD_ENABLED = os.environ.get("ORSI_RUN_LIVE_CLOUD_MODEL_ACCEPTANCE") == "1"
 _LIVE_CLOUD_KEY_PRESENT = bool(os.environ.get("OPENROUTER_API_KEY", "").strip())
-_CONFIGURED_MODELS = load_cloud_config().model_pool
+_CLOUD_CONFIG = load_cloud_config()
+_CONFIGURED_MODELS = _CLOUD_CONFIG.model_pool
 _WRITE_CAPABILITIES = frozenset(
     {
         "filesystem.copy",
@@ -29,10 +30,11 @@ _WRITE_CAPABILITIES = frozenset(
     }
 )
 _LIVE_CLOUD_MARK = pytest.mark.skipif(
-    not (_LIVE_CLOUD_ENABLED and _LIVE_CLOUD_KEY_PRESENT),
+    not (_LIVE_CLOUD_ENABLED and _LIVE_CLOUD_KEY_PRESENT and isinstance(_CLOUD_CONFIG, CloudConfig)),
     reason=(
         "Set ORSI_RUN_LIVE_CLOUD_MODEL_ACCEPTANCE=1 and OPENROUTER_API_KEY "
-        "to re-certify the configured free-model pool."
+        "with a legacy CloudConfig to re-certify that free-model pool. "
+        "This gate does not qualify OpenAI Responses profiles."
     ),
 )
 _CAPABILITY_CASES = (
