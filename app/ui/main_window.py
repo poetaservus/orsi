@@ -43,8 +43,8 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
-    QMessageBox,
     QPushButton,
+    QStackedLayout,
     QTextEdit,
     QVBoxLayout,
     QWidget,
@@ -53,7 +53,7 @@ from PySide6.QtWidgets import (
 from app.security.host_access import HostReadScope
 from app.inference.engine import InferenceUnavailable
 from app.inference.completion import CompletionText
-from app.ui.approvals import open_approval_dialog
+from app.ui.approvals import create_inline_approval
 from app.ui.chat import ChatView
 from app.ui.context_window import ContextWindowBar
 from app.ui.status import ConversationStatus
@@ -157,7 +157,7 @@ class ComposerFrame(QFrame):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = QRectF(self.rect()).adjusted(1.0, 1.0, -1.0, -1.0)
-        radius = rect.height() / 2
+        radius = min(27.0, rect.height() / 2)
         path = QPainterPath()
         path.addRoundedRect(rect, radius, radius)
 
@@ -376,10 +376,9 @@ class MainWindow(QMainWindow):
         self.startup_error = startup_error
         self._preferences_store = preferences_store
         self._greeting_message = self._load_greeting_message()
-        self._cloud_privacy_accepted = False
         self.thread = None
         self.worker = None
-        self._approval_dialog = None
+        self._approval_panel = None
         self.approval_requested.connect(self._show_approval, Qt.ConnectionType.QueuedConnection)
         bind_approval = getattr(service, "set_approval_requester", None)
         if callable(bind_approval):
@@ -566,7 +565,12 @@ class MainWindow(QMainWindow):
         self.composer = ComposerFrame(content)
         self.composer.setObjectName("composer")
         self.composer.setFixedHeight(_COMPOSER_HEIGHT)
-        composer_layout = QHBoxLayout(self.composer)
+        self._composer_stack = QStackedLayout(self.composer)
+        self._composer_stack.setContentsMargins(0, 0, 0, 0)
+        self._message_composer = QWidget(self.composer)
+        self._message_composer.setObjectName("messageComposer")
+        self._composer_stack.addWidget(self._message_composer)
+        composer_layout = QHBoxLayout(self._message_composer)
         composer_layout.setContentsMargins(22, 7, 20, 7)
         composer_layout.setSpacing(6)
 
@@ -753,11 +757,12 @@ class MainWindow(QMainWindow):
         content = self.composer.parentWidget()
         width = min(_COMPOSER_WIDTH, max(320, content.width() - 32))
         x = max(16, (content.width() - width) // 2)
+        height = self.composer.height()
         if self._intro_active:
-            y = max(24, (content.height() - _COMPOSER_HEIGHT) // 2)
+            y = max(24, (content.height() - height) // 2)
         else:
-            y = max(16, content.height() - _COMPOSER_BOTTOM_MARGIN - _COMPOSER_HEIGHT)
-        return QRect(x, y, width, _COMPOSER_HEIGHT)
+            y = max(16, content.height() - _COMPOSER_BOTTOM_MARGIN - height)
+        return QRect(x, y, width, height)
 
     def _position_startup_greeting(self, composer_geometry: QRect) -> None:
         content = self.composer.parentWidget()
@@ -914,22 +919,43 @@ class MainWindow(QMainWindow):
 
     @Slot(object)
     def _show_approval(self, record) -> None:
-        if self._approval_dialog is not None:
+        if self._approval_panel is not None:
             self.service.resolve_approval(record.approval_id, False)
             return
-        opened = open_approval_dialog(
-            self,
-            self.service,
-            record,
-            self._approval_finished,
+        panel = create_inline_approval(
+            self.composer, self.service, record, self._approval_finished,
         )
-        if opened is None:
+        if panel is None:
             return
-        self._approval_dialog, activity = opened
-        self.activity.set_activity(activity)
+        self._approval_panel = panel
+        # A fast tool call can arrive during the intro animation. Finish it before
+        # expanding the composer so its old geometry cannot overwrite the review.
+        if self._intro_transition is not None:
+            self._intro_transition.stop()
+            self._intro_transition.deleteLater()
+            self._intro_transition = None
+        self._intro_active = False
+        self.startup_greeting.hide()
+        self.settings_panel.hide()
+        self.skill_picker.popup.hide()
+        self._composer_stack.addWidget(panel)
+        self._composer_stack.setCurrentWidget(panel)
+        self.composer.setFixedHeight(154 if record.capability == "filesystem.mkdir" else 280)
+        self._position_overlays()
+        panel.setFocus()
+        self.activity.set_activity("Waiting for approval...")
 
     def _approval_finished(self) -> None:
-        self._approval_dialog = None
+        panel = self._approval_panel
+        self._approval_panel = None
+        if panel is not None:
+            self._composer_stack.removeWidget(panel)
+            panel.hide()
+        self._composer_stack.setCurrentWidget(self._message_composer)
+        self.composer.setFixedHeight(_COMPOSER_HEIGHT)
+        self._position_overlays()
+        if self.input.isEnabled():
+            self.input.setFocus()
 
     @Slot(object)
     def _worker_succeeded(self, text: str) -> None:
@@ -1000,6 +1026,8 @@ class MainWindow(QMainWindow):
         return duration_seconds
 
     def cancel_current_task(self) -> None:
+        if self._approval_panel is not None:
+            self._approval_panel.reject()
         cancel = getattr(self.service, "cancel_current_task", None)
         if callable(cancel):
             cancel()
@@ -1211,17 +1239,6 @@ class MainWindow(QMainWindow):
     def _ensure_cloud_ready(self) -> bool:
         if self.inference is None:
             return False
-        if not self._cloud_privacy_accepted:
-            answer = QMessageBox.question(
-                self,
-                "Use cloud model?",
-                self._cloud_privacy_message(),
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-                QMessageBox.StandardButton.No,
-            )
-            if answer != QMessageBox.StandardButton.Yes:
-                return False
-            self._cloud_privacy_accepted = True
         if not self.inference.cloud_has_api_key:
             key, accepted = QInputDialog.getText(
                 self,
@@ -1264,118 +1281,14 @@ class MainWindow(QMainWindow):
         values = getattr(self.service, "agent_capabilities", ())
         return isinstance(values, tuple) and "filesystem.search" in values
 
-    def _cloud_privacy_message(self) -> str:
-        provider = self.inference.cloud_provider_name
-        if self._agent_enabled():
-            scope = (
-                "across enabled local filesystem drives that the current Windows account can access"
-                if self._host_read_scope() == HostReadScope.FULL_LOCAL
-                else "inside O.R.S.I's portable root"
-            )
-            find_enabled = self._filesystem_find_enabled()
-            listing_enabled = self._filesystem_list_enabled()
-            text_read_enabled = self._filesystem_read_text_enabled()
-            search_enabled = self._filesystem_search_enabled()
-            result_parts = ["filesystem.stat metadata"]
-            access_parts = ["inspect metadata"]
-            if find_enabled:
-                result_parts.append("filesystem.find matching file and folder names")
-                access_parts.append("resolve exact file or folder names inside one requested folder")
-            if listing_enabled:
-                result_parts.append("filesystem.list directory names and types")
-                access_parts.append("list one requested directory")
-            if text_read_enabled:
-                result_parts.append("filesystem.read_text file content")
-                access_parts.append("read bounded text from one specifically requested file")
-            if search_enabled:
-                result_parts.append("filesystem.search matching snippets")
-                access_parts.append("search bounded text snippets inside one requested directory")
-            if len(result_parts) == 1:
-                results = f"{result_parts[0]} results"
-            elif len(result_parts) == 2:
-                results = " and ".join(result_parts)
-            else:
-                results = ", ".join(result_parts[:-1]) + f", and {result_parts[-1]}"
-            if len(access_parts) == 1:
-                access = f"{access_parts[0]} for one requested file or directory"
-            elif len(access_parts) == 2:
-                access = " or ".join(access_parts)
-            else:
-                access = ", ".join(access_parts[:-1]) + f", or {access_parts[-1]}"
-            if text_read_enabled or search_enabled:
-                boundary = "but cannot write or perform other computer actions"
-                confidentiality = (
-                    "File content, snippets, and directory or file names may be confidential"
-                    if search_enabled
-                    else "File content and directory or file names may be confidential"
-                )
-            else:
-                boundary = "but cannot read file content, search, or perform other computer actions"
-                confidentiality = "Directory and file names may be confidential"
-            mkdir_enabled = "filesystem.mkdir" in getattr(self.service, "agent_capabilities", ())
-            text_write_enabled = "filesystem.write_text" in getattr(self.service, "agent_capabilities", ())
-            copy_enabled = "filesystem.copy" in getattr(self.service, "agent_capabilities", ())
-            move_enabled = "filesystem.move" in getattr(self.service, "agent_capabilities", ())
-            trash_enabled = "filesystem.trash" in getattr(self.service, "agent_capabilities", ())
-            write_actions = []
-            approved_results = []
-            if mkdir_enabled:
-                write_actions.append("create one empty folder")
-                approved_results.append("approved folder paths")
-            if text_write_enabled:
-                write_actions.append("create or replace one text file")
-                approved_results.append("text-write paths and content")
-            if "filesystem.edit_text" in getattr(self.service, "agent_capabilities", ()):
-                write_actions.append("edit exact text in one existing file")
-                approved_results.append("text-edit paths and replacement excerpts")
-            if copy_enabled:
-                write_actions.append("copy one regular file")
-                approved_results.append("copy paths")
-            if move_enabled:
-                write_actions.append("move one regular file")
-                approved_results.append("move paths")
-            if trash_enabled:
-                write_actions.append("send one regular file to the Recycle Bin")
-                approved_results.append("trash paths")
-            if write_actions:
-                if len(write_actions) == 1:
-                    actions = write_actions[0]
-                else:
-                    actions = ", ".join(write_actions[:-1]) + f", or {write_actions[-1]}"
-                delete_boundary = (
-                    "it cannot permanently delete entries or trash directories"
-                    if trash_enabled
-                    else "it cannot trash entries or delete anything except the source of an approved move"
-                    if move_enabled
-                    else "it cannot move, trash, or delete entries"
-                )
-                boundary = (
-                    f"and can {actions} only after separate approval of exact paths and, when "
-                    f"relevant, exact content or collision policy; {delete_boundary}"
-                )
-                if len(approved_results) == 1:
-                    results += f" plus {approved_results[0]}"
-                else:
-                    results += " plus " + ", ".join(approved_results[:-1]) + f", and {approved_results[-1]}"
-            return (
-                f"Cloud mode sends this conversation and any {results} to {provider}. Agent mode "
-                f"can {access} {scope}, {boundary}.\n\n{confidentiality}. Do not use Cloud mode "
-                "for confidential information.\n\nContinue?"
-            )
-        return (
-            f"Cloud mode sends this conversation to {provider}. O.R.S.I is chat-only and cannot "
-            "access or operate your computer.\n\nDo not use Cloud mode for confidential "
-            "information.\n\nContinue?"
-        )
-
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt API name
         self._closing = True
         try:
             if self._greeting_save_timer.isActive():
                 self._greeting_save_timer.stop()
                 self._save_greeting_message()
-            if self._approval_dialog is not None:
-                self._approval_dialog.reject()
+            if self._approval_panel is not None:
+                self._approval_panel.reject()
         except Exception:
             log.warning("Window settings or approval cleanup failed.")
         finally:
@@ -1658,6 +1571,15 @@ QFrame#composer {
     background: transparent;
     border: none;
     border-radius: 27px;
+}
+QWidget#messageComposer, QFrame#inlineApproval { background: transparent; border: none; }
+QFrame#inlineApproval QLabel { background: transparent; border: none; font-size: 14px; }
+QLabel#approvalTitle { color: #eeeeef; font-weight: 500; }
+QLabel#approvalHint { color: #c6c9d2; }
+QFrame#inlineApproval QPlainTextEdit {
+    color: #e4e6eb; background: rgba(17, 19, 24, 100); border: none;
+    border-radius: 6px; padding: 4px 6px; font-size: 14px;
+    selection-background-color: #666666;
 }
 QTextEdit#messageInput {
     color: #dedee0;

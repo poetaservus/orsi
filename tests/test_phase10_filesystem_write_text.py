@@ -272,7 +272,7 @@ def test_window_text_write_approval_end_to_end(service, tmp_path):
     from PySide6.QtCore import Qt
     from PySide6.QtGui import QFont, QFontDatabase
     from PySide6.QtTest import QTest
-    from PySide6.QtWidgets import QApplication, QDialogButtonBox, QPlainTextEdit, QPushButton
+    from PySide6.QtWidgets import QApplication, QPlainTextEdit
     from app.ui.main_window import MainWindow
     app = QApplication.instance() or QApplication([])
     for filename in ("arial.ttf", "consola.ttf"):
@@ -293,16 +293,14 @@ def test_window_text_write_approval_end_to_end(service, tmp_path):
     try:
         window.input.setPlainText(f'Write text to "{target}":\nfrom ui')
         window.submit()
-        wait_until(lambda: window._approval_dialog is not None)
-        dialog = window._approval_dialog
-        assert dialog.findChild(QPlainTextEdit, "approvalPath").toPlainText() == str(target)
-        assert dialog.findChild(QPlainTextEdit, "approvalContent").toPlainText() == "from ui"
-        buttons = dialog.findChild(QDialogButtonBox)
-        assert buttons.button(QDialogButtonBox.StandardButton.Cancel).isDefault()
-        assert not dialog.findChild(QPushButton, "approveTextWrite").isDefault()
-        QTest.mouseClick(dialog.findChild(QPushButton, "approveTextWrite"), Qt.MouseButton.LeftButton)
+        wait_until(lambda: window._approval_panel is not None)
+        panel = window._approval_panel
+        assert not panel.isWindow() and panel.parentWidget() is window.composer
+        assert panel.findChild(QPlainTextEdit, "approvalPath").toPlainText() == str(target)
+        assert panel.findChild(QPlainTextEdit, "approvalContent").toPlainText() == "from ui"
+        QTest.keyClick(panel, Qt.Key.Key_Return)
         wait_until(lambda: window.thread is None)
-        wait_until(lambda: window._approval_dialog is None)
+        wait_until(lambda: window._approval_panel is None)
         assert target.read_text(encoding="utf-8") == "from ui"
     finally:
         service.cancel_current_task()

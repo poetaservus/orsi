@@ -4,204 +4,113 @@ from dataclasses import dataclass
 from typing import Callable
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import (
-    QDialog,
-    QDialogButtonBox,
-    QLabel,
-    QPlainTextEdit,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtWidgets import QFrame, QLabel, QPlainTextEdit, QVBoxLayout, QWidget
 
 
 @dataclass(frozen=True, slots=True)
-class ApprovalDialogSpec:
-    capability: str
-    object_name: str
+class ApprovalSpec:
     title: str
-    heading: str
-    approve_text: str
-    approve_object_name: str
-    notice: str
-    activity: str
-    size: tuple[int, int]
     content_kind: str
 
 
 _SPECS = {
-    "filesystem.edit_text": ApprovalDialogSpec(
-        capability="filesystem.edit_text",
-        object_name="editApproval",
-        title="Edit text file?",
-        heading="Apply this exact diff to:",
-        approve_text="Apply edit",
-        approve_object_name="approveTextEdit",
-        notice="Approval is for this file version and exact edit only. Escaped line endings are shown in the diff.",
-        activity="Waiting for edit approval...",
-        size=(720, 480),
-        content_kind="path_and_content",
-    ),
-    "filesystem.mkdir": ApprovalDialogSpec(
-        capability="filesystem.mkdir",
-        object_name="folderApproval",
-        title="Create folder?",
-        heading="Create one empty folder at:",
-        approve_text="Create folder",
-        approve_object_name="approveFolder",
-        notice="Existing entries will not be replaced. Approval is for this folder only.",
-        activity="Waiting for folder approval...",
-        size=(560, 240),
-        content_kind="path",
-    ),
-    "filesystem.copy": ApprovalDialogSpec(
-        capability="filesystem.copy",
-        object_name="copyApproval",
-        title="Copy file?",
-        heading="Copy file with these exact details:",
-        approve_text="Copy file",
-        approve_object_name="approveCopy",
-        notice="Approval is for this source, destination, and collision policy only.",
-        activity="Waiting for copy approval...",
-        size=(640, 340),
-        content_kind="details",
-    ),
-    "filesystem.move": ApprovalDialogSpec(
-        capability="filesystem.move",
-        object_name="moveApproval",
-        title="Move file?",
-        heading="Move file with these exact details:",
-        approve_text="Move file",
-        approve_object_name="approveMove",
-        notice=(
-            "Approval is for this source, destination, and collision policy only. "
-            "The source is removed after verification."
-        ),
-        activity="Waiting for move approval...",
-        size=(640, 360),
-        content_kind="details",
-    ),
-    "filesystem.trash": ApprovalDialogSpec(
-        capability="filesystem.trash",
-        object_name="trashApproval",
-        title="Send file to Recycle Bin?",
-        heading="Send this file to the Windows Recycle Bin:",
-        approve_text="Send to Recycle Bin",
-        approve_object_name="approveTrash",
-        notice=(
-            "Approval is for this exact file only. Directories and permanent deletion are not "
-            "part of this checkpoint."
-        ),
-        activity="Waiting for trash approval...",
-        size=(640, 320),
-        content_kind="details",
-    ),
-    "filesystem.write_text": ApprovalDialogSpec(
-        capability="filesystem.write_text",
-        object_name="writeApproval",
-        title="Write text file?",
-        heading="Write text to:",
-        approve_text="Write file",
-        approve_object_name="approveTextWrite",
-        notice=(
-            "This creates the file or replaces the entire existing file. Approval is for this "
-            "path and content only."
-        ),
-        activity="Waiting for file approval...",
-        size=(640, 420),
-        content_kind="path_and_content",
-    ),
+    "filesystem.edit_text": ApprovalSpec("Apply text edit?", "path_and_content"),
+    "filesystem.mkdir": ApprovalSpec("Create folder?", "path"),
+    "filesystem.copy": ApprovalSpec("Copy file?", "details"),
+    "filesystem.move": ApprovalSpec("Move file?", "details"),
+    "filesystem.trash": ApprovalSpec("Send to Recycle Bin?", "details"),
+    "filesystem.write_text": ApprovalSpec("Write file?", "path_and_content"),
+    "application.launch": ApprovalSpec("Launch application?", "details"),
 }
 
 
-def open_approval_dialog(
-    parent: QWidget,
-    service,
-    record,
-    on_finished: Callable[[], None],
-) -> tuple[QDialog, str] | None:
-    """Validate and display the approval surface for one supported write capability."""
+class InlineApproval(QFrame):
+    """Review one exact operation in the composer, without a modal window."""
+
+    def __init__(self, parent: QWidget, service, record, spec: ApprovalSpec,
+                 on_finished: Callable[[], None]):
+        super().__init__(parent)
+        self.setObjectName("inlineApproval")
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._service = service
+        self._record = record
+        self._on_finished = on_finished
+        self._finished = False
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(22, 12, 22, 12)
+        layout.setSpacing(6)
+        title = QLabel(spec.title, self)
+        title.setObjectName("approvalTitle")
+        layout.addWidget(title)
+        if spec.content_kind in {"path", "path_and_content"}:
+            path = self._add_preview(layout, "approvalPath", record.resource)
+            path.setMaximumHeight(54)
+        if spec.content_kind == "path_and_content":
+            label = "Exact diff" if record.capability == "filesystem.edit_text" else "File content"
+            layout.addWidget(QLabel(label, self))
+            self._add_preview(layout, "approvalContent", record.approval_preview)
+        elif spec.content_kind == "details":
+            self._add_preview(layout, "approvalDetails", record.approval_preview)
+        hint = QLabel("Enter to approve · Esc to abort", self)
+        hint.setObjectName("approvalHint")
+        layout.addWidget(hint)
+
+        self._shortcuts = []
+        for key, approved in ((Qt.Key.Key_Return, True), (Qt.Key.Key_Enter, True),
+                              (Qt.Key.Key_Escape, False)):
+            shortcut = QShortcut(QKeySequence(key), self)
+            shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            shortcut.setAutoRepeat(False)
+            shortcut.activated.connect(lambda value=approved: self.finish(value))
+            self._shortcuts.append(shortcut)
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._refresh)
+        self._timer.start(100)
+
+    def _add_preview(self, layout, name, text):
+        preview = QPlainTextEdit(self)
+        preview.setObjectName(name)
+        preview.setReadOnly(True)
+        preview.setPlainText(text)
+        layout.addWidget(preview, 1)
+        return preview
+
+    def _refresh(self) -> None:
+        try:
+            pending = self._service.approval_status(self._record.approval_id) == "pending"
+        except (LookupError, ValueError):
+            pending = False
+        if not pending:
+            self.finish(False)
+
+    def finish(self, approved: bool) -> None:
+        if self._finished:
+            return
+        self._finished = True
+        self._timer.stop()
+        for shortcut in self._shortcuts:
+            shortcut.setEnabled(False)
+        try:
+            # The service rechecks expiry and binds this decision to the exact call.
+            self._service.resolve_approval(self._record.approval_id, approved)
+        finally:
+            self._on_finished()
+            self.deleteLater()
+
+    def reject(self) -> None:
+        self.finish(False)
+
+
+def create_inline_approval(parent: QWidget, service, record,
+                           on_finished: Callable[[], None]) -> InlineApproval | None:
     spec = _SPECS.get(getattr(record, "capability", None))
     if spec is None or not getattr(record, "resource", None):
         service.resolve_approval(record.approval_id, False)
         return None
-    preview = getattr(record, "approval_preview", None)
-    if spec.content_kind != "path" and not isinstance(preview, str):
+    if spec.content_kind != "path" and not isinstance(getattr(record, "approval_preview", None), str):
         service.resolve_approval(record.approval_id, False)
         return None
     if service.approval_status(record.approval_id) != "pending":
         return None
-
-    dialog = QDialog(parent)
-    dialog.setObjectName(spec.object_name)
-    dialog.setWindowTitle(spec.title)
-    dialog.setWindowModality(Qt.WindowModality.WindowModal)
-    dialog.resize(*spec.size)
-    layout = QVBoxLayout(dialog)
-    layout.addWidget(QLabel(spec.heading, dialog))
-    _add_content(layout, dialog, record.resource, preview, spec.content_kind)
-    notice = QLabel(spec.notice, dialog)
-    notice.setWordWrap(True)
-    layout.addWidget(notice)
-
-    buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel, dialog)
-    approve = buttons.addButton(spec.approve_text, QDialogButtonBox.ButtonRole.AcceptRole)
-    approve.setObjectName(spec.approve_object_name)
-    approve.setAutoDefault(False)
-    cancel = buttons.button(QDialogButtonBox.StandardButton.Cancel)
-    cancel.setDefault(True)
-    buttons.accepted.connect(dialog.accept)
-    buttons.rejected.connect(dialog.reject)
-    layout.addWidget(buttons)
-
-    timer = QTimer(dialog)
-
-    def refresh() -> None:
-        try:
-            pending = service.approval_status(record.approval_id) == "pending"
-        except (LookupError, ValueError):
-            pending = False
-        if not pending:
-            dialog.reject()
-
-    def finish(code: int) -> None:
-        timer.stop()
-        service.resolve_approval(record.approval_id, code == QDialog.DialogCode.Accepted)
-        on_finished()
-        dialog.deleteLater()
-
-    timer.timeout.connect(refresh)
-    dialog.finished.connect(finish)
-    timer.start(100)
-    dialog.open()
-    cancel.setFocus()
-    return dialog, spec.activity
-
-
-def _add_content(
-    layout: QVBoxLayout,
-    dialog: QDialog,
-    resource: str,
-    preview: str | None,
-    content_kind: str,
-) -> None:
-    if content_kind in {"path", "path_and_content"}:
-        path = QPlainTextEdit(dialog)
-        path.setObjectName("approvalPath")
-        path.setPlainText(resource)
-        path.setReadOnly(True)
-        if content_kind == "path_and_content":
-            path.setMaximumHeight(92)
-        layout.addWidget(path)
-    if content_kind == "path_and_content":
-        layout.addWidget(QLabel("New file content:", dialog))
-        content = QPlainTextEdit(dialog)
-        content.setObjectName("approvalContent")
-        content.setPlainText(preview or "")
-        content.setReadOnly(True)
-        layout.addWidget(content, 1)
-    elif content_kind == "details":
-        details = QPlainTextEdit(dialog)
-        details.setObjectName("approvalDetails")
-        details.setPlainText(preview or "")
-        details.setReadOnly(True)
-        layout.addWidget(details, 1)
+    return InlineApproval(parent, service, record, spec, on_finished)

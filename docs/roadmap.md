@@ -19,11 +19,11 @@ startup fails.
 - Read-only metadata, exact-name find, directory listing, bounded text read, and literal text search.
 - Exact approval-controlled folder creation, text writing, copying, moving, Recycle-Bin trashing,
   and allowlisted application launch.
-- Portable-root read access and per-launch acknowledged full-local read access.
+- Portable-root read access and configured full-local read access without startup warnings.
 - Separate permission, write-policy, execution, native-platform, crash-journal, settings, startup,
   inference, conversation, and GUI boundaries.
 - GUI v2 with unchanged visual design, extracted approval and worker components, local/cloud
-  selection, context status, stop controls, and cloud/privacy disclosures.
+  selection, context status, stop controls, and inline tool approvals with Enter/Esc.
 - Removal of the unreachable legacy regex resolver. Production routing is now schema-driven; only a
   narrow same-folder extension/name recovery remains.
 - Current deterministic validation: 575 passed, 17 opt-in live tests skipped. The bundled-model

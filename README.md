@@ -35,8 +35,9 @@ runtime\python\python.exe -m app.main
   `filesystem.copy`, `filesystem.move`, and Recycle-Bin `filesystem.trash`.
 - Approval-controlled `application.launch` for explicitly allowlisted applications. The current
   implementation recognizes Blender and resolves only verified local executables.
-- Portable-root read scope by default, or full-local read on supported Windows drives only after an
-  explicit warning is accepted for that launch.
+- Portable-root read scope by default, or configured full-local read on supported Windows drives.
+  Startup and cloud selection do not show warning dialogs. Tool approvals appear in the input
+  area: **Enter** approves the displayed operation; **Esc** aborts it.
 - Crash-journaled tool lifecycle, cancellation, bounded retries/steps, strict schemas, and
   single-use expiring approvals.
 - Instruction-only skills: validated local/public HTTPS Git installation, explicit or automatic
@@ -118,7 +119,8 @@ extension/stem variant after an extensionless file read misses. See
   and [native tool verification](docs/cloud-openai-tools.md) for scope and results.
 
 Feature flags can be overridden with explicit `ORSI_ENABLE_...` environment variables. Full-local
-read authority is still not created until the launch warning is accepted.
+read authority follows the configured flag. Writes and application launches still require
+approval for each exact operation.
 
 The content-free `state/diagnostics/effective_baseline_v1.json` snapshot records the source revision,
 effective flags, model hash, targets, actual limits and GPU memory. See

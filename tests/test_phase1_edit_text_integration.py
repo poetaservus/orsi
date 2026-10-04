@@ -287,7 +287,7 @@ def test_window_edit_approval(service, tmp_path):
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtCore import Qt
     from PySide6.QtTest import QTest
-    from PySide6.QtWidgets import QApplication, QDialogButtonBox, QPlainTextEdit, QPushButton
+    from PySide6.QtWidgets import QApplication, QPlainTextEdit
     from app.ui.main_window import MainWindow
     app = QApplication.instance() or QApplication([])
     target = setup_target(service, tmp_path)
@@ -303,14 +303,14 @@ def test_window_edit_approval(service, tmp_path):
     try:
         window.input.setPlainText("Edit the file")
         window.submit()
-        wait_until(lambda: window._approval_dialog is not None)
-        dialog = window._approval_dialog
-        assert dialog.objectName() == "editApproval"
-        assert dialog.findChild(QPlainTextEdit, "approvalPath").toPlainText() == str(target)
-        preview = dialog.findChild(QPlainTextEdit, "approvalContent")
+        wait_until(lambda: window._approval_panel is not None)
+        panel = window._approval_panel
+        assert not panel.isWindow() and panel.parentWidget() is window.composer
+        assert panel.objectName() == "inlineApproval"
+        assert panel.findChild(QPlainTextEdit, "approvalPath").toPlainText() == str(target)
+        preview = panel.findChild(QPlainTextEdit, "approvalContent")
         assert preview.isReadOnly() and '"-old' in preview.toPlainText()
-        assert dialog.findChild(QDialogButtonBox).button(QDialogButtonBox.StandardButton.Cancel).isDefault()
-        QTest.mouseClick(dialog.findChild(QPushButton, "approveTextEdit"), Qt.MouseButton.LeftButton)
+        QTest.keyClick(panel, Qt.Key.Key_Return)
         wait_until(lambda: window.thread is None)
         assert target.read_bytes().startswith(b"new")
     finally:

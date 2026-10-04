@@ -18,14 +18,6 @@ from app.inference import (
     load_cloud_config,
 )
 from app.security.host_access import (
-    FULL_LOCAL_LIST_READ_WARNING,
-    FULL_LOCAL_LIST_SEARCH_READ_WARNING,
-    FULL_LOCAL_LIST_TEXT_SEARCH_READ_WARNING,
-    FULL_LOCAL_LIST_TEXT_READ_WARNING,
-    FULL_LOCAL_READ_WARNING,
-    FULL_LOCAL_SEARCH_READ_WARNING,
-    FULL_LOCAL_TEXT_SEARCH_READ_WARNING,
-    FULL_LOCAL_TEXT_READ_WARNING,
     HostAccessPolicy,
 )
 from app.settings.agent import AgentFeatureConfig, load_agent_feature_config
@@ -236,56 +228,6 @@ def build_application(
 
     host = {"hostname": socket.gethostname() or "Windows PC"}
     return service, host, startup_error, inference
-
-
-def request_full_local_read_acknowledgement(
-    *,
-    filesystem_list_enabled: bool = False,
-    filesystem_read_text_enabled: bool = False,
-    filesystem_search_enabled: bool = False,
-) -> bool:
-    """Ask once per launch before host-wide read authority can be constructed."""
-    from PySide6.QtWidgets import QMessageBox
-
-    for value, label in (
-        (filesystem_list_enabled, "Filesystem listing"),
-        (filesystem_read_text_enabled, "Filesystem text-read"),
-        (filesystem_search_enabled, "Filesystem search"),
-    ):
-        if not isinstance(value, bool):
-            raise TypeError(f"{label} acknowledgement state must be a boolean.")
-    if filesystem_search_enabled and filesystem_read_text_enabled:
-        warning = (
-            FULL_LOCAL_LIST_TEXT_SEARCH_READ_WARNING
-            if filesystem_list_enabled
-            else FULL_LOCAL_TEXT_SEARCH_READ_WARNING
-        )
-    elif filesystem_search_enabled:
-        warning = (
-            FULL_LOCAL_LIST_SEARCH_READ_WARNING
-            if filesystem_list_enabled
-            else FULL_LOCAL_SEARCH_READ_WARNING
-        )
-    elif filesystem_read_text_enabled:
-        warning = (
-            FULL_LOCAL_LIST_TEXT_READ_WARNING
-            if filesystem_list_enabled
-            else FULL_LOCAL_TEXT_READ_WARNING
-        )
-    else:
-        warning = (
-            FULL_LOCAL_LIST_READ_WARNING
-            if filesystem_list_enabled
-            else FULL_LOCAL_READ_WARNING
-        )
-    answer = QMessageBox.question(
-        None,
-        "Enable Full local read access?",
-        f"{warning}\n\nEnable this access for the current O.R.S.I session?",
-        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        QMessageBox.StandardButton.No,
-    )
-    return answer == QMessageBox.StandardButton.Yes
 
 
 _AGENT_STARTUP_ERROR = (

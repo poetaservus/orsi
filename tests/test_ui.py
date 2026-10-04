@@ -12,12 +12,11 @@ try:
     from PySide6.QtCore import QEvent, QPoint, Qt
     from PySide6.QtGui import QFont, QPalette
     from PySide6.QtTest import QTest
-    from PySide6.QtWidgets import QApplication, QLabel, QMessageBox, QWidget
+    from PySide6.QtWidgets import QApplication, QLabel, QWidget
 
     from app.conversation.context import ContextBudget
     from app.ui.chat import ChatView
     from app.ui.main_window import MainWindow
-    from app.startup import request_full_local_read_acknowledgement
     from app.state.storage import JsonStore
 except ImportError:
     QApplication = None
@@ -423,7 +422,7 @@ class UiTests(unittest.TestCase):
         self.assertGreaterEqual(response_left, middle_panel.x())
         window.close()
 
-    def test_cloud_selector_warns_and_keeps_key_in_memory(self):
+    def test_cloud_selector_asks_only_for_missing_key_and_keeps_it_in_memory(self):
         class FakeInference:
             available_modes = ("local", "cloud")
             mode = "local"
@@ -447,8 +446,8 @@ class UiTests(unittest.TestCase):
         self.assertEqual(window.model_selector.itemText(cloud_index), "Cloud · Test Cloud")
 
         with patch(
-            "app.ui.main_window.QMessageBox.question",
-            return_value=QMessageBox.StandardButton.Yes,
+            "PySide6.QtWidgets.QMessageBox.question",
+            side_effect=AssertionError("Cloud mode must not show a warning"),
         ), patch(
             "app.ui.main_window.QInputDialog.getText",
             return_value=("session-only-key", True),
@@ -460,7 +459,7 @@ class UiTests(unittest.TestCase):
         self.assertEqual(window.activity.text(), "Ready · Cloud · Chat only")
         window.close()
 
-    def test_agent_status_and_cloud_disclosure_name_the_metadata_boundary(self):
+    def test_metadata_status_and_cloud_readiness_without_a_warning(self):
         class FakeService:
             agent_enabled = True
             agent_error = None
@@ -491,15 +490,14 @@ class UiTests(unittest.TestCase):
             window.activity.text(),
             "Ready · Cloud · Agent · Portable-root read · Metadata only",
         )
-        disclosure = window._cloud_privacy_message()
-        self.assertIn("conversation and any filesystem.stat metadata results", disclosure)
-        self.assertIn("cannot read file content", disclosure)
-        self.assertIn("cannot", disclosure)
+        with patch("PySide6.QtWidgets.QMessageBox.question") as question:
+            self.assertTrue(window._ensure_cloud_ready())
+            question.assert_not_called()
 
         window.close()
         self.assertTrue(service.shutdown_called)
 
-    def test_full_local_status_and_cloud_disclosure_are_continuously_visible(self):
+    def test_full_local_status_and_cloud_readiness_without_a_warning(self):
         class FakeService:
             agent_enabled = True
             agent_error = None
@@ -526,32 +524,12 @@ class UiTests(unittest.TestCase):
             window.activity.text(),
             "Ready · Local · Agent · Full local read · Metadata only",
         )
-        disclosure = window._cloud_privacy_message()
-        self.assertIn("enabled local filesystem drives", disclosure)
-        self.assertIn("current Windows account", disclosure)
-        self.assertIn("cannot read file content", disclosure)
+        with patch("PySide6.QtWidgets.QMessageBox.question") as question:
+            self.assertTrue(window._ensure_cloud_ready())
+            question.assert_not_called()
         window.close()
 
-    def test_full_local_read_acknowledgement_is_explicit_and_defaults_to_no(self):
-        with patch(
-            "PySide6.QtWidgets.QMessageBox.question",
-            return_value=QMessageBox.StandardButton.Yes,
-        ) as question:
-            self.assertTrue(request_full_local_read_acknowledgement())
-
-        args = question.call_args.args
-        self.assertEqual(args[1], "Enable Full local read access?")
-        self.assertIn("current Windows account", args[2])
-        self.assertIn("metadata only", args[2])
-        self.assertEqual(args[-1], QMessageBox.StandardButton.No)
-
-        with patch(
-            "PySide6.QtWidgets.QMessageBox.question",
-            return_value=QMessageBox.StandardButton.No,
-        ):
-            self.assertFalse(request_full_local_read_acknowledgement())
-
-    def test_listing_status_warning_and_cloud_disclosure_name_directory_data(self):
+    def test_listing_status_and_cloud_readiness_without_a_warning_for_directory_data(self):
         class FakeService:
             agent_enabled = True
             agent_error = None
@@ -578,26 +556,12 @@ class UiTests(unittest.TestCase):
             window.activity.text(),
             "Ready · Local · Agent · Full local read · Metadata + listing",
         )
-        disclosure = window._cloud_privacy_message()
-        self.assertIn("filesystem.list directory names and types", disclosure)
-        self.assertIn("Directory and file names may be confidential", disclosure)
-        self.assertIn("cannot read file content", disclosure)
+        with patch("PySide6.QtWidgets.QMessageBox.question") as question:
+            self.assertTrue(window._ensure_cloud_ready())
+            question.assert_not_called()
         window.close()
 
-        with patch(
-            "PySide6.QtWidgets.QMessageBox.question",
-            return_value=QMessageBox.StandardButton.Yes,
-        ) as question:
-            self.assertTrue(
-                request_full_local_read_acknowledgement(
-                    filesystem_list_enabled=True
-                )
-            )
-        warning = question.call_args.args[2]
-        self.assertIn("bounded names and types", warning)
-        self.assertIn("cannot read file content", warning)
-
-    def test_find_status_and_cloud_disclosure_name_exact_lookup(self):
+    def test_find_status_and_cloud_readiness_without_a_warning(self):
         class FakeService:
             agent_enabled = True
             agent_error = None
@@ -624,14 +588,12 @@ class UiTests(unittest.TestCase):
             window.activity.text(),
             "Ready · Local · Agent · Full local read · Metadata + find",
         )
-        disclosure = window._cloud_privacy_message()
-        self.assertIn("filesystem.find matching file and folder names", disclosure)
-        self.assertIn("resolve exact file or folder names", disclosure)
-        self.assertIn("Directory and file names may be confidential", disclosure)
-        self.assertIn("cannot read file content", disclosure)
+        with patch("PySide6.QtWidgets.QMessageBox.question") as question:
+            self.assertTrue(window._ensure_cloud_ready())
+            question.assert_not_called()
         window.close()
 
-    def test_text_read_status_warning_and_cloud_disclosure_name_file_content(self):
+    def test_text_read_status_and_cloud_readiness_without_a_warning_for_file_content(self):
         class FakeService:
             agent_enabled = True
             agent_error = None
@@ -662,27 +624,12 @@ class UiTests(unittest.TestCase):
             window.activity.text(),
             "Ready · Local · Agent · Full local read · Metadata + listing + text",
         )
-        disclosure = window._cloud_privacy_message()
-        self.assertIn("filesystem.read_text file content", disclosure)
-        self.assertIn("read bounded text", disclosure)
-        self.assertIn("File content and directory or file names may be confidential", disclosure)
+        with patch("PySide6.QtWidgets.QMessageBox.question") as question:
+            self.assertTrue(window._ensure_cloud_ready())
+            question.assert_not_called()
         window.close()
 
-        with patch(
-            "PySide6.QtWidgets.QMessageBox.question",
-            return_value=QMessageBox.StandardButton.Yes,
-        ) as question:
-            self.assertTrue(
-                request_full_local_read_acknowledgement(
-                    filesystem_list_enabled=True,
-                    filesystem_read_text_enabled=True,
-                )
-            )
-        warning = question.call_args.args[2]
-        self.assertIn("bounded content", warning)
-        self.assertNotIn("cannot read file content", warning)
-
-    def test_search_status_warning_and_cloud_disclosure_name_matching_snippets(self):
+    def test_search_status_and_cloud_readiness_without_a_warning_for_matching_snippets(self):
         class FakeService:
             agent_enabled = True
             agent_error = None
@@ -714,26 +661,10 @@ class UiTests(unittest.TestCase):
             window.activity.text(),
             "Ready · Local · Agent · Full local read · Metadata + listing + text + search",
         )
-        disclosure = window._cloud_privacy_message()
-        self.assertIn("filesystem.search matching snippets", disclosure)
-        self.assertIn("search bounded text snippets", disclosure)
-        self.assertIn("File content, snippets, and directory or file names may be confidential", disclosure)
+        with patch("PySide6.QtWidgets.QMessageBox.question") as question:
+            self.assertTrue(window._ensure_cloud_ready())
+            question.assert_not_called()
         window.close()
-
-        with patch(
-            "PySide6.QtWidgets.QMessageBox.question",
-            return_value=QMessageBox.StandardButton.Yes,
-        ) as question:
-            self.assertTrue(
-                request_full_local_read_acknowledgement(
-                    filesystem_list_enabled=True,
-                    filesystem_read_text_enabled=True,
-                    filesystem_search_enabled=True,
-                )
-            )
-        warning = question.call_args.args[2]
-        self.assertIn("search for literal text snippets", warning)
-        self.assertIn("background-indexing", warning)
 
     def test_agent_start_failure_falls_back_visibly_to_chat_only(self):
         class FakeService:

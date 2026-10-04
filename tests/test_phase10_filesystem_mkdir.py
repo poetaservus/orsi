@@ -583,7 +583,7 @@ def test_window_approval_end_to_end(service, tmp_path, action):
     from PySide6.QtCore import Qt
     from PySide6.QtGui import QFont, QFontDatabase
     from PySide6.QtTest import QTest
-    from PySide6.QtWidgets import QApplication, QDialogButtonBox, QPlainTextEdit, QPushButton
+    from PySide6.QtWidgets import QApplication, QPlainTextEdit
     from app.security.permissions import ApprovalManager
     from app.ui.main_window import MainWindow
     app = QApplication.instance() or QApplication([])
@@ -607,28 +607,25 @@ def test_window_approval_end_to_end(service, tmp_path, action):
     try:
         window.input.setPlainText(f'Create a folder "{target}"')
         window.submit()
-        wait_until(lambda: window._approval_dialog is not None)
-        dialog = window._approval_dialog
+        wait_until(lambda: window._approval_panel is not None)
+        panel = window._approval_panel
+        assert not panel.isWindow() and panel.parentWidget() is window.composer
         assert not target.exists()
-        assert dialog.findChild(QPlainTextEdit, "approvalPath").toPlainText() == str(target)
-        buttons = dialog.findChild(QDialogButtonBox)
-        cancel = buttons.button(QDialogButtonBox.StandardButton.Cancel)
-        assert cancel.isDefault()
-        assert not dialog.findChild(QPushButton, "approveFolder").isDefault()
+        assert panel.findChild(QPlainTextEdit, "approvalPath").toPlainText() == str(target)
         if action == "approve":
             assert window.grab().save(str(tmp_path / "approval-window.png"))
-            assert dialog.grab().save(str(tmp_path / "approval-dialog.png"))
-            QTest.mouseClick(dialog.findChild(QPushButton, "approveFolder"), Qt.MouseButton.LeftButton)
+            assert panel.grab().save(str(tmp_path / "approval-panel.png"))
+            QTest.keyClick(panel, Qt.Key.Key_Return)
         elif action == "deny":
-            QTest.mouseClick(cancel, Qt.MouseButton.LeftButton)
+            panel.reject()
         elif action == "escape":
-            QTest.keyClick(dialog, Qt.Key.Key_Escape)
+            QTest.keyClick(panel, Qt.Key.Key_Escape)
         elif action == "expire":
             clock[0] = 61.0
         else:
             window.close()
         wait_until(lambda: window.thread is None)
-        wait_until(lambda: window._approval_dialog is None)
+        wait_until(lambda: window._approval_panel is None)
         assert target.exists() == (action == "approve")
     finally:
         service.cancel_current_task()

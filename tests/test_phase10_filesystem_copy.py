@@ -296,7 +296,7 @@ def test_window_copy_approval_end_to_end(service, tmp_path):
     from PySide6.QtCore import Qt
     from PySide6.QtGui import QFont, QFontDatabase
     from PySide6.QtTest import QTest
-    from PySide6.QtWidgets import QApplication, QDialogButtonBox, QPlainTextEdit, QPushButton
+    from PySide6.QtWidgets import QApplication, QPlainTextEdit
     from app.ui.main_window import MainWindow
     app = QApplication.instance() or QApplication([])
     for filename in ("arial.ttf", "consola.ttf"):
@@ -319,17 +319,15 @@ def test_window_copy_approval_end_to_end(service, tmp_path):
     try:
         window.input.setPlainText(f'copy "{source}" to "{destination}"')
         window.submit()
-        wait_until(lambda: window._approval_dialog is not None)
-        dialog = window._approval_dialog
-        details = dialog.findChild(QPlainTextEdit, "approvalDetails").toPlainText()
+        wait_until(lambda: window._approval_panel is not None)
+        panel = window._approval_panel
+        assert not panel.isWindow() and panel.parentWidget() is window.composer
+        details = panel.findChild(QPlainTextEdit, "approvalDetails").toPlainText()
         assert f"Source: {source}" in details
         assert f"Destination: {destination}" in details
-        buttons = dialog.findChild(QDialogButtonBox)
-        assert buttons.button(QDialogButtonBox.StandardButton.Cancel).isDefault()
-        assert not dialog.findChild(QPushButton, "approveCopy").isDefault()
-        QTest.mouseClick(dialog.findChild(QPushButton, "approveCopy"), Qt.MouseButton.LeftButton)
+        QTest.keyClick(panel, Qt.Key.Key_Return)
         wait_until(lambda: window.thread is None)
-        wait_until(lambda: window._approval_dialog is None)
+        wait_until(lambda: window._approval_panel is None)
         assert destination.read_text(encoding="utf-8") == "from ui"
     finally:
         service.cancel_current_task()

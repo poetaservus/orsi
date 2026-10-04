@@ -48,8 +48,9 @@ See [../ARCHITECTURE.md](../ARCHITECTURE.md) for the dependency map and extensio
   `application.launch`.
 - `application.launch` is allowlisted and currently recognizes Blender; it does not provide a
   shell or arbitrary process execution.
-- Full-local read still requires an explicit warning acknowledgement for every launch. Write and
-  execute permissions remain separate and require exact, single-use approval.
+- Full-local read follows the configured flag without a startup warning. Cloud selection also
+  opens without a warning. Write and execute permissions require exact, single-use approval
+  in the composer: Enter to approve, Esc to abort.
 - Interrupted or unverified mutations still block retry pending journal review.
 - Cloud credentials remain environment-sourced or in-memory only.
 

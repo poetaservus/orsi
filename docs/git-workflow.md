@@ -216,3 +216,26 @@ verification the change is committed, local main fast-forwards and its merged
 local branch is removed. Other worktrees retain their prior heads, including
 the detached older cloud test checkout. Restart the normal main launcher to
 load the new budgets.
+
+## Quiet startup and inline approvals, 4 October 2026
+
+The user requested a new branch to remove startup/cloud warnings and replace
+approval windows with Enter/Esc review in the input area. The bounded
+`codex/inline-tool-approvals` change starts from local main `e5d4831`. Configured
+host read access is used at startup without a warning; per-operation write and
+launch authorization stays with the existing runtime. No model profile or user
+runtime configuration changes are included.
+
+The final focused run passed 268 tests and 5 subtests, with 1 existing skip.
+Existing application-launch checks passed 21 tests, and native Windows UI checks
+passed 47 tests and 5 subtests. The full unrestricted regression passed 1,719
+tests and 15 subtests, with 49 existing skips and no failures. See
+[inline approval verification](inline-tool-approvals.md). Skipped live gates
+remain separate from deterministic verification.
+
+All pre-integration refs and the worktree map are preserved in the verified
+ignored bundle under `state/backups/inline-approvals-20261004/`. The previous
+main is also preserved at `archive/2026-10-04/main-before-inline-tool-approvals`.
+Following the repository working baseline, verification is followed by a local
+commit, fast-forward of main, and removal of the merged local feature branch.
+Remote refs and other active checkouts are not changed or published.

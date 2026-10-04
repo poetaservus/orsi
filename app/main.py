@@ -21,11 +21,6 @@ def build_application(*args, **kwargs):
     return build(*args, **kwargs)
 
 
-def request_full_local_read_acknowledgement(*args, **kwargs):
-    from app.startup import request_full_local_read_acknowledgement as request
-    return request(*args, **kwargs)
-
-
 def main() -> int:
     """Initialize runtime directories, compose the backend, and start the Qt UI."""
     if len(sys.argv) > 1 and sys.argv[1].casefold() == "skill":
@@ -39,22 +34,14 @@ def main() -> int:
     from app.ui.main_window import MainWindow
 
     app = QApplication(sys.argv)
-    full_local_read_acknowledged = False
     try:
         startup_agent_config = load_agent_feature_config()
     except (OSError, TypeError, ValueError):
         startup_agent_config = None
-    if startup_agent_config is not None and startup_agent_config.full_local_read_enabled:
-        full_local_read_acknowledged = request_full_local_read_acknowledgement(
-            filesystem_list_enabled=(
-                startup_agent_config.filesystem_list_enabled
-                or startup_agent_config.filesystem_find_enabled
-            ),
-            filesystem_read_text_enabled=(
-                startup_agent_config.filesystem_read_text_enabled
-            ),
-            filesystem_search_enabled=startup_agent_config.filesystem_search_enabled,
-        )
+    # Host access follows the configured setting, without a per-launch popup.
+    full_local_read_acknowledged = bool(
+        startup_agent_config is not None and startup_agent_config.full_local_read_enabled
+    )
     service, host, error, inference = build_application(
         agent_config_override=startup_agent_config,
         full_local_read_acknowledged=full_local_read_acknowledged,
