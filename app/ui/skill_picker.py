@@ -20,21 +20,21 @@ class SkillPicker(QObject):
     identifiers and displayed as plain text; no source or body is rendered.
     """
 
-    def __init__(self, editor, composer, registry, *, send_button=None):
+    def __init__(self, editor, composer, registry, *, input_layout, send_button=None):
         super().__init__(editor)
         self.editor, self.composer, self.registry = editor, composer, registry
         self.send_button = send_button
         self.selected_name = None
         self._command_range = None
         self._updating = False
-        self.chip = QPushButton(composer)
+        self.chip = QPushButton(editor.parentWidget())
         self.chip.setObjectName("skillChip")
         self.chip.setFixedHeight(30)
         self.chip.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.chip.setCursor(Qt.CursorShape.PointingHandCursor)
         self.chip.hide()
         self.chip.clicked.connect(self.clear_selection)
-        composer.layout().insertWidget(0, self.chip)
+        input_layout.insertWidget(0, self.chip, 0, Qt.AlignmentFlag.AlignVCenter)
 
         self.popup = QFrame(composer.parentWidget())
         self.popup.setObjectName("skillPicker")

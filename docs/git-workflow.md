@@ -259,3 +259,24 @@ preserved at `archive/2026-10-04/main-before-approval-animation`. Following the
 working baseline, the verified change is committed, local main fast-forwards,
 and the merged feature branch is removed. Other active worktrees and remote
 refs are unchanged.
+
+## Skill badge composer layout repair, 4 October 2026
+
+The user requested a separate branch to repair the skill badge overlapping the
+composer input. The bounded `codex/skill-chip-composer-layout` fix starts from
+local main `5bb7261` and places the badge in the nested message row instead of
+the outer approval stack. Selection and approval behavior are unchanged.
+
+Native focused checks passed 69 tests and 5 subtests. The first full run hit the
+previously recorded Skill Settings installer worker timeout, with 1,720 passed,
+1 failed, 49 skipped, and 15 subtests passed. The isolated Settings/picker
+recheck passed 19 tests. The full confirmation passed 1,721 tests and 15
+subtests, with 49 existing skips and no failures. The earlier intermittent
+failure remains recorded in [picker verification](message-skill-picker.md).
+
+All pre-integration refs and the worktree map are preserved in the verified
+ignored bundle under `state/backups/skill-chip-layout-20261004/`; the previous
+main is preserved at `archive/2026-10-04/main-before-skill-chip-layout`.
+Following the working baseline, verification is followed by committing the fix,
+fast-forwarding local main, and removing the merged feature branch. Remote
+refs and other worktrees are unchanged.

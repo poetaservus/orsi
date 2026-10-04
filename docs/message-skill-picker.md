@@ -128,3 +128,48 @@ model configuration are unchanged by this refinement.
 runtime/python/python.exe -B -m pytest tests/test_skill_picker_ui.py tests/test_ui.py tests/test_completion_state.py tests/test_message_skill.py -p no:cacheprovider --basetemp=.pytest-tmp-skill-picker-style-final-focused --junitxml=state/test-artifacts/skill-picker/style-final-focused.xml
 runtime/python/python.exe -B -m pytest -p no:cacheprovider --basetemp=.pytest-tmp-skill-picker-style-full --junitxml=state/test-artifacts/skill-picker/style-full.xml
 ```
+
+## Skill badge composer layout repair, 4 October 2026
+
+The bounded `codex/skill-chip-composer-layout` fix starts from local main
+`5bb7261`. After the approval composer became a stack of message/review panels,
+the picker still inserted its badge into the outer layout. That placed the badge
+over the input instead of reserving space beside it.
+
+The picker now receives the message row explicitly and inserts the badge beside
+the editor, vertically centered. Popup placement continues to use the outer
+composer. Selection identifiers, keyboard behavior, message attachments, approval
+rules, animation, and model/runtime configuration are unchanged.
+
+Native focused verification passed 69 tests and 5 subtests. The existing picker
+selection check now verifies that the badge stays within the composer, precedes
+the editor without overlap, and remains centered at window widths of 760, 1280,
+and 1920. Isolated native previews also checked `/handoff`, typed text, long names,
+and hiding/restoring the badge and draft across approval review. Synthetic
+screenshots are retained under ignored `state/skill-chip-layout-review/`; no
+user skills were modified and no model requests were made by the preview.
+
+The initial sandbox run could not discover/read the isolated Windows skill
+fixtures. The unrestricted native rerun passed; those sandbox failures are not
+reported as product failures. Tests use repository-local temporary directories.
+
+The first unrestricted full run recorded 1,720 passed, 1 failed, 49 skipped,
+and 15 subtests passed. The failure was the existing Skill Settings install
+worker exceeding its test wait in
+`test_enter_previews_local_file_then_install_refreshes_picker_without_restart`.
+That same failure was previously reproduced on pre-change source and recorded
+in [cloud output-budget verification](cloud-openai-output-budget.md). The
+isolated Settings/picker recheck passed all 19 tests. The first full-run failure
+is retained as intermittent regression evidence; the installer and its wait
+limit are not changed by this layout fix.
+
+The full confirmation run passed 1,721 tests and 15 subtests, with 49 existing
+skips and no failures, in 225.21 seconds. Skipped live gates remain separate
+from passed deterministic checks.
+
+Pre-integration refs and the worktree map are preserved in the verified ignored
+bundle under `state/backups/skill-chip-layout-20261004/`. The previous main is
+preserved at `archive/2026-10-04/main-before-skill-chip-layout`. Following the
+repository baseline, the verified bounded change is committed, local main
+fast-forwards, and the merged feature branch is removed. Remote refs, other
+worktrees, and user runtime settings are unchanged.

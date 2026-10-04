@@ -616,7 +616,8 @@ class MainWindow(QMainWindow):
         composer_layout.addWidget(self.input, 1)
         composer_layout.addWidget(self.action_slot)
         self.skill_picker = SkillPicker(self.input, self.composer,
-                                        getattr(service, "skill_registry", None), send_button=self.send)
+                                        getattr(service, "skill_registry", None),
+                                        input_layout=composer_layout, send_button=self.send)
 
         self.setCentralWidget(root)
         self.setStyleSheet(_STYLE)

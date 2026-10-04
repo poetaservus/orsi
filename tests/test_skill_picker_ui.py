@@ -7,7 +7,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest
 
 pytest.importorskip("PySide6")
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QPoint, QRect, Qt
 from PySide6.QtGui import QTextCursor
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
@@ -75,6 +75,15 @@ def test_typing_trigger_opens_cached_catalog_and_enter_attaches_without_sending(
     assert ui.input.toPlainText() == "" and ui.thread is None and not model.requests
     assert not picker.popup.isVisible()
     assert "Applies to this message" in picker.chip.toolTip()
+    for width in (760, 1280, 1920):
+        ui.resize(width, 700)
+        QApplication.processEvents()
+        chip = QRect(picker.chip.mapTo(ui.composer, QPoint()), picker.chip.size())
+        editor = QRect(ui.input.mapTo(ui.composer, QPoint()), ui.input.size())
+        assert ui.composer.rect().contains(chip)
+        assert chip.right() < editor.left()
+        assert abs(chip.center().y() - editor.center().y()) <= 1
+        assert ui._composer_stack.currentWidget() is ui._message_composer
 
 
 def test_search_mouse_selection_and_chip_removal_preserve_prompt(window):
