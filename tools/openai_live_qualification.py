@@ -21,6 +21,29 @@ from app.state.storage import JsonStore
 from tools.live_qualification import asks_for_color, code_is_complete, completed_stat
 
 
+def prepare_fixture(folder: Path):
+    from tests.fixtures.context_reliability import large_css_fixture
+    portable = folder / "portable"
+    portable.mkdir()
+    target = folder / "styles.css"
+    original = large_css_fixture().encode()
+    target.write_bytes(original)
+    note = folder / "acceptance-note.txt"
+    note.write_bytes(b"A" * 83)
+    return portable, target, note, original
+
+
+def fixture_approval_allowed(record, folder: Path, portable: Path) -> bool:
+    if record.capability not in {"filesystem.edit_text", "filesystem.write_text", "filesystem.copy",
+            "filesystem.move", "filesystem.mkdir", "filesystem.trash"} or not isinstance(record.resource, str):
+        return False
+    try:
+        path = Path(record.resource).resolve()
+        return path.is_relative_to(folder.resolve()) and not path.is_relative_to(portable.resolve())
+    except (OSError, RuntimeError, ValueError):
+        return False
+
+
 def accept_fixture_cloud_notice(window, app):
     """Click only this harness window's known consent dialog for synthetic data."""
     from PySide6.QtCore import QTimer
@@ -54,7 +77,6 @@ def run(root: Path, workspace: Path, report_path: Path, *, api_key: str, local_m
     from app.settings.model import load_model_config
     from app.security.host_access import HostAccessPolicy
     from app.ui.main_window import MainWindow
-    from tests.fixtures.context_reliability import large_css_fixture
     from tests.test_cloud_live_model import _prepare_capability_case, _verify_capability_case
     from pytest import MonkeyPatch
 
@@ -83,6 +105,7 @@ def run(root: Path, workspace: Path, report_path: Path, *, api_key: str, local_m
             self.requests = []
 
         def _request(self, inputs, *, tools=None):
+            requested_model = self.active_model
             try:
                 result = super()._request(inputs, tools=tools)
                 self.requests.append({"model_id": result.requested_model,
@@ -91,6 +114,11 @@ def run(root: Path, workspace: Path, report_path: Path, *, api_key: str, local_m
                     "encrypted_items": sum(item.get("type") == "reasoning" and bool(item.get("encrypted_content"))
                                            for item in result.get("output", []))})
                 return result
+            except CloudInferenceError as exc:
+                self.requests.append({"model_id": requested_model, "error_code": exc.code,
+                    "profile": self.config.profile(requested_model).model_dump(exclude={"qualified"}),
+                    "metrics": self.last_request_metrics.model_dump() if self.last_request_metrics else None})
+                raise
             finally:
                 if self._runner is not None and self._runner not in resources:
                     resources.append(self._runner)
@@ -150,13 +178,7 @@ def run(root: Path, workspace: Path, report_path: Path, *, api_key: str, local_m
                         continue
                     folder = workspace / f"profile-{expected.index(profile)}-repeat-{repetition}" / workflow
                     folder.mkdir(parents=True)
-                    portable = folder / "portable"
-                    portable.mkdir()
-                    target = portable / "styles.css"
-                    original = large_css_fixture().encode()
-                    target.write_bytes(original)
-                    note = portable / "acceptance-note.txt"
-                    note.write_bytes(b"A" * 83)
+                    portable, target, note, original = prepare_fixture(folder)
                     cloud = ObservedCloud(config, api_key=api_key, selection_path=folder / "cloud-selection.json")
                     cloud.select_model(profile["id"])
                     local_config = catalog.configuration(catalog.current_id)
@@ -173,7 +195,7 @@ def run(root: Path, workspace: Path, report_path: Path, *, api_key: str, local_m
                     inference = HybridInferenceEngine(local=LazyInferenceEngine(local_factory,
                         context_length=local_config.context_length, max_response_tokens=local_config.max_tokens),
                         cloud=cloud, default_mode="cloud", fallback_to_local=config.fallback_to_local)
-                    policy = HostAccessPolicy.full_local(application_root=portable, user_home=portable, acknowledged=True)
+                    policy = HostAccessPolicy.full_local(application_root=portable, user_home=folder, acknowledged=True)
                     runtime = build_agent_runtime(inference, config=flags, portable_root=portable,
                                                    state_directory=portable / "state", host_access_policy=policy)
                     store = ConversationStore(portable / "state/history.json", start_fresh=True)
@@ -187,7 +209,7 @@ def run(root: Path, workspace: Path, report_path: Path, *, api_key: str, local_m
                     approvals = []
                     def approve(record):
                         # Only this synthetic workspace may receive write authority.
-                        allowed = record.capability.startswith("filesystem.") and Path(record.resource).resolve().is_relative_to(portable.resolve())
+                        allowed = fixture_approval_allowed(record, folder, portable)
                         approvals.append((record.capability, allowed))
                         service.resolve_approval(record.approval_id, allowed)
                     service.set_approval_requester(approve)
@@ -239,12 +261,20 @@ def run(root: Path, workspace: Path, report_path: Path, *, api_key: str, local_m
                             away = next(p for p in expected if p["id"] != profile["id"])
                             cloud.select_model(away["id"])
                             inference.set_mode("cloud")
-                            submit(window, service, q.ROUNDTRIP)
-                            cloud.select_model(profile["id"])
-                            inference.set_mode("cloud")
+                            away_failure = None
+                            try:
+                                submit(window, service, q.ROUNDTRIP)
+                            except Exception as exc:
+                                away_failure = exc
+                            finally:
+                                cloud.select_model(profile["id"])
+                                inference.set_mode("cloud")
                             _, answer = submit(window, service, q.ROUNDTRIP)
                             assert answer.strip() == "OK" and store.session_id == session
                             cell["session_preserved"] = True
+                            cell["returned_to_original_model"] = cloud.active_model == profile["id"]
+                            if away_failure is not None:
+                                raise away_failure
                         elif workflow == "mode_round_trip":
                             accepted = catalog.profiles.get(catalog.current_id).configuration
                             assert local_config.context_length == accepted.context_length and local_config.max_tokens == accepted.max_tokens
@@ -290,7 +320,7 @@ def run(root: Path, workspace: Path, report_path: Path, *, api_key: str, local_m
                             assert "pool-chat-ok" in answer.casefold() and not turn.settled_calls and store.session_id == session
                             cell["session_preserved"] = True
                         else:
-                            prompt, expected_effect = _prepare_capability_case(workflow, portable, patch)
+                            prompt, expected_effect = _prepare_capability_case(workflow, folder, patch)
                             patch.undo()  # Real Recycle Bin adapter; no substituted tool execution.
                             turn, answer = submit(window, service, prompt)
                             assert len(turn.settled_calls) == 1 and turn.settled_calls[0].result.success
@@ -320,6 +350,10 @@ def run(root: Path, workspace: Path, report_path: Path, *, api_key: str, local_m
                             "ended": t.ended_at is not None, "finish_reason": t.outcome.completion.finish_reason if t.outcome else None}
                             for t in turns]
                         cell["request_cost"] = q.request_cost([t.outcome for t in turns])
+                        cell["capability_results"] = [{"capability": c.call.capability, "success": c.result.success,
+                            "failure_code": c.result.error.code if c.result.error else None} for t in turns for c in t.settled_calls]
+                        cell["approvals"] = {"allowed": sum(allowed for _, allowed in approvals),
+                                            "denied": sum(not allowed for _, allowed in approvals)}
                         cell["requests"] = [{k: v for k, v in r.items() if k != "profile"} for r in cloud.requests]
                         cell["cloud_privacy_acceptances"] = prior_consents + window._qualification_cloud_consents
                         consent_timer.stop()

@@ -127,3 +127,28 @@ def test_fixture_consent_clicks_the_actual_known_dialog():
     finally:
         timer.stop()
         window.close()
+
+
+def test_live_write_fixtures_are_outside_protected_application_root(tmp_path):
+    from app.security.write_policy import HostWritePolicy
+    from tools.openai_live_qualification import prepare_fixture
+    portable, target, note, original = prepare_fixture(tmp_path)
+    policy = HostWritePolicy(portable)
+    assert policy.resolve_text_file(str(target)) == target.resolve()
+    assert policy.resolve_trash_target(str(note)) == note.resolve()
+    assert target.read_bytes() == original and note.stat().st_size == 83
+    from app.capabilities.contracts import CapabilityExecutionError
+    with pytest.raises(CapabilityExecutionError):
+        policy.resolve_text_file(str(portable / "protected.txt"))
+
+
+@pytest.mark.parametrize("location,capability,allowed", [
+    ("fixture", "filesystem.edit_text", True), ("application", "filesystem.write_text", False),
+    ("outside", "filesystem.copy", False), ("fixture", "application.launch", False),
+    ("fixture", "filesystem.unknown", False)])
+def test_fixture_approvals_keep_authority_within_the_synthetic_workspace(tmp_path, location, capability, allowed):
+    from types import SimpleNamespace
+    from tools.openai_live_qualification import prepare_fixture, fixture_approval_allowed
+    portable, target, _, _ = prepare_fixture(tmp_path)
+    resource = {"fixture": target, "application": portable / "protected.txt", "outside": tmp_path.parent / "outside.txt"}[location]
+    assert fixture_approval_allowed(SimpleNamespace(capability=capability, resource=str(resource)), tmp_path, portable) is allowed
