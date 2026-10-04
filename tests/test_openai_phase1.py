@@ -83,8 +83,10 @@ def test_checked_in_configuration_uses_luna_and_unqualified_bounded_profiles():
     assert settings.default_mode == "local" and not settings.fallback_to_local
     assert settings.max_retries == 0
     assert all(not item.qualified for item in settings.profiles)
-    assert settings.profile(settings.default_model).effective_context_length == 32768
-    assert settings.profile(settings.default_model).max_output_tokens == 4096
+    assert settings.profile(settings.default_model).effective_context_length == 45056
+    assert settings.profile(settings.default_model).max_input_tokens == 28672
+    assert settings.profile(settings.default_model).max_output_tokens == 16384
+    assert settings.timeout_seconds == 180
 
 
 @pytest.mark.parametrize("overrides", [

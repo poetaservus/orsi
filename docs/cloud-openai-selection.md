@@ -68,3 +68,8 @@ are implemented; its final legacy deletion is pending that external gate.
 Machine-local reports are under ignored `state/test-artifacts/cloud-phase42/`.
 See [Phase 4.1 qualification](cloud-openai-qualification.md) for the retained
 acceptance failures and blocked cells.
+
+The subsequent [Luna output-budget adjustment](cloud-openai-output-budget.md)
+supersedes Luna's limits and the timeout recorded above. This page retains the
+original Phase 4.2 measurements rather than presenting them as evidence for the
+new profile.
