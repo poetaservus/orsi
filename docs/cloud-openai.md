@@ -19,7 +19,7 @@ implementation patterns adapted to O.R.S.I.'s existing Python interfaces;
 it does not override OpenAI's documented contract or O.R.S.I.'s permissions.
 Existing acceptance prompts remain unchanged.
 
-Current branch status: Phases 1, 2.1, 2.2, 3.1 and 3.2 are implemented. Native tools now
+Current branch status: Phases 1, 2.1, 2.2, 3.1, 3.2 and 4.1 are implemented. Native tools now
 support reasoning profiles and durable stateless output-item replay. Profile
 defaults are unchanged and both models remain unqualified. The Phase 1-only
 tool gate below is historical. See [native tools](cloud-openai-tools.md) and
@@ -27,7 +27,9 @@ tool gate below is historical. See [native tools](cloud-openai-tools.md) and
 [streaming/cancellation verification](cloud-openai-streaming.md) and
 [context/cache/measurement verification](cloud-openai-efficiency.md).
 Phase 4.1 adds the separate [OpenAI acceptance and packaging gate](cloud-openai-qualification.md);
-its measured results do not automatically promote either configured profile.
+Luna passed 28 of 30 required cells, with both failures caused by the required
+switch to inaccessible Sol. Sol's 30 cells remain blocked. Both profiles remain
+unqualified; default/UI selection and legacy removal belong to Phase 4.2.
 
 ## Phase 1 implementation
 
