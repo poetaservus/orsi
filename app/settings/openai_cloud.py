@@ -60,7 +60,7 @@ class OpenAICloudConfig(BaseModel):
     api_key_environment: Literal["OPENAI_API_KEY"] = "OPENAI_API_KEY"
     default_model: str = "gpt-6-luna"
     profiles: tuple[OpenAIModelProfile, ...] = Field(min_length=1, max_length=2)
-    timeout_seconds: int = Field(90, ge=5, le=300)
+    timeout_seconds: int = Field(90, ge=5, le=1800)
     max_retries: int = Field(0, ge=0, le=5)
     default_mode: Literal["local", "cloud"] = "local"
     fallback_to_local: bool = False

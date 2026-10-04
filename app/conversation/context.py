@@ -324,6 +324,10 @@ def context_length(inference) -> int:
 
 def response_reserve(inference) -> int:
     configured = max(32, int(getattr(inference, "max_response_tokens", 512)))
+    # Explicit Responses profiles can allocate more than half their context to
+    # output. Reserve the actual wire allowance so input admission stays honest.
+    if getattr(inference, "supports_openai_context", False) is True:
+        return min(configured, context_length(inference))
     return min(configured, context_length(inference) // 2)
 
 

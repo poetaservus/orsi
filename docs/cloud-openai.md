@@ -45,17 +45,22 @@ optional configured profile, subject to account access. Both remain unqualified.
 | Setting | GPT-6 Luna | GPT-6.1 Sol |
 | --- | --- | --- |
 | Model ID | `gpt-6-luna` | `gpt-6.1-sol` |
-| Effective application context | 45,056 | 32,768 |
+| Effective application context | 156,672 | 32,768 |
 | Input budget | 28,672 | 28,672 |
-| Output reserve | 16,384 | 4,096 |
+| Output reserve | 128,000 | 4,096 |
 | Reasoning effort | `none` | `medium` |
 | Temperature | 0.1 | omitted |
 
 Phase 1 preserved the previous 4,096-token output cap for both profiles. A later
 [Luna output-budget fix](cloud-openai-output-budget.md) raised its reserve after
 a user frontend-generation request reached that limit. Its input budget remains
-28,672; the additional context space reserves the larger output. The request
-timeout is now 180 seconds. These application budgets are not the vendor ceilings.
+28,672; the additional context space reserves the larger output. The subsequent
+[maximum-output update](cloud-openai-max-output.md) raises Luna to its documented
+128,000-token output ceiling with a finite 30-minute request deadline. Context
+accounting reserves the entire output allowance instead of clamping it to half
+the application context. Input admission retains its existing budget and safety
+margin. The stream event and byte bounds allow long responses; native file-write
+size limits and completion-before-execution checks remain in force.
 The model pages retrieved on
 4 October 2026 document a 1,050,000-token context and a 128,000-token output ceiling
 for both profiles. Profile validation rejects unsupported model IDs/efforts,

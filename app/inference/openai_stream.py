@@ -12,8 +12,10 @@ from time import monotonic
 from app.inference.completion import CompletionMetadata, IncompleteResponseError
 
 log = logging.getLogger(__name__)
-_MAX_EVENTS = 65_536
-_MAX_EVENT_BYTES = 32 * 1024 * 1024
+# Allow a 128,000-token response with multiple deltas per token and control
+# events while retaining finite protocol limits independent of model settings.
+_MAX_EVENTS = 262_144
+_MAX_EVENT_BYTES = 64 * 1024 * 1024
 _MAX_TEXT_CHARS = 1_000_000
 _TERMINALS = {"response.completed": "completed", "response.incomplete": "incomplete", "response.failed": "failed"}
 _PASSIVE = {"response.in_progress", "response.content_part.done", "response.output_text.done",

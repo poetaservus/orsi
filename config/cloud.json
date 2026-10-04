@@ -8,9 +8,9 @@
   "profiles": [
     {
       "id": "gpt-6-luna",
-      "context_length": 45056,
+      "context_length": 156672,
       "max_input_tokens": 28672,
-      "max_output_tokens": 16384,
+      "max_output_tokens": 128000,
       "reasoning_effort": "none",
       "temperature": 0.1,
       "qualified": false
@@ -25,7 +25,7 @@
       "qualified": false
     }
   ],
-  "timeout_seconds": 180,
+  "timeout_seconds": 1800,
   "max_retries": 0,
   "default_mode": "local",
   "fallback_to_local": false

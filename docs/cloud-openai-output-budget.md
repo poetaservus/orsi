@@ -1,5 +1,9 @@
 # Luna output-budget adjustment, 4 October 2026
 
+This records the initial 16,384-token adjustment and its historical checks.
+The later [maximum-output update](cloud-openai-max-output.md) supersedes the
+active Luna allowance with 128,000 tokens and records its separate verification.
+
 A user frontend-generation request stopped before executing its incomplete tool
 call. Content-free diagnostics recorded `finish_reason=length`, 5,750 input
 tokens, exactly 4,096 output tokens, zero reasoning tokens, one request and zero

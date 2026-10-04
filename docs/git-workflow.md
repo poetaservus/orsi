@@ -170,3 +170,25 @@ Only main is published. After successful publication, the merged local
 `codex/cloud-openai` branch is removed and its test checkout remains detached at
 the integrated tip, preserving its independent state and test launcher. No
 remote feature branches or unrelated active checkouts are changed.
+
+## Maximum Luna output allowance, 4 October 2026
+
+After integration, the user requested the highest supported output allowance.
+The bounded `codex/cloud-max-output` change starts from local main `a4aba0c`.
+Luna receives its documented 128,000-token output allowance, with matching
+context reserve, a finite 30-minute deadline and expanded bounded streaming
+capacity. The input allowance, Sol profile, user settings and qualification
+flags are preserved. See [maximum-output verification](cloud-openai-max-output.md).
+
+Verification passed all 247 focused checks and the full regression: 1,704 tests
+and 15 subtests passed, 49 skipped, no failures. Two short live requests accepted
+the 128,000-token wire setting; a real isolated Qt selector switch away/back
+confirmed effective limits and resource release. This does not claim a live
+128,000-token generation or successful qualification of previously blocked gates.
+
+Configuration copies, ref/worktree maps and a verified all-ref recovery bundle
+are preserved under ignored `state/backups/cloud-max-output-20261004/`. After
+verification the bounded change is committed, local main fast-forwards and the
+merged local feature branch is removed. Other active worktrees retain their
+original tips. The earlier detached test checkout retains `a4aba0c`; test the
+new allowance by restarting the normal main launcher.
