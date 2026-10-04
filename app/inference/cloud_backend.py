@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-from enum import StrEnum
 from random import random
 from threading import Lock
 from time import monotonic, sleep
@@ -12,7 +11,8 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from app.settings.cloud import CloudConfig
-from app.inference.engine import InferenceEngine, InferenceUnavailable
+from app.inference.engine import InferenceEngine
+from app.inference.cloud_errors import CloudErrorCode, CloudInferenceError
 from app.inference.diagnostics import record_completion_diagnostics
 from app.inference.protocol import (
     ModelCapabilityDefinition,
@@ -26,36 +26,6 @@ from app.inference.completion import CompletionMetadata, CompletionText, Incompl
 
 
 log = logging.getLogger(__name__)
-
-
-class CloudErrorCode(StrEnum):
-    AUTHENTICATION = "authentication"
-    PERMISSION = "permission"
-    QUOTA = "quota"
-    RATE_LIMIT = "rate_limit"
-    CONNECTION = "connection"
-    TIMEOUT = "timeout"
-    CONTEXT_OVERFLOW = "context_overflow"
-    BAD_REQUEST = "bad_request"
-    PROVIDER_UNAVAILABLE = "provider_unavailable"
-    MALFORMED_RESPONSE = "malformed_response"
-    TOOLS_NOT_READY = "tools_not_ready"
-    CLOSED = "closed"
-
-
-class CloudInferenceError(InferenceUnavailable):
-    def __init__(
-        self,
-        message: str,
-        *,
-        allow_local_fallback: bool = False,
-        retryable: bool = False,
-        code: CloudErrorCode | None = None,
-    ):
-        super().__init__(message)
-        self.allow_local_fallback = allow_local_fallback
-        self.retryable = retryable
-        self.code = code
 
 
 def _response_text(message: dict) -> str | None:

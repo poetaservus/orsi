@@ -4,7 +4,7 @@ import logging
 from threading import Event, Lock, RLock
 from typing import Callable, Iterable
 
-from app.inference.cloud_backend import CloudInferenceError
+from app.inference.cloud_errors import CloudInferenceError
 from app.inference.engine import InferenceEngine, InferenceUnavailable
 from app.inference.openai_replay import neutral_messages
 from app.inference.protocol import (
@@ -230,6 +230,26 @@ class HybridInferenceEngine(InferenceEngine):
         if self.cloud is None:
             raise InferenceUnavailable("Cloud inference is unavailable.")
         self.cloud.set_api_key(api_key)
+
+    @property
+    def cloud_model_catalog(self):
+        return getattr(self.cloud, "catalog", None)
+
+    def select_cloud_model(self, model_id: str) -> None:
+        with self._lock:
+            if self._closed:
+                raise InferenceUnavailable("Inference is closed.")
+            if self._mode != "cloud":
+                raise InferenceUnavailable("Switch to Cloud before choosing a cloud model.")
+            if self.cloud_model_catalog is None:
+                raise InferenceUnavailable("Cloud model selection is unavailable.")
+            previous = self.cloud.active_model
+            self.cloud.select_model(model_id)
+            if previous != self.cloud.active_model:
+                self.context_revision += 1
+            self.context_length = self.cloud.context_length
+            self.max_response_tokens = self.cloud.max_response_tokens
+        self.record_baseline()
 
     def consume_notice(self) -> str | None:
         with self._lock:

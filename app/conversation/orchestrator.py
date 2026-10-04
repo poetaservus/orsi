@@ -544,6 +544,17 @@ class ConversationService:
         finally:
             self._run_lock.release()
 
+    def select_cloud_model(self, model_id: str) -> None:
+        if not self._run_lock.acquire(blocking=False):
+            raise RuntimeError("Finish or stop the current response before switching models.")
+        try:
+            with self._cancellation_lock:
+                if self._closed:
+                    raise RuntimeError("The conversation is closed.")
+            self.inference.select_cloud_model(model_id)
+        finally:
+            self._run_lock.release()
+
     def shutdown(self) -> None:
         with self._cancellation_lock:
             if self._closed:

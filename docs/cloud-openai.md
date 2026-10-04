@@ -29,7 +29,9 @@ tool gate below is historical. See [native tools](cloud-openai-tools.md) and
 Phase 4.1 adds the separate [OpenAI acceptance and packaging gate](cloud-openai-qualification.md);
 Luna passed 28 of 30 required cells, with both failures caused by the required
 switch to inaccessible Sol. Sol's 30 cells remain blocked. Both profiles remain
-unqualified; default/UI selection and legacy removal belong to Phase 4.2.
+unqualified. Phase 4.2 implements [defaults and UI selection](cloud-openai-selection.md)
+and separates shared errors from the legacy transport. Legacy deletion remains
+gated on successful qualification, which is still blocked by Sol access.
 
 ## Phase 1 implementation
 
@@ -58,7 +60,7 @@ See the [Luna model contract](https://developers.openai.com/api/docs/models/gpt-
 Only the selected model ID is persisted under ignored
 `state/cloud_model_selection_v1.json`; selection never rewrites profiles. Corrupt
 or unknown selections are rejected without replacing the saved file. Phase 1
-exposes selection through the backend/catalog; UI selection follows in Phase 4.
+exposes selection through the backend/catalog; Phase 4.2 adds the UI selector.
 Startup still defaults to local mode with automatic local fallback disabled.
 
 `OpenAIResponsesInferenceEngine` creates the SDK client lazily. Keys come from

@@ -14,7 +14,7 @@ from pathlib import Path
 from threading import RLock
 from typing import Any, Iterable
 
-from app.inference.cloud_backend import CloudErrorCode, CloudInferenceError
+from app.inference.cloud_errors import CloudErrorCode, CloudInferenceError
 from app.inference.completion import CompletionMetadata, CompletionText, IncompleteResponseError, TokenUsage
 from app.inference.engine import InferenceEngine
 from app.inference.protocol import ModelCapabilityDefinition, ModelResponse, ModelProtocolFailureCode, model_capability_definitions

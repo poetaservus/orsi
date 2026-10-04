@@ -69,7 +69,7 @@ def run(root: Path, workspace: Path, report_path: Path, *, api_key: str, local_m
     from app.conversation.store import ConversationStore
     from app.inference.hybrid import HybridInferenceEngine, LazyInferenceEngine
     from app.inference.openai_backend import OpenAIResponsesInferenceEngine
-    from app.inference.cloud_backend import CloudInferenceError
+    from app.inference.cloud_errors import CloudInferenceError
     from app.inference.llama_server_backend import LlamaServerInferenceEngine
     from app.settings.cloud import load_cloud_config
     from app.settings.agent import load_agent_feature_config

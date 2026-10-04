@@ -479,9 +479,9 @@ class MainWindow(QMainWindow):
             self.model_selector.currentIndexChanged.connect(self._select_inference_mode)
         settings_layout.addWidget(self.model_selector)
 
-        local_label = QLabel("Local model")
-        local_label.setObjectName("settingsLabel")
-        settings_layout.addWidget(local_label)
+        self.local_model_label = QLabel("Local model")
+        self.local_model_label.setObjectName("settingsLabel")
+        settings_layout.addWidget(self.local_model_label)
         self.local_model_selector = QComboBox()
         self.local_model_selector.setObjectName("modelSelector")
         self.local_model_selector.setAccessibleName("Local model")
@@ -507,6 +507,25 @@ class MainWindow(QMainWindow):
         settings_layout.addWidget(self.local_model_details)
         self._sync_local_model_selector()
         self.local_model_selector.currentIndexChanged.connect(self._select_local_model)
+
+        self.cloud_model_label = QLabel("Cloud model")
+        self.cloud_model_label.setObjectName("settingsLabel")
+        settings_layout.addWidget(self.cloud_model_label)
+        self.cloud_model_selector = QComboBox()
+        self.cloud_model_selector.setObjectName("modelSelector")
+        self.cloud_model_selector.setAccessibleName("Cloud model")
+        self.cloud_model_selector.setFixedHeight(38)
+        cloud_catalog = getattr(inference, "cloud_model_catalog", None)
+        for profile in getattr(getattr(cloud_catalog, "config", None), "profiles", ()):
+            label = {"gpt-6-luna": "GPT-6 Luna", "gpt-6.1-sol": "GPT-6.1 Sol"}.get(profile.id, profile.id)
+            self.cloud_model_selector.addItem(label, profile.id)
+        settings_layout.addWidget(self.cloud_model_selector)
+        self.cloud_model_details = QLabel()
+        self.cloud_model_details.setObjectName("settingsLabel")
+        self.cloud_model_details.setWordWrap(True)
+        settings_layout.addWidget(self.cloud_model_details)
+        self._sync_cloud_model_selector()
+        self.cloud_model_selector.currentIndexChanged.connect(self._select_cloud_model)
 
         greeting_label = QLabel("Greeting")
         greeting_label.setObjectName("settingsLabel")
@@ -970,6 +989,11 @@ class MainWindow(QMainWindow):
             and bool(getattr(getattr(self.inference, "model_catalog", None), "models", ()))
         )
         self.new_session_button.setEnabled(not busy and self.service is not None)
+        self.cloud_model_selector.setEnabled(
+            not busy and self.service is not None and self.inference is not None
+            and self.inference.mode == "cloud"
+            and getattr(self.inference, "cloud_model_catalog", None) is not None
+        )
         self.skills_button.setEnabled(not busy and callable(getattr(self.service, "install_skill", None)))
         duration_seconds = self.chat.set_thinking(busy)
         self.activity.set_activity("" if busy else self._ready_status())
@@ -1069,11 +1093,53 @@ class MainWindow(QMainWindow):
             self.inference.set_mode(previous)
         self._sync_inference_selector()
         self._sync_local_model_selector()
+        self._sync_cloud_model_selector()
+        self._update_context_window()
+        self.activity.set_activity(self._ready_status())
+
+    def _sync_cloud_model_selector(self):
+        catalog = getattr(self.inference, "cloud_model_catalog", None)
+        available = catalog is not None
+        for widget in (self.cloud_model_label, self.cloud_model_selector, self.cloud_model_details):
+            widget.setVisible(available and self.inference.mode == "cloud")
+        self.cloud_model_selector.blockSignals(True)
+        self.cloud_model_selector.setCurrentIndex(
+            self.cloud_model_selector.findData(catalog.current_id) if available else -1
+        )
+        self.cloud_model_selector.blockSignals(False)
+        self.cloud_model_selector.setEnabled(bool(
+            available and self.service is not None and self.inference.mode == "cloud"
+            and self.thread is None
+        ))
+        if available:
+            profile = catalog.current_profile
+            status = "Verified" if profile.qualified else "Verification pending"
+            self.cloud_model_details.setText(
+                f"{profile.effective_context_length:,} context · {profile.max_output_tokens:,} reply limit\n{status}"
+            )
+
+    @Slot(int)
+    def _select_cloud_model(self, index):
+        catalog = getattr(self.inference, "cloud_model_catalog", None)
+        if self.thread is not None or self.service is None or catalog is None or index < 0:
+            self._sync_cloud_model_selector()
+            return
+        requested = self.cloud_model_selector.itemData(index)
+        if requested == catalog.current_id:
+            return
+        try:
+            self.service.select_cloud_model(requested)
+        except (InferenceUnavailable, RuntimeError, ValueError, OSError):
+            self.chat.add_message("Agent", "Could not switch cloud models. Your previous selection is still active.", True)
+        self._sync_cloud_model_selector()
         self._update_context_window()
         self.activity.set_activity(self._ready_status())
 
     def _sync_local_model_selector(self):
         catalog = getattr(self.inference, "model_catalog", None)
+        local_mode = self.inference is None or self.inference.mode == "local"
+        for widget in (self.local_model_label, self.local_model_selector, self.local_model_details):
+            widget.setVisible(local_mode)
         self.local_model_selector.blockSignals(True)
         index = self.local_model_selector.findData(catalog.current_id) if catalog else -1
         if index >= 0:
