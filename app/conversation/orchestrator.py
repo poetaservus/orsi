@@ -183,6 +183,45 @@ class ConversationService:
         finally:
             self._run_lock.release()
 
+    def install_skill(self, imported):
+        """Publish a reviewed import and refresh the catalog only between turns."""
+        if not self._run_lock.acquire(blocking=False):
+            raise RuntimeError("Finish or stop the current response before installing skills.")
+        try:
+            with self._cancellation_lock:
+                if self._closed:
+                    raise RuntimeError("The conversation is closed.")
+            from app.runtime.skills.import_source import install_import
+            from app.runtime.skills.installer import SkillInstaller
+            return install_import(SkillInstaller(self.skill_registry), imported)
+        finally:
+            self._run_lock.release()
+
+    def remove_skill(self, name: str) -> None:
+        """Remove a global skill between turns using existing removal safeguards."""
+        if not self._run_lock.acquire(blocking=False):
+            raise RuntimeError("Finish or stop the current response before removing skills.")
+        try:
+            with self._cancellation_lock:
+                if self._closed:
+                    raise RuntimeError("The conversation is closed.")
+            from app.runtime.skills.installer import SkillInstaller
+            effective = self.skill_registry.get(name)
+            if effective is not None and not effective.source_path.is_relative_to(self.skill_registry.global_root):
+                raise RuntimeError("Project skills must be managed in their project folder.")
+            SkillInstaller(self.skill_registry).remove(name)
+            removed_active = (self._active_skill_name == name or
+                              self._automatic_skill is not None and self._automatic_skill.name == name)
+            if self._active_skill_name == name:
+                self._active_skill_name = None
+            if self._automatic_skill is not None and self._automatic_skill.name == name:
+                self._automatic_skill = None
+            if removed_active:
+                self.skill_selection = SkillSelection()
+                self._context_measurement = None
+        finally:
+            self._run_lock.release()
+
     def run(self, user_message: str, activity=None, *, skill_name: str | None = None) -> str:
         """Run one turn; an optional explicit skill applies only to this message."""
         text = str(user_message).strip()

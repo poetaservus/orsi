@@ -59,6 +59,7 @@ from app.ui.context_window import ContextWindowBar
 from app.ui.status import ConversationStatus
 from app.ui.worker import ConversationWorker, ModelSwitchWorker
 from app.ui.skill_picker import SkillPicker
+from app.ui.skill_settings import SkillSettingsDialog
 from app.ui.window_frame import CAPTION_HEIGHT, DragStrip, WindowControls, WindowsFrame
 
 
@@ -449,7 +450,7 @@ class MainWindow(QMainWindow):
 
         self.settings_panel = QFrame(root)
         self.settings_panel.setObjectName("settingsPanel")
-        self.settings_panel.setFixedSize(400, 376)
+        self.settings_panel.setFixedSize(400, 422)
         settings_layout = QVBoxLayout(self.settings_panel)
         settings_layout.setContentsMargins(18, 16, 18, 16)
         settings_layout.setSpacing(8)
@@ -517,6 +518,13 @@ class MainWindow(QMainWindow):
         self.greeting_input.setMaxLength(_GREETING_MAX_LENGTH)
         self.greeting_input.setText(self._greeting_message)
         settings_layout.addWidget(self.greeting_input)
+
+        self.skills_button = QPushButton("Manage skills…")
+        self.skills_button.setObjectName("manageSkillsButton")
+        self.skills_button.setFixedHeight(38)
+        self.skills_button.setEnabled(callable(getattr(service, "install_skill", None)))
+        self.skills_button.clicked.connect(self._manage_skills)
+        settings_layout.addWidget(self.skills_button)
 
         self.activity = ConversationStatus(
             self._ready_status() if not startup_error else "Model unavailable"
@@ -840,6 +848,20 @@ class MainWindow(QMainWindow):
         if visible:
             self.settings_panel.raise_()
 
+    def _manage_skills(self) -> None:
+        if self.thread is not None or not callable(getattr(self.service, "install_skill", None)):
+            return
+        dialog = SkillSettingsDialog(self.service, self)
+        dialog.catalog_changed.connect(self._skills_changed)
+        dialog.exec()
+        dialog.deleteLater()
+
+    def _skills_changed(self) -> None:
+        name = self.skill_picker.selected_name
+        if name is not None and self.service.skill_registry.get(name) is None:
+            self.skill_picker.clear_selection()
+        self._update_context_window()
+
     def submit(self) -> None:
         if self.thread is None and self.skill_picker.accept_current():
             return
@@ -941,6 +963,7 @@ class MainWindow(QMainWindow):
             and bool(getattr(getattr(self.inference, "model_catalog", None), "models", ()))
         )
         self.new_session_button.setEnabled(not busy and self.service is not None)
+        self.skills_button.setEnabled(not busy and callable(getattr(self.service, "install_skill", None)))
         duration_seconds = self.chat.set_thinking(busy)
         self.activity.set_activity("" if busy else self._ready_status())
         return duration_seconds
@@ -1387,6 +1410,12 @@ QFrame#settingsPanel {
     border: 1px solid #3a3b3c;
     border-radius: 15px;
 }
+QPushButton#manageSkillsButton {
+    color: #d9dce3; background: #303640; border: 1px solid rgba(153, 165, 184, 36);
+    border-radius: 6px; padding: 7px 12px; font-family: Saira; font-size: 14px;
+}
+QPushButton#manageSkillsButton:hover { background: #3e4551; }
+QPushButton#manageSkillsButton:disabled { color: #767d89; }
 QLabel#settingsTitle {
     color: #e1e1e1;
     background: transparent;

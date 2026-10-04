@@ -49,6 +49,12 @@ redirected, reparse, or ambiguous paths are denied.
 
 ## Skills
 
+In the desktop app, open **Settings → Manage skills…**. Paste a public GitHub link to
+`SKILL.md`, or choose/drop a local Markdown file, then **Preview → Install**. Skills installed
+through Settings become available immediately. Select an installed skill and use **Remove…**
+to remove it after confirmation. Installation and management controls live only in Settings.
+See [the Settings workflow and verification](docs/skill-settings.md).
+
 Skills add instructions/context; tools remain separately registered and authorized callable
 capabilities. MCP is an external tool/resource protocol, while a plugin may bundle skills, tools,
 MCP definitions, hooks and configuration. MCP/plugin loading and Claude compatibility are future
@@ -65,8 +71,10 @@ dependencies are not installed or executed. The default global storage is `~/.or
 Project discovery requires an explicitly supplied project root; startup does not infer one.
 Restart O.R.S.I after CLI installation/removal to refresh the application's startup catalog.
 
-In chat, `/skill exact-skill-name` activates the metadata name shown by `skill list`; `/skill`
-clears it. A new chat clears selection. Automatic selection can choose one skill or no match for
+In the desktop composer, type `/skill`, choose a name, and send your prompt with its blue chip.
+That attachment applies to that message. The underlying local command interface still supports
+session activation using `/skill exact-skill-name` and clearing it with `/skill`.
+A new chat clears selection. Automatic selection can choose one skill or no match for
 the current turn. Skills cannot add tools, change model configuration, or grant permissions.
 Skill decision/injection events appear in `state/orsi.log` without prompt contents or hidden
 reasoning; see [observability](docs/skill-runtime-phase6-1.md).

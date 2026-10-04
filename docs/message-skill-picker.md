@@ -21,8 +21,9 @@ styling, with a compact layout and neutral selection highlight.
 Clicking Send while choosing attaches the highlighted skill and returns focus
 to the input; it does not submit the command or run a model request.
 Filtering and choosing read only cached names/descriptions; they perform no
-filesystem reads, inference or activation. Installation/discovery is unchanged:
-restart O.R.S.I. after installing a skill so it appears in the catalog.
+filesystem reads, inference or activation. The Settings-only follow-up now supports
+[installation with an immediate catalog refresh](skill-settings.md). CLI installation
+still requires restarting O.R.S.I. to refresh the application's startup catalog.
 
 The attachment applies to the outgoing message, including its tool continuations
 and approval waits. It is consumed on Send and released when the turn ends, even
