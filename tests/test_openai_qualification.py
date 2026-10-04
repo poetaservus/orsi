@@ -22,6 +22,7 @@ def evidence():
             for repetition in range(q.REPETITIONS):
                 report["cells"].append({"model_id": profile["id"], "workflow": workflow, "repetition": repetition,
                     "profile": deepcopy(profile), "status": "passed", "terminal_verified": True, "limits_verified": True,
+                    "cloud_privacy_acceptances": 2 if workflow == "restart" else 1,
                     "bytes_verified": True, "ui_released": True, "session_preserved": True, "previous_servers_exited": True,
                     "terminal_outcomes": [{"status": s, "ended": True} for s in gate.TERMINALS[workflow]],
                     "request_cost": {"generation_requests": 2, "usage_coverage": 2, "observed_total_tokens": 100}})
@@ -36,7 +37,7 @@ def test_complete_live_matrix_and_packaging_are_required():
 
 @pytest.mark.parametrize("defect", ["legacy", "deterministic", "dirty", "uncommitted_evidence", "revision", "sdk", "profiles",
     "packaging_source", "prompts", "limits", "missing", "duplicate", "skip", "access", "terminal", "usage", "resources",
-    "regression", "package", "bytes", "cancel_controls", "restart", "switch_leak", "recovery"])
+    "regression", "package", "bytes", "cancel_controls", "restart", "switch_leak", "recovery", "consent"])
 def test_incomplete_or_stale_evidence_never_qualifies(defect):
     report, current, profiles = evidence()
     cell = report["cells"][0]
@@ -62,6 +63,7 @@ def test_incomplete_or_stale_evidence_never_qualifies(defect):
     elif defect == "restart": next(c for c in report["cells"] if c["workflow"] == "restart")["session_preserved"] = False
     elif defect == "switch_leak": next(c for c in report["cells"] if c["workflow"] == "mode_round_trip")["previous_servers_exited"] = False
     elif defect == "recovery": current["effective_flags"]["context_recovery_enabled"] = True
+    elif defect == "consent": cell["cloud_privacy_acceptances"] = 0
     assert gate.qualification_errors(report, current, profiles)
 
 
@@ -110,3 +112,18 @@ def test_missing_qualification_report_is_read_only(tmp_path):
     from tools.verify_openai_qualification import verify
     assert verify(tmp_path, tmp_path / "missing.json")
     assert list(tmp_path.iterdir()) == []
+
+
+def test_fixture_consent_clicks_the_actual_known_dialog():
+    from PySide6.QtWidgets import QApplication, QWidget, QMessageBox
+    from tools.openai_live_qualification import accept_fixture_cloud_notice
+    app = QApplication.instance() or QApplication([])
+    window = QWidget()
+    timer = accept_fixture_cloud_notice(window, app)
+    try:
+        assert QMessageBox.question(window, "Use cloud model?", "Synthetic fixture consent",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes
+        assert window._qualification_cloud_consents == 1
+    finally:
+        timer.stop()
+        window.close()

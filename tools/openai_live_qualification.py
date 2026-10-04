@@ -21,6 +21,23 @@ from app.state.storage import JsonStore
 from tools.live_qualification import asks_for_color, code_is_complete, completed_stat
 
 
+def accept_fixture_cloud_notice(window, app):
+    """Click only this harness window's known consent dialog for synthetic data."""
+    from PySide6.QtCore import QTimer
+    from PySide6.QtWidgets import QMessageBox
+    window._qualification_cloud_consents = 0
+    timer = QTimer(window)
+    def accept():
+        dialog = app.activeModalWidget()
+        if (isinstance(dialog, QMessageBox) and dialog.parent() is window
+                and dialog.windowTitle() == "Use cloud model?"):
+            window._qualification_cloud_consents += 1
+            dialog.button(QMessageBox.StandardButton.Yes).click()
+    timer.timeout.connect(accept)
+    timer.start(10)
+    return timer
+
+
 def run(root: Path, workspace: Path, report_path: Path, *, api_key: str, local_models: Path,
         packaging: dict | None = None, regression: bool = True) -> dict:
     from PySide6.QtWidgets import QApplication
@@ -165,6 +182,8 @@ def run(root: Path, workspace: Path, report_path: Path, *, api_key: str, local_m
                     window = MainWindow(service, "qualification", inference=inference)
                     window.show()
                     app.processEvents()
+                    consent_timer = accept_fixture_cloud_notice(window, app)
+                    prior_consents = 0
                     approvals = []
                     def approve(record):
                         # Only this synthetic workspace may receive write authority.
@@ -251,6 +270,8 @@ def run(root: Path, workspace: Path, report_path: Path, *, api_key: str, local_m
                             turn, _ = submit(window, service, q.AFTER_CANCEL)
                             assert completed_stat(turn) and turn.provider_responses
                             session = store.session_id
+                            prior_consents = window._qualification_cloud_consents
+                            consent_timer.stop()
                             window.close()
                             service.shutdown()
                             # New client/runtime/process objects, same isolated durable conversation.
@@ -264,6 +285,7 @@ def run(root: Path, workspace: Path, report_path: Path, *, api_key: str, local_m
                             service.set_approval_requester(approve)
                             window = MainWindow(service, "qualification", inference=inference)
                             window.show()
+                            consent_timer = accept_fixture_cloud_notice(window, app)
                             turn, answer = submit(window, service, "Reply exactly with pool-chat-ok and do not use a tool.")
                             assert "pool-chat-ok" in answer.casefold() and not turn.settled_calls and store.session_id == session
                             cell["session_preserved"] = True
@@ -299,6 +321,8 @@ def run(root: Path, workspace: Path, report_path: Path, *, api_key: str, local_m
                             for t in turns]
                         cell["request_cost"] = q.request_cost([t.outcome for t in turns])
                         cell["requests"] = [{k: v for k, v in r.items() if k != "profile"} for r in cloud.requests]
+                        cell["cloud_privacy_acceptances"] = prior_consents + window._qualification_cloud_consents
+                        consent_timer.stop()
                         window.close()
                         service.shutdown()
                         inference.close()

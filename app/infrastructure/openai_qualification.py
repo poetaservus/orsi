@@ -63,6 +63,9 @@ def qualification_errors(report: dict, current: dict, expected_profiles: list[di
     for cell in cells:
         if cell.get("status") != "passed" or cell.get("terminal_verified") is not True:
             errors.append("All live cells must pass; blocked, failed and skipped cells cannot qualify.")
+        consents = cell.get("cloud_privacy_acceptances")
+        if type(consents) is not int or consents < (2 if cell.get("workflow") == "restart" else 1):
+            errors.append("Cloud workflows require their actual fixture-consent dialog acceptance.")
         if cell.get("profile") != by_id.get(cell.get("model_id")) or cell.get("limits_verified") is not True:
             errors.append("Actual selection, application limits and request settings must match the profile.")
         terminal = cell.get("terminal_outcomes", [])
