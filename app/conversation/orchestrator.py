@@ -571,6 +571,7 @@ class ConversationService:
     def _context_measurement_key(self) -> tuple:
         return (self.store.session_id, id(self.inference),
                 getattr(self.inference, "context_revision", 0),
+                getattr(self.inference, "context_identity", getattr(self.inference, "active_model", None)),
                 getattr(self.inference, "mode", None), context_length(self.inference))
 
     def reported_context_tokens(self) -> int | None:

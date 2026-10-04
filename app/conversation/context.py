@@ -87,10 +87,11 @@ def select_context_request(
     system = {"role": "system", "content": system_prompt}
     if type(recovery_enabled) is not bool:
         raise TypeError("Context recovery selection requires an explicit boolean.")
-    if recovery_enabled:
+    openai_context = getattr(inference, "supports_openai_context", False) is True
+    if recovery_enabled or openai_context:
         from app.conversation.recovery import recover_context_request
         recovered = recover_context_request(inference, [system, *history], reserved_tokens=reserved_tokens,
-                                            safety_buffer=safety_buffer)
+                                            safety_buffer=safety_buffer, projection_enabled=recovery_enabled)
         return ContextSelection(messages=recovered.messages, budget=recovered.budget)
     count_message_tokens(inference, [system])
     budget = max(
@@ -257,6 +258,8 @@ def _validated_safety_buffer(value: int) -> int:
 
 
 def count_message_tokens(inference, messages: list[dict[str, Any]]) -> int:
+    if getattr(inference, "supports_openai_context", False) is True:
+        return max(1, int(inference.count_context_message_tokens(messages)))
     counter = getattr(inference, "count_message_tokens", None)
     countable = [
         message

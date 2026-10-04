@@ -24,6 +24,7 @@ class OpenAIRequestRunner:
         self._closed = False
         self._revision = 0
         self.client = None
+        self.http_client = None
 
     def _serve(self):
         loop = asyncio.new_event_loop()

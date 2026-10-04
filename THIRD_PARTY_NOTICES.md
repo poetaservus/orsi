@@ -26,6 +26,11 @@ OpenCode.
   handling in `app/inference/openai_stream.py`. OpenAI documentation governs
   streaming and connection cancellation. Retry ownership uses the pinned
   official Python SDK rather than an additional OpenCode retry loop.
+- Cloud Phase 3.2 follows that pinned protocol's inclusive input/output usage
+  totals and cached/reasoning subset accounting. OpenAI documentation and the
+  pinned SDK additionally govern cache-write counts. Context estimates and
+  pressure-only result excerpts are O.R.S.I.-specific adaptations; cached input
+  never reduces the context budget and reasoning is not counted twice.
 - Upstream files used as references:
   - `packages/llm/src/protocols/openai-responses.ts`
   - `packages/opencode/src/session/tools.ts`

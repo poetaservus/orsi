@@ -53,7 +53,7 @@ def result_envelope(capability="filesystem.stat", **changes):
     return value
 
 
-def scripted_sdk(monkeypatch, payloads):
+def scripted_sdk(monkeypatch, payloads, *, engine_config=None):
     bodies = []
     def handle(request):
         bodies.append(json.loads(request.content))
@@ -67,7 +67,7 @@ def scripted_sdk(monkeypatch, payloads):
     monkeypatch.setattr(openai, "DefaultAsyncHttpxClient", http_factory)
     factory = Mock(return_value=client)
     monkeypatch.setattr(openai, "AsyncOpenAI", factory)
-    return OpenAIResponsesInferenceEngine(config(), api_key="fake-never-live"), client, bodies, factory
+    return OpenAIResponsesInferenceEngine(engine_config or config(), api_key="fake-never-live"), client, bodies, factory
 
 
 def test_strict_wire_schema_preserves_list_defaults_and_internal_manifest():

@@ -10,7 +10,6 @@ import asyncio
 from concurrent.futures import CancelledError
 import logging
 import os
-from math import ceil
 from pathlib import Path
 from threading import RLock
 from typing import Any, Iterable
@@ -23,6 +22,8 @@ from app.inference.openai_tools import responses_function_tools, responses_input
 from app.inference.openai_replay import OpenAIReplay, REPLAY_KEY, neutral_messages
 from app.inference.openai_stream import ResponsesStreamState
 from app.inference.openai_transport import OpenAIRequestRunner
+from app.inference.openai_context import context_input_items, estimate_input_tokens, estimate_schema_tokens
+from app.inference.openai_metrics import RequestMeasurement, record_request_metrics
 from app.settings.openai_cloud import OpenAICloudConfig, OpenAIModelCatalog
 
 
@@ -34,13 +35,32 @@ _QUOTA_ERROR_CODES = {"insufficient_quota", "billing_hard_limit_reached", "billi
 
 class _ResponsePayload(dict):
     """Bind replay to the requested profile even when an alias resolves to a snapshot."""
-    def __init__(self, payload, requested_model):
+    def __init__(self, payload, requested_model, request_metrics=None):
         super().__init__(payload)
         self.requested_model = requested_model
+        self.request_metrics = request_metrics
 
 
 def _count(value: Any) -> int | None:
-    return value if type(value) is int and value >= 0 else None
+    return value if type(value) is int and 0 <= value <= 2**63 - 1 else None
+
+
+def _token_usage(payload):
+    usage = payload.get("usage") if isinstance(payload, dict) else None
+    usage = usage if isinstance(usage, dict) else {}
+    input_tokens, output_tokens = _count(usage.get("input_tokens")), _count(usage.get("output_tokens"))
+    inputs, outputs = usage.get("input_tokens_details"), usage.get("output_tokens_details")
+    inputs = inputs if isinstance(inputs, dict) else {}
+    outputs = outputs if isinstance(outputs, dict) else {}
+    cached, writes = _count(inputs.get("cached_tokens")), _count(inputs.get("cache_write_tokens"))
+    reasoning = _count(outputs.get("reasoning_tokens"))
+    if input_tokens is None or (cached or 0) + (writes or 0) > input_tokens:
+        cached = writes = None
+    if output_tokens is None or reasoning is not None and reasoning > output_tokens:
+        reasoning = None
+    return TokenUsage(input_tokens=input_tokens, output_tokens=output_tokens,
+        total_tokens=_count(usage.get("total_tokens")), cached_input_tokens=cached,
+        cache_write_tokens=writes, reasoning_tokens=reasoning)
 
 
 def _error_code(payload: Any) -> str | None:
@@ -87,13 +107,8 @@ def _completion_metadata(payload: dict[str, Any]) -> CompletionMetadata:
         finish_reason = "length" if reason == "max_output_tokens" else "content_filter" if reason == "content_filter" else "error"
     elif status == "cancelled":
         finish_reason = "cancelled"
-    usage = payload.get("usage")
-    usage = usage if isinstance(usage, dict) else {}
-    return CompletionMetadata(finish_reason=finish_reason, usage=TokenUsage(
-        input_tokens=_count(usage.get("input_tokens")),
-        output_tokens=_count(usage.get("output_tokens")),
-        total_tokens=_count(usage.get("total_tokens")),
-    ))
+    return CompletionMetadata(finish_reason=finish_reason, usage=_token_usage(payload),
+                              request_metrics=getattr(payload, "request_metrics", None))
 
 
 def normalize_text_response(payload: dict[str, Any]) -> CompletionText:
@@ -186,6 +201,7 @@ def normalize_tool_response(payload: dict[str, Any], definitions, *, previous_id
 class OpenAIResponsesInferenceEngine(InferenceEngine):
     supports_openai_replay = True
     supports_text_streaming = True
+    supports_openai_context = True
     def __init__(self, config: OpenAICloudConfig, api_key: str | None = None, *,
                  selection_path: Path | None = None):
         self.config = config
@@ -196,6 +212,8 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
         self._text_observer = None
         self._request_cancellation = None
         self._closed = False
+        self.context_revision = 0
+        self.last_request_metrics = None
         self._refresh_limits()
 
     def _refresh_limits(self) -> None:
@@ -216,14 +234,19 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
     def select_model(self, model_id: str) -> None:
         with self._lock:
             self._ensure_open()
+            changed = model_id != self.catalog.current_id
             self.catalog.select(model_id)
             self._refresh_limits()
+            if changed:
+                self.context_revision += 1
+                self.last_request_metrics = None
 
     def set_api_key(self, api_key: str) -> None:
         with self._lock:
             self._ensure_open()
             runner, self._runner = self._runner, None
             self._api_key = str(api_key).strip()
+            self.last_request_metrics = None
         self._close_runner(runner)
 
     @property
@@ -313,7 +336,11 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
             body["temperature"] = profile.temperature
         if tools is not None:
             body.update(tools=tools, tool_choice="auto", parallel_tool_calls=True)
+        estimated_input = estimate_input_tokens(inputs) + estimate_schema_tokens(tools)
+        if estimated_input + 256 > profile.max_input_tokens:
+            raise _provider_error(None, "context_length_exceeded")
         state = ResponsesStreamState(observer)
+        measurement = RequestMeasurement()
         stream_opened = False
         async def no_quota_retry(response):
             # The SDK's public response hook runs before status retry handling.
@@ -330,21 +357,24 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
         async def request():
             nonlocal stream_opened
             import httpx
+            measurement.start()
             try:
                 # One deadline includes connection, SDK backoff and stream reads.
                 async with asyncio.timeout(self.config.timeout_seconds):
                     if cancellation is not None and cancellation.is_cancelled:
                         raise state.interrupted("cancelled", "The OpenAI response was stopped.")
                     if runner.client is None:
-                        http_client = openai.DefaultAsyncHttpxClient(event_hooks={"response": [no_quota_retry]})
+                        runner.http_client = openai.DefaultAsyncHttpxClient(event_hooks={"response": [no_quota_retry]})
                         runner.client = openai.AsyncOpenAI(api_key=api_key, base_url=self.config.base_url,
                             timeout=self.config.timeout_seconds, max_retries=self.config.max_retries,
-                            http_client=http_client)
+                            http_client=runner.http_client)
+                    runner.http_client.event_hooks["request"] = [measurement.request_hook]
                     stream = await runner.client.responses.create(**body)
                     stream_opened = True
                     async with stream:
                         async for event in stream:
                             payload = state.accept(event)
+                            measurement.observe(state)
                             if payload is not None:
                                 if payload.get("status") == "failed":
                                     if state.partial_text:
@@ -371,16 +401,33 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
                     raise state.interrupted(message="OpenAI returned an invalid response stream.") from None
                 raise _malformed() from None
         # The SDK owns pre-stream retries. Never reconnect/replay a started stream.
+        outcome, usage, interrupted = "error", TokenUsage(), None
         try:
             payload = runner.run(request)
+            outcome = "completed" if payload.get("status") == "completed" else "incomplete"
+            usage = _token_usage(payload)
         except CancelledError:
-            raise state.interrupted("cancelled", "The OpenAI response was stopped.") from None
-        except (CloudInferenceError, IncompleteResponseError):
+            interrupted = state.interrupted("cancelled", "The OpenAI response was stopped.")
+            outcome = "cancelled"
+            raise interrupted from None
+        except IncompleteResponseError as exc:
+            interrupted = exc
+            outcome = "cancelled" if exc.completion.finish_reason == "cancelled" else "incomplete"
+            raise
+        except CloudInferenceError:
             raise
         except RuntimeError:
             self._ensure_open()
             raise CloudInferenceError("The OpenAI transport is unavailable.", code=CloudErrorCode.PROVIDER_UNAVAILABLE) from None
-        return _ResponsePayload(payload, profile.id)
+        finally:
+            metrics = measurement.finish(outcome)
+            with self._lock:
+                self.last_request_metrics = metrics
+            record_request_metrics(log, metrics, usage)
+            if interrupted is not None:
+                interrupted.completion = interrupted.completion.model_copy(update={"request_metrics": metrics})
+                interrupted.completion_history = (interrupted.completion,)
+        return _ResponsePayload(payload, profile.id, metrics)
 
     def respond_with_capabilities(self, messages: list[dict[str, str]],
                                   capabilities: Iterable[ModelCapabilityDefinition]) -> ModelResponse:
@@ -400,11 +447,16 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
         return result
 
     def count_capability_schema_tokens(self, definitions) -> int:
-        from app.inference.protocol import _canonical_json
         tools = responses_function_tools(definitions)
         # Keep the existing conservative byte-based reserve, using actual wire
         # schemas after strict/nullable conversion instead of domain schemas.
-        return ceil(len(_canonical_json(tools).encode("utf-8")) / 3) + 48 * len(tools)
+        return estimate_schema_tokens(tools)
+
+    def count_context_message_tokens(self, messages):
+        return estimate_input_tokens(context_input_items(messages, self.active_model))
+
+    def count_message_tokens(self, messages):
+        return self.count_context_message_tokens(messages)
 
     def close(self) -> None:
         with self._lock:

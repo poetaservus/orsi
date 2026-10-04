@@ -4,6 +4,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.inference.diagnostics import completion_diagnostics
+from app.inference.openai_metrics import OpenAIRequestMetrics
 
 
 class TokenUsage(BaseModel):
@@ -11,6 +12,9 @@ class TokenUsage(BaseModel):
     input_tokens: int | None = Field(default=None, ge=0)
     output_tokens: int | None = Field(default=None, ge=0)
     total_tokens: int | None = Field(default=None, ge=0)
+    cached_input_tokens: int | None = Field(default=None, ge=0)
+    cache_write_tokens: int | None = Field(default=None, ge=0)
+    reasoning_tokens: int | None = Field(default=None, ge=0)
 
 
 class CompletionMetadata(BaseModel):
@@ -18,6 +22,7 @@ class CompletionMetadata(BaseModel):
     finish_reason: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_.:-]{1,64}$")
     usage: TokenUsage = Field(default_factory=TokenUsage)
     interrupted: bool = False
+    request_metrics: OpenAIRequestMetrics | None = None
 
     @property
     def incomplete(self) -> bool:

@@ -128,19 +128,22 @@ def _project_result(message: dict, *, text_limit: int, item_limit: int, anchors:
 
 
 def recover_context_request(inference, messages: list[dict], *, reserved_tokens: int = 0,
-                            safety_buffer: int = 256) -> RecoveredContext:
+                            safety_buffer: int = 256, projection_enabled: bool = True) -> RecoveredContext:
     """Project results first, compact old assistant material only on admission pressure.
 
     If protected content still cannot fit, return a non-fitting budget rather than
     silently discard a requirement, split a tool exchange or send an empty request.
     """
     projected = deepcopy(messages)
-    if any("openai_response" in message for message in messages):
+    openai_context = getattr(inference, "supports_openai_context", False) is True
+    if openai_context or any("openai_response" in message for message in messages):
         # Stateless provider evidence and the results paired with it must stay
-        # untouched. Phase 3 can add provider-aware context management; today
-        # admission stops safely if the complete selected transcript cannot fit.
-        return RecoveredContext(projected, calculate_context_budget(inference, projected,
-            reserved_tokens=reserved_tokens, safety_buffer=safety_buffer))
+        # untouched. OpenAI projections preserve the fitting prefix and only
+        # excerpt explicit capability results under actual admission pressure.
+        admission = calculate_context_budget(inference, projected,
+            reserved_tokens=reserved_tokens, safety_buffer=safety_buffer)
+        if not openai_context or admission.fits or not projection_enabled:
+            return RecoveredContext(projected, admission)
     anchors = _anchors(messages)
     count = sum(_project_result(m, text_limit=4096, item_limit=16, anchors=anchors) for m in projected)
     def budget(values):
@@ -161,6 +164,7 @@ def recover_context_request(inference, messages: list[dict], *, reserved_tokens:
                 compacted[index] = message
                 changed = True
         elif (index < latest_user and message.get("role") == "assistant" and "capability_calls" not in message
+              and "openai_response" not in message
               and isinstance(message.get("content"), str) and len(message["content"]) > 256):
             message["content"] = _text_excerpt(message["content"], 256, ())
             changed = True

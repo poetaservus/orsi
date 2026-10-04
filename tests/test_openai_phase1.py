@@ -315,7 +315,7 @@ def test_nonterminal_malformed_empty_or_unrequested_call_responses_fail_closed(o
 
 def test_missing_usage_is_not_reported_as_zero_and_invalid_counts_are_ignored():
     result = normalize_text_response(response(usage={"input_tokens": True, "output_tokens": -1, "total_tokens": "22"}))
-    assert result.completion.usage.model_dump() == {"input_tokens": None, "output_tokens": None, "total_tokens": None}
+    assert all(value is None for value in result.completion.usage.model_dump().values())
 
 
 def test_text_only_structured_history_stops_before_any_request(monkeypatch):

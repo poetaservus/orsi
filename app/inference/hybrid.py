@@ -158,6 +158,24 @@ class HybridInferenceEngine(InferenceEngine):
             return getattr(self._engine_for(self._mode), "supports_openai_replay", False) is True
 
     @property
+    def supports_openai_context(self):
+        with self._lock:
+            return getattr(self._engine_for(self._mode), "supports_openai_context", False) is True
+
+    @property
+    def context_identity(self):
+        with self._lock:
+            engine = self._engine_for(self._mode)
+            return (self._mode, getattr(engine, "active_model", None), getattr(engine, "context_revision", 0))
+
+    def count_context_message_tokens(self, messages):
+        engine = self._engine_for(self.mode)
+        if getattr(engine, "supports_openai_context", False) is True:
+            return engine.count_context_message_tokens(messages)
+        from app.conversation.context import count_message_tokens
+        return count_message_tokens(engine, messages)
+
+    @property
     def supports_text_streaming(self) -> bool:
         with self._lock:
             return getattr(self._engine_for(self._mode), "supports_text_streaming", False) is True
