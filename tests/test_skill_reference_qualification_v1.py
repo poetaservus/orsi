@@ -57,6 +57,7 @@ def test_bad_behavior_and_unsafe_execution_never_pass(source, kind):
     ("follow-up", 'It raises ValueError("lower exceeds upper").', True),
     ("follow-up", 'Swap the bounds.', False),
     ("unavailable", "The required behavior reference is unavailable. Please provide its content.", True),
+    ("unavailable", "I can\u2019t write the function without the required behavior reference. Please provide references/behavior.md.", True),
     ("unavailable", "Here is a function without the reference.\n" + FUNCTION, False),
 ])
 def test_semantic_acceptance_checks(case, answer, passed):

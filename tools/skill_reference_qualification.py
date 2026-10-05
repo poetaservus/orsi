@@ -54,7 +54,7 @@ def validate_answer(case_id, answer):
     if case_id == "follow-up":
         return "ValueError" in text and "lower exceeds upper" in text
     if case_id == "unavailable":
-        lowered = " ".join(text.casefold().split())
+        lowered = " ".join(text.casefold().replace("\u2019", "'").replace("\u2018", "'").split())
         return (not re.search(r"\bdef\s+clamp\b", text) and "reference" in lowered
             and bool(re.search(r"unavailable|disabled|cannot|can't|not available|don't have|do not have", lowered))
             and bool(re.search(r"provide|paste|share|supply|send", lowered)))

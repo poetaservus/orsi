@@ -23,7 +23,7 @@ local models and both configured cloud profiles. Each repetition covers:
 - Package changes and switching to a legacy skill after establishing a real
   successful reference read.
 
-That is 50 required cells, with additional setup function requests for change
+That is 100 required cells, with additional setup function requests for change
 and switch checks. The legacy skill uses a separate catalog, so it cannot skew
 the original automatic-selection tasks. Every task reuses a frozen prompt;
 there are no corrective retries or reworded prompts after a failed output.
