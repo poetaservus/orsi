@@ -280,3 +280,24 @@ main is preserved at `archive/2026-10-04/main-before-skill-chip-layout`.
 Following the working baseline, verification is followed by committing the fix,
 fast-forwarding local main, and removing the merged feature branch. Remote
 refs and other worktrees are unchanged.
+
+## Skill package format, Phase 1, 5 October 2026
+
+The user requested the first phase of supporting Markdown references, using a
+very small pack suitable for local models. The bounded
+`codex/skill-package-format-v1` branch starts from local main `92c3a7b`.
+The change defines the package/path/limit/failure contract, supplies a 1,591-byte
+integer-clamp fixture with two short references, and freezes future live prompts.
+It enables no resource imports or reader tools and changes no runtime behavior.
+See [format and verification](skill-package-format-v1.md).
+
+The focused run passed 266 tests with 2 existing skips. The full unrestricted
+Windows regression passed 1,724 tests and 15 subtests, with 49 existing skips and
+no failures. Reference-loading live gates are deferred until implementation;
+deterministic compatibility checks do not qualify local or cloud model behavior.
+
+Refs, worktrees and a verified all-ref bundle are preserved under ignored
+`state/backups/skill-package-format-20261005/`. The previous main is preserved at
+`archive/2026-10-05/main-before-skill-package-format`. After verification the
+bounded change is committed, main fast-forwards and the merged branch is removed.
+Other active checkouts and remote refs are unchanged.

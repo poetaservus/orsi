@@ -1,0 +1,46 @@
+{
+  "format": "orsi-skill-package-v1-acceptance",
+  "skill": "python-clamp",
+  "status": "deferred-until-reference-reader-and-conversation-loading",
+  "selection": "explicit",
+  "cases": [
+    {
+      "id": "function",
+      "prompt": "Write clamp(value, lower, upper) for integers. Include only the function.",
+      "required_reads": ["references/behavior.md"],
+      "unneeded_reads": ["references/checks.md"],
+      "expected": "A callable that handles below/inside/above/equal bounds and raises ValueError('lower exceeds upper') for reversed bounds. Assess generated code in an isolated test harness; the skill itself grants no execution tools."
+    },
+    {
+      "id": "assertions",
+      "prompt": "Assume clamp already exists. Write plain Python checks for it. Do not run them.",
+      "required_reads": ["references/checks.md"],
+      "unneeded_reads": [],
+      "expected": "The four exact assertions in checks.md plus the specified reversed-bounds try/except check; no test framework and no execution call. Reading behavior.md as well is allowed."
+    },
+    {
+      "id": "follow-up",
+      "preceding_case": "function",
+      "prompt": "What should happen if lower is greater than upper?",
+      "required_reads": [],
+      "allowed_cached_reads": ["references/behavior.md"],
+      "unneeded_reads": ["references/checks.md"],
+      "expected": "Explain ValueError('lower exceeds upper'), grounded in the prior successful read of the same installed package version. A fresh behavior.md read is allowed."
+    },
+    {
+      "id": "unrelated",
+      "prompt": "What is 7 + 5?",
+      "required_reads": [],
+      "unneeded_reads": ["references/behavior.md", "references/checks.md"],
+      "expected": "Answer 12 without loading supporting documents."
+    },
+    {
+      "id": "unavailable",
+      "setup": "Disable the reference reader; do not preload reference content or reuse another case's history.",
+      "prompt": "Write clamp(value, lower, upper) for integers. Include only the function.",
+      "required_reads": [],
+      "unneeded_reads": [],
+      "expected": "Explain that the required behavior reference is unavailable and request its content; do not fabricate its exact rules or claim a successful read."
+    }
+  ]
+}

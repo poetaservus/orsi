@@ -69,6 +69,8 @@ ORSI.cmd skill info "exact-skill-name"
 
 Installation copies `SKILL.md` only, preserving upstream bytes. Scripts, assets, references and
 dependencies are not installed or executed. The default global storage is `~/.orsi/skills/`.
+The [skill package v1 format](docs/skill-package-format-v1.md) defines the next reference-document
+structure and a tiny local-model test pack; reference installation/loading is not enabled yet.
 Project discovery requires an explicitly supplied project root; startup does not infer one.
 Restart O.R.S.I after CLI installation/removal to refresh the application's startup catalog.
 
