@@ -63,7 +63,7 @@ run in a separate restricted worker with a three-second deadline, independently
 of any model tool. The model is never asked to execute its generated checks.
 
 Live qualification additionally requires the right successful document reads,
-no forbidden or unrelated calls, matching package/version follow-up evidence,
+no forbidden or unrelated calls, no failed settled reader calls, matching package/version follow-up evidence,
 completed durable terminal outcomes and a correct visible answer. Unavailability
 must request the required content without fabricating a function. Stale/switch
 checks distinguish permitted visible answer history from forbidden raw excerpts
@@ -98,6 +98,103 @@ can retain source-matching evidence; source or profile changes invalidate it.
 ## Results
 
 The initial focused check passed 145 tests, including the generated-code worker,
-fail-closed report gate and Phase 3/4 regressions. Final deterministic and live
-results will be recorded here after their completion. Unattempted, unavailable
-and failed live checks remain distinct from passed deterministic tests.
+fail-closed report gate and Phase 3/4 regressions. Initial full regression passed
+1,910 tests and 15 subtests with 49 existing skips. The final gate/context-scope
+check passed 37 tests, followed by a full confirmation of 1,912 tests and 15
+subtests with 49 skips. An additional fallback-check correction and its regression
+case passed all 38 gate tests. The first full run after this correction recorded
+1,911 passed, 2 failed, 49 skipped and 15 subtests passed. Failures were an empty
+PID file read in `test_parent_exit_kills_owned_child_and_descendant_only[True]`
+and a native `WinError 5` directory-rename rejection in the depth-limit reader
+case. Both tests and their implementations are unchanged. The process test
+observes file existence before the writer has necessarily published its PID;
+the rename denial's cause was not established. The isolated native/reader/gate
+recheck passed 117 tests. The final full confirmation passed 1,913 tests and 15
+subtests, with 49 existing skips, in 225.23 seconds; both previously failing
+native cases passed. No test was skipped, relaxed or given a longer deadline
+to conceal these results.
+
+The full live matrix at candidate `789e011` finished all **100 required cells**:
+**36 passed, 44 failed, 20 blocked**. Its original strict gate remains
+**unqualified**. All owned resources exited and user settings were unchanged.
+
+| Configured model | Passed | Failed | Blocked | Effective context / output reserve |
+| --- | ---: | ---: | ---: | --- |
+| Qwen 3 14B (`Qwen314BQ4KM.gguf`) | 6 | 14 | 0 | 16,384 / 4,096 |
+| Qwen 2 3B (`model.gguf`) | 6 | 14 | 0 | 16,384 / 4,096 |
+| Qwen 3 VL 4B (`Qwen3VL4BInstructQ4KM.gguf`) | 6 | 14 | 0 | 16,384 / 4,096 |
+| GPT-6 Luna | 18 | 2 | 0 | 1,050,000 / 128,000 |
+| GPT-6.1 Sol | 0 | 0 | 20 | 1,050,000 / 4,096 configured; live access blocked |
+
+Every local model passed both repetitions of explicit unrelated arithmetic,
+automatic unrelated arithmetic and legacy single-file use. None passed the
+reference-dependent workflows reliably. All six explicit function cases skipped
+the required behavior read. Five of six automatic function cases selected the
+correct skill but still skipped that read; one 3B case reached a repeated-call
+stop. All three models retrieved checks in at least one case, but the strict
+read/output gate still failed. The 14B assertion cases recovered from an initial
+failed read; this conservative gate counts a failed settled call as a failure
+rather than claiming first-attempt reliable retrieval.
+
+The local stale/switch cases could not establish their prerequisite successful
+behavior read. They remain failed end-to-end gates, not evidence that the
+runtime's scope protections were bypassed. Those protections passed the Phase 3/4
+deterministic suite. Luna established real prior reads and passed all four live
+stale/switch cells, as well as both repetitions of function generation, assertion
+generation, grounded follow-up and automatic selection. Generated functions and
+assertions passed their isolated behavior checks.
+
+Sol's first actual request returned the adapter's `permission` error, with a
+`model_unavailable` terminal status. The remaining 19 cells are explicitly
+blocked and were not attempted. The same key worked for Luna; no key rotation,
+fallback model or account-access change was performed. This is an access blocker,
+not a passed Sol test or a local/network failure.
+
+### Evaluator correction and cloud recheck
+
+A separate synthetic disabled-reference review found that the wording matcher
+did not recognize the typographic apostrophe in “can't.” The visible reply
+requested the required reference, but the model also attempted
+`filesystem.read_text`, which returned `not_found` inside the fixture. That host
+fallback independently violates the reference boundary. The text matcher was
+corrected in `866efed`, with a regression case; the app, model settings, tools,
+prompts and fixtures did not change.
+
+The original 100-cell report is preserved without editing scores or pretending
+it was generated by the corrected evaluator. Its unavailable wording scores can
+include this false negative. A fresh Luna-only, two-repetition recheck at
+`866efed` again passed **18 of 20** cases. Both disabled-reference cells attempted
+a forbidden non-reference fallback before completing their response. Thus the
+remaining fallback failure is real despite correcting the text check. The
+subset report is intentionally unqualified: it contains neither the complete
+model matrix nor all passing cells. No partial report replaces full qualification.
+
+Local evidence is bound to the original harness revision; the corrected cloud
+subset has its own identity. The application, profiles and acceptance inputs
+are byte-identical between these candidates. Neither run promotes existing model
+qualification flags. Live results, unavailable gates and deterministic passes
+remain separate.
+
+### Retained artifacts and next work
+
+Ignored, machine-local artifacts:
+
+- `state/skill-reference-live-v1-summary.json`: original content-free 100-cell report.
+- `state/skill-reference-live-v1-20261005/`: disposable installations and synthetic state.
+- `state/skill-reference-luna-recheck-v1-summary.json`: corrected-evaluator cloud subset.
+- `state/skill-reference-unavailable-review-v1/`: separate synthetic fallback review.
+- `state/skill-reference-qualification-regression-text-final.xml`: retained earlier native test failures.
+- `state/skill-reference-qualification-regression-confirm.xml`: final passing regression evidence.
+
+The initial document incorrectly stated 50 cells; this record corrects it to
+10 workflows × 2 repetitions × 5 models = 100. No test was omitted or added to
+the live matrix by that documentation correction.
+
+The next bounded repair should first address local models skipping required
+reference reads and cloud models using ordinary file tools when the reader is
+unavailable. Inspect the interaction between ordinary-question core guidance and
+required skill lookup before changing prompts, routing or sampling together.
+Repeat the frozen cases after a focused repair. Sol requires appropriate account
+access before its cells can be qualified. This phase completes the qualification
+audit and reproducible harness; it does **not** complete successful release
+qualification of the reference feature.

@@ -77,6 +77,9 @@ Scripts, assets and dependencies are not installed or executed. The default glob
 an active skill supplies its main instructions and a compact document inventory; supporting
 text is loaded only when the model requests it. Verified excerpts can carry into follow-ups
 for the same package/version, within the existing model context limits.
+Live [qualification results](docs/skill-reference-qualification-v1.md) show reliable retrieval
+on Luna's enabled-reader tasks, inconsistent local-model compliance, and an unresolved
+disabled-reader fallback. The reference feature remains unqualified for general release.
 Project discovery requires an explicitly supplied project root; startup does not infer one.
 Restart O.R.S.I after CLI installation/removal to refresh the application's startup catalog.
 

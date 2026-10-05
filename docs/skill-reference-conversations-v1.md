@@ -3,6 +3,9 @@
 Date: 5 October 2026. Starting main: `f31a483`.
 Implementation branch: `codex/skill-reference-conversations-v1`.
 
+This is the Phase 4 implementation record. See [Phase 5 qualification](skill-reference-qualification-v1.md)
+for the subsequent live results and remaining model-compliance/access limitations.
+
 Phase 4 connects the Phase 3 reader to selected-skill conversations. The first
 request includes `SKILL.md` guidance and a compact inventory of canonical paths,
 an opaque package identity and its content version. Supporting document bodies,

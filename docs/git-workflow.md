@@ -371,3 +371,36 @@ preserved at `archive/2026-10-05/main-before-skill-reference-conversations`.
 After verification the bounded change is committed, local main fast-forwards
 and its merged feature branch is removed. Other active checkouts and remote refs
 are unchanged; this phase does not publish to GitHub.
+
+## Skill reference qualification, Phase 5, 5 October 2026
+
+The user requested Phase 5 and authorized reuse of their existing desktop key
+file for live cloud checks. `codex/skill-reference-qualification-v1` starts from
+verified local main `05221dc`. The branch adds an isolated tiny-pack live matrix,
+a restricted generated-code evaluator, a fail-closed qualification checker and
+the retained [qualification audit](skill-reference-qualification-v1.md).
+Application behavior, accepted profiles, runtime selection and frozen prompts
+are unchanged. No credential is copied or published.
+
+Candidate `789e011` completed 100 required cells: 36 passed, 44 failed and 20
+blocked. Each local model passed 6/20; Luna passed 18/20; Sol's first request
+was denied by account permissions and its remaining 19 cells were not attempted.
+All owned resources exited and user configuration hashes were unchanged. A
+wording-check false negative for typographic apostrophes was fixed in `866efed`;
+the fresh Luna subset again passed 18/20, with genuine disabled-reader fallback
+failures. Original and subset evidence remain separate. The reference feature
+is unqualified; this audit does not promote any model or release flag.
+
+Initial deterministic full runs passed 1,910 and then 1,912 tests, each with
+49 existing skips and 15 subtests passed. The evaluator's final focused check
+passed 38 tests. A later full run recorded 1,911 passed and two unchanged native
+test failures, retained in the audit. Their isolated recheck passed 117 tests;
+final full confirmation passed 1,913 tests and 15 subtests with 49 existing skips
+in 225.23 seconds, including both previously failing native cases.
+
+All pre-integration refs, worktrees and a verified complete-history bundle are
+preserved under ignored `state/backups/skill-reference-qualification-20261005/`.
+The prior main is preserved at
+`archive/2026-10-05/main-before-skill-reference-qualification`. After deterministic
+verification, commit the audit, fast-forward local main and remove its merged
+feature branch. Other active worktrees and remote refs remain unchanged.
