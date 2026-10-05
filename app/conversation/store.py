@@ -47,6 +47,12 @@ class RecoveredCall(BaseModel):
     error_code: str | None = None
 
 
+class SkillReferenceScope(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True, hide_input_in_errors=True)
+    package_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    version: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
 class TurnRecord(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, hide_input_in_errors=True)
     turn_id: str = Field(pattern=r"^turn-[1-9][0-9]*$")
@@ -58,6 +64,7 @@ class TurnRecord(BaseModel):
     settled_calls: list[SettledCall] = Field(default_factory=list, max_length=32)
     recovered_calls: list[RecoveredCall] = Field(default_factory=list, max_length=32)
     provider_responses: list[StoredOpenAIResponse] = Field(default_factory=list, max_length=32, repr=False)
+    reference_scope: SkillReferenceScope | None = None
 
 
 class Conversation(BaseModel):
@@ -165,6 +172,17 @@ class ConversationStore:
             self._commit(proposed)
             return turn_id
 
+    def record_reference_scope(self, turn_id: str, scope: tuple[str, str] | None) -> None:
+        """Bind opaque provider evidence even for a reference turn with no new read."""
+        value = SkillReferenceScope(package_id=scope[0], version=scope[1]) if scope is not None else None
+        with self._lock:
+            proposed = self._conversation.model_copy(deep=True)
+            turn = self._turn(proposed, turn_id)
+            if turn.outcome is not None or turn.provider_responses or turn.settled_calls:
+                raise TurnHistoryError("Reference scope must be recorded before model evidence.")
+            turn.reference_scope = value
+            self._commit(proposed)
+
     def record_settled(self, turn_id: str, settled: SettledCall) -> None:
         with self._lock:
             proposed = self._conversation.model_copy(deep=True)
@@ -224,7 +242,8 @@ class ConversationStore:
             if changed:
                 self._commit(proposed)
 
-    def agent_messages(self, *, capability_names: tuple[str, ...] | None = None, openai_replay: bool = False) -> list[dict]:
+    def agent_messages(self, *, capability_names: tuple[str, ...] | None = None, openai_replay: bool = False,
+                       reference_scope: tuple[str, str] | None = None) -> list[dict]:
         with self._lock:
             turns = {turn.user_index: turn for turn in self._conversation.turns}
             stopped = {turn.assistant_index: turn for turn in self._conversation.turns
@@ -240,13 +259,27 @@ class ConversationStore:
                 turn = turns.get(index)
                 if turn is not None:
                     retained = set()
+                    reference_notice = False
+                    def append_settled(settled):
+                        nonlocal reference_notice
+                        if settled.call.capability == "skill.read_reference" and (
+                                not self._reference_visible(settled, reference_scope)
+                                or capability_names is not None and settled.call.capability not in capability_names):
+                            if reference_notice:
+                                return
+                            reference_notice = True
+                        history.extend(self._settled_messages(settled, capability_names, reference_scope))
+                    scope_valid = ((turn.reference_scope is None or reference_scope == (
+                        turn.reference_scope.package_id, turn.reference_scope.version))
+                        and all(self._reference_visible(item, reference_scope) for item in turn.settled_calls))
                     if openai_replay:
                         for response in turn.provider_responses:
                             replay = response.replay
                             paired = [item for item in turn.settled_calls
                                       if item.provider_message_id == response.provider_message_id]
                             complete = tuple(item.call.provider_call_id for item in paired) == replay.call_ids
-                            visible = capability_names is None or all(item.call.capability in capability_names for item in paired)
+                            visible = ((capability_names is None or all(item.call.capability in capability_names for item in paired))
+                                       and scope_valid)
                             if replay.call_ids and complete and visible:
                                 calls = tuple(item.call for item in paired)
                                 value = model_capability_calls_message(calls, provider_message_id=response.provider_message_id,
@@ -256,7 +289,7 @@ class ConversationStore:
                                 history.extend(model_capability_result_message(item.call, item.result.model_dump(mode="json"),
                                     provider_message_id=response.provider_message_id) for item in paired)
                                 retained.update(item.result.call_id for item in paired)
-                            elif not replay.call_ids and replay.text.strip():
+                            elif not replay.call_ids and replay.text.strip() and scope_valid:
                                 history.append({"role": "assistant", "content": replay.text,
                                                 REPLAY_KEY: replay.model_dump(mode="python")})
                                 if (response == turn.provider_responses[-1] and turn.assistant_index is not None
@@ -264,14 +297,14 @@ class ConversationStore:
                                     replayed_assistants.add(turn.assistant_index)
                             else:
                                 for settled in paired:
-                                    history.extend(self._settled_messages(settled, capability_names))
+                                    append_settled(settled)
                                     retained.add(settled.result.call_id)
                             # Incomplete/unadvertised batches remain durable evidence.
                             # Only their settled neutral pairs are eligible on a later user turn.
                     for settled in turn.settled_calls:
                         if settled.result.call_id in retained:
                             continue
-                        history.extend(self._settled_messages(settled, capability_names))
+                        append_settled(settled)
                     for recovered in turn.recovered_calls:
                         history.append({"role": "assistant", "content":
                             f"Retained call outcome: {recovered.capability}, call {recovered.call_id}, "
@@ -280,9 +313,25 @@ class ConversationStore:
             return history
 
     @staticmethod
-    def _settled_messages(settled, capability_names):
-        if capability_names is None or settled.call.capability in capability_names:
+    def _reference_visible(settled, reference_scope):
+        if settled.call.capability != "skill.read_reference":
+            return True
+        output = settled.result.output
+        return (reference_scope is not None and settled.result.success and isinstance(output, dict)
+                and (output.get("package_id"), output.get("version")) == reference_scope)
+
+    @staticmethod
+    def _settled_messages(settled, capability_names, reference_scope=None):
+        if ((capability_names is None or settled.call.capability in capability_names)
+                and ConversationStore._reference_visible(settled, reference_scope)):
             return settled.messages()
+        if settled.call.capability == "skill.read_reference":
+            # Even hidden-tool summaries must not carry old reference text, calls
+            # or opaque provider reasoning back into a different package scope.
+            return [{"role": "assistant", "content":
+                "A prior skill reference exchange is unavailable in the active package scope. "
+                "Earlier answers are history, not the current skill specification. "
+                "Read the current inventory if reference knowledge is required."}]
         history = []
         if settled.assistant_text is not None:
             history.append({"role": "assistant", "content": settled.assistant_text})

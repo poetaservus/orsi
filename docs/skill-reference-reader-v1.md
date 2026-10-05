@@ -6,8 +6,9 @@ Implementation branch: `codex/skill-reference-reader-v1`.
 Phase 3 supplies the controlled reader and its scoped `skill.read_reference`
 capability adapter. It does not register that tool in the production catalog,
 inject inventories into conversations or change automatic skill selection.
-Those lifecycle and context-budget connections belong to Phase 4. The existing
-Settings preview therefore still says reference reading is not enabled.
+Those lifecycle and context-budget connections belong to Phase 4. This is the
+historical Phase 3 record; [Phase 4 conversation integration](skill-reference-conversations-v1.md)
+now supplies those connections and updates the Settings preview.
 
 ## Authority and inventory
 

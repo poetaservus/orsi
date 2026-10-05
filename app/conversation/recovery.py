@@ -98,10 +98,22 @@ def _project_result(message: dict, *, text_limit: int, item_limit: int, anchors:
     raw = _encoded(output)
     if len(raw) <= text_limit:
         return False
-    projected = _project_value(output, text_limit=text_limit, item_limit=item_limit, anchors=anchors)
+    if result.get("capability") == "skill.read_reference" and isinstance(output, dict) and isinstance(output.get("text"), str):
+        # This reader has contiguous byte offsets. Preserve its provenance and
+        # continuation contract when projecting, rather than joining head/tail
+        # snippets and leaving a misleading complete_document flag.
+        projected = deepcopy(output)
+        text = output["text"].encode("utf-8")[:text_limit].decode("utf-8", errors="ignore")
+        end = output["offset"] + len(text.encode("utf-8"))
+        projected.update(text=text, bytes_returned=end - output["offset"], end_offset=end,
+                         has_more=end < output["total_text_bytes"],
+                         next_offset=end if end < output["total_text_bytes"] else None,
+                         complete_document=output["offset"] == 0 and end == output["total_text_bytes"])
+    else:
+        projected = _project_value(output, text_limit=text_limit, item_limit=item_limit, anchors=anchors)
     encoded_projection = _encoded(projected)
     # Very broad dictionaries can exceed the budget despite per-value projection.
-    if len(encoded_projection) > text_limit * 3:
+    if len(encoded_projection) > text_limit * 3 and result.get("capability") != "skill.read_reference":
         projected = {"context_projection_excerpt": _text_excerpt(raw.decode("utf-8"), text_limit, anchors)}
         if isinstance(output, dict):
             projected.update({key: value for key, value in output.items()

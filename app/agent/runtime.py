@@ -334,6 +334,7 @@ class AgentRuntime:
         _settled_calls: list[SettledCall] | None = None,
         settled_observer: Callable[[SettledCall], None] | None = None,
         response_observer: Callable[[str, Any], None] | None = None,
+        continuation_guard: Callable[[], str | None] | None = None,
         _recovery: _RecoveryUsage | None = None,
     ) -> AgentRunResult:
         if not safe_identifier(session_id) or not safe_identifier(turn_id):
@@ -356,6 +357,8 @@ class AgentRuntime:
             raise TypeError("Settled-call observers must be callable when supplied.")
         if response_observer is not None and not callable(response_observer):
             raise TypeError("Response observers must be callable when supplied.")
+        if continuation_guard is not None and not callable(continuation_guard):
+            raise TypeError("Continuation guards must be callable when supplied.")
         if self.executor.review_required:
             return self._stopped(AgentRunStatus.INTERNAL_FAILURE,
                 "A previous write outcome requires review before another operation can run.",
@@ -448,6 +451,17 @@ class AgentRuntime:
                     capability_calls=capability_calls,
                     protocol_failures=protocol_failures,
                 )
+            if continuation_guard is not None:
+                try:
+                    message = continuation_guard()
+                except TaskCancelled:
+                    return self._stopped(AgentRunStatus.CANCELLED, "The agent task was cancelled.",
+                        steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
+                except Exception:
+                    message = "The active request scope could not be validated safely."
+                if message is not None:
+                    return self._stopped(AgentRunStatus.INTERNAL_FAILURE, str(message)[:500],
+                        steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
             if steps >= self.limits.max_steps:
                 return self._stopped(
                     AgentRunStatus.STEP_LIMIT,

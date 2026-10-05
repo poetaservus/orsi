@@ -138,6 +138,33 @@ class SkillReferenceReader:
         with self._lock:
             self._active = None
 
+    def validate(self, binding: ReferenceBinding, cancellation: CancellationToken) -> None:
+        """Recheck authority/version without returning or caching document text."""
+        with self._lock:
+            self._current_snapshot(binding, binding.version, cancellation)
+
+    def _current_snapshot(self, binding, version, cancellation):
+        cancellation.raise_if_cancelled()
+        if self._active is None:
+            raise ReferenceReadError(ReferenceErrorCode.DISABLED)
+        if binding != self._active[0] or version != binding.version:
+            raise ReferenceReadError(ReferenceErrorCode.STALE)
+        try:
+            snapshot = self._storage.snapshot(self._active[1], cancellation)
+            version_now = _validated_version(snapshot, self._active[1]) if self._active is not None else None
+        except ReferenceReadError:
+            if self._active is not None and self._active[0] == binding:
+                self._active = None
+            raise
+        if self._active is None or self._active[0] != binding:
+            raise ReferenceReadError(ReferenceErrorCode.STALE)
+        if (sha256(snapshot.identity.encode("utf-8")).hexdigest() != binding.package_id
+                or version_now != binding.version):
+            self._active = None
+            raise ReferenceReadError(ReferenceErrorCode.STALE)
+        cancellation.raise_if_cancelled()
+        return snapshot
+
     def activate(self, skill: SkillDefinition, cancellation: CancellationToken) -> ReferenceBinding:
         with self._lock:
             self._active = None  # Failed activation must not retain earlier authority.
@@ -172,19 +199,7 @@ class SkillReferenceReader:
                     or not 4 <= max_bytes <= MAX_EXCERPT_BYTES or type(max_lines) is not int
                     or not 1 <= max_lines <= MAX_EXCERPT_LINES):
                 raise ReferenceReadError(ReferenceErrorCode.INVALID_REQUEST)
-            try:
-                snapshot = self._storage.snapshot(self._active[1], cancellation)
-                version_now = _validated_version(snapshot, self._active[1]) if self._active is not None else None
-            except ReferenceReadError:
-                if self._active is not None and self._active[0] == binding:
-                    self._active = None
-                raise
-            if self._active is None or self._active[0] != binding:
-                raise ReferenceReadError(ReferenceErrorCode.STALE)
-            if (sha256(snapshot.identity.encode("utf-8")).hexdigest() != binding.package_id
-                    or version_now != binding.version or self._active[0] != binding):
-                self._active = None
-                raise ReferenceReadError(ReferenceErrorCode.STALE)
+            snapshot = self._current_snapshot(binding, version, cancellation)
             raw = next(r.data for r in snapshot.references if r.path == path)
             if raw.startswith(b"\xef\xbb\xbf"):
                 raw = raw[3:]

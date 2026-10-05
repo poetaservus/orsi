@@ -126,6 +126,10 @@ class CapabilityRegistry:
             if registration.enabled and registration.model_visible
         )
 
+    def extended(self, registrations: Iterable[CapabilityRegistration]) -> CapabilityRegistry:
+        """Return a validated new catalog, preserving all existing registrations."""
+        return CapabilityRegistry((*self._registrations, *registrations))
+
     @staticmethod
     def _validate_registration(registration: CapabilityRegistration) -> None:
         if not isinstance(registration, CapabilityRegistration):

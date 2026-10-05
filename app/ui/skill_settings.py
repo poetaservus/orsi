@@ -110,7 +110,7 @@ class SkillSettingsDialog(QDialog):
         self.preview_packages.hide()
         layout.addWidget(self.preview_packages)
         self.scope = QLabel("Folders and repositories include supporting Markdown documents. File links import "
-                            "only the main instructions. References are stored; reading them is not enabled yet.")
+                            "only the main instructions. Selected skills can read their references when tools are enabled.")
         self.scope.setWordWrap(True)
         self.scope.setObjectName("skillsHint")
         layout.addWidget(self.scope)

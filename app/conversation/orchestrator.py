@@ -27,6 +27,7 @@ from app.conversation.prompt import (
 )
 from app.conversation.result_grounding import grounded_text_read_answer
 from app.conversation.store import ConversationStore, TurnHistoryError
+from app.conversation.skill_references import ConversationSkillReferences
 from app.security.host_access import HostAccessPolicy, HostReadScope
 from app.inference.engine import InferenceUnavailable
 from app.inference.diagnostics import record_context_budget
@@ -47,7 +48,8 @@ class ConversationService:
 
     def _stored_agent_history(self, *, capability_names=None):
         return self.store.agent_messages(capability_names=self.agent_capabilities if capability_names is None else capability_names,
-            openai_replay=getattr(self.inference, "supports_openai_replay", False) is True)
+            openai_replay=getattr(self.inference, "supports_openai_replay", False) is True,
+            reference_scope=self._references.scope if self._reference_runtime is not None else None)
 
     def _retain_provider_response(self, scope, replay):
         try:
@@ -68,6 +70,7 @@ class ConversationService:
         agent_error: str | None = None,
         skill_registry: SkillRegistry | None = None,
         automatic_skills_enabled: bool = True,
+        skill_references_enabled: bool = True,
     ):
         if type(automatic_skills_enabled) is not bool:
             raise TypeError("Automatic skill selection must be an explicit boolean.")
@@ -89,6 +92,8 @@ class ConversationService:
         self.store = store
         self.skill_registry = skill_registry if skill_registry is not None else SkillRegistry()
         self.automatic_skills_enabled = automatic_skills_enabled
+        self._references = ConversationSkillReferences(enabled=skill_references_enabled)
+        self._reference_runtime = None
         self.agent_runtime = agent_runtime
         self.portable_root = portable_root
         self.allowed_read_roots = (
@@ -139,7 +144,7 @@ class ConversationService:
     def agent_capabilities(self) -> tuple[str, ...]:
         if self.agent_runtime is None:
             return ()
-        return self.agent_runtime.registry.model_visible_names
+        return (self._reference_runtime or self.agent_runtime).registry.model_visible_names
 
     @property
     def active_skill(self) -> SkillDefinition | None:
@@ -169,6 +174,8 @@ class ConversationService:
             raise SkillActivationError(SkillActivationErrorCode.MISSING_SKILL,
                                        "Requested skill is unavailable in the current catalog.")
         self._active_skill_name = skill.name
+        self._references.reset()
+        self._reference_runtime = None
         self._automatic_skill = None
         self.skill_selection = SkillSelection(name=skill.name, reason="explicit")
         self._context_measurement = None
@@ -189,6 +196,8 @@ class ConversationService:
                     raise RuntimeError("The conversation is closed.")
             self._record_skill_event("deactivated", skill=self.active_skill, injected=False)
             self._active_skill_name = None
+            self._references.reset()
+            self._reference_runtime = None
             self._automatic_skill = None
             self.skill_selection = SkillSelection()
             self._context_measurement = None
@@ -229,6 +238,8 @@ class ConversationService:
             if self._automatic_skill is not None and self._automatic_skill.name == name:
                 self._automatic_skill = None
             if removed_active:
+                self._references.reset()
+                self._reference_runtime = None
                 self.skill_selection = SkillSelection()
                 self._context_measurement = None
         finally:
@@ -272,6 +283,8 @@ class ConversationService:
                 if len(command) == 1:
                     self._record_skill_event("deactivated", skill=self.active_skill, injected=False)
                     self._active_skill_name = None
+                    self._references.reset()
+                    self._reference_runtime = None
                     self._automatic_skill = None
                     self.skill_selection = SkillSelection()
                     self._context_measurement = None
@@ -316,6 +329,12 @@ class ConversationService:
                 self.skill_selection = SkillSelection(reason="disabled")
                 record_skill_event("router", method="none", router_result="disabled", injected=False)
             source.token.raise_if_cancelled()
+            self._references.prepare(self.active_skill, tools_enabled=self.agent_enabled, cancellation=source.token)
+            self._reference_runtime = self._references.scoped_runtime(self.agent_runtime,
+                session_id=self._session_id, turn_id=turn_id)
+            if self._references.scope is not None:
+                self.store.record_reference_scope(turn_id, self._references.scope)
+            self._agent_history = self._stored_agent_history()
             if text_observer is not None and callable(preview_setter):
                 preview_setter(text_observer)
                 preview_attached = True
@@ -399,7 +418,25 @@ class ConversationService:
                 if message_skill is not None:
                     self._record_skill_event("deactivated", skill=message_skill, method="explicit", injected=False)
             self._active_turn_id = None
-            self._run_lock.release()
+            had_reference_runtime = self._reference_runtime is not None
+            self._references.finish()
+            self._reference_runtime = None
+            try:
+                if had_reference_runtime:
+                    history = self._stored_agent_history()
+                    if self._history_persistence_failed and self._turn_result is not None:
+                        # Failed persistence must not erase settled non-reference
+                        # evidence retained in memory, while reference bodies and
+                        # opaque provider replay still expire with their scope.
+                        retained = {item.result.call_id for turn in self.store.turns()
+                                    for item in turn.settled_calls}
+                        for settled in self._turn_result.settled_calls:
+                            if (settled.call.capability != "skill.read_reference"
+                                    and settled.result.call_id not in retained):
+                                history.extend(settled.messages())
+                    self._agent_history = history
+            finally:
+                self._run_lock.release()
 
     def _run_chat_turn(self, source: CancellationSource, activity=None) -> str:
         if activity:
@@ -457,7 +494,8 @@ class ConversationService:
                 steps=0, capability_calls=0, protocol_failures=0)
             raise RuntimeError("The agent request cannot fit the active model context window.")
         self._record_skill_injection(request)
-        result = self.agent_runtime.run(
+        capabilities = self._turn_capabilities(text)  # Optional automatic guidance may have been dropped by admission.
+        result = (self._reference_runtime or self.agent_runtime).run(
             request.messages,
             session_id=self._session_id,
             turn_id=self._active_turn_id,
@@ -467,8 +505,15 @@ class ConversationService:
             cancellation=source.token,
             settled_observer=retain_settled,
             response_observer=self._retain_provider_response,
+            continuation_guard=(lambda: self._references.continuation_error(source.token))
+                if self._reference_runtime is not None else None,
             capability_names=capabilities,
         )
+        if result.status == AgentRunStatus.COMPLETED:
+            reference_error = self._references.continuation_error(source.token)
+            if reference_error is not None:
+                result = result.model_copy(update={"status": AgentRunStatus.INTERNAL_FAILURE,
+                    "assistant_text": None, "message": reference_error})
         self._turn_result = result
         if result.status == AgentRunStatus.CANCELLED:
             if result.partial_text:
@@ -525,6 +570,8 @@ class ConversationService:
             self._history_persistence_failed = False
             self._agent_history = []
             self._active_skill_name = None
+            self._references.reset()
+            self._reference_runtime = None
             self._automatic_skill = None
             self.skill_selection = SkillSelection()
             self._context_measurement = None
@@ -541,6 +588,8 @@ class ConversationService:
                 if self._closed:
                     raise RuntimeError("The conversation is closed.")
             self.inference.select_local_model(model_id)
+            self._references.reset()
+            self._reference_runtime = None
         finally:
             self._run_lock.release()
 
@@ -552,6 +601,8 @@ class ConversationService:
                 if self._closed:
                     raise RuntimeError("The conversation is closed.")
             self.inference.select_cloud_model(model_id)
+            self._references.reset()
+            self._reference_runtime = None
         finally:
             self._run_lock.release()
 
@@ -563,6 +614,8 @@ class ConversationService:
         try:
             self.cancel_current_task()
         finally:
+            self._references.reset()
+            self._reference_runtime = None
             try:
                 self.store.close_session()
             except Exception:
@@ -658,7 +711,8 @@ class ConversationService:
             raise SkillActivationError(SkillActivationErrorCode.MISSING_SKILL,
                                        "Active skill is unavailable. Select another skill or use /skill to clear it.")
         core_prompt = prompt
-        prompt = with_active_skill(core_prompt, skill)
+        prompt = with_active_skill(core_prompt, skill, references=self._references.prompt_payload(
+            available=use_agent and "skill.read_reference" in capabilities))
         if skill is not None:
             latest_user = next((message for message in reversed(history) if message.get("role") == "user"), None)
             # Added guidance must not displace or truncate the current user task.
@@ -676,7 +730,13 @@ class ConversationService:
                 # task fail. Explicit activation retains its Phase 3.1 contract.
                 self._automatic_skill = None
                 self.skill_selection = replace(self.skill_selection, name=None, reason="skill_context_limit")
-                prompt = core_prompt
+                self._references.reset()
+                self._reference_runtime = None
+                if self._active_turn_id is not None:
+                    self.store.record_reference_scope(self._active_turn_id, None)
+                self._agent_history = self._stored_agent_history()
+                return self._model_request(capability_turn=capability_turn,
+                    capability_names=tuple(name for name in capabilities if name != "skill.read_reference"))
         return select_context_request(
             self.inference,
             system_prompt=prompt,
@@ -723,7 +783,7 @@ class ConversationService:
         selected = set(names)
         definitions = tuple(
             definition
-            for definition in self.agent_runtime.registry.model_definitions()
+            for definition in (self._reference_runtime or self.agent_runtime).registry.model_definitions()
             if definition.name in selected
         )
         return capability_schema_reserve(definitions, inference=self.inference)

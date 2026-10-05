@@ -346,3 +346,28 @@ Refs, worktrees and a verified complete-history bundle are preserved under ignor
 at `archive/2026-10-05/main-before-skill-reference-reader`. Following verification,
 the bounded change is committed, local main fast-forwards and its merged feature
 branch is removed. Other active checkouts and remote refs are unchanged.
+
+## Skill references in conversations, Phase 4, 5 October 2026
+
+The user requested Phase 4 on `codex/skill-reference-conversations-v1`, starting
+from verified local main `f31a483`. Active packages now supply compact inventories
+and a turn-scoped reader. Matching package/version excerpts can be reused in
+follow-ups, with bounded context accounting, stale-scope revocation and filtered
+provider replay. Ordinary host access and write approvals remain unchanged.
+See [conversation implementation and verification](skill-reference-conversations-v1.md).
+
+The final focused cleanup/reference/outcome check passed 69 tests, including
+37 Phase 4 cases. The isolated registry/conversation recheck passed 76 tests.
+Earlier full-run cleanup regressions were fixed. A later native directory-rename
+failure remains recorded separately. The final full unrestricted Windows
+confirmation passed 1,875 tests and 15 subtests, with 49 existing skips and no
+failures, including the directory-rename case.
+Live local/cloud qualification remains Phase 5. Acceptance prompts, the tiny
+fixture, model profiles, sampling, runtime settings and skill selection are unchanged.
+
+Refs, worktrees and a verified complete-history bundle are preserved under ignored
+`state/backups/skill-reference-conversations-20261005/`. The starting main is
+preserved at `archive/2026-10-05/main-before-skill-reference-conversations`.
+After verification the bounded change is committed, local main fast-forwards
+and its merged feature branch is removed. Other active checkouts and remote refs
+are unchanged; this phase does not publish to GitHub.

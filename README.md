@@ -72,8 +72,11 @@ Folder/repository installation preserves `SKILL.md` and bounded Markdown documen
 Scripts, assets and dependencies are not installed or executed. The default global storage is
 `~/.orsi/skills/`. See the [package format](docs/skill-package-format-v1.md) and
 [installation verification](docs/skill-package-install-v1.md). The
-[controlled reference reader](docs/skill-reference-reader-v1.md) is implemented;
-conversation access and model injection follow in Phase 4.
+[controlled reference reader](docs/skill-reference-reader-v1.md) now supports
+[on-demand conversation reads](docs/skill-reference-conversations-v1.md). With tools enabled,
+an active skill supplies its main instructions and a compact document inventory; supporting
+text is loaded only when the model requests it. Verified excerpts can carry into follow-ups
+for the same package/version, within the existing model context limits.
 Project discovery requires an explicitly supplied project root; startup does not infer one.
 Restart O.R.S.I after CLI installation/removal to refresh the application's startup catalog.
 

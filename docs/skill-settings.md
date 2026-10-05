@@ -46,10 +46,14 @@ installation from local folders and public Git repositories remains available.
 CLI changes still require an application restart to refresh its startup catalog.
 
 Imports remain Markdown guidance. Scripts, dependencies and assets are not
-imported or executed. Reference documents are stored but automatic reading and
-model injection are not enabled yet. Claude-specific metadata does not create runtime
-behavior or compatibility. Model profiles, sampling, prompts, routing, context
-policy, tool definitions and authorization are unchanged.
+imported or executed. With tools enabled, selected skills now provide a compact
+reference inventory and the scoped `skill.read_reference` tool. Supporting text
+loads on demand and counts toward the existing context budget. If references
+are unavailable, the model is instructed to request their content or a skill
+refresh. See [conversation integration](skill-reference-conversations-v1.md).
+Claude-specific metadata does not create runtime behavior or compatibility.
+Model profiles, sampling, skill selection, host permissions and write approvals
+are unchanged.
 
 ## Implementation boundary
 
