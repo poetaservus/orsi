@@ -5,7 +5,8 @@ Implementation branch: `codex/skill-package-format-v1`.
 
 This is the Phase 1 contract and historical verification. Phase 2 now implements
 package imports; see [package installation](skill-package-install-v1.md).
-Reference reading and conversation loading remain later phases.
+Phase 3 implements the [controlled reader](skill-reference-reader-v1.md).
+Conversation loading remains Phase 4.
 
 ## Delivery boundary
 

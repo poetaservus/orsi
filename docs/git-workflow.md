@@ -324,3 +324,25 @@ Refs, worktrees and a verified all-ref bundle are preserved under ignored
 at `archive/2026-10-05/main-before-skill-package-install`. After verification the
 bounded change is committed, local main fast-forwards and its merged feature
 branch is removed. Other active checkouts and remote refs are unchanged.
+
+## Skill reference reader, Phase 3, 5 October 2026
+
+The user requested Phase 3 on the bounded `codex/skill-reference-reader-v1`
+branch from local main `e22d6c9`. The change adds a revocable reader, compact
+resource metadata, package/content-version checks, bounded UTF-8 continuation,
+a replaceable storage interface and a scoped capability adapter. Native document
+access opens/enumerates through directory handles and rechecks namespace identity.
+The production catalog and conversation behavior remain unchanged until Phase 4.
+See [reader implementation and verification](skill-reference-reader-v1.md).
+
+The final focused unrestricted Windows suite passed 480 tests with 2 existing
+skips, including 73 new reader cases. The full unrestricted suite passed 1,838
+tests and 15 subtests, with 49 existing skips and no failures. Live local/cloud reference loading
+is deferred until conversation integration. Acceptance prompts, fixtures, model
+profiles, user settings, routing and context policy are unchanged.
+
+Refs, worktrees and a verified complete-history bundle are preserved under ignored
+`state/backups/skill-reference-reader-20261005/`. The starting main is preserved
+at `archive/2026-10-05/main-before-skill-reference-reader`. Following verification,
+the bounded change is committed, local main fast-forwards and its merged feature
+branch is removed. Other active checkouts and remote refs are unchanged.
