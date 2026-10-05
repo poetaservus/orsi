@@ -1,4 +1,4 @@
-"""Prepare one Markdown skill for review; publish through the existing installer."""
+"""Review immutable single-file or complete Markdown packages before publication."""
 from dataclasses import dataclass
 from pathlib import Path
 from time import monotonic
@@ -7,7 +7,8 @@ from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, ProxyHandler, Request, build_opener
 
 from app.runtime.skills.contracts import SkillDefinition
-from app.runtime.skills.installer import SkillInstaller, _Package, _snapshot
+from app.runtime.skills.installer import SkillInstaller, _Package, _snapshot, _inspect_package, _validate_packages
+from app.runtime.skills.registry import SkillRegistry
 from app.runtime.skills.loader import MAX_SKILL_SIZE, _validate_path
 from app.runtime.skills.parser import parse_skill
 
@@ -21,6 +22,34 @@ class SkillImport:
     definition: SkillDefinition
     data: bytes
     source: str
+    packages: tuple[_Package, ...] = ()
+    revision: str = ""
+    kind: str = "single-file"
+
+    @property
+    def reference_count(self):
+        return sum(len(package.references) for package in self.packages)
+
+    @property
+    def total_bytes(self):
+        return sum(package.total_bytes for package in self.packages) if self.packages else len(self.data)
+
+    @property
+    def skill_count(self):
+        return len(self.packages) if self.packages else 1
+
+
+def _github_repository_url(source):
+    """Only a public GitHub repository root selects package mode in Settings."""
+    parts = urlsplit(source)
+    segments = parts.path.strip("/").split("/")
+    if parts.netloc != "github.com" or len(segments) != 2:
+        return None
+    from app.runtime.skills.git_installer import _validate_url
+    _validate_url(source)
+    if any(not segment or segment in (".", "..") or "%" in segment for segment in segments):
+        raise SkillImportError("Use a public GitHub repository link.")
+    return source
 
 
 def github_skill_url(source: str) -> str:
@@ -90,9 +119,15 @@ def prepare_import(source: str, *, max_bytes: int = MAX_SKILL_SIZE) -> SkillImpo
     if type(max_bytes) is not int or not 0 < max_bytes <= MAX_SKILL_SIZE:
         raise SkillImportError("The skill size limit is invalid.")
     if not isinstance(source, str) or not source.strip():
-        raise SkillImportError("Paste a GitHub skill link or choose a Markdown file.")
+        raise SkillImportError("Paste a GitHub repository/file link or choose a skill folder or Markdown file.")
     source = source.strip()
     if "://" in source:
+        repository = _github_repository_url(source)
+        if repository is not None:
+            from app.runtime.skills.git_installer import GitSkillInstaller
+            snapshot = GitSkillInstaller(SkillInstaller(SkillRegistry(max_bytes=max_bytes))).prepare(repository)
+            first = snapshot.packages[0]
+            return SkillImport(first.skill, first.data, source, snapshot.packages, snapshot.revision, "repository")
         url = github_skill_url(source)
         data = _download(url, max_bytes)
         root, path = Path("."), Path("SKILL.md")
@@ -100,6 +135,10 @@ def prepare_import(source: str, *, max_bytes: int = MAX_SKILL_SIZE) -> SkillImpo
         path = Path(source)
         _validate_path(path, path)
         path = path.absolute()
+        if path.is_dir():
+            packages = _inspect_package(path, SkillRegistry(max_bytes=max_bytes))
+            first = packages[0]
+            return SkillImport(first.skill, first.data, source, packages, kind="folder")
         if path.suffix.casefold() != ".md":
             raise SkillImportError("Choose a Markdown (.md) skill file.")
         data = _snapshot(path, max_bytes)
@@ -123,5 +162,10 @@ def install_import(installer: SkillInstaller, imported: SkillImport):
                              source_path=imported.definition.source_path)
     if definition != imported.definition:
         raise SkillImportError("The preview changed. Preview the skill again.")
+    if imported.packages:
+        _validate_packages(imported.packages, installer.registry)
+        if imported.packages[0].skill != definition or imported.packages[0].data != imported.data:
+            raise SkillImportError("The preview changed. Preview the skill again.")
+        return installer._install_packages(imported.packages)
     # The same immutable package transaction is used by HTTPS Git installation.
     return installer._install_packages((_Package(definition, imported.data),))

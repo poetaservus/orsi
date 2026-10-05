@@ -12,7 +12,7 @@ from app.runtime.skills.installer import SkillInstallError
 
 
 class SkillSourceInput(QLineEdit):
-    """Drop one file/link into Settings, never into the composer."""
+    """Drop one folder/file/link into Settings, never into the composer."""
 
     def dragEnterEvent(self, event):  # noqa: N802
         mime = event.mimeData()
@@ -70,7 +70,7 @@ class SkillSettingsDialog(QDialog):
         self.setObjectName("skillSettings")
         self.setWindowTitle("Skills")
         self.setMinimumWidth(600)
-        self.resize(640, 570)
+        self.resize(640, 610)
         self.setStyleSheet(_STYLE)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 18, 20, 18)
@@ -78,16 +78,18 @@ class SkillSettingsDialog(QDialog):
         title = QLabel("Skills")
         title.setObjectName("skillsTitle")
         layout.addWidget(title)
-        layout.addWidget(QLabel("Paste a GitHub skill link, or choose/drop a Markdown file."))
+        layout.addWidget(QLabel("Paste a GitHub repository or skill-file link, or drop a folder/file."))
         source_row = QHBoxLayout()
         self.source = SkillSourceInput()
-        self.source.setAccessibleName("Skill link or Markdown file")
-        self.source.setPlaceholderText("GitHub link to SKILL.md")
+        self.source.setAccessibleName("Skill repository, folder or Markdown file")
+        self.source.setPlaceholderText("GitHub repository, skill folder or SKILL.md link")
         self.source.setMaxLength(4096)
         self.source.setAcceptDrops(True)
         self.browse = QPushButton("Choose file…")
+        self.browse_folder = QPushButton("Choose folder…")
         source_row.addWidget(self.source, 1)
         source_row.addWidget(self.browse)
+        source_row.addWidget(self.browse_folder)
         layout.addLayout(source_row)
         self.preview_button = QPushButton("Preview")
         self.preview_button.setEnabled(False)
@@ -95,13 +97,20 @@ class SkillSettingsDialog(QDialog):
         self.preview_name = QLabel()
         self.preview_description = QLabel()
         self.preview_source = QLabel()
-        for label in (self.preview_name, self.preview_description, self.preview_source):
+        self.preview_summary = QLabel()
+        for label in (self.preview_name, self.preview_description, self.preview_source, self.preview_summary):
             label.setTextFormat(Qt.TextFormat.PlainText)
             label.setWordWrap(True)
             label.hide()
             layout.addWidget(label)
         self.preview_source.setWordWrap(False)
-        self.scope = QLabel("Imports instructions only. Scripts and additional resources are not imported.")
+        self.preview_packages = QListWidget()
+        self.preview_packages.setAccessibleName("Packages to install")
+        self.preview_packages.setMaximumHeight(100)
+        self.preview_packages.hide()
+        layout.addWidget(self.preview_packages)
+        self.scope = QLabel("Folders and repositories include supporting Markdown documents. File links import "
+                            "only the main instructions. References are stored; reading them is not enabled yet.")
         self.scope.setWordWrap(True)
         self.scope.setObjectName("skillsHint")
         layout.addWidget(self.scope)
@@ -124,11 +133,12 @@ class SkillSettingsDialog(QDialog):
         self.close_button = QPushButton("Done")
         layout.addWidget(self.close_button)
         # Enter in the source prepares a preview; it never installs implicitly.
-        for button in (self.browse, self.preview_button, self.install_button, self.remove_button, self.close_button):
+        for button in (self.browse, self.browse_folder, self.preview_button, self.install_button, self.remove_button, self.close_button):
             button.setAutoDefault(False)
         self.source.returnPressed.connect(self._preview)
         self.source.textChanged.connect(self._source_changed)
         self.browse.clicked.connect(self._browse)
+        self.browse_folder.clicked.connect(self._browse_folder)
         self.preview_button.clicked.connect(self._preview)
         self.install_button.clicked.connect(self._install)
         self.remove_button.clicked.connect(self._remove)
@@ -138,13 +148,20 @@ class SkillSettingsDialog(QDialog):
 
     def _source_changed(self):
         self.prepared = None
-        for label in (self.preview_name, self.preview_description, self.preview_source):
+        self.preview_packages.clear()
+        self.preview_packages.hide()
+        for label in (self.preview_name, self.preview_description, self.preview_source, self.preview_summary):
             label.hide()
         self.status.clear()
         self._update_buttons()
 
     def _browse(self):
         path, _ = QFileDialog.getOpenFileName(self, "Choose a skill", "", "Markdown skills (*.md)")
+        if path:
+            self.source.setText(path)
+
+    def _browse_folder(self):
+        path = QFileDialog.getExistingDirectory(self, "Choose a skill folder")
         if path:
             self.source.setText(path)
 
@@ -165,6 +182,7 @@ class SkillSettingsDialog(QDialog):
         busy = self.thread is not None
         self.source.setEnabled(not busy)
         self.browse.setEnabled(not busy)
+        self.browse_folder.setEnabled(not busy)
         self.preview_button.setEnabled(not busy and bool(self.source.text().strip()))
         self.install_button.setEnabled(not busy and self.prepared is not None)
         item = self.installed.currentItem()
@@ -176,7 +194,9 @@ class SkillSettingsDialog(QDialog):
     def _preview(self):
         if self.thread is None and self.source.text().strip():
             self.prepared = None
-            for label in (self.preview_name, self.preview_description, self.preview_source):
+            self.preview_packages.clear()
+            self.preview_packages.hide()
+            for label in (self.preview_name, self.preview_description, self.preview_source, self.preview_summary):
                 label.hide()
             self._start("preview", self.source.text())
 
@@ -216,22 +236,33 @@ class SkillSettingsDialog(QDialog):
         if self._action == "preview":
             self.prepared = result
             skill = result.definition
-            self.preview_name.setText(" ".join(skill.name.split())[:128])
+            names = ", ".join(" ".join(package.skill.name.split())[:128] for package in result.packages) if result.packages else skill.name
+            self.preview_name.setText(names if len(names) <= 240 else names[:237] + "…")
+            self.preview_packages.clear()
+            for package in result.packages:
+                item = QListWidgetItem(" ".join(package.skill.name.split())[:128])
+                item.setToolTip("<qt>" + escape(" ".join(package.skill.description.split())[:512]) + "</qt>")
+                self.preview_packages.addItem(item)
+            self.preview_packages.setVisible(result.skill_count > 1)
             description = " ".join(skill.description.split())
             self.preview_description.setText(description if len(description) <= 240 else description[:237] + "…")
             self.preview_description.setToolTip("<qt>" + escape(description[:512]) + "</qt>")
             self.preview_source.setText(self.preview_source.fontMetrics().elidedText(
                 "Source: " + result.source[:2048], Qt.TextElideMode.ElideRight, self.width() - 44))
             self.preview_source.setToolTip("<qt>" + escape(result.source[:2048]) + "</qt>")
-            for label in (self.preview_name, self.preview_description, self.preview_source):
+            skill_label = "skill" if result.skill_count == 1 else "skills"
+            reference_label = "reference" if result.reference_count == 1 else "references"
+            self.preview_summary.setText(f"{result.skill_count} {skill_label} · {result.reference_count} {reference_label} · "
+                                         f"{result.total_bytes / 1024:.1f} KB")
+            for label in (self.preview_name, self.preview_description, self.preview_source, self.preview_summary):
                 label.show()
             self.status.setText("Ready to install.")
             self.layout().activate()
-            self.setMinimumHeight(max(570, self.layout().heightForWidth(self.width())))
+            self.setMinimumHeight(max(610, self.layout().heightForWidth(self.width())))
         else:
             if self._action == "install":
-                self.status.setText("Already installed with identical content." if result.already_installed
-                                    else "Installed. Available in /skill.")
+                self.status.setText(f"Installed {len(result.installed)}; already present {len(result.already_installed)}. "
+                                    "Available in /skill.")
             else:
                 self.status.setText("Skill removed.")
             self._refresh_installed()

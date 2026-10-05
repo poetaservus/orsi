@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import sys
 
-from app.runtime.skills.installer import SkillInstaller, SkillInstallError
+from app.runtime.skills.installer import SkillInstaller, SkillInstallError, _reference_snapshots
 from app.runtime.skills.registry import SkillRegistry
 
 
@@ -19,9 +19,9 @@ def main(argv=None) -> int:
     parser.add_argument("--storage", type=Path, help="Explicit global skill storage (default: ~/.orsi/skills).")
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("list", help="List available skills.")
-    install = commands.add_parser("install", help="Install a local directory or public HTTPS Git repository; copy SKILL.md only.")
+    install = commands.add_parser("install", help="Install Markdown packages from a local directory or public HTTPS Git repository.")
     install.add_argument("path")
-    remove = commands.add_parser("remove", help="Remove a global skill containing SKILL.md alone.")
+    remove = commands.add_parser("remove", help="Remove an installed global skill and its owned Markdown references.")
     remove.add_argument("name")
     info = commands.add_parser("info", help="Show skill metadata without loading its instructions into a model.")
     info.add_argument("name")
@@ -40,12 +40,13 @@ def main(argv=None) -> int:
         if args.command == "info":
             skill = installer.info(args.name)
             print(json.dumps({"name": skill.name, "description": skill.description,
-                              "source_path": str(skill.source_path), "supported_files": ["SKILL.md"]},
+                              "source_path": str(skill.source_path),
+                              "supported_files": ["SKILL.md"] + [r.path for r in _reference_snapshots(skill.root_path)]},
                              ensure_ascii=True, indent=2))
         elif args.command == "install":
             remote = "://" in args.path or args.path.startswith("git@")
             def preview(skills):
-                print(f"Validated {'Git' if remote else 'local'} skills (SKILL.md only):")
+                print(f"Validated {'Git' if remote else 'local'} skills (Markdown packages):")
                 for skill in skills:
                     print(f"{_label(skill.name, 128)}: {_label(skill.description)}")
             if remote:

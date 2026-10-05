@@ -50,8 +50,8 @@ redirected, reparse, or ambiguous paths are denied.
 
 ## Skills
 
-In the desktop app, open **Settings → Manage skills…**. Paste a public GitHub link to
-`SKILL.md`, or choose/drop a local Markdown file, then **Preview → Install**. Skills installed
+In the desktop app, open **Settings → Manage skills…**. Paste a public GitHub repository or
+`SKILL.md` link, or choose/drop a skill folder or Markdown file, then **Preview → Install**. Skills installed
 through Settings become available immediately. Select an installed skill and use **Remove…**
 to remove it after confirmation. Installation and management controls live only in Settings.
 See [the Settings workflow and verification](docs/skill-settings.md).
@@ -67,10 +67,12 @@ ORSI.cmd skill install "C:\path\to\small-skill"
 ORSI.cmd skill info "exact-skill-name"
 ```
 
-Installation copies `SKILL.md` only, preserving upstream bytes. Scripts, assets, references and
-dependencies are not installed or executed. The default global storage is `~/.orsi/skills/`.
-The [skill package v1 format](docs/skill-package-format-v1.md) defines the next reference-document
-structure and a tiny local-model test pack; reference installation/loading is not enabled yet.
+Folder/repository installation preserves `SKILL.md` and bounded Markdown documents beneath
+`references/`, including subfolders. A file or Raw link still imports one instruction file.
+Scripts, assets and dependencies are not installed or executed. The default global storage is
+`~/.orsi/skills/`. See the [package format](docs/skill-package-format-v1.md) and
+[installation verification](docs/skill-package-install-v1.md). Reference documents are stored;
+automatic reading and model injection are not enabled yet.
 Project discovery requires an explicitly supplied project root; startup does not infer one.
 Restart O.R.S.I after CLI installation/removal to refresh the application's startup catalog.
 

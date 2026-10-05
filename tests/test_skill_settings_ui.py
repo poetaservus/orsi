@@ -2,6 +2,7 @@
 import os
 from pathlib import Path
 from threading import Event
+from time import monotonic
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -28,7 +29,10 @@ def app():
 
 
 def wait_worker(dialog):
-    for _ in range(400):
+    # Package transactions perform several native snapshots. A bounded wall-clock
+    # deadline tolerates Windows IO scheduling without changing what is asserted.
+    deadline = monotonic() + 15
+    while monotonic() < deadline:
         QApplication.processEvents()
         if dialog.thread is None:
             return
@@ -113,6 +117,50 @@ def test_github_link_previews_and_changed_input_invalidates_install(ui, monkeypa
     dialog.source.setText("different source")
     assert dialog.prepared is None and not dialog.install_button.isEnabled()
     assert service.skill_registry.get("imported") is None and not model.requests
+
+
+def test_folder_preview_shows_size_and_references_then_installs_reviewed_bytes(ui, tmp_path):
+    import shutil
+    from tests.test_skill_package_format_v1 import FIXTURE
+    _, dialog, service, model = ui
+    source = tmp_path / "clamp"
+    shutil.copytree(FIXTURE, source)
+    dialog.source.setText(str(source))
+    dialog.preview_button.click()
+    wait_worker(dialog)
+    assert dialog.prepared.reference_count == 2
+    assert "1 skill" in dialog.preview_summary.text() and "2 references" in dialog.preview_summary.text()
+    assert "KB" in dialog.preview_summary.text() and not model.requests
+    (source / "references/behavior.md").write_bytes(b"Changed after preview")
+    dialog.install_button.click()
+    wait_worker(dialog)
+    installed = service.skill_registry.get("python-clamp")
+    assert (installed.root_path / "references/behavior.md").read_bytes() == (FIXTURE / "references/behavior.md").read_bytes()
+    assert not model.requests and dialog.browse_folder.isEnabled()
+
+
+def test_repository_preview_lists_all_packages_and_uses_snapshot_without_inference(ui, monkeypatch):
+    from app.runtime.skills.git_installer import GitSkillInstaller, GitSkillSnapshot
+    from app.runtime.skills.installer import _Package
+    from app.runtime.skills.parser import parse_skill
+    _, dialog, service, model = ui
+    def prepare(self, url):
+        packages = []
+        for name in ("first-import", "second-import"):
+            data = DATA.replace(b"name: imported", ("name: " + name).encode())
+            root = Path("released") / name
+            packages.append(_Package(parse_skill(data.decode(), root_path=root, source_path=root / "SKILL.md"), data))
+        return GitSkillSnapshot(tuple(packages), "a" * 40)
+    monkeypatch.setattr(GitSkillInstaller, "prepare", prepare)
+    dialog.source.setText("https://github.com/fixture/package.git")
+    dialog.preview_button.click()
+    wait_worker(dialog)
+    assert dialog.preview_packages.count() == 2 and dialog.preview_packages.isVisible()
+    assert "2 skills" in dialog.preview_summary.text()
+    dialog.install_button.click()
+    wait_worker(dialog)
+    assert service.skill_registry.get("first-import") and service.skill_registry.get("second-import")
+    assert not model.requests
 
 
 def test_drop_one_markdown_file_into_settings_source(ui, tmp_path):

@@ -1,4 +1,4 @@
-"""The tiny authored pack is compatible; Phase 1 adds no resource loading."""
+"""The tiny pack remains compatible; installed references are not injected yet."""
 import json
 import os
 from pathlib import Path
@@ -42,12 +42,14 @@ def test_tiny_pack_has_resolvable_entry_and_document_relative_links():
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Native Windows skill installer")
-def test_current_installer_preserves_entry_point_without_claiming_package_support(tmp_path):
+def test_package_installer_preserves_documents_without_injecting_them(tmp_path):
     installer = SkillInstaller(SkillRegistry(global_root=tmp_path / "skills"))
     assert installer.install(FIXTURE).installed == ("python-clamp",)
     installed = installer.info("python-clamp")
     assert installed.source_path.read_bytes() == (FIXTURE / "SKILL.md").read_bytes()
-    assert [path.name for path in installed.root_path.iterdir()] == ["SKILL.md"]
+    for relative in ("references/behavior.md", "references/checks.md"):
+        assert (installed.root_path / relative).read_bytes() == (FIXTURE / relative).read_bytes()
+    assert "lower exceeds upper" not in with_active_skill("CORE", installed)
     assert installer.install(FIXTURE).already_installed == ("python-clamp",)
     installer.remove("python-clamp")
     assert installer.list() == ()

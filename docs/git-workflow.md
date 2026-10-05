@@ -301,3 +301,26 @@ Refs, worktrees and a verified all-ref bundle are preserved under ignored
 `archive/2026-10-05/main-before-skill-package-format`. After verification the
 bounded change is committed, main fast-forwards and the merged branch is removed.
 Other active checkouts and remote refs are unchanged.
+
+## Skill package installation, Phase 2, 5 October 2026
+
+The user requested Phase 2 on the bounded `codex/skill-package-install-v1`
+branch from local main `b6021fc`. Local folders and Git snapshots now preserve
+bounded supporting Markdown; Settings previews folders/repositories with counts,
+size and package names. Whole-package byte comparisons, generated ownership
+inventory, rollback and removal protect unrelated content. Single-file imports
+remain available. Reference reading and model injection are not enabled.
+See [implementation and verification](skill-package-install-v1.md).
+
+The broad focused suite passed 520 tests with 2 existing skips; the final
+Git/package recheck passed 74. The full unrestricted Windows suite passed
+1,765 tests and 15 subtests, with 49 existing skips and no failures. An isolated
+Qt preview/install visual audit passed with zero model requests. Earlier native
+cleanup/test-wait failures and a failed optional diagnostic probe are recorded
+separately. Model acceptance prompts, profiles and runtime authority are unchanged.
+
+Refs, worktrees and a verified all-ref bundle are preserved under ignored
+`state/backups/skill-package-install-20261005/`. The previous main is preserved
+at `archive/2026-10-05/main-before-skill-package-install`. After verification the
+bounded change is committed, local main fast-forwards and its merged feature
+branch is removed. Other active checkouts and remote refs are unchanged.

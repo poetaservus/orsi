@@ -390,7 +390,7 @@ def test_unsupported_resources_inside_a_skill_are_not_traversed(tmp_path):
     source = write_skill(tmp_path / "source")
     outside = tmp_path / "outside"
     outside.mkdir()
-    _winapi.CreateJunction(str(outside), str(source.parent / "references"))
+    _winapi.CreateJunction(str(outside), str(source.parent / "assets"))
     installer = manager(tmp_path)
     installer.install(source.parent)
     assert [p.name for p in installer.info("frontend").root_path.iterdir()] == ["SKILL.md"]

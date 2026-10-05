@@ -3,6 +3,10 @@
 Date: 5 October 2026. Starting main: `92c3a7b`.
 Implementation branch: `codex/skill-package-format-v1`.
 
+This is the Phase 1 contract and historical verification. Phase 2 now implements
+package imports; see [package installation](skill-package-install-v1.md).
+Reference reading and conversation loading remain later phases.
+
 ## Delivery boundary
 
 Phase 1 defines the package contract and supplies a deliberately tiny test pack.

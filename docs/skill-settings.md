@@ -4,14 +4,17 @@ This follow-up was verified on `codex/message-skill-picker`, after picker
 revision `e3467f9`, and committed as `9d41df3`. On 4 October 2026, the user
 explicitly approved merging it into main and pushing to GitHub. The previous
 local main is `9afeaf5`; see [the integration record](git-workflow.md).
+The workflow below includes Phase 2 package imports added on 5 October 2026;
+see [package installation and its verification](skill-package-install-v1.md).
 
 ## User workflow
 
 1. Open Settings, then **Manage skills…**.
-2. Paste a public GitHub link to the skill's `SKILL.md` file. GitHub file links,
-   Raw links and file links ending in `?plain=1` are supported. Alternatively,
-   choose a local `.md` file, or drop it into this Settings dialog's source field.
-3. Click **Preview** to check the skill's name, description and source. Pressing
+2. Paste a public GitHub repository link for complete packages, or a `SKILL.md`
+   file/Raw link for instructions alone. File links ending in `?plain=1` remain
+   supported. Alternatively, choose/drop a local skill folder or `.md` file.
+3. Click **Preview** to check names, descriptions, source, reference count and
+   total content size. Multiple packages are listed before publication. Pressing
    Enter in the source field previews; it does not install.
 4. Click **Install**, then **Done**. The skill is immediately available in the
    existing `/skill` chooser, without restarting the app. Choosing it still
@@ -29,14 +32,22 @@ Installation copies its exact reviewed bytes as `SKILL.md`. Matching existing
 content is a no-op; an existing name with different content must be explicitly
 removed before reinstalling. This dialog does not overwrite installed skills.
 
-This version accepts public GitHub skill-file links, rather than repository,
+Choosing a folder/repository preserves bounded `references/**/*.md` content
+alongside the entry point. The preview captures all installed bytes; changing the
+source afterward does not change what Install publishes. Reference-only changes
+also count as conflicting content. Removal checks the generated ownership
+inventory and preserves unknown or edited installed files rather than deleting
+them. Legacy single-file skills remain supported without new metadata.
+
+This version accepts public GitHub repository and skill-file links, rather than
 marketplace, private or arbitrary web links. For a marketplace skill, use its
 public GitHub `SKILL.md` source or a downloaded Markdown file. Existing CLI
 installation from local folders and public Git repositories remains available.
 CLI changes still require an application restart to refresh its startup catalog.
 
-Imports remain instructions only. Scripts, references, dependencies and assets
-are not imported or executed. Claude-specific metadata does not create runtime
+Imports remain Markdown guidance. Scripts, dependencies and assets are not
+imported or executed. Reference documents are stored but automatic reading and
+model injection are not enabled yet. Claude-specific metadata does not create runtime
 behavior or compatibility. Model profiles, sampling, prompts, routing, context
 policy, tool definitions and authorization are unchanged.
 
@@ -48,12 +59,17 @@ worker before releasing it or closing; controls are disabled while it works.
 The rest of the UI remains responsive during a network preview. Closing or
 pressing Escape cannot destroy a running worker.
 
-The source adapter accepts only HTTPS GitHub file/raw URLs and downloads from
+For single-file import, the source adapter accepts HTTPS GitHub file/raw URLs and downloads from
 `raw.githubusercontent.com`, without redirects, proxies or credentials. It caps
 downloads at the existing skill byte limit (at most 1 MiB), uses a 10-second IO
 timeout and a 30-second elapsed check between bounded reads, and rejects HTML.
 Failures report safe messages without logging response bodies. Local files use
 the existing native snapshot reader and path safeguards.
+
+Repository previews use the existing owned bare-Git inspection without checkout,
+and snapshot one default-branch commit. Git processes and temporary objects are
+released before showing the preview. Install publishes that snapshot without
+another network request. A Git executable on PATH is required for this mode.
 
 Preview parses a captured byte snapshot. Install reparses and verifies that
 snapshot, then uses the same immutable package transaction as the existing Git
@@ -64,7 +80,7 @@ turn lock and reject changes while a response runs or after shutdown. Settings
 management is disabled while responding. Metadata labels are plain text and
 bounded; tooltips escape HTML. No additional inference request is made by import.
 
-## Verification
+## Original single-file Settings verification
 
 The focused regression passed **339 tests and five subtests**. After the final
 preview layout adjustment, all **43 new tests** passed again. These cover URL

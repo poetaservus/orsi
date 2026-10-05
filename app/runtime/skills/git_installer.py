@@ -19,6 +19,10 @@ from app.runtime.skills.installer import (
     MAX_INSTALL_BYTES, MAX_INSTALL_SKILLS, SkillInstaller, SkillInstallError,
     SkillInstallErrorCode as Code, _check_platform, _create_directory, _inspect_package,
 )
+from app.runtime.skills.package_format import (
+    ReferenceFile, MAX_REFERENCE_BYTES, MAX_REFERENCE_FILES, MAX_TOTAL_REFERENCE_BYTES,
+    validate_reference_path, validate_references,
+)
 
 
 MAX_DOWNLOAD_BYTES = 128 * 1024 * 1024
@@ -33,6 +37,12 @@ _OID = re.compile(rb"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
 class GitSkillInstallResult:
     installed: tuple[str, ...]
     already_installed: tuple[str, ...]
+    revision: str
+
+
+@dataclass(frozen=True, slots=True)
+class GitSkillSnapshot:
+    packages: tuple
     revision: str
 
 
@@ -59,6 +69,27 @@ class GitSkillInstaller:
         token = cancellation if cancellation is not None else CancellationToken()
         deadline = monotonic() + DOWNLOAD_TIMEOUT
         _boundary(token, deadline)
+        snapshot = self._prepare(url, token, deadline)
+        _boundary(token, deadline)
+        def preview(skills):
+            _boundary(token, deadline)
+            if on_discovered is not None:
+                on_discovered(skills)
+            _boundary(token, deadline)
+        result = self.installer._install_packages(snapshot.packages, on_discovered=preview)
+        return GitSkillInstallResult(result.installed, result.already_installed, snapshot.revision)
+
+    def prepare(self, url: str, *, cancellation: CancellationToken | None = None) -> GitSkillSnapshot:
+        """Inspect immutable package bytes and release the clone without publication."""
+        _validate_url(url)
+        _check_platform()
+        if cancellation is not None and not isinstance(cancellation, CancellationToken):
+            raise TypeError("Git inspection requires a CancellationToken.")
+        token = cancellation if cancellation is not None else CancellationToken()
+        return self._prepare(url, token, monotonic() + DOWNLOAD_TIMEOUT)
+
+    def _prepare(self, url, token, deadline):
+        _boundary(token, deadline)
         executable = shutil.which("git")
         if executable is None:
             raise SkillInstallError(Code.GIT_UNAVAILABLE, "Git is required for HTTPS skill installation.")
@@ -74,29 +105,28 @@ class GitSkillInstaller:
                     raise SkillInstallError(Code.UNSAFE_REPOSITORY, "Repository has no valid default-branch revision.")
                 tree = command.read(repository, ["ls-tree", "--full-tree", "-l", "-r", "-z",
                                                  revision.decode("ascii")], MAX_TREE_BYTES)
-                blobs = _skill_blobs(tree, self.installer.registry.max_bytes)
+                blobs = _package_blobs(tree, self.installer.registry.max_bytes)
                 materialized = root / "skills"
                 materialized.mkdir()
-                for index, (oid, size) in enumerate(blobs):
-                    data = command.read(repository, ["cat-file", "blob", oid], size)
-                    if len(data) != size:
-                        raise SkillInstallError(Code.UNSAFE_REPOSITORY, "Repository object size changed during inspection.")
-                    # Repository paths are never converted to local paths.
+                for index, documents in enumerate(blobs):
+                    # Original repository roots remain opaque. Only validated
+                    # package-relative reference identifiers become child paths.
                     folder = materialized / f"package-{index:04d}"
                     folder.mkdir()
-                    (folder / "SKILL.md").write_bytes(data)
+                    for relative, oid, size in documents:
+                        data = command.read(repository, ["cat-file", "blob", oid], size)
+                        if len(data) != size:
+                            raise SkillInstallError(Code.UNSAFE_REPOSITORY, "Repository object size changed during inspection.")
+                        target = folder / relative
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        with target.open("xb") as stream:
+                            stream.write(data)
                 packages = _inspect_package(materialized, self.installer.registry)
                 _boundary(token, deadline)
             # Cleanup failure prevents publication. Snapshots have no dependency on
             # the now-deleted clone or synthetic paths retained for preview metadata.
             _boundary(token, deadline)
-            def preview(skills):
-                _boundary(token, deadline)
-                if on_discovered is not None:
-                    on_discovered(skills)
-                _boundary(token, deadline)
-            result = self.installer._install_packages(packages, on_discovered=preview)
-            return GitSkillInstallResult(result.installed, result.already_installed, revision.decode("ascii"))
+            return GitSkillSnapshot(packages, revision.decode("ascii"))
         except SkillInstallError:
             raise
         except (OSError, ValueError):
@@ -201,14 +231,14 @@ def _boundary(token, deadline):
         raise SkillInstallError(Code.TIMED_OUT, "Git skill inspection exceeded its deadline.")
 
 
-def _skill_blobs(tree, max_skill_bytes):
+def _package_blobs(tree, max_skill_bytes):
     if not tree or not tree.endswith(b"\0"):
         raise SkillInstallError(Code.NO_SKILLS if not tree else Code.UNSAFE_REPOSITORY,
                                 "Repository contains no supported skills or has an invalid tree.")
     records = tree[:-1].split(b"\0")
     if len(records) > MAX_TREE_ENTRIES:
         raise SkillInstallError(Code.DOWNLOAD_LIMIT, "Repository exceeds the tree entry limit.")
-    blobs, total, paths = [], 0, set()
+    objects, paths = {}, set()
     for record in records:
         try:
             header, path = record.split(b"\t", 1)
@@ -224,14 +254,50 @@ def _skill_blobs(tree, max_skill_bytes):
                                     "Repository rejects symlinks, submodules and unsupported tree entries.") from None
         if length > MAX_REPOSITORY_BLOB_BYTES:
             raise SkillInstallError(Code.DOWNLOAD_LIMIT, "Repository contains an oversized file.")
+        objects[path] = (oid.decode("ascii"), length)
+    roots = []
+    for path in sorted(objects, key=lambda item: (len(item), item)):
         if path.rsplit(b"/", 1)[-1] == b"SKILL.md":
-            total += length
-            if length > max_skill_bytes or total > MAX_INSTALL_BYTES or len(blobs) >= MAX_INSTALL_SKILLS:
-                raise SkillInstallError(Code.LIMIT_EXCEEDED, "Repository skills exceed installation size limits.")
-            blobs.append((oid.decode("ascii"), length))
+            # Match local discovery: an entry point defines the whole package;
+            # nested entry points do not silently install additional skills.
+            if not any(path.startswith(root) for root in roots):
+                roots.append(path[:-len(b"SKILL.md")])
+    blobs, total = [], 0
+    for root in roots:
+        oid, length = objects[root + b"SKILL.md"]
+        if length > max_skill_bytes or len(blobs) >= MAX_INSTALL_SKILLS:
+            raise SkillInstallError(Code.LIMIT_EXCEEDED, "Repository skills exceed installation size limits.")
+        documents, reference_bytes = [("SKILL.md", oid, length)], 0
+        for path in sorted(objects):
+            if not path.startswith(root + b"references/") or not path.endswith(b".md"):
+                continue
+            try:
+                relative = path[len(root):].decode("ascii")
+                validate_reference_path(relative)
+            except ValueError:
+                raise SkillInstallError(Code.UNSAFE_REPOSITORY, "Repository references contain unsupported paths.") from None
+            reference_oid, reference_size = objects[path]
+            reference_bytes += reference_size
+            if (reference_size > MAX_REFERENCE_BYTES or reference_bytes > MAX_TOTAL_REFERENCE_BYTES
+                    or len(documents) > MAX_REFERENCE_FILES):
+                raise SkillInstallError(Code.LIMIT_EXCEEDED, "Repository references exceed size or count limits.")
+            documents.append((relative, reference_oid, reference_size))
+        try:
+            validate_references(tuple(ReferenceFile(relative, b"inventory") for relative, _, _ in documents[1:]))
+        except ValueError:
+            raise SkillInstallError(Code.UNSAFE_REPOSITORY, "Repository references contain ambiguous paths.") from None
+        total += length + reference_bytes
+        if total > MAX_INSTALL_BYTES:
+            raise SkillInstallError(Code.LIMIT_EXCEEDED, "Repository skills exceed installation size limits.")
+        blobs.append(tuple(documents))
     if not blobs:
         raise SkillInstallError(Code.NO_SKILLS, "Repository contains no supported SKILL.md files.")
     return tuple(blobs)
+
+
+def _skill_blobs(tree, max_skill_bytes):
+    """Compatibility inspection of entry points; repository roots stay opaque."""
+    return tuple((documents[0][1], documents[0][2]) for documents in _package_blobs(tree, max_skill_bytes))
 
 
 def _check_download(root):
