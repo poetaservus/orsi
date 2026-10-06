@@ -14,6 +14,9 @@ ResponseFailureReason = Literal[
     "invalid_text", "text_limit", "orphan_tool_arguments", "unknown_completed_item",
     "unsupported_event", "provider_failed", "provider_incomplete", "unfinished_tool_call",
     "output_limit", "content_filter", "cancelled",
+    "provider_stream_error", "provider_rate_limit", "provider_quota", "provider_context_overflow",
+    "provider_authentication", "provider_permission", "provider_unavailable", "provider_bad_request",
+    "sdk_response_validation",
 ]
 # Fixed local wording only: provider messages, event values and exception text
 # must never become a diagnostic or status message.
@@ -41,6 +44,15 @@ _FAILURE_MESSAGES = {
     "output_limit": "The cloud response reached its output token limit.",
     "content_filter": "The cloud response was interrupted by the provider's content filter.",
     "cancelled": "The cloud response was stopped.",
+    "provider_stream_error": "The cloud provider reported an error during streaming.",
+    "provider_rate_limit": "The cloud provider's rate limit was reached during streaming. Try again later.",
+    "provider_quota": "The cloud provider reported a quota or billing limit during streaming.",
+    "provider_context_overflow": "The cloud provider reported that the request exceeds its context limit.",
+    "provider_authentication": "The cloud provider rejected authentication during streaming.",
+    "provider_permission": "The cloud provider rejected access to the request or model during streaming.",
+    "provider_unavailable": "The cloud provider reported an internal error during streaming. Try again later.",
+    "provider_bad_request": "The cloud provider rejected the request during streaming.",
+    "sdk_response_validation": "The cloud response did not match the SDK's expected format.",
 }
 
 

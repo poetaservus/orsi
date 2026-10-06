@@ -15,7 +15,7 @@ from threading import RLock
 from typing import Any, Iterable
 
 from app.inference.cloud_errors import CloudErrorCode, CloudInferenceError
-from app.inference.completion import CompletionMetadata, CompletionText, IncompleteResponseError, TokenUsage
+from app.inference.completion import CompletionMetadata, CompletionText, IncompleteResponseError, TokenUsage, ResponseFailureReason
 from app.inference.engine import InferenceEngine
 from app.inference.protocol import ModelCapabilityDefinition, ModelResponse, ModelProtocolFailureCode, model_capability_definitions
 from app.inference.openai_tools import responses_function_tools, responses_input, normalize_responses_calls
@@ -31,6 +31,27 @@ log = logging.getLogger(__name__)
 _MAX_TEXT_CHARS = 1_000_000
 _CONTEXT_ERROR_CODES = {"context_length_exceeded", "context_window_exceeded", "input_too_long"}
 _QUOTA_ERROR_CODES = {"insufficient_quota", "billing_hard_limit_reached", "billing_not_active"}
+_STREAM_ERROR_REASONS = {
+    **dict.fromkeys(_CONTEXT_ERROR_CODES, "provider_context_overflow"),
+    **dict.fromkeys(_QUOTA_ERROR_CODES, "provider_quota"),
+    "rate_limit_exceeded": "provider_rate_limit",
+    "invalid_api_key": "provider_authentication",
+    "permission_denied": "provider_permission",
+    "model_not_found": "provider_permission",
+    "server_error": "provider_unavailable",
+    "internal_error": "provider_unavailable",
+    "internal_server_error": "provider_unavailable",
+    "invalid_parameter": "provider_bad_request",
+    "invalid_argument": "provider_bad_request",
+    "invalid_request_error": "provider_bad_request",
+}
+
+
+def _stream_error_diagnostic(code, *, default: ResponseFailureReason = "provider_stream_error"):
+    """Only explicitly recognized codes can enter diagnostics, never raw bodies."""
+    if isinstance(code, str) and code in _STREAM_ERROR_REASONS:
+        return _STREAM_ERROR_REASONS[code], code
+    return default, "unrecognized"
 
 
 class _ResponsePayload(dict):
@@ -382,10 +403,11 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
                             measurement.observe(state)
                             if payload is not None:
                                 if payload.get("status") == "failed":
-                                    log.warning("OpenAI failed response: category=%s",
-                                        _provider_error(None, _error_code(payload)).code.value)
+                                    failure_reason, safe_code = _stream_error_diagnostic(
+                                        _error_code(payload), default="provider_failed")
+                                    log.warning("OpenAI failed response: category=%s code=%s", failure_reason, safe_code)
                                     if state.partial_text:
-                                        raise state.interrupted(failure_reason="provider_failed")
+                                        raise state.interrupted(failure_reason=failure_reason)
                                     raise _provider_error(None, _error_code(payload))
                                 return payload
                     raise state.interrupted()
@@ -407,7 +429,19 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
                 if stream_opened:
                     raise state.interrupted(failure_reason=exc.failure_reason) from None
                 raise _malformed() from None
-            except (openai.APIError, ValueError, TypeError, AttributeError):
+            except openai.APIResponseValidationError:
+                if stream_opened:
+                    raise state.interrupted(failure_reason="sdk_response_validation") from None
+                raise _malformed() from None
+            except openai.APIError as exc:
+                if stream_opened:
+                    # The SDK consumes SSE error envelopes and raises APIError
+                    # before state.accept(). Preserve known codes, not its text.
+                    failure_reason, safe_code = _stream_error_diagnostic(_error_code(exc.body))
+                    log.warning("OpenAI SDK stream error: category=%s code=%s", failure_reason, safe_code)
+                    raise state.interrupted(failure_reason=failure_reason) from None
+                raise _malformed() from None
+            except (ValueError, TypeError, AttributeError):
                 if stream_opened:
                     raise state.interrupted(failure_reason="invalid_stream") from None
                 raise _malformed() from None

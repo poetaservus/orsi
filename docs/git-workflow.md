@@ -429,3 +429,29 @@ Runtime selection and user conversations/settings are preserved; other active
 worktrees and remote refs are unchanged.
 The previous main is also preserved at
 `archive/2026-10-06/main-before-cloud-stream-diagnostics`.
+
+## SDK stream-error diagnostics, 6 October 2026
+
+Following the user's reproduced failure, `codex/cloud-sdk-error-diagnostics`
+starts from local main `969ddc4`. The pinned SDK raises provider stream errors
+before yielding their events, which the initial diagnostic handler incorrectly
+grouped with decoding failures. The bounded follow-up separates provider,
+decoding and SDK schema errors and allowlists recognized provider codes. The
+user's subsequent normal-app run confirms `rate_limit_exceeded` after 22
+successful tool calls. No private message/body is logged and no agent API
+request or transcript replay is performed. See the
+[follow-up evidence](cloud-stream-diagnostics.md#sdk-provider-error-follow-up-6-october-2026).
+
+The focused checks passed 204 tests. Full unrestricted Windows confirmation
+passed 1,930 tests and 15 subtests, with 49 existing skips and no failures in
+236.04 seconds. Existing live qualification gates remain unrun; the user's
+reproduction is diagnostic evidence. Model limits, prompts, retry/routing and
+tool execution policy are unchanged. Rate-limit pacing is separate follow-up
+work rather than an unverified model-profile adjustment.
+
+Pre-integration refs and the worktree map are preserved in the verified bundle
+under ignored `state/backups/cloud-sdk-errors-20261006/`; previous main is also
+preserved at `archive/2026-10-06/main-before-cloud-sdk-errors`. After verification,
+commit, fast-forward local main and remove the merged local feature branch.
+Other active worktrees, user settings/conversations and remote refs remain
+unchanged.

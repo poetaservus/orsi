@@ -68,3 +68,68 @@ feature branch. Historical/unmerged tips remain preserved. Other active
 worktrees and remote refs are not changed or published.
 The previous main is also preserved at
 `archive/2026-10-06/main-before-cloud-stream-diagnostics`.
+
+## SDK provider-error follow-up, 6 October 2026
+
+The user's reproduced run at 19:11 again completed 22 capability calls. It
+accepted `response.created` and `response.in_progress`, then recorded
+`invalid_stream` after 1,188 ms, with unknown usage. This evidence identifies
+the broad exception handler, but does not preserve its exception type or code.
+No claim is made that this particular run was a rate limit, quota error or
+malformed response.
+
+Inspection of the pinned SDK's `AsyncStream.__stream__` shows that it consumes
+SSE error envelopes and raises `APIError` before yielding a typed event to
+Orsi. The original diagnostic handler grouped that provider exception with
+JSON/type/attribute decoding failures. A two-event mock SDK stream reproduces
+the misleading label without a live request.
+
+The follow-up from local main `969ddc4` on `codex/cloud-sdk-error-diagnostics`
+separates SDK provider errors from decoding and SDK schema validation failures.
+An explicit allowlist maps known provider codes to rate-limit, quota,
+context-overflow, authentication, permission, server or request-error categories.
+Unknown codes become `unrecognized`; their messages, bodies and parameters
+remain private. The fixed category and recognized code enter diagnostics, and
+completion metadata carries the fixed category through the existing chat and
+storage path. The existing retry, stream acceptance, routing, tool execution,
+model-profile and context policies are unchanged.
+
+The focused checks passed 204 tests, including real pinned-SDK SSE errors after
+exactly two accepted events, text and tool requests, recognized codes, hostile
+unknown codes, malformed code types and SDK schema exceptions. Started streams
+still do not reconnect or retry, incomplete tool calls remain unexecutable, and
+unknown usage stays unknown. Full unrestricted Windows confirmation passed
+1,930 tests and 15 subtests, with 49 existing skips and no failures in 236.04
+seconds.
+No API request or private transcript replay is performed by this audit. The
+user can restart the normal launcher to reproduce with the finer diagnostics.
+
+Pre-integration refs and the worktree map are preserved in the verified bundle
+under ignored `state/backups/cloud-sdk-errors-20261006/`. After verification,
+commit, fast-forward local main and remove the merged local feature branch.
+Other active worktrees, runtime settings/conversations and remote refs remain
+unchanged.
+
+### Confirmed user reproduction
+
+The user's next normal-app run at 19:17:36 completed 22 capability calls in
+46.23 seconds and then recorded `provider_rate_limit` with recognized code
+`rate_limit_exceeded`. The failed request accepted two events and stopped after
+937 ms, with no text or terminal usage. This confirms a provider rate-limit
+failure for that reproduction. The earlier generic records remain ambiguous.
+The specific request/token/day ceiling, retry interval and account capacity
+were not retained; no exact ceiling is inferred from the code alone.
+
+Luna still requests a 128,000-token output allowance for every step. OpenAI's
+[rate-limit guide](https://developers.openai.com/api/docs/guides/rate-limits),
+retrieved 6 October 2026, documents separate request/token limits, explains that
+large requested generation caps can increase token rate-limit accounting, and
+advises pacing/backoff. The large cap is a possible contributor here, not proven
+as the exhausted ceiling. A separate rate-management change can use safe numeric
+remaining/reset evidence to pace new requests while preserving the accepted
+model profile. This diagnostic change does not reduce the output cap or replay
+an already-started stream. The user's reproduction is observational evidence,
+not a live model-qualification pass or an API request performed by this agent.
+
+The prior main is preserved at
+`archive/2026-10-06/main-before-cloud-sdk-errors`.

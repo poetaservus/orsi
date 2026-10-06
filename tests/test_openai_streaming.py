@@ -383,6 +383,55 @@ def test_failed_provider_terminal_with_partial_text_has_distinct_safe_reason(mak
     assert "private-code" not in caplog.text and "private-provider-body" not in caplog.text
 
 
+@pytest.mark.parametrize("code,expected", [
+    ("rate_limit_exceeded", "provider_rate_limit"),
+    ("insufficient_quota", "provider_quota"),
+    ("context_length_exceeded", "provider_context_overflow"),
+    ("server_error", "provider_unavailable"),
+    ("private-unknown-code", "provider_stream_error"),
+    ({"private": "invalid-code-type"}, "provider_stream_error"),
+])
+@pytest.mark.parametrize("tools", [False, True])
+def test_sdk_error_envelope_after_two_events_is_not_misreported_as_decoding_failure(make_engine, code, expected, tools, caplog):
+    # The pinned SDK consumes this error before yielding a typed event to Orsi.
+    created = events()[0]
+    progress = {"type": "response.in_progress", "sequence_number": 1, "response": created["response"]}
+    error = {"error": {"code": code, "message": "private-provider-message", "param": "private-param"}}
+    requests = []
+    stream = Stream([created, progress, error])
+    def handle(request):
+        requests.append(request)
+        return streaming_response(stream)
+    engine = make_engine(handle, max_retries=3)
+    if tools:
+        result = engine.respond_with_capabilities(MESSAGES, (capability_definition(),))
+        completion = result.completion
+        assert result.kind == ModelResponseKind.PROTOCOL_FAILURE and not result.capability_calls
+    else:
+        with pytest.raises(IncompleteResponseError) as caught:
+            engine.respond(MESSAGES)
+        completion = caught.value.completion
+        assert "private" not in str(caught.value)
+    assert completion.failure_reason == expected and completion.finish_reason == "error"
+    assert completion.interrupted and completion.usage.total_tokens is None
+    assert f"category={expected}" in caplog.text and "events=2 sequence=1" in caplog.text
+    assert "private-provider-message" not in caplog.text and "private-param" not in caplog.text
+    assert "private-unknown-code" not in caplog.text and "invalid-code-type" not in caplog.text
+    assert len(requests) == 1 and stream.closed.is_set()
+
+
+def test_sdk_schema_error_is_distinct_from_provider_error_and_does_not_log_body(make_engine, caplog):
+    def failure(message):
+        response = httpx.Response(200, request=httpx.Request("POST", "https://api.openai.com/v1/responses"))
+        return openai.APIResponseValidationError(response=response, body={"private-body": "secret"}, message=message)
+    stream = Stream(events()[:1], failure=failure)
+    engine = make_engine(lambda request: streaming_response(stream))
+    with pytest.raises(IncompleteResponseError) as caught:
+        engine.respond(MESSAGES)
+    assert caught.value.completion.failure_reason == "sdk_response_validation"
+    assert "private-body" not in caplog.text and "private-stream-failure" not in caplog.text
+
+
 def test_stop_before_transport_starts_does_not_send_and_does_not_poison_next_turn(make_engine):
     calls = []
     def handle(request):
