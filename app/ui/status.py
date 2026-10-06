@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import math
 
-from PySide6.QtCore import QRectF, QTimer, Slot
+from PySide6.QtCore import QElapsedTimer, QRectF, QTimer, Qt, Slot
 from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QLabel, QWidget
 
@@ -11,12 +11,13 @@ class ThinkingDots(QWidget):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setObjectName("thinkingDots")
-        self.setFixedSize(54, 30)
+        self.setFixedSize(37, 22)
         self.setAccessibleName("O.R.S.I is thinking")
-        self._phase = 0.0
+        self._elapsed = QElapsedTimer()
         self._timer = QTimer(self)
-        self._timer.setInterval(55)
-        self._timer.timeout.connect(self._advance)
+        self._timer.setTimerType(Qt.TimerType.PreciseTimer)
+        self._timer.setInterval(16)
+        self._timer.timeout.connect(self.update)
         self.hide()
 
     @property
@@ -24,31 +25,32 @@ class ThinkingDots(QWidget):
         return self._timer.isActive()
 
     def start(self) -> None:
-        self._phase = 0.0
+        self._elapsed.start()
         self.show()
         self._timer.start()
         self.update()
 
     def stop(self) -> None:
         self._timer.stop()
+        self._elapsed.invalidate()
         self.hide()
 
-    def _advance(self) -> None:
-        self._phase = (self._phase + 0.28) % (math.tau * 2)
-        self.update()
+    def _pulse(self, index: int, seconds: float) -> float:
+        return (1 - math.cos(math.tau * (seconds / 1.4 - index * .16))) / 2
 
     def paintEvent(self, event) -> None:  # noqa: N802 - Qt API name
         del event
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setPen(QColor("#b8b8b8"))
-        painter.setBrush(QColor("#b8b8b8"))
-        radius = 3.1
-        baseline = self.height() / 2 + 2
-        for index, x in enumerate((13.0, 27.0, 41.0)):
-            wave = max(0.0, math.sin(self._phase - index * 0.85))
-            y = baseline - wave * 7.0
-            painter.drawEllipse(QRectF(x - radius, y - radius, radius * 2, radius * 2))
+        painter.setPen(Qt.PenStyle.NoPen)
+        seconds = self._elapsed.nsecsElapsed() / 1_000_000_000 if self._elapsed.isValid() else 0
+        for index, x in enumerate((0.0, 12.0, 24.0)):
+            pulse = self._pulse(index, seconds)
+            height = 5.0 + pulse * 9.0
+            color = QColor("#c7cad2")
+            color.setAlphaF(.35 + pulse * .65)
+            painter.setBrush(color)
+            painter.drawRoundedRect(QRectF(x, (self.height() - height) / 2, 5, height), 2.5, 2.5)
 
 
 class ConversationStatus(QLabel):

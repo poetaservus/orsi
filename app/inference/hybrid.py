@@ -7,6 +7,7 @@ from typing import Callable, Iterable
 from app.inference.cloud_errors import CloudInferenceError
 from app.inference.engine import InferenceEngine, InferenceUnavailable
 from app.inference.openai_replay import neutral_messages
+from app.runtime.activity import report_activity
 from app.inference.protocol import (
     ModelCapabilityDefinition,
     ModelResponse,
@@ -83,6 +84,7 @@ class LazyInferenceEngine(InferenceEngine):
             if self._initialization_error is not None:
                 raise InferenceUnavailable(str(self._initialization_error)) from self._initialization_error
             try:
+                report_activity(getattr(self, "_activity_observer", None), "Loading local model…")
                 engine = self._factory()
                 if self._closed.is_set():
                     close = getattr(engine, "close", None)
@@ -94,6 +96,7 @@ class LazyInferenceEngine(InferenceEngine):
                 self.max_response_tokens = int(
                     getattr(self._engine, "max_response_tokens", self.max_response_tokens)
                 )
+                report_activity(getattr(self, "_activity_observer", None), "Thinking…")
                 return self._engine
             except Exception as exc:
                 error = exc if isinstance(exc, InferenceUnavailable) else InferenceUnavailable(str(exc))
@@ -184,6 +187,12 @@ class HybridInferenceEngine(InferenceEngine):
         setter = getattr(self.cloud, "set_text_observer", None)
         if callable(setter):
             setter(observer)
+
+    def set_activity_observer(self, observer=None):
+        for engine in (self.local, self.cloud):
+            setter = getattr(engine, "set_activity_observer", None)
+            if callable(setter):
+                setter(observer)
 
     def set_request_cancellation(self, token=None):
         setter = getattr(self.cloud, "set_request_cancellation", None)

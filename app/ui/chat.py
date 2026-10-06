@@ -28,7 +28,14 @@ _CONVERSATION_WIDTH = 1120
 
 
 def _elapsed_label(prefix: str, seconds: float) -> str:
-    return f"{prefix} for {max(0.0, seconds):.1f}s"
+    hours, remainder = divmod(int(max(0.0, seconds)), 3600)
+    minutes, remaining_seconds = divmod(remainder, 60)
+    duration = f"{remaining_seconds}s"
+    if hours:
+        duration = f"{hours} h {minutes} m {duration}"
+    elif minutes:
+        duration = f"{minutes} m {duration}"
+    return f"{prefix} for {duration}"
 
 
 def _split_fenced_code(content: str) -> list[tuple[str, str, str]]:
@@ -405,9 +412,14 @@ class ChatView(QScrollArea):
         self._thinking_row = QWidget()
         self._thinking_layout = QVBoxLayout(self._thinking_row)
         self._thinking_layout.setContentsMargins(4, 0, 0, 0)
-        self._thinking_layout.setSpacing(1)
-        self.working_label = QLabel("Working for 0.0s")
+        self._thinking_layout.setSpacing(6)
+        self.working_label = QLabel("Working for 0s")
         self.working_label.setObjectName("responseTiming")
+        self.activity_label = QLabel()
+        self.activity_label.setObjectName("workingActivity")
+        self.activity_label.setTextFormat(Qt.TextFormat.PlainText)
+        self.activity_label.setWordWrap(True)
+        self.activity_label.setAccessibleName("Current activity")
         self.thinking_dots = ThinkingDots()
         self.stream_preview = QLabel()
         self.stream_preview.setObjectName("streamPreview")
@@ -420,6 +432,7 @@ class ChatView(QScrollArea):
             0,
             Qt.AlignmentFlag.AlignLeft,
         )
+        self._thinking_layout.addWidget(self.activity_label)
         self._thinking_layout.addWidget(
             self.thinking_dots,
             0,
@@ -502,6 +515,7 @@ class ChatView(QScrollArea):
         self.stream_preview.hide()
         self._thinking_row.setVisible(thinking)
         if thinking:
+            self.activity_label.setText("Preparing your request…")
             self._response_elapsed.start()
             self._update_working_label()
             self._response_timer.start()
@@ -517,12 +531,22 @@ class ChatView(QScrollArea):
         self._response_timer.stop()
         self._response_elapsed.invalidate()
         self.thinking_dots.stop()
+        self.activity_label.clear()
         return elapsed
+
+    def set_activity(self, text: str) -> None:
+        if not self._response_elapsed.isValid():
+            return
+        self.activity_label.setText(text)
+        if self._follow_tail:
+            QTimer.singleShot(0, self._scroll_to_bottom)
 
     def set_stream_preview(self, text: str) -> None:
         if not self._response_elapsed.isValid():
             return
         self.stream_preview.setText(text)
+        if text:
+            self.set_activity("Writing reply…")
         self.stream_preview.setVisible(bool(text))
         if self._follow_tail:
             QTimer.singleShot(0, self._scroll_to_bottom)
@@ -534,6 +558,10 @@ class ChatView(QScrollArea):
             else 0.0
         )
         self.working_label.setText(_elapsed_label("Working", elapsed))
+
+    def closeEvent(self, event) -> None:  # noqa: N802 - Qt API name
+        self.set_thinking(False)
+        super().closeEvent(event)
 
     def resizeEvent(self, event) -> None:  # noqa: N802 - Qt API name
         super().resizeEvent(event)

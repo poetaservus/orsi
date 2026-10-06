@@ -916,7 +916,7 @@ class MainWindow(QMainWindow):
         self.thread.started.connect(self.worker.run)
         self.worker.finished.connect(self._worker_succeeded)
         self.worker.failed.connect(self._worker_failed)
-        self.worker.activity.connect(self.activity.set_activity)
+        self.worker.activity.connect(self._set_working_activity)
         self.worker.text_updated.connect(self._stream_preview)
         self.worker.finished.connect(self.thread.quit)
         self.worker.failed.connect(self.thread.quit)
@@ -952,7 +952,7 @@ class MainWindow(QMainWindow):
         self._composer_stack.setCurrentWidget(panel)
         self._animate_composer_height(height)
         panel.setFocus()
-        self.activity.set_activity("Waiting for approval...")
+        self._set_working_activity("Waiting for your approval…")
 
     def _approval_finished(self) -> None:
         panel = self._approval_panel
@@ -1073,7 +1073,14 @@ class MainWindow(QMainWindow):
         if callable(cancel):
             cancel()
             self.stop.setEnabled(False)
-            self.activity.set_activity("Stopping...")
+            self._set_working_activity("Stopping…")
+
+    @Slot(str)
+    def _set_working_activity(self, text: str) -> None:
+        if self.thread is None:
+            return
+        self.activity.set_activity(text)
+        self.chat.set_activity(text)
 
     def create_new_session(self) -> None:
         if self.thread is not None:
@@ -1354,6 +1361,7 @@ class MainWindow(QMainWindow):
             self.thread.quit()
             event.ignore()
             return
+        self.chat.set_thinking(False)
         super().closeEvent(event)
 
     def _sync_inference_selector(self) -> None:
@@ -1521,6 +1529,15 @@ QLabel#responseTiming {
     border: none;
     font-family: Saira;
     font-size: 11px;
+    font-weight: 400;
+}
+QLabel#workingActivity {
+    color: #b5b8c2;
+    background: transparent;
+    border: none;
+    padding: 0;
+    font-family: Saira;
+    font-size: 12px;
     font-weight: 400;
 }
 QFrame#orsiMessage QLabel#incompleteResponse, QFrame#errorMessage QLabel#incompleteResponse {

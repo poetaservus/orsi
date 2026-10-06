@@ -506,3 +506,22 @@ ignored `state/backups/cloud-rate-pacing-20261006/`. Preserve prior main at
 `archive/2026-10-06/main-before-cloud-rate-pacing`, commit the verified bounded
 change, fast-forward local main and remove its merged local branch. Other active
 worktrees, user conversations/selection/keys and remote refs are unchanged.
+
+## Working status UI review branch, 6 October 2026
+
+The user's explicit request places the working status changes on a new branch,
+`codex/working-status-ui`, from local main `ca90b4c`. See the
+[implementation and verification record](working-status-ui.md). Commit the
+bounded verified change and retain this branch for review; immediate
+fast-forward integration and branch deletion are deferred for this request.
+Local main, other worktrees and remote refs remain unchanged. Pre-change refs,
+worktree map and the verified complete-history bundle are preserved under
+ignored `state/backups/working-status-ui-20261006/`.
+
+Final unrestricted focused checks passed 246 tests and 5 subtests. Final full
+unrestricted confirmation passed 1,967 tests and 15 subtests, with 49 existing
+skips and no failures in 297.59 seconds. Earlier intermittent native Windows
+folder-rename failures and the successful five-case isolated recheck remain
+in the verification record. No existing native implementation or acceptance
+test was changed. Live model/API gates remain unrun and separate from these
+passed checks; no paid API requests or key changes were made.

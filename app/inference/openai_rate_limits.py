@@ -9,6 +9,7 @@ import re
 from time import monotonic
 
 from app.inference.cloud_errors import CloudErrorCode, CloudInferenceError
+from app.runtime.activity import report_activity
 
 
 log = logging.getLogger(__name__)
@@ -101,17 +102,19 @@ class OpenAIRatePacer:
             tokens -= entry.tokens
         return max(waits, default=0)
 
-    async def acquire(self, model, cost):
+    async def acquire(self, model, cost, *, activity=None):
         budget = self.budgets.setdefault(model, _Budget())
         while True:
             delay = self._delay(budget, cost, self.clock())
             if not delay:
+                report_activity(activity, "Thinking…")
                 reservation = Reservation(self.clock(), cost)
                 budget.ledger.append(reservation)
                 for resource, (limit, remaining, reset_at) in list(budget.headers.items()):
                     budget.headers[resource] = (limit, max(0, remaining - (1 if resource == "requests" else cost)), reset_at)
                 return reservation
             log.info("OpenAI rate wait: seconds=%.3f estimated_tokens=%s", delay, cost)
+            report_activity(activity, "Waiting for API capacity…")
             await self.sleep(delay)
 
     def settle(self, reservation, usage=None):

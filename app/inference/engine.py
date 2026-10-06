@@ -21,6 +21,9 @@ class InferenceEngine(ABC):
     context_length = 8192
     max_response_tokens = 512
 
+    def set_activity_observer(self, observer=None):
+        self._activity_observer = observer
+
     @abstractmethod
     def respond(self, messages: list[dict[str, str]]) -> str:
         raise NotImplementedError

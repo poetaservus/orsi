@@ -32,6 +32,7 @@ from app.security.host_access import HostAccessPolicy, HostReadScope
 from app.inference.engine import InferenceUnavailable
 from app.inference.diagnostics import record_context_budget
 from app.runtime.cancellation import CancellationSource, TaskCancelled
+from app.runtime.activity import report_activity
 from app.runtime.skills import (
     SkillDefinition, SkillRegistry, SkillActivationError, SkillActivationErrorCode, with_active_skill,
     SkillCandidate, SkillSelection, select_skill,
@@ -266,11 +267,17 @@ class ConversationService:
         preview_attached = False
         cancellation_setter = getattr(self.inference, "set_request_cancellation", None)
         cancellation_attached = False
+        activity_setter = getattr(self.inference, "set_activity_observer", None)
+        activity_attached = False
         try:
             with self._cancellation_lock:
                 if self._closed:
                     raise RuntimeError("The conversation is closed.")
                 self._cancellation = source
+            report_activity(activity, "Preparing your request…")
+            if callable(activity_setter):
+                activity_setter(activity)
+                activity_attached = True
             if self.supports_text_streaming and callable(cancellation_setter):
                 cancellation_setter(source.token)
                 cancellation_attached = True
@@ -305,8 +312,8 @@ class ConversationService:
                 self.skill_selection = SkillSelection(name=self._active_skill_name, reason="explicit")
             elif self.automatic_skills_enabled:
                 candidates = tuple(SkillCandidate(skill.name, skill.description) for skill in self.skill_registry.list())
-                if candidates and activity:
-                    activity("Choosing a skill...")
+                if candidates:
+                    report_activity(activity, "Choosing a skill…")
                 try:
                     self.skill_selection = select_skill(self.inference, candidates=candidates, request=text,
                                                        cancellation=source.token)
@@ -329,6 +336,8 @@ class ConversationService:
                 self.skill_selection = SkillSelection(reason="disabled")
                 record_skill_event("router", method="none", router_result="disabled", injected=False)
             source.token.raise_if_cancelled()
+            if self.active_skill is not None:
+                report_activity(activity, "Reading skill guidance…")
             self._references.prepare(self.active_skill, tools_enabled=self.agent_enabled, cancellation=source.token)
             self._reference_runtime = self._references.scoped_runtime(self.agent_runtime,
                 session_id=self._session_id, turn_id=turn_id)
@@ -351,6 +360,7 @@ class ConversationService:
                     completion=value.completion, completion_history=value.completion_history)
             else:
                 answer = self._run_agent_turn(text, source, activity)
+            report_activity(activity, "Saving the conversation…")
             self.store.finish_turn(turn_id, self._turn_result, answer)
             self._agent_history = self._stored_agent_history()
             return answer
@@ -398,6 +408,8 @@ class ConversationService:
                 return "The response was stopped."
             raise
         finally:
+            if activity_attached:
+                activity_setter(None)
             if cancellation_attached:
                 cancellation_setter(None)
             if preview_attached:
@@ -439,8 +451,7 @@ class ConversationService:
                 self._run_lock.release()
 
     def _run_chat_turn(self, source: CancellationSource, activity=None) -> str:
-        if activity:
-            activity("Thinking...")
+        report_activity(activity, "Thinking…")
         source.token.raise_if_cancelled()
         request = self._model_request(capability_turn=False)
         if not request.budget.fits:
@@ -469,8 +480,7 @@ class ConversationService:
     ) -> str:
         if self.agent_runtime is None or self.portable_root is None:
             raise RuntimeError("The structured agent runtime is unavailable.")
-        if activity:
-            activity("Working...")
+        report_activity(activity, "Preparing the next step…")
         source.token.raise_if_cancelled()
         turn_results: list[tuple] = []
 
@@ -508,6 +518,7 @@ class ConversationService:
             continuation_guard=(lambda: self._references.continuation_error(source.token))
                 if self._reference_runtime is not None else None,
             capability_names=capabilities,
+            activity_observer=activity,
         )
         if result.status == AgentRunStatus.COMPLETED:
             reference_error = self._references.continuation_error(source.token)

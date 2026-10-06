@@ -27,6 +27,7 @@ from app.inference.openai_metrics import RequestMeasurement, record_request_metr
 from app.inference.openai_rate_limits import OpenAIRatePacer
 from app.settings.openai_cloud import OpenAIAccountRateLimits, OpenAICloudConfig, OpenAIModelCatalog
 from app.state.storage import JsonStore
+from app.runtime.activity import report_activity
 
 
 log = logging.getLogger(__name__)
@@ -360,6 +361,7 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
             runner, api_key, observer = self._runner, self._api_key, self._text_observer
             cancellation = self._request_cancellation
             pacer = self._rate_pacer
+            activity = getattr(self, "_activity_observer", None)
         body: dict[str, Any] = {
             "model": profile.id,
             "input": inputs,
@@ -388,7 +390,8 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
             # arbitrary HTTP-hook exceptions as connection failures.
             if measurement.attempts:
                 try:
-                    reservation = await pacer.acquire(profile.id, estimated_input + 256 + profile.max_output_tokens)
+                    reservation = await pacer.acquire(profile.id, estimated_input + 256 + profile.max_output_tokens,
+                        activity=activity)
                 except CloudInferenceError as exc:
                     admission_error = exc
                     raise
@@ -417,7 +420,8 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
                 async with asyncio.timeout(self.config.timeout_seconds):
                     if cancellation is not None and cancellation.is_cancelled:
                         raise state.interrupted("cancelled")
-                    reservation = await pacer.acquire(profile.id, estimated_input + 256 + profile.max_output_tokens)
+                    reservation = await pacer.acquire(profile.id, estimated_input + 256 + profile.max_output_tokens,
+                        activity=activity)
                     if runner.client is None:
                         runner.http_client = openai.DefaultAsyncHttpxClient(event_hooks={"response": [no_quota_retry]})
                         runner.client = openai.AsyncOpenAI(api_key=api_key, base_url=self.config.base_url,
@@ -427,6 +431,7 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
                     runner.http_client.event_hooks["response"] = [no_quota_retry]
                     stream = await runner.client.responses.create(**body)
                     stream_opened = True
+                    report_activity(activity, "Generating response…")
                     async with stream:
                         async for event in stream:
                             payload = state.accept(event)

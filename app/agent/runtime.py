@@ -61,6 +61,7 @@ from app.capabilities.registry import CapabilityLookupError, CapabilityRegistry
 from app.inference.diagnostics import record_context_budget
 from app.inference.completion import CompletionMetadata, CompletionText, IncompleteResponseError
 from app.inference.engine import InferenceEngine, InferenceUnavailable
+from app.runtime.activity import capability_activity, report_activity
 from app.inference.protocol import (
     ModelCapabilityCall,
     ModelCapabilityDefinition,
@@ -340,6 +341,7 @@ class AgentRuntime:
         settled_observer: Callable[[SettledCall], None] | None = None,
         response_observer: Callable[[str, Any], None] | None = None,
         continuation_guard: Callable[[], str | None] | None = None,
+        activity_observer: Callable[[str], None] | None = None,
         _recovery: _RecoveryUsage | None = None,
     ) -> AgentRunResult:
         if not safe_identifier(session_id) or not safe_identifier(turn_id):
@@ -364,6 +366,8 @@ class AgentRuntime:
             raise TypeError("Response observers must be callable when supplied.")
         if continuation_guard is not None and not callable(continuation_guard):
             raise TypeError("Continuation guards must be callable when supplied.")
+        if activity_observer is not None and not callable(activity_observer):
+            raise TypeError("Activity observers must be callable when supplied.")
         if self.executor.review_required:
             return self._stopped(AgentRunStatus.INTERNAL_FAILURE,
                 "A previous write outcome requires review before another operation can run.",
@@ -484,6 +488,7 @@ class AgentRuntime:
                     steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
             if planned_response is None:
                 recovery.model_requests += 1
+                report_activity(activity_observer, "Preparing the next step…")
                 if not self._recover_transcript(transcript, definitions, recovery):
                     return self._stopped(AgentRunStatus.INTERNAL_FAILURE,
                         "Context recovery failed safely; settled operations were retained.",
@@ -493,6 +498,7 @@ class AgentRuntime:
                 planned_response = None
                 model_stop = None
             elif structured_fallback:
+                report_activity(activity_observer, "Thinking…")
                 response, model_stop = self._fallback_model_step(
                     transcript,
                     definitions,
@@ -502,6 +508,7 @@ class AgentRuntime:
                     _request_usage=recovery,
                 )
             else:
+                report_activity(activity_observer, "Thinking…")
                 response, model_stop = self._model_step(
                     transcript,
                     definitions,
@@ -755,6 +762,7 @@ class AgentRuntime:
                     started=started,
                     user_cancellation=user_cancellation,
                     deadline_cancellation=deadline_cancellation,
+                    activity_observer=activity_observer,
                 )
                 if outcome.stop_status is not None and outcome.result is None:
                     code = (CapabilityErrorCode.OUTCOME_UNKNOWN if self.executor.review_required else
@@ -892,6 +900,7 @@ class AgentRuntime:
         started: float,
         user_cancellation: CancellationToken,
         deadline_cancellation: _DeadlineCancellationToken,
+        activity_observer: Callable[[str], None] | None = None,
     ) -> _CallOutcome:
         if self.executor.review_required:
             return _CallOutcome(stop_status=AgentRunStatus.INTERNAL_FAILURE,
@@ -956,6 +965,7 @@ class AgentRuntime:
             )
 
         try:
+            report_activity(activity_observer, "Checking permissions…")
             self.executor.journal.record_prepared(prepared)
             evaluation = self.permission_gate.evaluate(prepared)
             authorization_outcome = self._authorize(
@@ -965,6 +975,7 @@ class AgentRuntime:
                 started=started,
                 user_cancellation=user_cancellation,
                 deadline_cancellation=deadline_cancellation,
+                activity_observer=activity_observer,
             )
             authorization = authorization_outcome.authorization
             if authorization is None:
@@ -1015,6 +1026,7 @@ class AgentRuntime:
             )
 
         try:
+            report_activity(activity_observer, capability_activity(call.capability))
             result = self.executor.execute(prepared, authorization)
         except Exception:
             log.exception("Capability result persistence failed unexpectedly.")
@@ -1054,6 +1066,7 @@ class AgentRuntime:
         started: float,
         user_cancellation: CancellationToken,
         deadline_cancellation: _DeadlineCancellationToken,
+        activity_observer: Callable[[str], None] | None = None,
     ) -> _AuthorizationOutcome:
         if evaluation.decision != PermissionDecision.ASK:
             return _AuthorizationOutcome(
@@ -1064,6 +1077,7 @@ class AgentRuntime:
                 record_final_authorization=True,
             )
 
+        report_activity(activity_observer, "Waiting for your approval…")
         record = self.approval_manager.request(
             evaluation,
             cancellation=cancellation,
