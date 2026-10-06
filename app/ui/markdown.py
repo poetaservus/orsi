@@ -28,7 +28,7 @@ class MarkdownLabel(QTextEdit):
         self._rendered_font = None
         self._inline_spans = []
         self.document = _TextDocument(self)
-        self.document.setDocumentMargin(3)
+        self.document.setDocumentMargin(5)
         self.setDocument(self.document)
         self.setReadOnly(True)
         self.setUndoRedoEnabled(False)
@@ -169,18 +169,18 @@ class MarkdownLabel(QTextEdit):
                 right = right[0] if isinstance(right, tuple) else right
                 delta = right - left
                 baseline = origin.top() + metrics.ascent()
-                rectangles.append(QRectF(origin.left() + min(0, delta) - 3,
-                    baseline - metrics.capHeight() - 2, abs(delta) + 6,
-                    metrics.capHeight() + metrics.descent() + 4))
+                rectangles.append(QRectF(origin.left() + min(0, delta) - 5,
+                    baseline - metrics.capHeight() - 4, abs(delta) + 10,
+                    metrics.capHeight() + metrics.descent() + 8))
         return rectangles
 
     def paintEvent(self, event) -> None:  # noqa: N802
         painter = QPainter(self.viewport())
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor("#303030"))
+        painter.setBrush(QColor("#3b3c40"))
         for rectangle in self._inline_backgrounds():
-            painter.drawRoundedRect(rectangle, 4, 4)
+            painter.drawRoundedRect(rectangle, 6, 6)
         for rectangle, style in self._bullet_markers():
             color = self.palette().color(self.foregroundRole())
             painter.setBrush(color)

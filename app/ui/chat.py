@@ -228,6 +228,7 @@ class _Message(QFrame):
         natural_text_width = max(
             (
                 label.fontMetrics().horizontalAdvance(line.expandtabs(4))
+                + (2 * label.document.documentMargin() if isinstance(label, MarkdownLabel) else 0)
                 for label in labels
                 for line in ((label.plain_text() if isinstance(label, MarkdownLabel) else label.text()).splitlines()
                              or [""])

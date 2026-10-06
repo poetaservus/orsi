@@ -76,3 +76,22 @@ following the user's explicit request for a new branch. Local main remains
 `ca90b4c`; the usual immediate integration and branch deletion are deferred.
 Other worktrees and remote refs are unchanged. Restart `orsi.cmd` from this
 checkout to load the updated UI.
+
+## Inline highlight follow-up
+
+Following the user's visual review, the same UI branch improves inline code
+and path highlights. Horizontal padding increases from 3 to 5 pixels, vertical
+padding from 2 to 4, and corner radius from 4 to 6. The grey changes from
+`#303030` to `#3b3c40`. The document margin and message width calculation
+account for the added padding so highlights at row edges remain visible.
+Text, selection, clipboard contents and fenced code blocks retain their
+existing behavior. No new tests are added for this small styling adjustment.
+
+The existing focused UI, native inline reference and working-status checks
+passed 51 tests and 5 subtests in 9.87 seconds. A synthetic Qt render is saved
+under ignored `state/previews/inline-highlight/` and visually checked for both
+standalone paths and references within a sentence. Full unrestricted
+confirmation passed 1,967 tests and 15 subtests, with 49 existing skips and
+no failures in 292.10 seconds. Live model/API gates remain unrun; no paid API
+requests or key changes are made. This follow-up is committed on the existing
+review branch.
