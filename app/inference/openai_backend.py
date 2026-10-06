@@ -24,7 +24,9 @@ from app.inference.openai_stream import ResponsesStreamState, StreamProtocolErro
 from app.inference.openai_transport import OpenAIRequestRunner
 from app.inference.openai_context import context_input_items, estimate_input_tokens, estimate_schema_tokens
 from app.inference.openai_metrics import RequestMeasurement, record_request_metrics
-from app.settings.openai_cloud import OpenAICloudConfig, OpenAIModelCatalog
+from app.inference.openai_rate_limits import OpenAIRatePacer
+from app.settings.openai_cloud import OpenAIAccountRateLimits, OpenAICloudConfig, OpenAIModelCatalog
+from app.state.storage import JsonStore
 
 
 log = logging.getLogger(__name__)
@@ -230,7 +232,7 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
     supports_text_streaming = True
     supports_openai_context = True
     def __init__(self, config: OpenAICloudConfig, api_key: str | None = None, *,
-                 selection_path: Path | None = None):
+                 selection_path: Path | None = None, rate_limits_path: Path | None = None):
         self.config = config
         self.catalog = OpenAIModelCatalog(config, selection_path)
         self._api_key = (api_key if api_key is not None else os.environ.get(config.api_key_environment, "")).strip()
@@ -241,6 +243,13 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
         self._closed = False
         self.context_revision = 0
         self.last_request_metrics = None
+        self._configured_rate_limits = dict(config.rate_limits)
+        if rate_limits_path is not None:
+            account_limits = OpenAIAccountRateLimits.model_validate(JsonStore(rate_limits_path).load(default={}))
+            for model, limits in account_limits.models.items():
+                config.profile(model)
+                self._configured_rate_limits[model] = limits
+        self._rate_pacer = OpenAIRatePacer(self._configured_rate_limits)
         self._refresh_limits()
 
     def _refresh_limits(self) -> None:
@@ -274,6 +283,7 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
             runner, self._runner = self._runner, None
             self._api_key = str(api_key).strip()
             self.last_request_metrics = None
+            self._rate_pacer = OpenAIRatePacer(self._configured_rate_limits)
         self._close_runner(runner)
 
     @property
@@ -349,6 +359,7 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
                 self._runner = OpenAIRequestRunner()
             runner, api_key, observer = self._runner, self._api_key, self._text_observer
             cancellation = self._request_cancellation
+            pacer = self._rate_pacer
         body: dict[str, Any] = {
             "model": profile.id,
             "input": inputs,
@@ -369,7 +380,23 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
         state = ResponsesStreamState(observer)
         measurement = RequestMeasurement()
         stream_opened = False
+        reservation = None
+        admission_error = None
+        async def request_hook(request):
+            nonlocal reservation, admission_error
+            # The initial reservation happens outside the SDK, which wraps
+            # arbitrary HTTP-hook exceptions as connection failures.
+            if measurement.attempts:
+                try:
+                    reservation = await pacer.acquire(profile.id, estimated_input + 256 + profile.max_output_tokens)
+                except CloudInferenceError as exc:
+                    admission_error = exc
+                    raise
+            await measurement.request_hook(request)
+
         async def no_quota_retry(response):
+            pacer.settle(reservation)
+            pacer.observe(profile.id, response.headers)
             # The SDK's public response hook runs before status retry handling.
             # Quota is permanent even though its HTTP status can be 429.
             if response.status_code == 429:
@@ -382,7 +409,7 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
                     response.headers["x-should-retry"] = "false"
 
         async def request():
-            nonlocal stream_opened
+            nonlocal stream_opened, reservation
             import httpx
             measurement.start()
             try:
@@ -390,12 +417,14 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
                 async with asyncio.timeout(self.config.timeout_seconds):
                     if cancellation is not None and cancellation.is_cancelled:
                         raise state.interrupted("cancelled")
+                    reservation = await pacer.acquire(profile.id, estimated_input + 256 + profile.max_output_tokens)
                     if runner.client is None:
                         runner.http_client = openai.DefaultAsyncHttpxClient(event_hooks={"response": [no_quota_retry]})
                         runner.client = openai.AsyncOpenAI(api_key=api_key, base_url=self.config.base_url,
                             timeout=self.config.timeout_seconds, max_retries=self.config.max_retries,
                             http_client=runner.http_client)
-                    runner.http_client.event_hooks["request"] = [measurement.request_hook]
+                    runner.http_client.event_hooks["request"] = [request_hook]
+                    runner.http_client.event_hooks["response"] = [no_quota_retry]
                     stream = await runner.client.responses.create(**body)
                     stream_opened = True
                     async with stream:
@@ -410,6 +439,7 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
                                     if state.partial_text:
                                         raise state.interrupted(failure_reason=failure_reason)
                                     raise _provider_error(None, _error_code(payload))
+                                pacer.settle(reservation, _token_usage(payload))
                                 return payload
                     raise state.interrupted()
             except asyncio.CancelledError:
@@ -420,6 +450,8 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
                 raise CloudInferenceError("The OpenAI request timed out.", code=CloudErrorCode.TIMEOUT,
                     retryable=True, allow_local_fallback=True) from None
             except (openai.APIConnectionError, httpx.RequestError):
+                if admission_error is not None:
+                    raise admission_error from None
                 if stream_opened:
                     raise state.interrupted(failure_reason="stream_connection") from None
                 raise CloudInferenceError("OpenAI could not connect. Check the internet connection.",
@@ -446,6 +478,10 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
                 if stream_opened:
                     raise state.interrupted(failure_reason="invalid_stream") from None
                 raise _malformed() from None
+            finally:
+                # Output may arrive long after admission. Keep its capacity
+                # reserved for a minute after completion/interruption too.
+                pacer.settle(reservation)
         # The SDK owns pre-stream retries. Never reconnect/replay a started stream.
         outcome, usage, interrupted = "error", TokenUsage(), None
         try:

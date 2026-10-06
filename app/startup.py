@@ -75,6 +75,7 @@ def build_application(
             OpenAIResponsesInferenceEngine(
                 cloud_config,
                 selection_path=PATHS.state / "cloud_model_selection_v1.json",
+                rate_limits_path=PATHS.state / "cloud_rate_limits_v1.json",
             )
             if isinstance(cloud_config, OpenAICloudConfig)
             else OpenAICompatibleInferenceEngine(cloud_config)

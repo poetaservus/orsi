@@ -50,6 +50,20 @@ class OpenAIModelProfile(BaseModel):
         return min(self.context_length, self.max_input_tokens + self.max_output_tokens)
 
 
+class OpenAIRateLimits(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True, hide_input_in_errors=True)
+
+    requests_per_minute: int = Field(ge=1, le=1_000_000)
+    tokens_per_minute: int = Field(ge=1, le=1_000_000_000)
+
+
+class OpenAIAccountRateLimits(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True, hide_input_in_errors=True)
+
+    schema_version: Literal[1] = 1
+    models: dict[str, OpenAIRateLimits] = Field(default_factory=dict)
+
+
 class OpenAICloudConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, hide_input_in_errors=True)
 
@@ -64,6 +78,7 @@ class OpenAICloudConfig(BaseModel):
     max_retries: int = Field(0, ge=0, le=5)
     default_mode: Literal["local", "cloud"] = "local"
     fallback_to_local: bool = False
+    rate_limits: dict[str, OpenAIRateLimits] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def validate_profiles(self):
@@ -72,6 +87,8 @@ class OpenAICloudConfig(BaseModel):
             raise ValueError("OpenAI profiles must have unique model IDs.")
         if self.default_model not in ids:
             raise ValueError("The default OpenAI model requires an explicit profile.")
+        if set(self.rate_limits) - set(ids):
+            raise ValueError("Rate limits require a configured OpenAI model.")
         return self
 
     def profile(self, model_id: str) -> OpenAIModelProfile:

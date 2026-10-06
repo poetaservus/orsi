@@ -477,3 +477,32 @@ complete-history bundle are preserved under ignored
 fast-forward local main and remove the merged local feature branch. Other
 active worktrees, user runtime selection/conversations and remote refs remain
 unchanged.
+
+## Cloud rate pacing, 6 October 2026
+
+The user's latest normal-app failure is a provider token rate limit while the
+32-step cloud budget is active. `codex/cloud-rate-pacing` starts from local main
+`e05aee4`. The user reports 200,000 TPM and 500 RPM; the reproduced run records
+309,803 total tokens across 21 completed operations in about 44 seconds.
+See the [content-free evidence and verification record](cloud-rate-pacing.md).
+
+The bounded change adds Responses request admission using a rolling minute
+ledger and numeric server capacity/reset headers. It retains capacity after
+long/interrupted streams and preserves SDK retry/partial-stream behavior.
+The user's bootstrap account limits stay in ignored runtime state. Accepted
+model profiles, sampling, prompts, tool behavior, context and deadlines are
+unchanged; cloud steps remain 32 and local 24.
+
+Final unrestricted focused checks passed 301 tests in 26.73 seconds. Final full
+unrestricted confirmation passed 1,954 tests and 15 subtests, with 49 existing
+skips and no failures in 248.54 seconds. An earlier full run's unchanged Windows
+folder-rename access-denied failure is retained in the audit; its 49-test
+isolated recheck and final full confirmation pass. Live API/model gates remain
+unrun and separate from deterministic checks. No paid API requests or key
+changes were made during verification.
+
+Pre-change refs and the worktree map are preserved in the verified bundle under
+ignored `state/backups/cloud-rate-pacing-20261006/`. Preserve prior main at
+`archive/2026-10-06/main-before-cloud-rate-pacing`, commit the verified bounded
+change, fast-forward local main and remove its merged local branch. Other active
+worktrees, user conversations/selection/keys and remote refs are unchanged.
