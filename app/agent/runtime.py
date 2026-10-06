@@ -548,9 +548,13 @@ class AgentRuntime:
             if _completion_history is not None:
                 _completion_history.append(response.completion)
             if response.completion.incomplete:
+                message = response.completion.failure_message or (
+                    "The response was cut off." if response.kind != ModelResponseKind.ASSISTANT_TEXT
+                    else "The response is incomplete.")
+                if response.kind != ModelResponseKind.ASSISTANT_TEXT:
+                    message += " The incomplete tool generation was not executed."
                 return self._stopped(self._incomplete_status(response.completion),
-                    "The response was cut off. The incomplete tool generation was not executed."
-                    if response.kind != ModelResponseKind.ASSISTANT_TEXT else "The response is incomplete.",
+                    message,
                     steps=steps, capability_calls=capability_calls,
                     protocol_failures=protocol_failures + int(response.kind == ModelResponseKind.PROTOCOL_FAILURE),
                     completion=response.completion,

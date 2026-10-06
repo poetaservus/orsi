@@ -16,7 +16,7 @@ from app.agent.contracts import AgentRunStatus
 from app.conversation.orchestrator import ConversationService
 from app.conversation.store import ConversationStore
 from app.inference.cloud_backend import CloudErrorCode, CloudInferenceError
-from app.inference.completion import IncompleteResponseError
+from app.inference.completion import CompletionMetadata, CompletionText, IncompleteResponseError
 from app.inference.openai_backend import OpenAIResponsesInferenceEngine
 from app.inference.protocol import ModelResponseKind
 from app.runtime.cancellation import CancellationSource
@@ -127,12 +127,16 @@ def test_interrupted_stream_keeps_text_with_unknown_usage_and_never_retries(make
         engine.respond(MESSAGES)
     assert caught.value.partial_text == "partial  "
     assert caught.value.completion.interrupted and caught.value.completion.usage.total_tokens is None
+    expected = {None: "stream_ended", httpx.ReadError: "stream_connection", httpx.ReadTimeout: "stream_timeout"}[failure]
+    assert caught.value.completion.failure_reason == expected
+    assert caught.value.completion.failure_message == str(caught.value)
+    assert f"reason={expected}" in caplog.text
     assert len(requests) == 1 and stream.closed.is_set()
     assert "private-stream-failure" not in str(caught.value) + caplog.text
 
 
 @pytest.mark.parametrize("mutation", ["sequence", "identity", "item", "delta", "unknown", "json"])
-def test_invalid_stream_never_accepts_its_terminal(make_engine, mutation):
+def test_invalid_stream_never_accepts_its_terminal(make_engine, mutation, caplog):
     values = events()
     if mutation == "sequence":
         values[-1]["sequence_number"] += 1
@@ -143,13 +147,19 @@ def test_invalid_stream_never_accepts_its_terminal(make_engine, mutation):
     elif mutation == "delta":
         values[3]["item_id"] = "wrong"
     elif mutation == "unknown":
-        values[3]["type"] = "response.hosted_tool.delta"
+        values[3]["type"] = "private-unrecognized-event"
     body = encode(values) if mutation != "json" else encode(values[:4]) + b"data: {broken-private\n\n"
     engine = make_engine(lambda request: httpx.Response(200, content=body,
         headers={"content-type": "text/event-stream"}))
     with pytest.raises(IncompleteResponseError) as caught:
         engine.respond(MESSAGES)
     assert caught.value.completion.incomplete and "private" not in str(caught.value)
+    expected = {"sequence": "invalid_sequence", "identity": "invalid_terminal",
+        "item": "unknown_completed_item", "delta": "invalid_text",
+        "unknown": "unsupported_event", "json": "invalid_stream"}[mutation]
+    assert caught.value.completion.failure_reason == expected
+    assert f"reason={expected}" in caplog.text
+    assert "private-unrecognized-event" not in caplog.text and "broken-private" not in caplog.text
 
 
 def test_tool_arguments_are_private_and_incomplete_calls_cannot_execute(make_engine):
@@ -311,6 +321,66 @@ def test_disconnect_before_created_event_is_incomplete_not_safe_to_fallback(make
     with pytest.raises(IncompleteResponseError) as caught:
         engine.respond(MESSAGES)
     assert caught.value.completion.incomplete and stream.closed.is_set()
+    assert caught.value.completion.failure_reason == "stream_connection"
+
+
+@pytest.mark.parametrize("partial", [False, True])
+def test_stream_failure_reason_survives_runtime_store_and_chat_worker(make_engine, tmp_path, partial, caplog):
+    from app.ui.worker import ConversationWorker
+    from app.ui.chat import ChatView
+    from PySide6.QtWidgets import QApplication
+    from tests.test_phase8_filesystem_stat import build_service
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    app = QApplication.instance() or QApplication([])
+    engine = make_engine(lambda request: streaming_response(stream), max_retries=3)
+    service, runtime, store, _ = build_service(tmp_path, engine)
+    definition = runtime.registry.model_definitions()[0]
+    payload = response("partial answer") if partial else response(output=[function(definition, {"path": "private-arguments"})])
+    stream = Stream(events(payload, terminal=False), failure=httpx.ReadError)
+    worker = ConversationWorker(service, "Synthetic stream failure")
+    received = []
+    worker.finished.connect(received.append)
+    worker.failed.connect(received.append)
+    chat = ChatView()
+    try:
+        worker.run()
+        assert len(received) == 1 and received[0].completion.failure_reason == "stream_connection"
+        chat.add_message("Agent", received[0])
+        label = chat._messages[-1].completion_label
+        assert "connection was interrupted" in label.text() + str(received[0])
+        assert "stream_connection" in label.toolTip()
+        reopened = ConversationStore(store.path)
+        outcome = reopened._conversation.turns[-1].outcome
+        assert outcome.capability_calls == 0 and reopened._conversation.turns[-1].settled_calls == []
+        assert outcome.completion.failure_reason == "stream_connection"
+        assert "connection was interrupted" in outcome.message
+        assert "incomplete tool generation was not executed" in outcome.message
+        saved = reopened._conversation.messages[-1]
+        chat.add_message("Agent", CompletionText(saved.content, saved.completion))
+        assert "connection was interrupted" in chat._messages[-1].completion_label.text() + saved.content
+        assert "private-arguments" not in caplog.text
+    finally:
+        chat.close()
+        service.shutdown()
+        app.processEvents()
+
+
+def test_failure_reason_rejects_provider_controlled_text_and_accepts_legacy_metadata():
+    from pydantic import ValidationError
+    assert CompletionMetadata.model_validate({"finish_reason": "error", "interrupted": True}).failure_reason is None
+    with pytest.raises(ValidationError):
+        CompletionMetadata(failure_reason="private-provider-error-body")
+
+
+def test_failed_provider_terminal_with_partial_text_has_distinct_safe_reason(make_engine, caplog):
+    payload = response("partial text", status="failed", error={"code": "private-code", "message": "private-provider-body"})
+    engine = make_engine(lambda request: streaming_response(Stream(events(payload))))
+    with pytest.raises(IncompleteResponseError) as caught:
+        engine.respond(MESSAGES)
+    assert caught.value.partial_text == "partial text"
+    assert caught.value.completion.failure_reason == "provider_failed"
+    assert "provider reported a failed response" in str(caught.value)
+    assert "private-code" not in caplog.text and "private-provider-body" not in caplog.text
 
 
 def test_stop_before_transport_starts_does_not_send_and_does_not_poison_next_turn(make_engine):

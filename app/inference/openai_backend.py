@@ -20,7 +20,7 @@ from app.inference.engine import InferenceEngine
 from app.inference.protocol import ModelCapabilityDefinition, ModelResponse, ModelProtocolFailureCode, model_capability_definitions
 from app.inference.openai_tools import responses_function_tools, responses_input, normalize_responses_calls
 from app.inference.openai_replay import OpenAIReplay, REPLAY_KEY, neutral_messages
-from app.inference.openai_stream import ResponsesStreamState
+from app.inference.openai_stream import ResponsesStreamState, StreamProtocolError
 from app.inference.openai_transport import OpenAIRequestRunner
 from app.inference.openai_context import context_input_items, estimate_input_tokens, estimate_schema_tokens
 from app.inference.openai_metrics import RequestMeasurement, record_request_metrics
@@ -100,15 +100,19 @@ def _completion_metadata(payload: dict[str, Any]) -> CompletionMetadata:
         raise _provider_error(None, _error_code(payload))
     if not isinstance(status, str) or status not in {"completed", "incomplete", "cancelled"}:
         raise _malformed()
-    finish_reason = "stop"
+    finish_reason, failure_reason = "stop", None
     if status == "incomplete":
         details = payload.get("incomplete_details")
         reason = details.get("reason") if isinstance(details, dict) else None
         finish_reason = "length" if reason == "max_output_tokens" else "content_filter" if reason == "content_filter" else "error"
+        failure_reason = "output_limit" if reason == "max_output_tokens" else "content_filter" if reason == "content_filter" else "provider_incomplete"
     elif status == "cancelled":
         finish_reason = "cancelled"
+        failure_reason = "cancelled"
+    if failure_reason is not None:
+        log.warning("OpenAI incomplete response: reason=%s", failure_reason)
     return CompletionMetadata(finish_reason=finish_reason, usage=_token_usage(payload),
-                              request_metrics=getattr(payload, "request_metrics", None))
+                              request_metrics=getattr(payload, "request_metrics", None), failure_reason=failure_reason)
 
 
 def normalize_text_response(payload: dict[str, Any]) -> CompletionText:
@@ -188,7 +192,8 @@ def normalize_tool_response(payload: dict[str, Any], definitions, *, previous_id
     if any(item.get("status") is not None and item.get("status") != "completed" for item in calls):
         return ModelResponse.failure(ModelProtocolFailureCode.OUTPUT_TRUNCATED,
                                     "OpenAI returned an unfinished tool call; no calls can execute.").model_copy(
-            update={"completion": completion.model_copy(update={"finish_reason": "error", "interrupted": True})})
+            update={"completion": completion.model_copy(update={"finish_reason": "error", "interrupted": True,
+                                                                  "failure_reason": "unfinished_tool_call"})})
     result = normalize_responses_calls(calls, definitions, completion,
                                       assistant_text=str(text) if text is not None else None,
                                       previous_ids=previous_ids)
@@ -362,7 +367,7 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
                 # One deadline includes connection, SDK backoff and stream reads.
                 async with asyncio.timeout(self.config.timeout_seconds):
                     if cancellation is not None and cancellation.is_cancelled:
-                        raise state.interrupted("cancelled", "The OpenAI response was stopped.")
+                        raise state.interrupted("cancelled")
                     if runner.client is None:
                         runner.http_client = openai.DefaultAsyncHttpxClient(event_hooks={"response": [no_quota_retry]})
                         runner.client = openai.AsyncOpenAI(api_key=api_key, base_url=self.config.base_url,
@@ -377,28 +382,34 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
                             measurement.observe(state)
                             if payload is not None:
                                 if payload.get("status") == "failed":
+                                    log.warning("OpenAI failed response: category=%s",
+                                        _provider_error(None, _error_code(payload)).code.value)
                                     if state.partial_text:
-                                        raise state.interrupted()
+                                        raise state.interrupted(failure_reason="provider_failed")
                                     raise _provider_error(None, _error_code(payload))
                                 return payload
                     raise state.interrupted()
             except asyncio.CancelledError:
-                raise state.interrupted("cancelled", "The OpenAI response was stopped.") from None
+                raise state.interrupted("cancelled") from None
             except (TimeoutError, openai.APITimeoutError, httpx.TimeoutException):
                 if stream_opened:
-                    raise state.interrupted(message="The OpenAI stream timed out before completion.") from None
+                    raise state.interrupted(failure_reason="stream_timeout") from None
                 raise CloudInferenceError("The OpenAI request timed out.", code=CloudErrorCode.TIMEOUT,
                     retryable=True, allow_local_fallback=True) from None
             except (openai.APIConnectionError, httpx.RequestError):
                 if stream_opened:
-                    raise state.interrupted() from None
+                    raise state.interrupted(failure_reason="stream_connection") from None
                 raise CloudInferenceError("OpenAI could not connect. Check the internet connection.",
                     code=CloudErrorCode.CONNECTION, retryable=True, allow_local_fallback=True) from None
             except openai.APIStatusError as exc:
                 raise _provider_error(exc.status_code, _error_code(exc.body)) from None
+            except StreamProtocolError as exc:
+                if stream_opened:
+                    raise state.interrupted(failure_reason=exc.failure_reason) from None
+                raise _malformed() from None
             except (openai.APIError, ValueError, TypeError, AttributeError):
                 if stream_opened:
-                    raise state.interrupted(message="OpenAI returned an invalid response stream.") from None
+                    raise state.interrupted(failure_reason="invalid_stream") from None
                 raise _malformed() from None
         # The SDK owns pre-stream retries. Never reconnect/replay a started stream.
         outcome, usage, interrupted = "error", TokenUsage(), None
@@ -407,7 +418,7 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
             outcome = "completed" if payload.get("status") == "completed" else "incomplete"
             usage = _token_usage(payload)
         except CancelledError:
-            interrupted = state.interrupted("cancelled", "The OpenAI response was stopped.")
+            interrupted = state.interrupted("cancelled")
             outcome = "cancelled"
             raise interrupted from None
         except IncompleteResponseError as exc:

@@ -149,12 +149,15 @@ class _Message(QFrame):
                           "Incomplete code block — closing fence missing.")
             if getattr(content, "status_message", None):
                 indication += "\n" + content.status_message
+            elif self.completion.failure_message and self.completion.failure_message not in content:
+                indication += "\n" + self.completion.failure_message
             self.completion_label = QLabel(indication)
             self.completion_label.setObjectName("incompleteResponse")
             self.completion_label.setWordWrap(True)
             self.completion_label.setTextFormat(Qt.TextFormat.PlainText)
             self.completion_label.setToolTip(
                 f"Finish reason: {self.completion.finish_reason or 'not supplied'}\n"
+                f"Failure reason: {self.completion.failure_reason or 'not supplied'}\n"
                 f"Input tokens: {self.completion.usage.input_tokens}\n"
                 f"Output tokens: {self.completion.usage.output_tokens}\n"
                 f"Total tokens: {self.completion.usage.total_tokens}")

@@ -404,3 +404,28 @@ The prior main is preserved at
 `archive/2026-10-05/main-before-skill-reference-qualification`. After deterministic
 verification, commit the audit, fast-forward local main and remove its merged
 feature branch. Other active worktrees and remote refs remain unchanged.
+
+## Cloud stream diagnostics, 6 October 2026
+
+The user requested retaining safe failure reasons and displaying the specific
+cloud interruption category. The bounded `codex/cloud-stream-diagnostics`
+branch starts from local main `2cbfb49`. Reasons survive the adapter, agent
+runtime, saved conversation, worker and chat; logs retain only fixed categories
+and counters. Incomplete calls stay blocked. See the
+[diagnostics and verification record](cloud-stream-diagnostics.md).
+
+The final focused checks passed 191 tests; the other affected OpenAI contract
+checks passed 103. The initial full run had one protocol-limit wording failure,
+which was corrected and passed its focused recheck. Final unrestricted Windows
+confirmation passed 1,917 tests and 15 subtests, with 49 existing skips and no
+failures in 235.61 seconds. Live API/model qualification gates remain unrun,
+separate from deterministic passes.
+
+All pre-integration refs and the worktree map are preserved in the verified
+complete-history bundle under ignored
+`state/backups/cloud-stream-diagnostics-20261006/`. After verification, commit
+the bounded change, fast-forward local main and remove its merged local branch.
+Runtime selection and user conversations/settings are preserved; other active
+worktrees and remote refs are unchanged.
+The previous main is also preserved at
+`archive/2026-10-06/main-before-cloud-stream-diagnostics`.
