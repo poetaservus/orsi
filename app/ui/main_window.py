@@ -69,7 +69,7 @@ log = logging.getLogger(__name__)
 
 _ICON_DIRECTORY = Path(__file__).with_name("assets")
 _FONT_DIRECTORY = _ICON_DIRECTORY / "fonts"
-_TOP_BUTTON_WIDTH = 34
+_TOP_BUTTON_WIDTH = 32
 _TOP_BUTTON_HEIGHT = 28
 _TOP_ICON_SIZE = 22
 _CHAT_TOP_INSET = 44
@@ -410,12 +410,12 @@ class MainWindow(QMainWindow):
         self.app_controls.setObjectName("appControls")
         controls_layout = QHBoxLayout(self.app_controls)
         controls_layout.setContentsMargins(0, 0, 0, 0)
-        controls_layout.setSpacing(2)
+        controls_layout.setSpacing(6)
 
         self.new_session_button = QPushButton()
         self.new_session_button.setObjectName("topBarButton")
         self.new_session_button.setFixedSize(_TOP_BUTTON_WIDTH, _TOP_BUTTON_HEIGHT)
-        self.new_session_button.setIcon(QIcon(str(_ICON_DIRECTORY / "new_message_icon_cropped.png")))
+        self.new_session_button.setIcon(QIcon(str(_ICON_DIRECTORY / "top_new_session.svg")))
         self.new_session_button.setIconSize(QSize(_TOP_ICON_SIZE, _TOP_ICON_SIZE))
         self.new_session_button.setToolTip("New session — permanently clears this conversation")
         self.new_session_button.setAccessibleName("New session")
@@ -424,14 +424,19 @@ class MainWindow(QMainWindow):
         self.settings_button = QPushButton()
         self.settings_button.setObjectName("topBarButton")
         self.settings_button.setFixedSize(_TOP_BUTTON_WIDTH, _TOP_BUTTON_HEIGHT)
-        self.settings_button.setIcon(QIcon(str(_ICON_DIRECTORY / "settings_icon_cropped.png")))
+        self.settings_button.setIcon(QIcon(str(_ICON_DIRECTORY / "top_settings.svg")))
         self.settings_button.setIconSize(QSize(_TOP_ICON_SIZE, _TOP_ICON_SIZE))
         self.settings_button.setToolTip("Settings")
         self.settings_button.setAccessibleName("Settings")
 
         controls_layout.addWidget(self.new_session_button)
+        self.app_controls_separator = QFrame(self.app_controls)
+        self.app_controls_separator.setObjectName("appControlsSeparator")
+        self.app_controls_separator.setFixedSize(1, 14)
+        self.app_controls_separator.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        controls_layout.addWidget(self.app_controls_separator, 0, Qt.AlignmentFlag.AlignVCenter)
         controls_layout.addWidget(self.settings_button)
-        self.app_controls.setFixedSize(70, _TOP_BUTTON_HEIGHT)
+        self.app_controls.setFixedSize(2 * _TOP_BUTTON_WIDTH + 13, _TOP_BUTTON_HEIGHT)
         self.context_window = ContextWindowBar(
             int(getattr(inference, "context_length", 0)),
             root,
@@ -771,7 +776,8 @@ class MainWindow(QMainWindow):
         self.startup_greeting.raise_()
         self.composer.raise_()
         self.skill_picker.reposition()
-        self.drag_strip.setGeometry(7, 7, max(0, self._root.width() - 130), CAPTION_HEIGHT - 7)
+        self.drag_strip.setGeometry(7, 7,
+            max(0, self._root.width() - self.window_controls.width() - 16), CAPTION_HEIGHT - 7)
         self.drag_strip.raise_()
         self.app_controls.move(8, 8)
         self.app_controls.raise_()
@@ -1457,6 +1463,7 @@ QMainWindow#mainWindow, QWidget#root {
 }
 QWidget#mainContent, QWidget#chatContent { background: transparent; }
 QWidget#appControls { background: transparent; border: none; }
+QFrame#appControlsSeparator { background: rgba(203, 208, 218, 42); border: none; }
 QPushButton#topBarButton {
     background: transparent;
     border: none;
@@ -1687,15 +1694,15 @@ QTextEdit#messageInput {
 QTextEdit#messageInput:focus { border: none; }
 QTextEdit#messageInput:disabled { color: #777777; background: transparent; }
 QPushButton#skillChip {
-    color: #c1dbff;
-    background: rgba(63, 116, 188, 82);
-    border: 1px solid rgba(112, 166, 233, 100);
+    color: #d5d6dc;
+    background: rgba(18, 20, 26, 92);
+    border: 1px solid rgba(200, 202, 210, 35);
     border-radius: 8px;
     padding: 2px 10px;
     font-family: Saira;
     font-size: 14px;
 }
-QPushButton#skillChip:hover { background: rgba(74, 133, 208, 110); }
+QPushButton#skillChip:hover { background: rgba(23, 25, 32, 128); }
 QLabel#skillPickerEmpty { color: #b9bfcc; background: transparent; border: none; padding: 6px 8px; }
 QListWidget#skillPickerList {
     color: #d9dce3; background: transparent; border: none; outline: none;

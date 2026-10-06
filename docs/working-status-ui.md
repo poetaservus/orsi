@@ -123,3 +123,34 @@ confirmation passed 1,967 tests and 15 subtests, with 49 existing skips and no
 failures in 235.96 seconds. Live model/API gates remain unrun; no paid API
 requests or key changes are made. This follow-up is committed and retained
 on the UI review branch.
+
+## Control weight, spacing and skill chip refinement
+
+The user's four visual corrections remain on the same UI review branch.
+Composer plus/folder SVG strokes decrease from 1.5 to 1.2 while retaining
+white tint and their existing positions. The selected skill chip uses a dark
+neutral fill, a quiet grey border and grey text instead of the blue treatment.
+Hover styling is muted too; selection/removal and message metadata are unchanged.
+
+Top-left controls use new vector speech-bubble and gear outlines with equal
+visible bounds and consistent strokes, replacing the uneven cropped raster
+assets. Equal 32-by-28 button areas, 6-pixel gaps and a 1-by-14 translucent
+separator keep the controls aligned. The decorative separator ignores mouse
+input. Existing top bar placement and button actions are retained.
+
+Minimize, maximize/restore and close use a shared 1-pixel rounded stroke and
+centered floating-point geometry. Their button areas are 36 by 28 with 8-pixel
+gaps. The drag-strip width follows the actual control group width so the wider
+group fits cleanly; native frame operations and event routing are unchanged.
+
+Existing focused UI, skill picker, approvals, shutdown and window-frame checks
+passed 71 tests and 15 subtests in 13.63 seconds. The real Windows frame gate
+passes at normal and 150% scaling, including resize/caption hit testing,
+maximize/restore, minimize and shutdown. Synthetic Qt previews select
+`prompter` through the existing skill picker and render the composer, corner
+controls and a minimum-size window at both scales under ignored
+`state/previews/control-polish/`. No new tests are added for this reversible
+visual adjustment. Full unrestricted confirmation passed 1,967 tests and
+15 subtests, with 49 existing skips and no failures in 242.46 seconds.
+Live model/API gates remain unrun; no paid API requests or key changes are
+made. This follow-up is committed and retained on the UI review branch.

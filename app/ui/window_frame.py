@@ -5,7 +5,7 @@ import ctypes
 import sys
 from ctypes import wintypes
 
-from PySide6.QtCore import QPoint, Qt
+from PySide6.QtCore import QLineF, QPoint, QRectF, Qt
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QAbstractButton, QApplication, QHBoxLayout, QPushButton, QWidget
 
@@ -35,7 +35,7 @@ class WindowButton(QPushButton):
         self.action = action
         self.window = window
         self.setObjectName("windowControl")
-        self.setFixedSize(34, 28)
+        self.setFixedSize(36, 28)
         self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.setAccessibleName(action.capitalize())
         self.setToolTip(action.capitalize())
@@ -44,20 +44,21 @@ class WindowButton(QPushButton):
         super().paintEvent(event)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setPen(QPen(QColor("#cbd0da"), 1.2))
-        painter.translate((self.width() - 10) / 2, (self.height() - 10) / 2)
+        painter.setPen(QPen(QColor("#cbd0da"), 1.0, Qt.PenStyle.SolidLine,
+            Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
+        painter.translate((self.width() - 12) / 2, (self.height() - 12) / 2)
         if self.action == "minimize":
-            painter.drawLine(0, 7, 10, 7)
+            painter.drawLine(QLineF(1, 6, 11, 6))
         elif self.action == "close":
-            painter.drawLine(1, 1, 9, 9)
-            painter.drawLine(9, 1, 1, 9)
+            painter.drawLine(QLineF(1.5, 1.5, 10.5, 10.5))
+            painter.drawLine(QLineF(10.5, 1.5, 1.5, 10.5))
         elif self.window.isMaximized():
-            painter.drawLine(3, 0, 10, 0)
-            painter.drawLine(10, 0, 10, 7)
-            painter.drawLine(10, 7, 8, 7)
-            painter.drawRect(0, 3, 7, 7)
+            painter.drawLine(QLineF(4, 1, 11, 1))
+            painter.drawLine(QLineF(11, 1, 11, 8))
+            painter.drawLine(QLineF(11, 8, 9, 8))
+            painter.drawRect(QRectF(1, 4, 7, 7))
         else:
-            painter.drawRect(0, 0, 10, 10)
+            painter.drawRect(QRectF(1, 1, 10, 10))
 
 
 class WindowControls(QWidget):
@@ -66,13 +67,13 @@ class WindowControls(QWidget):
         self.window = window
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(2)
+        layout.setSpacing(8)
         self.minimize = WindowButton("minimize", window, self)
         self.maximize = WindowButton("maximize", window, self)
         self.close_button = WindowButton("close", window, self)
         for button in (self.minimize, self.maximize, self.close_button):
             layout.addWidget(button)
-        self.setFixedSize(106, 28)
+        self.setFixedSize(124, 28)
         self.setStyleSheet("""
             QPushButton#windowControl { background: transparent; border: none; border-radius: 5px; }
             QPushButton#windowControl:hover { background: rgba(255,255,255,18); }
