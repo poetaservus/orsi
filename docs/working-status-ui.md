@@ -95,3 +95,31 @@ confirmation passed 1,967 tests and 15 subtests, with 49 existing skips and
 no failures in 292.10 seconds. Live model/API gates remain unrun; no paid API
 requests or key changes are made. This follow-up is committed on the existing
 review branch.
+
+## Composer icon placeholders
+
+The user's next UI follow-up adds a plus followed by their supplied folder
+icon before the composer text field. The folder's original SVG path is copied
+into the app's assets and tinted white, with a 1.5-pixel stroke to match the
+plus. Both have 32-pixel hit areas and a subtle rounded hover background.
+They are placeholders: no attachment, file dialog, request or command is
+connected. Tooltips and accessible names identify them as placeholders;
+clicking them does not steal typing focus.
+
+The controls fit in the existing 54-pixel composer without adding a row or
+changing its geometry. A nested editor layout keeps the existing skill chip
+beside the text field while the plus and folder remain together on the left.
+Existing send/stop behavior and inline approval transitions are preserved.
+The bundled assets remove any runtime dependency on the original Downloads
+file. No new tests are added for the reversible icon styling.
+
+Existing UI, skill picker, inline approval and shutdown checks passed 67 tests
+and 5 subtests in 10.11 seconds. A synthetic native Qt click check confirms
+both icons load, their order is correct, and clicking preserves the draft and
+editor focus without creating a worker. The folder path data is compared with
+the user-supplied asset. Full-size and narrow-window renders are visually
+checked under ignored `state/previews/composer-icons/`. Full unrestricted
+confirmation passed 1,967 tests and 15 subtests, with 49 existing skips and no
+failures in 235.96 seconds. Live model/API gates remain unrun; no paid API
+requests or key changes are made. This follow-up is committed and retained
+on the UI review branch.

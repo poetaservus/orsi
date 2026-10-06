@@ -578,6 +578,26 @@ class MainWindow(QMainWindow):
         composer_layout.setSpacing(6)
         composer_layout.setAlignment(Qt.AlignmentFlag.AlignBottom)
 
+        self.composer_tools = QWidget(self._message_composer)
+        self.composer_tools.setObjectName("composerTools")
+        tools_layout = QHBoxLayout(self.composer_tools)
+        tools_layout.setContentsMargins(0, 0, 0, 0)
+        tools_layout.setSpacing(2)
+        self.add_placeholder = QPushButton(self.composer_tools)
+        self.folder_placeholder = QPushButton(self.composer_tools)
+        for button, name, asset, description in (
+            (self.add_placeholder, "composerAddPlaceholder", "plus.svg", "Add (placeholder)"),
+            (self.folder_placeholder, "composerFolderPlaceholder", "folder.svg", "Folder (placeholder)"),
+        ):
+            button.setObjectName(name)
+            button.setFixedSize(32, 32)
+            button.setIcon(QIcon(str(_ICON_DIRECTORY / asset)))
+            button.setIconSize(QSize(28, 28))
+            button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+            button.setToolTip(description)
+            button.setAccessibleName(description)
+            tools_layout.addWidget(button)
+
         self.input = MessageInput()
         self.input.setObjectName("messageInput")
         self.input.setPlaceholderText("Ask O.R.S.I.")
@@ -613,11 +633,16 @@ class MainWindow(QMainWindow):
         self.stop.setEnabled(False)
         self.stop.hide()
 
-        composer_layout.addWidget(self.input, 1)
+        composer_layout.addWidget(self.composer_tools, 0, Qt.AlignmentFlag.AlignVCenter)
+        input_layout = QHBoxLayout()
+        input_layout.setContentsMargins(0, 0, 0, 0)
+        input_layout.setSpacing(6)
+        input_layout.addWidget(self.input, 1)
+        composer_layout.addLayout(input_layout, 1)
         composer_layout.addWidget(self.action_slot)
         self.skill_picker = SkillPicker(self.input, self.composer,
                                         getattr(service, "skill_registry", None),
-                                        input_layout=composer_layout, send_button=self.send)
+                                        input_layout=input_layout, send_button=self.send)
 
         self.setCentralWidget(root)
         self.setStyleSheet(_STYLE)
@@ -1631,7 +1656,16 @@ QFrame#composer {
     border: none;
     border-radius: 27px;
 }
-QWidget#messageComposer, QFrame#inlineApproval { background: transparent; border: none; }
+QWidget#messageComposer, QWidget#composerTools, QFrame#inlineApproval { background: transparent; border: none; }
+QPushButton#composerAddPlaceholder, QPushButton#composerFolderPlaceholder {
+    background: transparent; border: none; border-radius: 16px; padding: 0;
+}
+QPushButton#composerAddPlaceholder:hover, QPushButton#composerFolderPlaceholder:hover {
+    background: rgba(255, 255, 255, 14);
+}
+QPushButton#composerAddPlaceholder:pressed, QPushButton#composerFolderPlaceholder:pressed {
+    background: rgba(255, 255, 255, 8);
+}
 QFrame#inlineApproval QLabel { background: transparent; border: none; font-size: 14px; }
 QLabel#approvalTitle { color: #eeeeef; font-weight: 500; }
 QLabel#approvalHint { color: #c6c9d2; }
