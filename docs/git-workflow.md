@@ -455,3 +455,25 @@ preserved at `archive/2026-10-06/main-before-cloud-sdk-errors`. After verificati
 commit, fast-forward local main and remove the merged local feature branch.
 Other active worktrees, user settings/conversations and remote refs remain
 unchanged.
+
+## Cloud step budget, 6 October 2026
+
+The user requested the maximum supported cloud step count while retaining 24
+for local mode. `codex/cloud-max-steps` starts from verified local main
+`36e2df4`. The accepted configuration now selects 32 cloud steps and 24 local
+steps, including after switching modes and in the temporary skill-reference
+runtime. The existing hard 32-step contracts and other budgets are unchanged.
+See the [implementation and verification record](cloud-step-budget.md).
+
+The unrestricted focused checks passed 168 tests. Full unrestricted Windows
+confirmation passed 1,937 tests and 15 subtests, with 49 existing skips and no
+failures in 237.32 seconds. Live API/model qualification gates remain unrun and
+separate from deterministic checks.
+
+The previous agent configuration, refs, worktree map and verified
+complete-history bundle are preserved under ignored
+`state/backups/cloud-max-steps-20261006/`. The previous main is also preserved at
+`archive/2026-10-06/main-before-cloud-max-steps`. After verification, commit,
+fast-forward local main and remove the merged local feature branch. Other
+active worktrees, user runtime selection/conversations and remote refs remain
+unchanged.

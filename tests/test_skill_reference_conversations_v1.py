@@ -97,6 +97,20 @@ def reader_pairs(messages):
     return [m for m in messages if m.get("role") == "capability" and m["result"]["capability"] == "skill.read_reference"]
 
 
+@pytest.mark.parametrize("mode,steps", [("cloud", 32), ("local", 24)])
+def test_skill_scoped_runtime_uses_active_mode_step_budget(tmp_path, mode, steps):
+    def inspect_budget():
+        assert service._reference_runtime is not service.agent_runtime
+        assert service._reference_runtime.limits is service.agent_runtime.limits
+        assert service._reference_runtime.effective_max_steps == steps
+    model = PackageModel([request_reference(before=inspect_budget), ModelResponse.text("fixture response")])
+    model.mode = mode
+    with conversation(tmp_path, model=model) as (service, model, root):
+        service.activate_skill("python-clamp")
+        assert service.run("Inspect the synthetic skill reference") == "fixture response"
+        assert service.agent_runtime.limits.max_steps == 24
+
+
 @pytest.mark.parametrize("case,path", [("function", "references/behavior.md"), ("assertions", "references/checks.md")])
 def test_fixed_tasks_use_one_relevant_document_and_existing_executor(tmp_path, case, path, caplog):
     with conversation(tmp_path, actions=[request_reference(path), ModelResponse.text("fixture response")]) as (service, model, root):

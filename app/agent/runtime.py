@@ -188,6 +188,11 @@ class AgentRuntime:
             raise TypeError("Context recovery requires an explicit boolean.")
         self.context_recovery_enabled = context_recovery_enabled
 
+    @property
+    def effective_max_steps(self) -> int:
+        """Select the per-turn step budget from the active inference mode."""
+        return self.limits.cloud_max_steps if getattr(self.model, "mode", None) == "cloud" else self.limits.max_steps
+
     def purge_terminal_records(self) -> tuple[str, ...]:
         """Apply the journal's explicit privacy retention policy."""
         return self.executor.journal.purge()
@@ -435,6 +440,8 @@ class AgentRuntime:
         completed_required: set[str] = set()
         planned_response = ModelResponse.calls(required_calls) if required_calls else None
         structured_fallback = False
+        log.info("Agent step budget: mode=%s max_steps=%s",
+            "cloud" if getattr(self.model, "mode", None) == "cloud" else "local", self.effective_max_steps)
 
         while True:
             if recovery.semantic_corrections >= self.limits.max_semantic_corrections:
@@ -462,7 +469,7 @@ class AgentRuntime:
                 if message is not None:
                     return self._stopped(AgentRunStatus.INTERNAL_FAILURE, str(message)[:500],
                         steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
-            if steps >= self.limits.max_steps:
+            if steps >= self.effective_max_steps:
                 return self._stopped(
                     AgentRunStatus.STEP_LIMIT,
                     "The agent stopped after reaching its maximum model-step limit.",

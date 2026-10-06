@@ -59,6 +59,8 @@ def _api_error_message(raw: bytes, fallback: str) -> str:
 class OpenAICompatibleInferenceEngine(InferenceEngine):
     """OpenAI-compatible chat-completions backend with an in-memory API key."""
 
+    mode = "cloud"
+
     def __init__(self, config: CloudConfig, api_key: str | None = None):
         self.config = config
         self.context_length = config.context_length

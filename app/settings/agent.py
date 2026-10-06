@@ -24,6 +24,7 @@ _APPLICATION_LAUNCH_GATE = "ORSI_ENABLE_APPLICATION_LAUNCH"
 _FULL_LOCAL_READ_GATE = "ORSI_ENABLE_FULL_LOCAL_READ"
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 _FALSE_VALUES = {"0", "false", "no", "off"}
+MAX_AGENT_STEPS = 32
 
 
 class AgentRuntimeLimits(BaseModel):
@@ -31,7 +32,8 @@ class AgentRuntimeLimits(BaseModel):
 
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
 
-    max_steps: int = Field(default=24, ge=1, le=32)
+    max_steps: int = Field(default=24, ge=1, le=MAX_AGENT_STEPS)
+    cloud_max_steps: int = Field(default=MAX_AGENT_STEPS, ge=1, le=MAX_AGENT_STEPS)
     max_capability_calls: int = Field(default=32, ge=1, le=32)
     max_identical_calls: int = Field(default=2, ge=1, le=8)
     max_protocol_failures: int = Field(default=2, ge=1, le=8)

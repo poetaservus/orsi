@@ -225,6 +225,7 @@ def normalize_tool_response(payload: dict[str, Any], definitions, *, previous_id
 
 
 class OpenAIResponsesInferenceEngine(InferenceEngine):
+    mode = "cloud"
     supports_openai_replay = True
     supports_text_streaming = True
     supports_openai_context = True
