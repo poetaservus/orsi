@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from html import escape
 
 from PySide6.QtCore import QElapsedTimer, QRect, QRectF, QTimer, Qt
 from PySide6.QtGui import QColor, QFontDatabase, QLinearGradient, QPainter, QPen
@@ -207,7 +208,7 @@ class _Message(QFrame):
         radius = min(12, max(1, self.height() / 2))
         painter.drawRoundedRect(bounds, radius, radius)
 
-    def set_available_width(self, width: int) -> None:
+    def set_available_width(self, width: int, *, minimum_width: int = 0) -> None:
         if self.from_user:
             ratio = 0.72 if "\n" in self._content else 0.48
         else:
@@ -245,6 +246,7 @@ class _Message(QFrame):
         )
         natural_width = max(natural_text_width, natural_code_width)
         minimum = min(360, maximum) if self._code_blocks else max(36, horizontal_padding + 24)
+        minimum = min(maximum, max(minimum, minimum_width))
         target = min(maximum, max(minimum, natural_width + horizontal_padding + 4))
         if self.from_user:
             # Wrap at the normal width cap, then fit the bubble to the widest
@@ -293,9 +295,12 @@ class _MessageBand(QWidget):
         *,
         from_user: bool,
         duration_seconds: float | None,
+        skill_name: str | None = None,
     ):
         super().__init__()
         self.message = message
+        self.from_user = from_user
+        self.skill_name = skill_name if from_user else None
         self.setObjectName("conversationBand")
         self.setMouseTracking(True)
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Minimum)
@@ -312,6 +317,13 @@ class _MessageBand(QWidget):
         meta_layout.setSpacing(8)
 
         self.timing_label = QLabel()
+        self.skill_label = QLabel(self.meta_row)
+        self.skill_label.setObjectName("userSkill")
+        self.skill_label.setTextFormat(Qt.TextFormat.PlainText)
+        self.skill_label.setAccessibleName("Skill used for this message")
+        if from_user:
+            meta_layout.addWidget(self.skill_label)
+        self.skill_label.setVisible(bool(self.skill_name))
         self.timing_label.setObjectName("responseTiming")
         if not from_user and duration_seconds is not None:
             self.timing_label.setText(_elapsed_label(
@@ -363,7 +375,24 @@ class _MessageBand(QWidget):
 
     def set_available_width(self, width: int) -> None:
         self.setFixedWidth(width)
-        self.message.set_available_width(width)
+        self.skill_label.ensurePolished()
+        caption = "/" + " ".join(self.skill_name.split()) if self.skill_name else ""
+        caption_width = min(210, self.skill_label.fontMetrics().horizontalAdvance(caption))
+        minimum = caption_width + 40 if caption else 0
+        self.message.set_available_width(width, minimum_width=minimum)
+        if self.from_user:
+            self.meta_row.layout().setContentsMargins(width - self.message.width() + 2, 0, 2, 0)
+        available = max(1, self.message.width() - 40)
+        self.skill_label.setMaximumWidth(available)
+        self.skill_label.setText(self.skill_label.fontMetrics().elidedText(caption, Qt.TextElideMode.ElideRight, available))
+        self.skill_label.setToolTip("<qt>" + escape(caption) + "</qt>" if caption else "")
+
+    def set_skill_name(self, name: str) -> None:
+        if not self.from_user:
+            return
+        self.skill_name = name
+        self.skill_label.show()
+        self.set_available_width(self.width())
 
     def copy_message(self) -> None:
         if self.copy_button.copy_text(self.message._content):
@@ -460,7 +489,8 @@ class ChatView(QScrollArea):
         error: bool = False,
         *,
         duration_seconds: float | None = None,
-    ) -> None:
+        skill_name: str | None = None,
+    ) -> _MessageBand:
         from_user = sender.casefold() == "user"
         # Sending a message always follows the conversation tail. Incoming
         # replies preserve the reader's position if they intentionally
@@ -481,6 +511,7 @@ class ChatView(QScrollArea):
             message,
             from_user=from_user,
             duration_seconds=duration_seconds,
+            skill_name=skill_name,
         )
         row_layout.addStretch(1)
         row_layout.addWidget(band)
@@ -497,6 +528,14 @@ class ChatView(QScrollArea):
         self._messages.append(message)
         self._message_rows.append(row)
         self._message_bands.append(band)
+        if self._follow_tail:
+            QTimer.singleShot(0, self._scroll_to_bottom)
+        return band
+
+    def set_message_skill(self, band: _MessageBand, name: str) -> None:
+        if band not in self._message_bands:
+            return
+        band.set_skill_name(name)
         if self._follow_tail:
             QTimer.singleShot(0, self._scroll_to_bottom)
 

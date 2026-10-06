@@ -154,3 +154,43 @@ visual adjustment. Full unrestricted confirmation passed 1,967 tests and
 15 subtests, with 49 existing skips and no failures in 242.46 seconds.
 Live model/API gates remain unrun; no paid API requests or key changes are
 made. This follow-up is committed and retained on the UI review branch.
+
+## Per-message skill captions
+
+The next user request adds `/skill_name` above the left edge of a user bubble,
+with the existing timer's Saira 11-pixel font and `#858791` colour. No caption
+is displayed when a message has no admitted skill. The existing metadata row
+hosts the caption, with room for the hover copy button. Very short bubbles
+allow enough width for a readable caption; long names are elided and their
+escaped full name is available on hover. Names render as plain text.
+
+Skill usage is captured from the admitted answer request's rendered skill
+snapshot, at the same boundary as the existing injection diagnostic. An
+optional worker signal updates the current user bubble while inference runs.
+This includes explicit message/session selections and automatic choices;
+rejected guidance and no-match turns retain no label. Observers are cleared
+at turn completion, and display callback failures cannot interrupt inference.
+
+An optional `skill_name` field is stored on the corresponding user message.
+The original message text, copied text and model-history projections remain
+unchanged. Existing saved messages without this field load with no caption;
+no historical tags are guessed from logs. Reopened history restores the skill
+caption and correctly identifies user rows with ChatView's `User` sender
+value. Conversation metadata is committed through the existing validated,
+atomic store; no live user settings or conversation files are migrated during
+development. Existing prompts, selection, tools, permissions and budgets are
+unchanged.
+
+Initial existing checks passed 186 tests and 5 subtests in 16.37 seconds.
+Final focused confirmation passed 232 tests and 5 subtests in 30.09 seconds.
+Seven new cases cover explicit chat/agent usage and round-trip reopening,
+live worker delivery and next-message isolation, rejected skills, automatic
+selection/no-match, legacy history and untrusted long names, original copy
+text, and observer failure isolation. Existing native reference conversation,
+skill, turn-outcome and UI checks are included. A synthetic Qt preview with
+labelled and unlabelled messages is under ignored
+`state/previews/message-skill-label/`. Full unrestricted confirmation passed
+1,974 tests and 15 subtests, with 49 existing skips and no failures in
+220.54 seconds. Live model/API gates remain unrun; no paid API requests or
+key changes are made. This follow-up is committed and retained on the UI
+review branch.

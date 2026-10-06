@@ -35,6 +35,7 @@ class ChatMessage(BaseModel):
     completion_history: list[CompletionMetadata] | None = None
     turn_id: str | None = None
     stopped: bool = False
+    skill_name: str | None = Field(default=None, min_length=1)
 
 
 class RecoveredCall(BaseModel):
@@ -171,6 +172,17 @@ class ConversationStore:
             proposed.session_status = "active"
             self._commit(proposed)
             return turn_id
+
+    def record_skill_usage(self, turn_id: str, name: str) -> None:
+        """Retain display metadata without changing message content or model history."""
+        with self._lock:
+            proposed = self._conversation.model_copy(deep=True)
+            turn = self._turn(proposed, turn_id)
+            if turn.outcome is not None:
+                raise TurnHistoryError("Finished messages cannot change their skill usage.")
+            message = proposed.messages[turn.user_index]
+            message.skill_name = name
+            self._commit(proposed)
 
     def record_reference_scope(self, turn_id: str, scope: tuple[str, str] | None) -> None:
         """Bind opaque provider evidence even for a reference turn with no new read."""

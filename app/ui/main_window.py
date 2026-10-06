@@ -380,6 +380,7 @@ class MainWindow(QMainWindow):
         self._greeting_message = self._load_greeting_message()
         self.thread = None
         self.worker = None
+        self._active_user_message_band = None
         self._approval_panel = None
         self._approval_transition = None
         self.approval_requested.connect(self._show_approval, Qt.ConnectionType.QueuedConnection)
@@ -672,7 +673,8 @@ class MainWindow(QMainWindow):
             for message in visible_history():
                 value = CompletionText(message.content, message.completion,
                     tuple(message.completion_history) if message.completion_history else None)
-                self.chat.add_message("You" if message.role == "user" else "Agent", value, message.stopped)
+                self.chat.add_message("User" if message.role == "user" else "Agent", value, message.stopped,
+                    skill_name=getattr(message, "skill_name", None))
             if self.chat._messages:
                 self._intro_active = False
         self._update_context_window()
@@ -939,7 +941,7 @@ class MainWindow(QMainWindow):
         self.skill_picker.clear_selection()
         self.input.clear()
         self._leave_intro_mode()
-        self.chat.add_message("User", message)
+        self._active_user_message_band = self.chat.add_message("User", message)
         self._set_busy(True)
         self.thread = QThread()
         self.worker = ConversationWorker(self.service, message, skill_name=skill_name)
@@ -949,6 +951,7 @@ class MainWindow(QMainWindow):
         self.worker.failed.connect(self._worker_failed)
         self.worker.activity.connect(self._set_working_activity)
         self.worker.text_updated.connect(self._stream_preview)
+        self.worker.skill_used.connect(self._set_user_message_skill)
         self.worker.finished.connect(self.thread.quit)
         self.worker.failed.connect(self.thread.quit)
         self.thread.finished.connect(self._thread_finished)
@@ -1069,6 +1072,7 @@ class MainWindow(QMainWindow):
             self.thread.deleteLater()
         self.thread = None
         self.worker = None
+        self._active_user_message_band = None
         self._set_busy(False)
         if getattr(self, "_closing", False):
             self.close()
@@ -1105,6 +1109,11 @@ class MainWindow(QMainWindow):
             cancel()
             self.stop.setEnabled(False)
             self._set_working_activity("Stopping…")
+
+    @Slot(str)
+    def _set_user_message_skill(self, name: str) -> None:
+        if self.thread is not None and self._active_user_message_band is not None:
+            self.chat.set_message_skill(self._active_user_message_band, name)
 
     @Slot(str)
     def _set_working_activity(self, text: str) -> None:
@@ -1555,7 +1564,7 @@ QWidget#messageMetaRow, QWidget#messageActionRow {
     background: transparent;
     border: none;
 }
-QLabel#responseTiming {
+QLabel#responseTiming, QLabel#userSkill {
     color: #858791;
     background: transparent;
     border: none;

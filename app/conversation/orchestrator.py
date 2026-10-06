@@ -250,7 +250,10 @@ class ConversationService:
     def supports_text_streaming(self):
         return getattr(self.inference, "supports_text_streaming", False) is True
 
-    def run(self, user_message: str, activity=None, *, skill_name: str | None = None, text_observer=None) -> str:
+    supports_skill_reporting = True
+
+    def run(self, user_message: str, activity=None, *, skill_name: str | None = None, text_observer=None,
+            skill_observer=None) -> str:
         """Run one turn; an optional explicit skill applies only to this message."""
         text = str(user_message).strip()
         if not text:
@@ -263,6 +266,8 @@ class ConversationService:
         previous_explicit_skill = self._active_skill_name
         previous_automatic_skill = self._automatic_skill
         message_skill = None
+        self._skill_observer = skill_observer
+        self._reported_skill_name = None
         preview_setter = getattr(self.inference, "set_text_observer", None)
         preview_attached = False
         cancellation_setter = getattr(self.inference, "set_request_cancellation", None)
@@ -408,6 +413,8 @@ class ConversationService:
                 return "The response was stopped."
             raise
         finally:
+            self._skill_observer = None
+            self._reported_skill_name = None
             if activity_attached:
                 activity_setter(None)
             if cancellation_attached:
@@ -764,6 +771,10 @@ class ConversationService:
         # Use the rendered snapshot: a concurrent reload may replace or remove
         # the catalog definition after the request is constructed.
         payload = json.loads(system.rsplit("\nACTIVE SKILL\n", 1)[1].split("\nEND ACTIVE SKILL\n", 1)[0])
+        if self._active_turn_id is not None and getattr(self, "_reported_skill_name", None) != payload["name"]:
+            self.store.record_skill_usage(self._active_turn_id, payload["name"])
+            self._reported_skill_name = payload["name"]
+            report_activity(getattr(self, "_skill_observer", None), payload["name"])
         skill = self.skill_registry.get(payload["name"])
         if skill is not None and skill.instructions != payload["instructions"]:
             skill = None

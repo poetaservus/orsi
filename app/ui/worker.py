@@ -16,6 +16,7 @@ class ConversationWorker(QObject):
     failed = Signal(object)
     activity = Signal(str)
     text_updated = Signal(str)
+    skill_used = Signal(str)
 
     def __init__(self, service, message: str, *, skill_name: str | None = None):
         super().__init__()
@@ -31,6 +32,8 @@ class ConversationWorker(QObject):
                 kwargs["skill_name"] = self.skill_name
             if getattr(self.service, "supports_text_streaming", False) is True:
                 kwargs["text_observer"] = self.text_updated.emit
+            if getattr(self.service, "supports_skill_reporting", False) is True:
+                kwargs["skill_observer"] = self.skill_used.emit
             response = self.service.run(self.message, self.activity.emit, **kwargs)
             if isinstance(response, str) and getattr(response, "completion", None) is not None:
                 if response.completion.incomplete and not response.strip():
