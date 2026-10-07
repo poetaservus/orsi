@@ -133,6 +133,7 @@ def build_application(
             local_factory,
             context_length=context_hint.length,
             max_response_tokens=model_config.max_tokens,
+            supports_local_document_inputs=True,
         )
     except Exception as exc:
         log.exception("Local inference could not be configured.")

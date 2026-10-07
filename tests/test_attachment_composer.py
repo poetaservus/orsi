@@ -179,7 +179,7 @@ def test_gate_preserves_text_and_attachments_without_inference_or_key_prompt(win
     window.submit()
     assert window.input.toPlainText() == "Read this carefully" and window.attachment_tray.count == 1
     assert not window.service.inference.requests and window.service.store.messages() == []
-    assert window.thread is None and "Sending images and files" in window.attachment_hint.toolTip()
+    assert window.thread is None and "not enabled" in window.attachment_hint.toolTip()
 
 
 def test_attachment_only_dispatch_uses_verified_references_when_adapter_ready(windows, tmp_path):
@@ -195,6 +195,39 @@ def test_attachment_only_dispatch_uses_verified_references_when_adapter_ready(wi
     labels = window.chat._messages[0].findChildren(QLabel, "messageAttachment")
     assert labels[0].text() == "File · file.txt"
     assert window.chat._messages[1]._content == "Attachment reply"
+
+
+def test_local_document_adapter_sends_prepared_text_and_retains_reference(windows, tmp_path):
+    window = windows()
+    window.service.inference.supports_local_document_inputs = True
+    window.attachment_tray.add_paths([text_file(tmp_path, content="Local document evidence")])
+    wait_for(lambda: not window.attachment_tray.is_processing)
+    reference = window.attachment_tray.references[0]
+    window.input.setPlainText("Explain this document")
+    window.submit()
+    wait_for(lambda: window.thread is None)
+    assert window.attachment_tray.count == 0
+    request = window.service.inference.requests[0]
+    assert "Local document evidence" in request[-1]["content"]
+    assert "attachments" not in request[-1]
+    assert window.service.store.visible_messages()[0].attachments == (reference,)
+    assert window.chat._messages[-1]._content == "Reply"
+
+
+def test_local_image_gate_keeps_draft_and_reports_vision_requirement(windows, tmp_path):
+    window = windows()
+    window.service.inference.supports_local_document_inputs = True
+    image = QImage(30, 30, QImage.Format.Format_RGB32)
+    image.fill(QColor("white"))
+    mime = QMimeData()
+    mime.setImageData(image)
+    window.attachment_tray.add_mime(mime)
+    wait_for(lambda: not window.attachment_tray.is_processing)
+    window.input.setPlainText("Read image")
+    window.submit()
+    assert window.thread is None and not window.service.inference.requests
+    assert window.attachment_tray.count == 1 and window.input.toPlainText() == "Read image"
+    assert "vision model" in window.attachment_hint.toolTip()
 
 
 def test_failed_file_can_be_removed_and_does_not_reach_model(windows, tmp_path):

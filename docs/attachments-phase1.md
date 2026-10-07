@@ -81,12 +81,15 @@ alongside extraction/vision accounting in the provider phases. Lazy and hybrid
 wrappers retain the selected backend and pass the references and resolver through.
 An attachment failure does not invoke the existing text-only cloud fallback.
 
-All shipped adapters remain opted out. Agent attachment transport is separately
+At the phase 1 checkpoint, all shipped adapters remained opted out. Agent attachment transport was separately
 blocked until native tool continuation and replay are implemented in the provider
 phases. These gates run before beginning a new durable turn or issuing inference.
 An attachment in earlier history cannot be silently stripped after switching to
 an unsupported backend. A current attached turn that cannot fit context is retained
 as a failed turn and never silently dropped to obtain a model response.
+
+Local text-document adapters and native continuations are implemented in
+[phase 3A](attachments-phase3a.md); local vision and cloud input remain gated.
 
 Attached bytes and filenames are user material. They cannot activate a skill,
 become system guidance, add capabilities, or grant access to the original folder.

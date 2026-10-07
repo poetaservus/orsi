@@ -10,6 +10,10 @@ class AttachmentError(ValueError):
     """An attachment cannot be stored or admitted without losing its meaning."""
 
 
+class AttachmentContextError(AttachmentError):
+    """An intact attachment message cannot fit the active request budget."""
+
+
 class AttachmentReference(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True, hide_input_in_errors=True,
                               revalidate_instances="always")

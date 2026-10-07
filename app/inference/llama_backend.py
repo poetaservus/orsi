@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Iterable
 
 from app.inference.engine import InferenceEngine, InferenceUnavailable
+from app.inference.local_documents import LocalDocumentInputs
 from app.inference.diagnostics import record_completion_diagnostics
 from app.inference.completion import CompletionMetadata, CompletionText, IncompleteResponseError
 from app.settings.model import ModelConfig
@@ -66,7 +67,7 @@ def _probe_native_context(llama_cpp, model_path: Path) -> int | None:
             probe.close()
 
 
-class LlamaCppInferenceEngine(InferenceEngine):
+class LlamaCppInferenceEngine(LocalDocumentInputs, InferenceEngine):
     def __init__(self, config: ModelConfig):
         path = config.resolved_model_path
         if not path.is_file(): raise InferenceUnavailable(f"No local GGUF model found at {path}. Update config/model.json.")
@@ -115,6 +116,7 @@ class LlamaCppInferenceEngine(InferenceEngine):
 
     def count_message_tokens(self, messages: list[dict[str, str]]) -> int:
         """Use the GGUF tokenizer and its embedded chat template."""
+        self.require_text_messages(messages)
         template = (
             self.model.metadata.get("tokenizer.chat_template")
             or self.model.metadata.get("tokenizer.chat_template.default")
@@ -153,6 +155,7 @@ class LlamaCppInferenceEngine(InferenceEngine):
         return tokens + 4 * len(messages) + 3
 
     def respond(self, messages: list[dict[str, str]]) -> str:
+        self.require_text_messages(messages)
         response = self.model.create_chat_completion(**{
             "messages": messages,
             "temperature": self.config.temperature,

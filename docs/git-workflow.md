@@ -673,3 +673,29 @@ at `archive/2026-10-07/main-before-attachment-composer`. After verification, com
 fast-forward local main and remove the merged local feature branch. The user's
 standing merge-and-push instruction authorizes publishing main only; other active
 worktrees and remote feature/archive branches remain outside this operation.
+
+## Local document input, 7 October 2026
+
+`codex/local-document-input` starts from local main `5b74da8`. The user approved
+phase 3A of the image/file input plan: local text-document input only. Both local
+llama.cpp adapters now consume complete extracted documents as user source material,
+with accounting, intact attachment-turn admission, follow-ups, archive restoration
+and native tool continuations. Local image input and cloud input remain gated for
+their later phases. See [the phase 3A verification record](attachments-phase3a.md).
+
+Focused native checks passed 160 tests. The accepted 14B live smoke passed with
+the existing production catalog, isolated read scope, actual 16,384 context and
+4,096 output reserve. The first restricted-catalog continuation failure is recorded
+separately; acceptance tasks, sampling and production policies were unchanged.
+The owned test server exited. Dependencies and whitespace checks passed; no cloud
+API requests were made. Versioned model profiles and user settings were untouched.
+Final full native regression passed 2,147 tests and 15 subtests, with 50 optional
+skips and no failures in 316.34 seconds. The phase's opt-in live smoke was run
+separately and passed; other skipped live gates remain unqualified.
+
+Pre-change refs, worktree map and a verified complete-history bundle are preserved
+under ignored `state/backups/local-document-input-20261007/`. Prior main is retained
+at `archive/2026-10-07/main-before-local-document-input`. After full verification,
+commit, fast-forward local main, publish main under the user's standing authorization
+and remove only the merged local feature branch. Other worktrees and remote branches
+remain outside this operation.

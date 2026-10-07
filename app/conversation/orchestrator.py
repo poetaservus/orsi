@@ -28,9 +28,10 @@ from app.conversation.prompt import (
 from app.conversation.result_grounding import grounded_text_read_answer
 from app.conversation.store import ConversationStore, TurnHistoryError
 from app.conversation.skill_references import ConversationSkillReferences
+from app.conversation.local_documents import LocalDocuments, LocalDocumentCounter
 from app.security.host_access import HostAccessPolicy, HostReadScope
 from app.inference.engine import InferenceUnavailable
-from app.inference.attachments import AttachmentError, attachment_references, has_attachments
+from app.inference.attachments import AttachmentError, AttachmentContextError, attachment_references, has_attachments
 from app.inference.diagnostics import record_context_budget
 from app.runtime.cancellation import CancellationSource, TaskCancelled
 from app.runtime.activity import report_activity
@@ -92,6 +93,7 @@ class ConversationService:
 
         self.inference = inference
         self.store = store
+        self._documents = LocalDocuments(store.attachment_store)
         self.skill_registry = skill_registry if skill_registry is not None else SkillRegistry()
         self.automatic_skills_enabled = automatic_skills_enabled
         self._references = ConversationSkillReferences(enabled=skill_references_enabled)
@@ -282,6 +284,9 @@ class ConversationService:
                     raise RuntimeError("The conversation is closed.")
                 self._cancellation = source
             report_activity(activity, "Preparing your request…")
+            self._documents.clear()
+            if references and self._local_documents_enabled():
+                report_activity(activity, "Reading attached documents…")
             self._admit_attachments(references, source.token, verify=True)
             if callable(activity_setter):
                 activity_setter(activity)
@@ -383,8 +388,8 @@ class ConversationService:
                               isinstance(exc, IncompleteResponseError) and exc.completion.finish_reason == "cancelled" else
                               AgentRunStatus.INCOMPLETE if isinstance(exc, IncompleteResponseError) else
                               AgentRunStatus.MODEL_UNAVAILABLE if isinstance(exc, InferenceUnavailable) else
-                              AgentRunStatus.CONTEXT_LIMIT if isinstance(exc, SkillActivationError)
-                                  and exc.code == SkillActivationErrorCode.CONTEXT_LIMIT else
+                              AgentRunStatus.CONTEXT_LIMIT if isinstance(exc, AttachmentContextError) or (
+                                  isinstance(exc, SkillActivationError) and exc.code == SkillActivationErrorCode.CONTEXT_LIMIT) else
                               AgentRunStatus.INTERNAL_FAILURE)
                     outcome = AgentRunResult(status=status, message=str(exc).strip()[:500] or "The turn stopped.",
                         steps=prior_outcome.steps if prior_outcome else 0,
@@ -594,6 +599,7 @@ class ConversationService:
             self._session_id = self.store.session_id
             self._history_persistence_failed = False
             self._agent_history = []
+            self._documents.clear()
             self._active_skill_name = None
             self._references.reset()
             self._reference_runtime = None
@@ -701,12 +707,23 @@ class ConversationService:
             capability_names=capability_names,
         ).messages
 
+    def _local_documents_enabled(self):
+        return (getattr(self.inference, "mode", "local") == "local" and
+                getattr(self.inference, "supports_local_document_inputs", False) is True)
+
     def _admit_attachments(self, references=(), cancellation=None, *, verify=False):
         retained = tuple(item for message in self.store.visible_messages() for item in message.attachments)
         if not references and not retained:
             return
         if getattr(self.inference, "mode", "local") == "local" and len(references) > 1:
             raise AttachmentError("Local mode accepts one file or image per message.")
+        if self._local_documents_enabled():
+            if any(reference.kind == "image" for reference in (*retained, *references)):
+                raise AttachmentError("Local image input requires a qualified vision model and will be enabled in phase 3B.")
+            if verify:
+                for reference in (*retained, *references):
+                    self._documents.load(reference, cancellation=cancellation)
+            return
         if getattr(self.inference, "supports_attachment_inputs", False) is not True:
             raise AttachmentError("Image and file input is not enabled for this model yet.")
         if self.agent_enabled:
@@ -748,6 +765,8 @@ class ConversationService:
         else:
             prompt = AGENT_CONVERSATION_SYSTEM_PROMPT if self.agent_enabled else SYSTEM_PROMPT
             history = self._stored_agent_history(capability_names=())
+        document_inputs = has_attachments(history) and self._local_documents_enabled()
+        counter = LocalDocumentCounter(self.inference, self._documents) if document_inputs else self.inference
         skill = self.active_skill
         if self._active_skill_name is not None and skill is None:
             record_skill_event("activation_error", method="explicit", injected=False, error_code="missing_skill")
@@ -758,16 +777,16 @@ class ConversationService:
             available=use_agent and "skill.read_reference" in capabilities))
         latest_user = next((message for message in reversed(history) if message.get("role") == "user"), None)
         if latest_user and latest_user.get("attachments") and not calculate_context_budget(
-                self.inference, [{"role": "system", "content": prompt}, latest_user],
+                counter, [{"role": "system", "content": prompt}, latest_user],
                 reserved_tokens=schema_reserve).fits:
-            raise AttachmentError("The attached message cannot fit the active model context window.")
+            raise AttachmentContextError("The attached message cannot fit the active model context window.")
         if skill is not None:
             latest_user = next((message for message in reversed(history) if message.get("role") == "user"), None)
             # Added guidance must not displace or truncate the current user task.
             required = [{"role": "system", "content": prompt}]
             if latest_user is not None:
                 required.append(latest_user)
-            if not calculate_context_budget(self.inference, required, reserved_tokens=schema_reserve).fits:
+            if not calculate_context_budget(counter, required, reserved_tokens=schema_reserve).fits:
                 self._record_skill_event("rejected", skill=skill,
                     method="explicit" if self._active_skill_name is not None else "automatic",
                     router_result="skill_context_limit", injected=False, error_code="context_limit")
@@ -785,13 +804,16 @@ class ConversationService:
                 self._agent_history = self._stored_agent_history()
                 return self._model_request(capability_turn=capability_turn,
                     capability_names=tuple(name for name in capabilities if name != "skill.read_reference"))
-        return select_context_request(
-            self.inference,
+        request = select_context_request(
+            counter,
             system_prompt=prompt,
             history=history,
             reserved_tokens=schema_reserve,
             recovery_enabled=bool(self.agent_runtime and self.agent_runtime.context_recovery_enabled),
         )
+        if document_inputs:
+            return ContextSelection(self._documents.project(request.messages), request.budget)
+        return request
 
     def _record_skill_injection(self, request: ContextSelection) -> None:
         """Record only admitted answer inputs, never context-meter projections."""

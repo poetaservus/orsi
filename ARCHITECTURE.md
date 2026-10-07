@@ -316,8 +316,8 @@ files. No attachment provides skill or filesystem execution authority.
 
 Attachment inference and counting require explicit adapter support. Lazy/hybrid
 wrappers preserve the selected mode, and unsupported backends reject attached
-requests before inference. Production adapters and agent attachment continuations
-remain disabled until the later provider phases. See
+requests before inference. Both local llama.cpp adapters now implement text-document
+input and native agent continuations; local vision and cloud inputs remain gated. See
 [the phase 1 contract and verification record](docs/attachments-phase1.md).
 
 Phase 2's `ui/attachments.py` owns ordered composer drafts and a cancellable Qt
@@ -329,3 +329,15 @@ and closing cancel outstanding preparation. Unsupported inference leaves the
 draft intact before requesting credentials or beginning a model turn. Extraction
 cannot activate skills or grant filesystem/tool authority. See
 [the phase 2 preparation contract and verification record](docs/attachments-phase2.md).
+
+Phase 3A's `conversation/local_documents.py` verifies/prepares local document snapshots
+and renders them as JSON source material inside the owning user message. A scoped
+counter projects the same complete text for the existing tokenizer while context selection
+still sees attachment references, preserving atomic turns and oversized-current-turn
+guards. Only selected transient requests become text before chat/native tool dispatch;
+durable conversation JSON retains the original text and references. Native continuations
+retain the rendered user message without duplicate projection. Per-turn caches expire
+before verification on the next turn and on session reset. The lazy startup hint permits
+document/image admission checks without loading a model in the GUI. The PDF cache adds
+an optional readable-page count; older PDF caches are regenerated from verified snapshots
+before local use. See [phase 3A](docs/attachments-phase3a.md).

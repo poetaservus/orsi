@@ -151,8 +151,11 @@ literal; copying a full response retains its original Markdown and code.
 The composer + button selects attachment drafts, with thumbnails, removal, file dropping
 and clipboard image paste. Local mode accepts one attachment per message; cloud drafts
 can contain multiple. Documents are prepared as text with explicit visual limitations.
-Sending these attachments is staged behind the upcoming local/cloud input adapters;
-the draft stays intact when sending is unavailable. See [phase 2](docs/attachments-phase2.md).
+Local models can read text/code, CSV/JSON, selectable-text PDFs, DOCX, PPTX and XLSX
+attachments, including follow-ups and tool continuations. The complete extracted text
+counts toward context; oversized current messages fail visibly. Images require phase 3B's
+vision support, and cloud attachment sending remains pending phase 4. Unsupported input
+keeps the composer draft intact. See [phase 3A](docs/attachments-phase3a.md).
 Unfinished code fences still appear in code boxes. Incomplete tool generation is rejected before
 argument repair or execution. The UI releases its controls even when the context meter cannot
 refresh. See [completion-state verification](docs/completion-state-2026-10-02.md).

@@ -43,6 +43,7 @@ class ProcessedAttachment(BaseModel):
     summary: str
     warnings: tuple[str, ...] = ()
     units: int = Field(default=1, ge=0)
+    readable_units: int | None = Field(default=None, ge=0)
     width: int | None = None
     height: int | None = None
 
@@ -235,7 +236,7 @@ def _pdf(stream, token):
     warnings = ["Selectable text only; scanned text, charts and page visuals are not read or OCRed."]
     if empty:
         warnings.append(f"{empty} page(s) contain no selectable text and need visual reading.")
-    return _bounded_text(parts, token), len(reader.pages), tuple(warnings)
+    return _bounded_text(parts, token), len(reader.pages), tuple(warnings), len(reader.pages) - empty
 
 
 class AttachmentProcessor:
@@ -269,8 +270,9 @@ class AttachmentProcessor:
                     fields = dict(input_kind="visual", summary=f"Image · {size.width()} × {size.height()}",
                                   width=size.width(), height=size.height(), warnings=("Requires visual input support.",))
                 elif suffix == ".pdf":
-                    text, units, warnings = _pdf(stream, token)
-                    fields = dict(input_kind="text", text=text, units=units, warnings=warnings, summary=f"PDF · {units} pages · text only")
+                    text, units, warnings, readable = _pdf(stream, token)
+                    fields = dict(input_kind="text", text=text, units=units, readable_units=readable,
+                                  warnings=warnings, summary=f"PDF · {units} pages · text only")
                 elif suffix in _OFFICE_EXTENSIONS:
                     text, units, warnings = _office(stream, suffix, token)
                     fields = dict(input_kind="text", text=text, units=units, warnings=warnings,
@@ -290,13 +292,15 @@ class AttachmentProcessor:
             # Parser errors can contain user text. Surface only a fixed, content-free message.
             raise AttachmentError("This attachment could not be processed. Check its format and encoding, then try again.") from exc
 
-    def load(self, reference) -> ProcessedAttachment:
+    def load(self, reference, *, cancellation=None) -> ProcessedAttachment:
+        token = cancellation or CancellationToken()
         try:
-            with self.store.open(reference):
+            with self.store.open(reference, cancellation=token):
                 path = self.store.root / reference.id / "prepared_v1.json"
                 from app.conversation.attachments import _snapshot_stream
-                with _snapshot_stream(path, 32 * 1024 * 1024, CancellationToken()) as stream:
+                with _snapshot_stream(path, 32 * 1024 * 1024, token) as stream:
                     processed = ProcessedAttachment.model_validate_json(stream.read(32 * 1024 * 1024 + 1))
+                token.raise_if_cancelled()
                 if processed.attachment_id != reference.id or processed.sha256 != reference.sha256:
                     raise AttachmentError("The prepared document does not match its attachment.")
                 return processed

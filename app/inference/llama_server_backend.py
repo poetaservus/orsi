@@ -16,6 +16,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from app.inference.engine import InferenceEngine, InferenceUnavailable
+from app.inference.local_documents import LocalDocumentInputs
 from app.inference.diagnostics import record_completion_diagnostics
 from app.inference.completion import CompletionText, IncompleteResponseError
 from app.inference.owned_process import OwnedProcess, ProcessOwnershipError, start_owned_process
@@ -45,7 +46,7 @@ _MAX_HTTP_RESPONSE_BYTES = 4 * 1024 * 1024
 _MAX_HEALTH_RESPONSE_BYTES = 16 * 1024
 
 
-class LlamaServerInferenceEngine(InferenceEngine):
+class LlamaServerInferenceEngine(LocalDocumentInputs, InferenceEngine):
     """Local inference through llama.cpp's native OpenAI tool-call parser."""
 
     def __init__(
@@ -126,6 +127,7 @@ class LlamaServerInferenceEngine(InferenceEngine):
         Offline/failed counting keeps the existing byte heuristic and never loads
         a model solely to refresh the UI or estimate admission.
         """
+        self.require_text_messages(messages)
         encoded_bytes = sum(
             len(str(message.get("content", "")).encode("utf-8", errors="replace"))
             for message in messages
@@ -187,6 +189,7 @@ class LlamaServerInferenceEngine(InferenceEngine):
             return None
 
     def respond(self, messages: list[dict[str, str]]) -> str:
+        self.require_text_messages(messages)
         if not messages:
             raise InferenceUnavailable("Local inference received an empty conversation.")
         completion = self._request_completion(

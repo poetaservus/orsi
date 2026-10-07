@@ -54,6 +54,7 @@ from PySide6.QtWidgets import (
 
 from app.security.host_access import HostReadScope
 from app.inference.engine import InferenceUnavailable
+from app.inference.attachments import AttachmentError
 from app.inference.completion import CompletionText
 from app.ui.approvals import create_inline_approval
 from app.ui.chat import ChatView
@@ -1024,6 +1025,9 @@ class MainWindow(QMainWindow):
                 if not callable(admit):
                     raise ValueError("Image and file sending is not enabled for this model yet.")
                 admit(attachments)
+            except AttachmentError as exc:
+                self._attachment_notice(str(exc))
+                return
             except Exception:
                 self._attachment_notice("Attachments are ready. Sending images and files will be available in the next updates.")
                 return

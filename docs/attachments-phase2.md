@@ -32,6 +32,9 @@ attachment draft. It does not ask for credentials or issue inference. Actual loc
 and cloud input, native tool continuations and live qualification are phases 3/4.
 Text-only messages retain their existing send behavior.
 
+This describes the phase 2 checkpoint. [Phase 3A](attachments-phase3a.md) now enables
+local text-document sending and native tool continuations; vision and cloud remain gated.
+
 ## Preparation contract
 
 `AttachmentProcessor` consumes phase 1's verified immutable copies, never the live
