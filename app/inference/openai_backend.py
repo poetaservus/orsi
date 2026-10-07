@@ -242,6 +242,9 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
                  selection_path: Path | None = None, rate_limits_path: Path | None = None):
         self.config = config
         self.catalog = OpenAIModelCatalog(config, selection_path)
+        from app.settings.images import ImageSettingsStore
+        self.image_settings = ImageSettingsStore(config.image_generation,
+            selection_path.parent / "image_generation_v1.json" if selection_path is not None else None)
         self._api_key = (api_key if api_key is not None else os.environ.get(config.api_key_environment, "")).strip()
         self._lock = RLock()
         self._runner = None

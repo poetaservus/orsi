@@ -7,6 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.state.storage import JsonStore
+from app.settings.images import ImageGenerationSettings
 
 
 ReasoningEffort = Literal["none", "low", "medium", "high", "xhigh", "max"]
@@ -79,6 +80,7 @@ class OpenAICloudConfig(BaseModel):
     default_mode: Literal["local", "cloud"] = "local"
     fallback_to_local: bool = False
     rate_limits: dict[str, OpenAIRateLimits] = Field(default_factory=dict)
+    image_generation: ImageGenerationSettings = Field(default_factory=ImageGenerationSettings)
 
     @model_validator(mode="after")
     def validate_profiles(self):
