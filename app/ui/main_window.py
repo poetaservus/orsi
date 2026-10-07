@@ -26,8 +26,6 @@ from PySide6.QtGui import (
     QIcon,
     QLinearGradient,
     QPainter,
-    QPainterPath,
-    QPalette,
     QPixmap,
     QRegion,
 )
@@ -66,6 +64,10 @@ from app.ui.skill_settings import SkillSettingsDialog
 from app.ui.window_frame import CAPTION_HEIGHT, DragStrip, WindowControls, WindowsFrame
 from app.ui.attachments import AttachmentTray
 from app.ui.image_viewer import ImageViewer
+from app.ui.composer import (
+    ComposerFrame, MessageInput, COMPOSER_STYLE, composer_tools, configure_input, configure_send,
+    COMPOSER_WIDTH as _COMPOSER_WIDTH, COMPOSER_HEIGHT as _COMPOSER_HEIGHT,
+)
 from app.conversation.attachment_processing import SUPPORTED_FILE_FILTER
 
 
@@ -78,8 +80,6 @@ _TOP_BUTTON_WIDTH = 32
 _TOP_BUTTON_HEIGHT = 28
 _TOP_ICON_SIZE = 22
 _CHAT_TOP_INSET = 44
-_COMPOSER_WIDTH = 799
-_COMPOSER_HEIGHT = 54
 _COMPOSER_BOTTOM_MARGIN = 42
 _DEFAULT_GREETING_TEXT = "Lets Roll."
 _GREETING_MAX_LENGTH = 80
@@ -137,59 +137,6 @@ def _apply_greeting_font(widget: QWidget) -> None:
     font = widget.font()
     font.setWeight(QFont.Weight.Light)
     widget.setFont(font)
-
-
-class MessageInput(QTextEdit):
-    submit_requested = Signal()
-    attachments_requested = Signal(object)
-
-    def canInsertFromMimeData(self, source):  # noqa: N802
-        return source.hasImage() or (source.hasUrls() and all(u.isLocalFile() for u in source.urls())) or super().canInsertFromMimeData(source)
-
-    def insertFromMimeData(self, source):  # noqa: N802
-        if source.hasImage() or (source.hasUrls() and all(u.isLocalFile() for u in source.urls())):
-            self.attachments_requested.emit(source)
-        else:
-            super().insertFromMimeData(source)
-
-    def keyPressEvent(self, event) -> None:  # noqa: N802 - Qt API name
-        is_return = event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
-        if is_return and not (event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
-            self.submit_requested.emit()
-            event.accept()
-            return
-        super().keyPressEvent(event)
-
-
-class ComposerFrame(QFrame):
-    """Paint a clean v2 composer pill without baked-in image artifacts."""
-
-    def __init__(self, parent: QWidget | None = None):
-        super().__init__(parent)
-        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
-        self.setAutoFillBackground(False)
-
-    def paintEvent(self, event) -> None:  # noqa: N802 - Qt API name
-        del event
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        rect = QRectF(self.rect()).adjusted(1.0, 1.0, -1.0, -1.0)
-        radius = min(27.0, rect.height() / 2)
-        path = QPainterPath()
-        path.addRoundedRect(rect, radius, radius)
-
-        fill = QLinearGradient(rect.topLeft(), rect.bottomLeft())
-        fill.setColorAt(0.0, QColor("#41444d"))
-        fill.setColorAt(0.45, QColor("#383b45"))
-        fill.setColorAt(1.0, QColor("#303340"))
-        painter.setPen(QColor(105, 109, 124, 190))
-        painter.setBrush(fill)
-        painter.drawPath(path)
-
-        painter.setPen(QColor(255, 255, 255, 26))
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        inner = rect.adjusted(2.0, 2.0, -2.0, -2.0)
-        painter.drawRoundedRect(inner, max(1.0, radius - 2.0), max(1.0, radius - 2.0))
 
 
 class BottomGlassPane(QWidget):
@@ -619,49 +566,18 @@ class MainWindow(QMainWindow):
         composer_layout.setSpacing(6)
         composer_layout.setAlignment(Qt.AlignmentFlag.AlignBottom)
 
-        self.composer_tools = QWidget(self._message_composer)
-        self.composer_tools.setObjectName("composerTools")
-        tools_layout = QHBoxLayout(self.composer_tools)
-        tools_layout.setContentsMargins(0, 0, 0, 0)
-        tools_layout.setSpacing(2)
-        self.add_placeholder = QPushButton(self.composer_tools)
-        self.folder_placeholder = QPushButton(self.composer_tools)
-        for button, name, asset, description in (
-            (self.add_placeholder, "composerAddPlaceholder", "plus.svg", "Attach images or files"),
-            (self.folder_placeholder, "composerFolderPlaceholder", "folder.svg", "Folder (placeholder)"),
-        ):
-            button.setObjectName(name)
-            button.setFixedSize(32, 32)
-            button.setIcon(QIcon(str(_ICON_DIRECTORY / asset)))
-            button.setIconSize(QSize(28, 28))
-            button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-            button.setToolTip(description)
-            button.setAccessibleName(description)
-            tools_layout.addWidget(button)
+        self.composer_tools, self.add_placeholder, self.folder_placeholder = composer_tools(self._message_composer)
 
         self.input = MessageInput()
-        self.input.setObjectName("messageInput")
-        self.input.setPlaceholderText("Ask O.R.S.I.")
-        self.input.setAcceptRichText(False)
-        self.input.setFixedHeight(41)
-        self.input.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.input.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        input_palette = self.input.palette()
-        input_palette.setColor(QPalette.ColorRole.PlaceholderText, QColor("#a2a8ba"))
-        self.input.setPalette(input_palette)
+        configure_input(self.input)
 
         self.action_slot = QWidget()
         self.action_slot.setObjectName("composerActionSlot")
         self.action_slot.setFixedSize(34, 37)
 
         self.send = QPushButton(self.action_slot)
-        self.send.setObjectName("sendButton")
-        self.send.setFixedSize(34, 34)
+        configure_send(self.send)
         self.send.move(0, 4)
-        self.send.setIcon(QIcon(str(_ICON_DIRECTORY / "input_button_cropped.png")))
-        self.send.setIconSize(QSize(27, 27))
-        self.send.setToolTip("Send")
-        self.send.setAccessibleName("Send")
 
         self.stop = QPushButton(self.action_slot)
         self.stop.setObjectName("stopButton")
@@ -1858,21 +1774,7 @@ QLabel#conversationStatus {
     font-family: Saira;
     font-weight: 400;
 }
-QFrame#composer {
-    background: transparent;
-    border: none;
-    border-radius: 27px;
-}
 QWidget#messageComposer, QWidget#composerTools, QFrame#inlineApproval { background: transparent; border: none; }
-QPushButton#composerAddPlaceholder, QPushButton#composerFolderPlaceholder {
-    background: transparent; border: none; border-radius: 16px; padding: 0;
-}
-QPushButton#composerAddPlaceholder:hover, QPushButton#composerFolderPlaceholder:hover {
-    background: rgba(255, 255, 255, 14);
-}
-QPushButton#composerAddPlaceholder:pressed, QPushButton#composerFolderPlaceholder:pressed {
-    background: rgba(255, 255, 255, 8);
-}
 QWidget#attachmentTray, QWidget#attachmentTray QWidget { background: transparent; }
 QFrame#attachmentCard { background: rgba(19, 22, 30, 120); border: 1px solid rgba(145, 152, 171, 35); border-radius: 11px; }
 QLabel#attachmentName { color: #d6d9e0; font-size: 12px; border: none; }
@@ -1888,18 +1790,6 @@ QFrame#inlineApproval QPlainTextEdit {
     border-radius: 6px; padding: 4px 6px; font-size: 14px;
     selection-background-color: #666666;
 }
-QTextEdit#messageInput {
-    color: #dedee0;
-    background: transparent;
-    border: none;
-    padding: 4px 0 3px 4px;
-    font-family: Saira;
-    font-size: 17px;
-    font-weight: 400;
-    selection-background-color: #666666;
-}
-QTextEdit#messageInput:focus { border: none; }
-QTextEdit#messageInput:disabled { color: #777777; background: transparent; }
 QPushButton#skillChip {
     color: #d5d6dc;
     background: rgba(18, 20, 26, 92);
@@ -1918,15 +1808,6 @@ QListWidget#skillPickerList {
 QListWidget#skillPickerList::item { padding: 6px 8px; border-radius: 6px; }
 QListWidget#skillPickerList::item:selected { background: #3e4551; color: #ffffff; }
 QListWidget#skillPickerList::item:hover:!selected { background: rgba(255, 255, 255, 8); }
-QPushButton#sendButton, QPushButton#stopButton {
-    background: transparent;
-    border: none;
-    border-radius: 17px;
-    padding: 0;
-}
-QPushButton#sendButton:hover, QPushButton#stopButton:hover { background: #454852; }
-QPushButton#sendButton:pressed, QPushButton#stopButton:pressed { background: #2c2e35;  }
-QPushButton#sendButton:disabled, QPushButton#stopButton:disabled { background: transparent; }
 QComboBox#modelSelector {
     color: #ededed;
     background: #262626;
@@ -1967,4 +1848,4 @@ QScrollBar::handle:vertical {
 }
 QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
 QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: transparent; }
-"""
+""" + COMPOSER_STYLE

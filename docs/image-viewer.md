@@ -1,18 +1,27 @@
 # Image viewer and follow-up composer
 
 Click an image in a message, or focus its miniature and press Enter/Space, to open
-a frameless viewer at 94% of the available screen width and 92% of its height.
+a frameless overlay filling the available screen. The chat behind it is blurred
+and dimmed, with a large, sharp image and the same centered composer as chat.
 The image fits the large canvas without cropping. Previous/next buttons and
 Left/Right keys browse the message's images; arrow keys inside the prompt continue
 editing text. Escape and the close button return to the chat.
 
 The viewer reads the verified saved original on a worker, through its pinned
-snapshot handle. A separate two-entry cache holds images bounded to 3840 × 2160;
+snapshot handle. A separate two-entry cache holds images bounded to 4096 × 4096;
 small originals are kept at native resolution. The thumbnail cache retains its
 existing bounds. Missing or changed sources show a safe fallback and cannot be
-resent. Closing clears the viewer cache and cancels outstanding work.
+resent. Closing clears the viewer cache and blurred backdrop, and cancels outstanding work.
+The backdrop captures only the app's own widget once, stays in memory and is
+bounded to 1280 × 900 before blurring. The foreground image and controls remain
+sharp. No desktop capture or continuously recomputed background is involved.
 
-The small composer sends the viewed image with an explicit new prompt. Enter sends;
+The shared 54px chat composer sends the viewed image with an explicit new prompt.
+Its pill, controls, icon sizes, input typography and send styling come from
+`app/ui/composer.py`, also used by the main window. The plus menu chooses which
+of the message's images to include; the folder icon retains its existing
+placeholder role. Extra files are attached through the chat composer.
+Enter sends;
 Shift+Enter adds a line. Cloud users may check “Include all images”; local users
 send one image. Browsing retains the prompt. Working sessions disable sending, and
 existing main-composer drafts are preserved rather than replaced.
@@ -35,7 +44,24 @@ and supply/persist that metadata. Assistant Markdown still cannot automatically
 load arbitrary local files or remote images. Output display metadata is separate
 from existing user-input references and does not change inference history.
 
-## Verification
+## Overlay redesign verification, 7 October 2026
+
+The focused UI group passed **96 tests and 15 subtests**. Checks cover filling
+the screen, blurred/dimmed chat with a sharp foreground image, the shared
+composer's dimensions and position, original 2800 × 3900 portrait detail,
+navigation, local/cloud resend, missing sources and cleanup. Synthetic previews
+were rendered and inspected at both the test viewport and 1920 × 1080; their
+artifacts remain ignored under `state/chat-image-preview-artifacts/`.
+
+Two earlier combined UI runs aborted in the existing copy-feedback wait with a
+native Qt access violation. The viewer test fixture now retains one QApplication
+for the session and detaches its temporary parent before cleanup; the final
+combined run passed. Copy-button behavior and its assertions were not changed.
+The full regression suite passed **2,292 tests and 15 subtests**, with **58
+optional gates skipped**, in **357.51 seconds**. No live model/API qualification
+was rerun for this presentation change.
+
+## Initial implementation verification
 
 Expanded native checks passed 162 tests and five subtests. Final viewer/composer
 checks passed 41 tests. They cover high-resolution original pixels, near-screen

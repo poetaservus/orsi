@@ -1,5 +1,29 @@
 # Git layout and baseline hygiene
 
+## Image viewer overlay integration, 7 October 2026
+
+The bounded `codex/image-viewer-overlay` change starts from local main `9031aa6`.
+The viewer fills the available screen, shows a larger source-backed image over
+a blurred/dimmed capture of the chat, and uses the same composer paint, controls,
+typography and stylesheet as the main chat. Preview decoding now retains portrait
+detail up to a 4096 × 4096 bound. Local/cloud follow-up sends keep their existing
+source-reference and draft-preservation path. Inference and model profiles are
+unchanged.
+
+The focused viewer/composer/chat/native-window group passed 96 tests and 15
+subtests. Two earlier combined UI runs aborted in a native Qt copy-feedback wait;
+the viewer test fixture now holds its QApplication for the whole session and
+cleans up its temporary parent explicitly. The final full regression passed
+2,292 tests and 15 subtests, with 58 optional gates skipped, in 357.51 seconds.
+Synthetic renders were inspected at 1920 × 1080. Live model/API gates were not
+rerun for this presentation change; see [the viewer record](image-viewer.md).
+
+Before integration, refs and worktree identities were preserved in the verified
+complete bundle under `state/backups/image-viewer-overlay-20261007/`. Previous
+main is retained at `archive/2026-10-07/main-before-image-viewer-overlay`. The
+user's standing merge-and-push instruction authorizes integration and publication.
+Other worktrees and historical tips remain untouched.
+
 ## Image-only input integration, 7 October 2026
 
 The bounded `codex/image-only-grounding` change starts from verified local main

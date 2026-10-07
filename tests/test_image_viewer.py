@@ -7,11 +7,12 @@ import pytest
 from PySide6.QtCore import QBuffer, QIODevice, Qt
 from PySide6.QtGui import QColor, QImage
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QLabel, QVBoxLayout, QWidget
 
 from app.conversation.attachments import AttachmentStore
 from app.ui.chat import ChatView
 from app.ui.image_viewer import ImageViewer
+from app.ui.composer import ComposerFrame, MessageInput
 
 
 def picture(color, width=1800, height=1000):
@@ -33,13 +34,12 @@ def wait_for(predicate):
 
 
 @pytest.fixture
-def viewer(tmp_path):
-    app = QApplication.instance() or QApplication([])
+def viewer(tmp_path, viewer_application):
     store = AttachmentStore(tmp_path / "attachments")
     refs = tuple(store.import_bytes(picture(color), name=f"{i}.png") for i, color in enumerate(("red", "blue")))
     values = []
     def make(**kwargs):
-        window = ImageViewer(store, refs, **kwargs)
+        window = ImageViewer(store, kwargs.pop('references', refs), **kwargs)
         window.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose, False)
         values.append(window)
         window.show()
@@ -53,7 +53,13 @@ def viewer(tmp_path):
     QApplication.processEvents()
 
 
-def test_viewer_decodes_large_saved_original_and_fits_near_screen(viewer):
+@pytest.fixture(scope='session')
+def viewer_application():
+    # Keep one application alive while later UI tests process queued Qt events.
+    return QApplication.instance() or QApplication([])
+
+
+def test_viewer_decodes_large_saved_original_and_fills_available_screen(viewer):
     make, store, refs = viewer
     window = make(index=1)
     image = window.loader._images[refs[1].id]
@@ -62,12 +68,56 @@ def test_viewer_decodes_large_saved_original_and_fits_near_screen(viewer):
     assert window.canvas.width() > 500 and window.canvas.height() > 400
     assert window.counter.text() == "2 / 2" and window.name.text() == "1.png"
     screen = window.screen().availableGeometry()
-    assert .90 < window.width() / screen.width() < 1
-    assert .88 < window.height() / screen.height() < 1
+    assert window.geometry() == screen
     content = store.root / refs[1].id / "content"
     renamed = content.with_name("released")
     content.rename(renamed)
     renamed.rename(content)
+
+
+def test_overlay_blurs_only_chat_and_uses_shared_centered_composer(viewer):
+    make, store, refs = viewer
+    parent = QWidget()
+    parent.resize(1000, 800)
+    layout = QVBoxLayout(parent)
+    label = QLabel('Chat behind the image')
+    label.setStyleSheet('background: qlineargradient(x1:0,y1:0,x2:1,y2:0,stop:0 #ffffff,stop:0.499 #ffffff,stop:0.5 #ff0000,stop:1 #ff0000); color: white; font-size: 60px')
+    layout.addWidget(label)
+    parent.show()
+    QApplication.processEvents()
+    window = make(parent=parent)
+    assert not window._backdrop.isNull()
+    assert window._backdrop.width() <= 1280 and window._backdrop.height() <= 900
+    blurred = window._backdrop.toImage()
+    edge = blurred.pixelColor(blurred.width() // 2 + 5, blurred.height() // 2 + 100)
+    assert 0 < edge.green() < 255
+    assert parent.graphicsEffect() is None
+    assert isinstance(window.composer, ComposerFrame) and isinstance(window.prompt, MessageInput)
+    assert window.composer.height() == 54 and window.composer.width() <= 799
+    assert abs(window.composer.geometry().center().x() - window.rect().center().x()) <= 1
+    assert window.composer.y() > window.canvas.geometry().bottom()
+    assert window.prompt.height() == 41 and window.send.size().width() == 34
+    assert window.prompt.placeholderText() == 'Ask O.R.S.I.'
+    frame = window.grab().toImage()
+    # Chat is dimmed; the foreground image stays saturated and sharp.
+    assert frame.pixelColor(5, frame.height() // 2).red() < 90
+    center = window.canvas.mapTo(window, window.canvas.rect().center())
+    assert frame.pixelColor(center) == QColor('red')
+    window.close()
+    assert window._backdrop.isNull()
+    window.setParent(None)
+    parent.close()
+
+
+def test_portrait_original_keeps_detail_above_previous_decoder_height(viewer):
+    make, store, refs = viewer
+    ref = store.import_bytes(picture('green', 2800, 3900), name='portrait.png')
+    window = make(references=(ref,))
+    image = window.loader._images[ref.id]
+    assert image.width() == 2800 and image.height() == 3900
+    target = window.canvas.target_rect(image)
+    assert target.height() >= window.canvas.height() - 10
+    assert abs(target.width() / target.height() - 2800 / 3900) < .002
 
 
 def test_navigation_preserves_prompt_and_keyboard_edits_text(viewer):
