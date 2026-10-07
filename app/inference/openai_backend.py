@@ -444,8 +444,15 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
         settings = self.image_settings.current
         inputs, estimate = self._project_attachments(messages)
         report_activity(getattr(self, "_activity_observer", None), "Generating image…")
-        payload = self._request(inputs, tools=[settings.tool(self.active_model)],
-                                attachment_estimate=estimate, image_generation=True)
+        try:
+            payload = self._request(inputs, tools=[settings.tool(self.active_model)],
+                                    attachment_estimate=estimate, image_generation=True)
+        except CloudInferenceError as exc:
+            if exc.code == CloudErrorCode.PERMISSION:
+                raise CloudInferenceError("Your OpenAI account cannot access the selected image model. "
+                    "Choose another image model in Settings or enable account access, then retry.",
+                    code=exc.code) from None
+            raise
         return image_result(payload, store=self._attachment_sources().store,
             settings=settings, completion=_completion_metadata(payload), cancellation=self._request_cancellation)
 
@@ -483,6 +490,7 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
             body.update(tools=tools, tool_choice="auto", parallel_tool_calls=True)
         if image_generation:
             body["tool_choice"] = {"type": "image_generation"}
+            body["max_output_tokens"] = min(profile.max_output_tokens, 4096)
         if attachment_estimate is not None:
             from app.conversation.cloud_attachments import MAX_REQUEST_BYTES
             if len(json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8")) > MAX_REQUEST_BYTES:
@@ -532,7 +540,7 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
                     if cancellation is not None and cancellation.is_cancelled:
                         raise state.interrupted("cancelled")
                     if attachment_estimate is None:
-                        reservation = await pacer.acquire(profile.id, estimated_input + 256 + profile.max_output_tokens,
+                        reservation = await pacer.acquire(profile.id, estimated_input + 256 + body["max_output_tokens"],
                             activity=activity)
                     if runner.client is None:
                         runner.http_client = openai.DefaultAsyncHttpxClient(event_hooks={"response": [no_quota_retry]})
@@ -583,7 +591,7 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
                         if cancellation is not None and cancellation.is_cancelled:
                             raise state.interrupted("cancelled")
                         ceiling = pacer.request_token_ceiling(profile.id)
-                        allowance = profile.max_output_tokens
+                        allowance = body["max_output_tokens"]
                         if ceiling is not None:
                             allowance = min(allowance, ceiling - actual - 256)
                         if allowance < 32:
@@ -602,7 +610,10 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
                             activity=activity)
                     runner.http_client.event_hooks["request"] = [request_hook]
                     runner.http_client.event_hooks["response"] = [no_quota_retry]
-                    stream = await runner.client.responses.create(**body)
+                    if image_generation and runner.image_client is None:
+                        runner.image_client = runner.client.with_options(max_retries=0)
+                    client = runner.image_client if image_generation else runner.client
+                    stream = await client.responses.create(**body)
                     stream_opened = True
                     report_activity(activity, "Generating image…" if image_generation else "Generating response…")
                     async with stream:

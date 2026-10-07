@@ -619,6 +619,9 @@ class ChatView(QScrollArea):
         self._thinking_layout.insertWidget(self._thinking_layout.count() - 1, self.generation_frame,
                                            alignment=Qt.AlignmentFlag.AlignLeft)
         self.generation_frame.start()
+        self.activity_label.hide()
+        self.thinking_dots.stop()
+        self.thinking_dots.hide()
         QTimer.singleShot(0, self._sync_generation_visibility)
         if self._follow_tail:
             QTimer.singleShot(0, self._scroll_to_bottom)
@@ -647,6 +650,8 @@ class ChatView(QScrollArea):
         self.stream_preview.hide()
         self._thinking_row.setVisible(thinking)
         if thinking:
+            self.activity_label.show()
+            self.thinking_dots.show()
             self.activity_label.setText("Preparing your request…")
             self._response_elapsed.start()
             self._update_working_label()

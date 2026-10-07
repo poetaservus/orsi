@@ -11,12 +11,13 @@ from app.inference.completion import CompletionText, IncompleteResponseError
 _CREATE = re.compile(r"\b(?:generate|create|make|design|render)\b.{0,100}\b(?:images?|pictures?|photos?|illustrations?|artworks?|logos?|posters?|thumbnails?|wallpapers?)\b|\b(?:draw|paint|sketch|illustrate)\b", re.I | re.S)
 _EDIT = re.compile(r"\b(?:edit|change|replace|remove|add|make|darken|brighten|crop|resize|turn|adjust|give|put|transform)\b", re.I)
 _EXPLAIN = re.compile(r"\b(?:how\s+(?:do|can|to)|explain|describe|analy[sz]e|what\s+(?:is|are|does))\b", re.I)
+_TEXT_REQUEST = re.compile(r"\b(?:generate|create|make|design|render)\s+(?:(?:me|a|an|the|some|python|javascript)\s+)*(?:list|script|code|program|function|report|document|table|instructions|prompt)\b", re.I)
 
 
 def image_request(text, *, has_image=False):
     if text.lstrip().startswith("/image "):
         return True
-    if _EXPLAIN.search(text):
+    if _EXPLAIN.search(text) or _TEXT_REQUEST.search(text):
         return False
     return bool(_CREATE.search(text) or has_image and _EDIT.search(text))
 
@@ -25,7 +26,8 @@ def image_result(payload, *, store, settings, completion, cancellation=None):
     if completion.incomplete:
         raise IncompleteResponseError("Image generation did not finish. You can retry the request.", completion)
     output = payload.get("output")
-    if not isinstance(output, list):
+    if not isinstance(output, list) or any(not isinstance(item, dict) or
+            item.get("type") not in {"image_generation_call", "message", "reasoning"} for item in output):
         raise AttachmentError("The image service returned an invalid result.")
     calls = [item for item in output if item.get("type") == "image_generation_call"]
     if not calls:

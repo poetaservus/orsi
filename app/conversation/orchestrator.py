@@ -260,6 +260,16 @@ class ConversationService:
     supports_skill_reporting = True
     supports_admission_reporting = True
 
+    def will_generate_images(self, text, *, attachments=(), skill_name=None):
+        from app.inference.image_generation import image_request
+        from app.conversation.image_followup import latest_generated_sources, visual_followup
+        if skill_name is not None or getattr(self.inference, "supports_image_generation", False) is not True:
+            return False
+        has_image = any(ref.kind == "image" for ref in attachment_references(attachments))
+        if not attachments and visual_followup(text):
+            has_image = bool(latest_generated_sources(self.store.visible_messages()))
+        return image_request(text, has_image=has_image)
+
     def run(self, user_message: str, activity=None, *, skill_name: str | None = None, text_observer=None,
             skill_observer=None, attachments=(), admission_observer=None) -> str:
         """Run one turn; an optional explicit skill applies only to this message."""
@@ -269,9 +279,7 @@ class ConversationService:
             from app.conversation.image_followup import latest_generated_sources, visual_followup
             if visual_followup(text):
                 references = latest_generated_sources(self.store.visible_messages())
-        from app.inference.image_generation import image_request
-        image_turn = (getattr(self.inference, "supports_image_generation", False) is True
-                      and skill_name is None and image_request(text, has_image=any(r.kind == "image" for r in references)))
+        image_turn = self.will_generate_images(text, attachments=references, skill_name=skill_name)
         if not text and not references:
             raise ValueError("Enter a message first.")
         if not self._run_lock.acquire(blocking=False):

@@ -344,6 +344,9 @@ class MainWindow(QMainWindow):
         self.thread = None
         self._image_viewer = None
         self._pending_image_reply = None
+        self._image_request_draft = None
+        self._image_in_flight = False
+        self._image_stopping = False
         self.worker = None
         self._active_user_message_band = None
         self._approval_panel = None
@@ -1011,6 +1014,11 @@ class MainWindow(QMainWindow):
             return
 
         skill_name = self.skill_picker.selected_name
+        self._image_request_draft = (self.input.toPlainText(), attachments)
+        check_image = getattr(self.service, "will_generate_images", None)
+        self._image_in_flight = bool(callable(check_image) and
+            check_image(message, attachments=attachments, skill_name=skill_name))
+        self._image_stopping = False
         self._submitted_draft = (self.input.toPlainText(), skill_name) if attachments else None
         self.skill_picker.clear_selection()
         self.input.clear()
@@ -1146,8 +1154,18 @@ class MainWindow(QMainWindow):
             return
         duration_seconds = self._set_busy(False)
         images = getattr(text, "generated_images", ())
+        cancelled = self._image_stopping or getattr(getattr(text, "completion", None), "finish_reason", None) == "cancelled"
         generation_frame = self.chat.take_generation_frame(images,
-            status="Image generation failed" if error else "Image generation stopped")
+            status="Image generation stopped" if cancelled else "Image generation failed" if error else "Image generation stopped")
+        if (error or cancelled) and self._image_in_flight and self._image_request_draft is not None:
+            prompt, references = self._image_request_draft
+            if not self.input.toPlainText().strip():
+                self.input.setPlainText(prompt)
+            if references and not self.attachment_tray.count:
+                self.attachment_tray.add_references(references)
+        self._image_in_flight = False
+        self._image_stopping = False
+        self._image_request_draft = None
         notice = None
         try:
             if self.inference is not None:
@@ -1212,7 +1230,8 @@ class MainWindow(QMainWindow):
             self._approval_panel.reject()
         cancel = getattr(self.service, "cancel_current_task", None)
         if callable(cancel):
-            cancel()
+            if cancel():
+                self._image_stopping = True
             self.stop.setEnabled(False)
             self._set_working_activity("Stopping…")
 
@@ -1225,9 +1244,12 @@ class MainWindow(QMainWindow):
     def _set_working_activity(self, text: str) -> None:
         if self.thread is None:
             return
+        if text == "Generating image…" and self._image_stopping:
+            return
         self.activity.set_activity(text)
         self.chat.set_activity(text)
         if text == "Generating image…":
+            self._image_in_flight = True
             cloud = getattr(self.inference, "cloud", self.inference)
             settings = getattr(cloud, "image_settings", None)
             size = settings.current.size if settings is not None else "1024x1024"

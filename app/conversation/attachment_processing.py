@@ -247,6 +247,7 @@ class AttachmentProcessor:
         token = cancellation or CancellationToken()
         suffix = Path(reference.name).suffix.lower()
         thumbnail, fields = None, {}
+        reader = None
         try:
             with self.store.open(reference, cancellation=token) as stream:
                 if reference.kind == "image":
@@ -292,6 +293,10 @@ class AttachmentProcessor:
         except Exception as exc:
             # Parser errors can contain user text. Surface only a fixed, content-free message.
             raise AttachmentError("This attachment could not be processed. Check its format and encoding, then try again.") from exc
+        finally:
+            # Tracebacks retain this frame on decode failure. Drop the reader's
+            # owned Windows file handle before the caller cleans up its draft.
+            reader = None
 
     def load(self, reference, *, cancellation=None) -> ProcessedAttachment:
         token = cancellation or CancellationToken()

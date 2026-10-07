@@ -18,7 +18,7 @@ separately and an unavailable account/model is never a passed image check.
 | 2B | Chat and viewer editing from original sources; settings dialog | 61 focused; 2,310 full-suite tests and 15 subtests passed, 58 skipped; live edit blocked by image-model access |
 | 3A | Cached grainy drifting placeholder | 51 focused tests and 5 subtests; confirmation passed 2,312 tests and 15 subtests, 58 skipped; synthetic visual reviewed |
 | 3B | Aspect ratio, fade, thumbnails, viewer and save | 76 focused tests and 5 subtests; 2,314 full-suite tests and 15 subtests passed, 58 skipped; synthetic UI and viewer reviewed |
-| 4A | Failure, cancellation, manual retry and deduplication | Pending |
+| 4A | Failure, cancellation, manual retry and deduplication | 136 focused tests; confirmation passed 2,328 full-suite tests and 15 subtests, 58 skipped |
 | 4B | Acceptance and live generation/edit verification | Pending |
 
 On 7 October 2026 the authorized account could retrieve GPT-6 Luna, while
@@ -43,3 +43,15 @@ Phase 3A's first native full run recorded 2,311 passed and one Windows access-de
 directory rename in the unchanged skill-reference-reader depth-limit test. This
 is retained as a failed run; the placeholder and the reader implementation were
 not changed to hide it. Native recheck and full confirmation are separate evidence.
+
+Phase 4A's first full run recorded 2,327 passed and one unchanged Skill Settings
+folder-preview install worker timeout. Its complete nine-test native UI group
+passed on recheck. The failed full run is retained separately; neither the
+existing worker nor its acceptance test was changed to pass the recheck.
+
+Image generation has no automatic POST retry, even when chat SDK retries are
+configured. A started image stream is never replayed. Its mainline output budget
+is bounded at the lesser of the existing profile allowance and 4,096 tokens;
+image size/quality/format remain separate tool options. Chat request budgets and
+sampling are unchanged. Corrupt/incomplete/duplicate results never enter assistant
+history. Decoder handles are explicitly released before failed-draft cleanup.
