@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from html import escape
 
-from PySide6.QtCore import QElapsedTimer, QRect, QRectF, QTimer, Qt, Signal
+from PySide6.QtCore import QElapsedTimer, QPoint, QRect, QRectF, QTimer, Qt, Signal
 from PySide6.QtGui import QColor, QFontDatabase, QLinearGradient, QPainter, QPen
 from PySide6.QtWidgets import (
     QFrame,
@@ -116,7 +116,7 @@ class _CodeBlock(QFrame):
 
 
 class _Message(QFrame):
-    def __init__(self, content: str, *, from_user: bool, error: bool = False, attachments=(), images=(), image_loader=None):
+    def __init__(self, content: str, *, from_user: bool, error: bool = False, attachments=(), images=(), image_loader=None, generation_frame=None):
         super().__init__()
         self.from_user = from_user
         self._content = content
@@ -150,9 +150,14 @@ class _Message(QFrame):
                   if from_user else attachment_references(images))
         if any(ref.kind != "image" for ref in images):
             raise ValueError("Displayed output images must be saved image references.")
-        self.image_strip = MessageImageStrip(images, image_loader) if images and image_loader else None
+        self.image_strip = generation_frame or (MessageImageStrip(images, image_loader, preserve_aspect=not from_user)
+                                                if images and image_loader else None)
+        self.result_thumbnails = None
         if self.image_strip is not None:
             layout.addWidget(self.image_strip)
+        if generation_frame is not None and len(images) > 1:
+            self.result_thumbnails = MessageImageStrip(images, image_loader)
+            layout.addWidget(self.result_thumbnails)
         for reference in self.attachments:
             if reference.kind == "image" and self.image_strip is not None:
                 continue
@@ -288,6 +293,8 @@ class _Message(QFrame):
         self.setFixedWidth(target)
         if self.image_strip is not None:
             self.image_strip.set_available_width(content_width)
+        if self.result_thumbnails is not None:
+            self.result_thumbnails.set_available_width(content_width)
         for label in labels:
             label.setFixedWidth(content_width)
             if isinstance(label, MarkdownLabel):
@@ -454,6 +461,7 @@ class ChatView(QScrollArea):
         self.viewport().setAutoFillBackground(False)
         self._follow_tail = True
         self._setting_scroll_position = False
+        self.generation_frame = None
 
         self._content = QWidget()
         self._content.setObjectName("chatContent")
@@ -508,6 +516,7 @@ class ChatView(QScrollArea):
         scroll_bar.rangeChanged.connect(self._on_scroll_range_changed)
         scroll_bar.actionTriggered.connect(self._on_user_scroll_action)
         scroll_bar.sliderMoved.connect(self._on_user_slider_moved)
+        scroll_bar.valueChanged.connect(self._sync_generation_visibility)
 
     def add_message(
         self,
@@ -519,6 +528,7 @@ class ChatView(QScrollArea):
         skill_name: str | None = None,
         attachments=(),
         images=(),
+        generation_frame=None,
     ) -> _MessageBand:
         from_user = sender.casefold() == "user"
         # Sending a message always follows the conversation tail. Incoming
@@ -527,9 +537,11 @@ class ChatView(QScrollArea):
         if from_user:
             self._follow_tail = True
         message = _Message(content, from_user=from_user, error=error, attachments=attachments, images=images,
-                           image_loader=self.image_loader)
+                           image_loader=self.image_loader, generation_frame=generation_frame)
         if message.image_strip is not None:
             message.image_strip.image_activated.connect(self.image_activated)
+        if message.result_thumbnails is not None:
+            message.result_thumbnails.image_activated.connect(self.image_activated)
         band_width = self._message_area_width()
 
         row = QWidget()
@@ -584,6 +596,10 @@ class ChatView(QScrollArea):
 
     def clear_messages(self) -> None:
         self.set_thinking(False)
+        if self.generation_frame is not None:
+            self.generation_frame.stop()
+            self.generation_frame.deleteLater()
+            self.generation_frame = None
         if self.image_loader is not None:
             self.image_loader.clear()
         for row in self._message_rows:
@@ -594,6 +610,37 @@ class ChatView(QScrollArea):
         self._messages.clear()
         self._follow_tail = True
         QTimer.singleShot(0, self._scroll_to_bottom)
+
+    def start_image_generation(self, aspect_ratio=1.0):
+        if self.image_loader is None or self.generation_frame is not None:
+            return
+        from app.ui.generated_image_frame import GeneratedImageFrame
+        self.generation_frame = GeneratedImageFrame(aspect_ratio=aspect_ratio)
+        self._thinking_layout.insertWidget(self._thinking_layout.count() - 1, self.generation_frame,
+                                           alignment=Qt.AlignmentFlag.AlignLeft)
+        self.generation_frame.start()
+        QTimer.singleShot(0, self._sync_generation_visibility)
+        if self._follow_tail:
+            QTimer.singleShot(0, self._scroll_to_bottom)
+
+    def _sync_generation_visibility(self, *_):
+        frame = self.generation_frame
+        if frame is not None:
+            bounds = frame.rect().translated(frame.mapTo(self.viewport(), QPoint(0, 0)))
+            frame.set_occluded(not bounds.intersects(self.viewport().rect()))
+
+    def take_generation_frame(self, images=(), *, status=""):
+        frame, self.generation_frame = self.generation_frame, None
+        if frame is None:
+            return None
+        self._thinking_layout.removeWidget(frame)
+        frame.setParent(None)
+        frame.set_occluded(False)
+        if images:
+            frame.show_result(images, self.image_loader)
+        else:
+            frame.stop(status or "Image generation stopped")
+        return frame
 
     def set_thinking(self, thinking: bool) -> float | None:
         self.stream_preview.clear()

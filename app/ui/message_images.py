@@ -169,7 +169,7 @@ class _ImagePreview(QWidget):
 class MessageImageStrip(QScrollArea):
     image_activated = Signal(object, int)
 
-    def __init__(self, references, loader):
+    def __init__(self, references, loader, *, preserve_aspect=False):
         super().__init__()
         self.setObjectName("messageImages")
         self.setFrameShape(QFrame.Shape.NoFrame)
@@ -189,7 +189,9 @@ class MessageImageStrip(QScrollArea):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(8)
         self.single = len(references) == 1
-        size = QSize(280, 180) if self.single else QSize(112, 96)
+        self.aspect_ratio = 1.0 if preserve_aspect else 280 / 180
+        self.preserve_aspect = preserve_aspect and self.single
+        size = QSize(280, 280 if self.preserve_aspect else 180) if self.single else QSize(112, 96)
         self.references = tuple(references)
         self.previews = [_ImagePreview(ref, loader, size) for ref in self.references]
         for index, preview in enumerate(self.previews):
@@ -198,12 +200,23 @@ class MessageImageStrip(QScrollArea):
         self.natural_width = min(480, size.width() * len(references) + 8 * (len(references) - 1))
         self.content.setFixedSize(size.width() * len(references) + 8 * (len(references) - 1), size.height())
         self.setWidget(self.content)
+        if self.preserve_aspect:
+            loader.loaded.connect(lambda key: self._aspect_loaded(key, loader))
+
+    def _aspect_loaded(self, key, loader):
+        if key != self.references[0].id:
+            return
+        image = loader._images.get(key)
+        if image is not None and not image.isNull():
+            self.aspect_ratio = image.width() / image.height()
+            self.set_available_width(self.width())
+            self.updateGeometry()
 
     def set_available_width(self, width):
         self.setFixedWidth(width)
         if self.single:
             width = min(280, width)
-            height = max(1, round(width * 180 / 280))
+            height = max(1, round(width / self.aspect_ratio))
             self.previews[0].setFixedSize(width, height)
             self.content.setFixedSize(width, height)
         self.setFixedHeight(self.content.height() + (12 if self.content.width() > width else 0))

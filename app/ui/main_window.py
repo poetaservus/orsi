@@ -1145,6 +1145,9 @@ class MainWindow(QMainWindow):
         if getattr(self, "_closing", False):
             return
         duration_seconds = self._set_busy(False)
+        images = getattr(text, "generated_images", ())
+        generation_frame = self.chat.take_generation_frame(images,
+            status="Image generation failed" if error else "Image generation stopped")
         notice = None
         try:
             if self.inference is not None:
@@ -1158,7 +1161,8 @@ class MainWindow(QMainWindow):
             text,
             error,
             duration_seconds=duration_seconds,
-            images=getattr(text, "generated_images", ()),
+            images=images,
+            generation_frame=generation_frame,
         )
         if notice:
             self.chat.add_message("Agent", notice)
@@ -1223,6 +1227,14 @@ class MainWindow(QMainWindow):
             return
         self.activity.set_activity(text)
         self.chat.set_activity(text)
+        if text == "Generating image…":
+            cloud = getattr(self.inference, "cloud", self.inference)
+            settings = getattr(cloud, "image_settings", None)
+            size = settings.current.size if settings is not None else "1024x1024"
+            width, height = map(int, size.split("x"))
+            self.chat.start_image_generation(width / height)
+        elif text == "Stopping…" and self.chat.generation_frame is not None:
+            self.chat.generation_frame.stop("Stopping image generation…")
 
     def create_new_session(self) -> None:
         if self.thread is not None:

@@ -3,7 +3,7 @@ from PySide6.QtCore import QLineF, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox, QDialog, QGraphicsBlurEffect, QGraphicsPixmapItem, QGraphicsScene,
-    QHBoxLayout, QLabel, QMenu, QPushButton, QSizePolicy, QVBoxLayout, QWidget,
+    QFileDialog, QHBoxLayout, QLabel, QMenu, QPushButton, QSizePolicy, QVBoxLayout, QWidget,
 )
 
 from app.inference.attachments import attachment_references
@@ -132,9 +132,14 @@ class ImageViewer(QDialog):
         self.next = _NavigationButton('next')
         self.next.setAccessibleName("Next image")
         self.close_button = _NavigationButton('close')
+        self.save_button = QPushButton("Save image…")
+        self.save_button.setObjectName("imageViewerSave")
+        self.save_button.setAccessibleName("Save original image")
+        self.save_button.clicked.connect(self._save_image)
         self.close_button.setAccessibleName("Close image viewer")
         header.addWidget(self.name, 1)
         header.addWidget(self.counter)
+        header.addWidget(self.save_button)
         header.addWidget(self.previous)
         header.addWidget(self.next)
         header.addSpacing(8)
@@ -248,6 +253,36 @@ class ImageViewer(QDialog):
         menu.popup(self.add_placeholder.mapToGlobal(self.add_placeholder.rect().topLeft()))
         menu.aboutToHide.connect(menu.deleteLater)
 
+    def _save_image(self):
+        from pathlib import Path
+        path, _ = QFileDialog.getSaveFileName(self, "Save original image", self.reference.name,
+                                             "Images (*.png *.jpg *.jpeg *.webp);;All files (*)")
+        if not path:
+            return
+        try:
+            self._export_original(Path(path))
+        except Exception:
+            self.status.setText("Could not save the image. Choose another location and try again.")
+            return
+        self.status.setText("Image saved.")
+
+    def _export_original(self, path):
+        # QSaveFile preserves the original encoded bytes and commits atomically.
+        from PySide6.QtCore import QSaveFile, QIODevice
+        target = QSaveFile(str(path))
+        if not target.open(QIODevice.OpenModeFlag.WriteOnly):
+            raise OSError("Image destination is unavailable.")
+        try:
+            with self.loader.store.open(self.reference) as source:
+                while chunk := source.read(1024 * 1024):
+                    if target.write(chunk) != len(chunk):
+                        raise OSError("Image save failed.")
+            if not target.commit():
+                raise OSError("Image save failed.")
+        finally:
+            if target.isOpen():
+                target.cancelWriting()
+
     def set_reply_available(self, available):
         self._available = available
         self.status.setText("" if available else "Wait for the current reply to finish.")
@@ -287,6 +322,8 @@ QLabel { color: #dce2ee; font-size: 13px; }
 QLabel#imageViewerCounter, QLabel#imageViewerStatus { color: #939cac; font-size: 12px; }
 QPushButton#imageViewerNavigation { background: rgba(28, 30, 35, 180); border: none; border-radius: 18px; padding: 0; }
 QPushButton#imageViewerNavigation:hover { background: #353840; }
+QPushButton#imageViewerSave { color: #cad3e2; background: rgba(28, 30, 35, 180); border: 1px solid #414550; border-radius: 8px; padding: 5px 10px; }
+QPushButton#imageViewerSave:hover { background: #353840; }
 QDialog#imageViewer QCheckBox { color: #b1b8c8; font-size: 12px; }
 QMenu { color: #dce2ee; background: #252830; border: 1px solid #414550; border-radius: 8px; padding: 6px; }
 QMenu::item { padding: 6px 16px; border-radius: 4px; }
