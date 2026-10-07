@@ -183,9 +183,9 @@ class ConversationStore:
 
     def begin_turn(self, text: str, *, attachments=(), cancellation=None) -> str:
         references = attachment_references(attachments)
-        for reference in references:
-            self.attachment_store.verify(reference, cancellation=cancellation)
-        with self._lock:
+        with self.attachment_store.protect_drafts(), self._lock:
+            for reference in references:
+                self.attachment_store.verify(reference, cancellation=cancellation)
             if any(turn.outcome is None for turn in self._conversation.turns):
                 raise TurnHistoryError("An unfinished turn must be settled before another operation can run.")
             proposed = self._conversation.model_copy(deep=True)
@@ -194,6 +194,7 @@ class ConversationStore:
             proposed.messages.append(ChatMessage(role="user", content=text, turn_id=turn_id, attachments=references))
             proposed.session_status = "active"
             self._commit(proposed)
+            self.attachment_store.retain_drafts(references)
             return turn_id
 
     def record_skill_usage(self, turn_id: str, name: str) -> None:

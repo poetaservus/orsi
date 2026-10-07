@@ -104,7 +104,7 @@ def test_no_reply_room_stops_before_paid_generation(tmp_path, native_sdk):
     with pytest.raises(CloudInferenceError) as error:
         service.run('Read', attachments=[ref])
     assert error.value.code == CloudErrorCode.RATE_LIMIT
-    assert len(counts) == 2 and not bodies
+    assert len(counts) == 1 and not bodies and not service.store.messages()
 
 
 def test_provider_project_ceiling_limits_reply_but_remaining_balance_only_waits(tmp_path, native_sdk):

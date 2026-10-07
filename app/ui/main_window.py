@@ -1038,11 +1038,13 @@ class MainWindow(QMainWindow):
             return
 
         skill_name = self.skill_picker.selected_name
+        self._submitted_draft = (self.input.toPlainText(), skill_name) if attachments else None
         self.skill_picker.clear_selection()
         self.input.clear()
         self._leave_intro_mode()
         self._active_user_message_band = self.chat.add_message("User", message, attachments=attachments)
-        self.attachment_tray.clear()
+        if not attachments or getattr(self.service, 'supports_admission_reporting', False) is not True:
+            self.attachment_tray.clear()
         self._set_busy(True)
         self.thread = QThread()
         self.worker = ConversationWorker(self.service, message, skill_name=skill_name, attachments=attachments)
@@ -1053,10 +1055,30 @@ class MainWindow(QMainWindow):
         self.worker.activity.connect(self._set_working_activity)
         self.worker.text_updated.connect(self._stream_preview)
         self.worker.skill_used.connect(self._set_user_message_skill)
+        self.worker.admitted.connect(self._attachment_admitted)
+        self.worker.draft_rejected.connect(self._restore_attachment_draft)
         self.worker.finished.connect(self.thread.quit)
         self.worker.failed.connect(self.thread.quit)
         self.thread.finished.connect(self._thread_finished)
         self.thread.start()
+
+    @Slot()
+    def _attachment_admitted(self):
+        self._submitted_draft = None
+        self.attachment_tray.clear()
+
+    @Slot()
+    def _restore_attachment_draft(self):
+        submitted = getattr(self, '_submitted_draft', None)
+        if submitted is None or getattr(self, '_closing', False):
+            return
+        message, skill_name = submitted
+        self.input.setPlainText(message)
+        if skill_name is not None:
+            self.skill_picker.select_name(skill_name)
+        self.chat.remove_message(self._active_user_message_band)
+        self._active_user_message_band = None
+        self._submitted_draft = None
 
     @Slot(object)
     def _show_approval(self, record) -> None:

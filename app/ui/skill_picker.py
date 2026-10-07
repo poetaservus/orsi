@@ -133,18 +133,22 @@ class SkillPicker(QObject):
             cursor.setPosition(self._command_range[1], QTextCursor.MoveMode.KeepAnchor)
             cursor.removeSelectedText()
             self.editor.setTextCursor(cursor)
-            self.selected_name = name
-            label = self.chip.fontMetrics().elidedText("/" + " ".join(name.split()),
-                                                     Qt.TextElideMode.ElideRight, 210)
-            self.chip.setText(label.replace("&", "&&") + "  ×")
-            self.chip.setToolTip("<qt>" + escape(name[:512]) + "<br/>Applies to this message. Click to remove.</qt>")
-            self.chip.setAccessibleName("Remove skill " + " ".join(name.split())[:128])
-            self.chip.show()
+            self.select_name(name)
             self._command_range = None
             self.popup.hide()
             self.editor.setFocus()
         finally:
             self._updating = False
+
+    def select_name(self, name):
+        self.selected_name = name
+        label = self.chip.fontMetrics().elidedText('/' + ' '.join(name.split()), Qt.TextElideMode.ElideRight, 210)
+        self.chip.setText(label.replace('&', '&&') + '  ×')
+        self.chip.setToolTip('<qt>' + escape(name[:512]) + '<br/>Applies to this message. Click to remove.</qt>')
+        self.chip.setAccessibleName('Remove skill ' + ' '.join(name.split())[:128])
+        self.chip.show()
+        self.popup.hide()
+        self._command_range = None
 
     def clear_selection(self):
         self.selected_name = None

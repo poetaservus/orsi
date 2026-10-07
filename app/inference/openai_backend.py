@@ -565,8 +565,6 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
                             pacer.settle(count_reservation, TokenUsage(input_tokens=0, output_tokens=0, total_tokens=0))
                         if cancellation is not None and cancellation.is_cancelled:
                             raise state.interrupted("cancelled")
-                        if count_only:
-                            return {"status": "counted", "input_tokens": actual}
                         ceiling = pacer.request_token_ceiling(profile.id)
                         allowance = profile.max_output_tokens
                         if ceiling is not None:
@@ -574,6 +572,8 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
                         if allowance < 32:
                             raise CloudInferenceError("The attached input leaves no reply space within the API token rate limit. "
                                 "Use fewer/smaller attachments or increase the model's API rate limit.", code=CloudErrorCode.RATE_LIMIT)
+                        if count_only:
+                            return {"status": "counted", "input_tokens": actual}
                         body["max_output_tokens"] = allowance
                         with self._lock:
                             self.last_attachment_capacity = {"input_tokens": actual,

@@ -551,6 +551,17 @@ class ChatView(QScrollArea):
         if self._follow_tail:
             QTimer.singleShot(0, self._scroll_to_bottom)
 
+    def remove_message(self, band):
+        """Remove an unsaved submitted bubble when its draft is restored."""
+        if band not in self._message_bands:
+            return
+        index = self._message_bands.index(band)
+        row = self._message_rows.pop(index)
+        self._message_bands.pop(index)
+        self._messages.pop(index)
+        self._layout.removeWidget(row)
+        row.deleteLater()
+
     def clear_messages(self) -> None:
         self.set_thinking(False)
         for row in self._message_rows:

@@ -161,8 +161,11 @@ images and files directly through OpenAI Responses, including PDF page visuals,
 follow-ups, restored chats and native tool continuations. Its worker checks the actual
 provider input-token count before admission and generation, caches only hashed numeric measurements,
 and fits the reply allowance to available account capacity. Unsupported input keeps the composer draft intact.
+Worker rejection before a turn is saved restores the exact draft and selected skill for manual retry.
+Removing, cancelling or closing an unsent draft cleans up its owned copy; saved and archived sources remain.
 See [documents](docs/attachments-phase3a.md), [local images](docs/attachments-phase3b.md)
-and [cloud input](docs/attachments-phase4a.md), with [capacity qualification](docs/attachments-phase4b.md).
+and [cloud input](docs/attachments-phase4a.md), with [capacity qualification](docs/attachments-phase4b.md)
+and [context/lifecycle qualification](docs/attachments-phase5.md).
 Unfinished code fences still appear in code boxes. Incomplete tool generation is rejected before
 argument repair or execution. The UI releases its controls even when the context meter cannot
 refresh. See [completion-state verification](docs/completion-state-2026-10-02.md).

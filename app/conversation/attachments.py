@@ -6,9 +6,12 @@ from hashlib import sha256
 from io import BytesIO
 import mimetypes
 import os
+import logging
 from pathlib import Path
 import stat
 from uuid import uuid4
+from threading import RLock
+from weakref import WeakValueDictionary
 
 from app.inference.attachments import AttachmentError, AttachmentReference
 from app.runtime.cancellation import CancellationToken
@@ -17,9 +20,20 @@ from app.state.atomic import rename_state_directory
 
 
 _CHUNK_BYTES = 1024 * 1024
+log = logging.getLogger(__name__)
 DEFAULT_SNAPSHOT_LIMIT = 512 * 1024 * 1024
 _IMAGE_TYPES = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
                 ".webp": "image/webp", ".gif": "image/gif"}
+
+
+class _DraftOwnership:
+    def __init__(self):
+        self.references = {}
+        self.lock = RLock()
+
+
+_DRAFT_OWNERS = WeakValueDictionary()
+_DRAFT_OWNERS_LOCK = RLock()
 
 
 def _ordinary_components(path: Path) -> None:
@@ -54,6 +68,70 @@ class AttachmentStore:
             raise ValueError("The attachment storage limit must be a positive integer.")
         self.root = Path(root).absolute()
         self.max_bytes = max_bytes
+        with _DRAFT_OWNERS_LOCK:
+            key = os.path.normcase(str(self.root.resolve()))
+            owner = _DRAFT_OWNERS.get(key)
+            if owner is None:
+                owner = _DraftOwnership()
+                _DRAFT_OWNERS[key] = owner
+            self._draft_owner = owner
+        self._drafts = owner.references
+        self._draft_lock = owner.lock
+
+    @contextmanager
+    def protect_drafts(self):
+        """Serialize abandonment against the verify/save/retain boundary."""
+        with self._draft_lock:
+            yield
+
+    def retain_drafts(self, references):
+        """A successful durable commit transfers ownership out of the composer."""
+        with self._draft_lock:
+            for reference in references:
+                if self._drafts.get(reference.id) == reference:
+                    del self._drafts[reference.id]
+
+    def discard_draft(self, reference):
+        """Remove only a draft this store created and has never retained in history.
+
+        No recursive deletion or scans of historical/shared stores. Unexpected
+        entries, links or changed manifests preserve the directory for review.
+        """
+        with self._draft_lock:
+            if self._drafts.get(reference.id) != reference:
+                return False
+            token = CancellationToken()
+            try:
+                with self._pinned_root(token):
+                    folder = self.root / reference.id
+                    _ordinary_components(folder)
+                    if folder.resolve().parent != self.root.resolve():
+                        raise AttachmentError('Invalid draft storage location.')
+                    if os.name == 'nt':
+                        from app.execution.windows_filesystem import pinned_parent
+                        pin = pinned_parent(folder / 'guard', token)
+                    else:
+                        pin = nullcontext()
+                    with pin:
+                        children = list(folder.iterdir())
+                        if {p.name for p in children} - {'content', 'metadata.json', 'prepared_v1.json'}:
+                            raise AttachmentError('Unexpected draft storage entries.')
+                        for child in children:
+                            info = child.lstat()
+                            if not stat.S_ISREG(info.st_mode) or getattr(info, 'st_file_attributes', 0) & 0x400:
+                                raise AttachmentError('Invalid draft storage entry.')
+                        with _snapshot_stream(folder / 'metadata.json', 4096, token) as stream:
+                            recorded = AttachmentReference.model_validate_json(stream.read(4097))
+                        if recorded != reference or (folder / 'content').stat().st_size != reference.size_bytes:
+                            raise AttachmentError('The draft snapshot changed.')
+                        for child in children:
+                            child.unlink()
+                    folder.rmdir()
+                del self._drafts[reference.id]
+                return True
+            except (OSError, ValueError):
+                log.warning('Abandoned attachment draft cleanup was deferred.')
+                return False
 
     @contextmanager
     def _pinned_root(self, cancellation, *, create=False):
@@ -69,14 +147,14 @@ class AttachmentStore:
             _ordinary_components(self.root)
             yield
 
-    def import_file(self, source: Path, *, cancellation=None) -> AttachmentReference:
+    def import_file(self, source: Path, *, cancellation=None, draft=False) -> AttachmentReference:
         """Snapshot the selected file, not a live pointer to its original location."""
         token = cancellation or CancellationToken()
         path = Path(source).absolute()
         token.raise_if_cancelled()
         try:
             with _snapshot_stream(path, self.max_bytes, token) as stream:
-                return self._import_stream(stream, path.name, token)
+                return self._import_stream(stream, path.name, token, draft=draft)
         except OSError as exc:
             raise AttachmentError("The selected file could not be copied safely.") from exc
         except ValueError as exc:
@@ -84,13 +162,15 @@ class AttachmentStore:
                 raise
             raise AttachmentError("The selected file exceeds the attachment storage limit.") from exc
 
-    def import_bytes(self, data: bytes, *, name: str, cancellation=None) -> AttachmentReference:
+    def import_bytes(self, data: bytes, *, name: str, cancellation=None, draft=False) -> AttachmentReference:
         """Accept already captured clipboard bytes using the same durable format."""
         if not isinstance(data, bytes):
             raise TypeError("Attachment snapshots require bytes.")
-        return self._import_stream(BytesIO(data), name, cancellation or CancellationToken())
+        return self._import_stream(BytesIO(data), name, cancellation or CancellationToken(), draft=draft)
 
-    def _import_stream(self, stream, name, token):
+    def _import_stream(self, stream, name, token, *, draft=False):
+        if type(draft) is not bool:
+            raise TypeError('Draft ownership requires an explicit boolean.')
         suffix = Path(name).suffix.lower()
         media_type = _IMAGE_TYPES.get(suffix) or mimetypes.guess_type(name)[0] or "application/octet-stream"
         # Type is an advisory filename classification; decoding belongs to the processing phase.
@@ -119,6 +199,9 @@ class AttachmentStore:
                     token.raise_if_cancelled()
                     # Publish the blob and its manifest together; no half-imported reference is returned.
                     rename_state_directory(staging, self.root / reference.id, cancellation=token)
+                    if draft:
+                        with self._draft_lock:
+                            self._drafts[reference.id] = reference
                     return reference
                 finally:
                     if staging.exists():

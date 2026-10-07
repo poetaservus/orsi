@@ -372,12 +372,12 @@ def test_selected_source_is_locked_through_copy(tmp_path, monkeypatch):
     source = tmp_path / "file.txt"
     source.write_bytes(b"stable")
     original_import = snapshots._import_stream
-    def during_copy(stream, name, token):
+    def during_copy(stream, name, token, *, draft=False):
         with pytest.raises(PermissionError):
             source.write_bytes(b"changed")
         with pytest.raises(PermissionError):
             source.unlink()
-        return original_import(stream, name, token)
+        return original_import(stream, name, token, draft=draft)
     monkeypatch.setattr(snapshots, "_import_stream", during_copy)
     ref = snapshots.import_file(source)
     assert ref.sha256 == sha256(b"stable").hexdigest()

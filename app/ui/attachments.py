@@ -39,11 +39,13 @@ class AttachmentPreparationWorker(QObject):
         try:
             for job in self.jobs:
                 token = job.cancellation.token
+                reference = None
+                handed_off = False
                 try:
                     token.raise_if_cancelled()
                     self.progress.emit(job.key, "Copying…")
                     if job.path is not None:
-                        reference = self.store.import_file(job.path, cancellation=token)
+                        reference = self.store.import_file(job.path, cancellation=token, draft=True)
                     else:
                         if job.image.width() * job.image.height() > MAX_IMAGE_PIXELS:
                             from app.inference.attachments import AttachmentError
@@ -52,20 +54,25 @@ class AttachmentPreparationWorker(QObject):
                         buffer.open(QIODevice.OpenModeFlag.WriteOnly)
                         if not job.image.save(buffer, "PNG"):
                             raise ValueError("Clipboard image conversion failed.")
-                        reference = self.store.import_bytes(bytes(buffer.data()), name=job.name, cancellation=token)
+                        reference = self.store.import_bytes(bytes(buffer.data()), name=job.name, cancellation=token, draft=True)
                     self.progress.emit(job.key, "Preparing…")
                     if self.cloud:
                         from app.conversation.cloud_attachments import prepare_cloud_attachment
                         prepared = prepare_cloud_attachment(self.store, reference, cancellation=token)
                     else:
                         prepared = AttachmentProcessor(self.store).prepare(reference, cancellation=token)
+                    token.raise_if_cancelled()
                     self.prepared.emit(job.key, prepared)
+                    handed_off = True
                 except TaskCancelled:
                     pass
                 except Exception as exc:
                     from app.inference.attachments import AttachmentError
                     self.failed.emit(job.key, str(exc) if isinstance(exc, AttachmentError) else
                                      "The attachment could not be prepared. Try another file.")
+                finally:
+                    if reference is not None and not handed_off:
+                        self.store.discard_draft(reference)
         finally:
             self.done.emit()
 
@@ -201,6 +208,7 @@ class AttachmentTray(QWidget):
     def _prepared(self, key, prepared):
         entry = self._entries.get(key)
         if entry is None or self._closing:
+            self.store.discard_draft(prepared.reference)
             return
         entry["prepared"] = prepared
         detail = prepared.processed.summary
@@ -240,6 +248,8 @@ class AttachmentTray(QWidget):
         if entry is None:
             return
         entry["job"].cancellation.cancel()
+        if entry['prepared'] is not None:
+            self.store.discard_draft(entry['prepared'].reference)
         self.cards.removeWidget(entry["card"])
         entry["card"].deleteLater()
         self.setVisible(bool(self._entries))
@@ -257,5 +267,4 @@ class AttachmentTray(QWidget):
     def shutdown(self):
         self._closing = True
         self._queued.clear()
-        for entry in self._entries.values():
-            entry["job"].cancellation.cancel()
+        self.clear()

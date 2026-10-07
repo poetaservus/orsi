@@ -375,6 +375,77 @@ def test_cloud_capacity_rejection_preserves_complete_composer_draft(windows, tmp
     assert not window.service.inference.requests and window.thread is None
 
 
+def test_worker_preflight_failure_restores_same_sources_and_text_for_manual_retry(windows, tmp_path):
+    window = windows('cloud', enabled=True)
+    window.attachment_tray.add_paths([text_file(tmp_path)])
+    wait_for(lambda: not window.attachment_tray.is_processing)
+    references = window.attachment_tray.references
+    def reject(*args, **kwargs):
+        raise ValueError('Synthetic source preflight rejection')
+    window.service.inference.prepare_attachment_context = reject
+    window.input.setPlainText('  Preserve this exact draft  ')
+    window.submit()
+    wait_for(lambda: window.thread is None)
+    assert window.input.toPlainText() == '  Preserve this exact draft  '
+    assert window.attachment_tray.references == references and window.attachment_tray.ready
+    assert not window.service.store.messages() and not window.service.inference.requests
+    assert not any(message.from_user for message in window.chat._messages)
+    del window.service.inference.prepare_attachment_context
+    window.submit()
+    wait_for(lambda: window.thread is None)
+    assert window.attachment_tray.count == 0 and window.input.toPlainText() == ''
+    assert len(window.service.inference.requests) == 1
+    assert window.service.store.visible_messages()[0].attachments == references
+    for ref in references:
+        window.service.store.attachment_store.verify(ref)
+
+
+def test_failed_attachment_submission_restores_selected_skill_chip(windows, tmp_path):
+    window = windows('cloud', enabled=True)
+    window.attachment_tray.add_paths([text_file(tmp_path)])
+    wait_for(lambda: not window.attachment_tray.is_processing)
+    window.skill_picker.select_name('missing-explicit-skill')
+    window.input.setPlainText('Keep my selected skill')
+    window.submit()
+    wait_for(lambda: window.thread is None)
+    assert window.skill_picker.selected_name == 'missing-explicit-skill'
+    assert not window.skill_picker.chip.isHidden()
+    assert window.input.toPlainText() == 'Keep my selected skill'
+    assert window.attachment_tray.ready and window.attachment_tray.count == 1
+
+
+def test_draft_remove_failure_and_late_cancel_cleanup_only_unsent_snapshots(windows, tmp_path, monkeypatch):
+    window = windows()
+    window.attachment_tray.add_paths([text_file(tmp_path)])
+    wait_for(lambda: not window.attachment_tray.is_processing)
+    ref = window.attachment_tray.references[0]
+    folder = window.service.store.attachment_store.root / ref.id
+    window.attachment_tray.clear()
+    assert not folder.exists()
+    entered, release = Event(), Event()
+    def delayed(self, reference, *, cancellation=None):
+        entered.set()
+        assert release.wait(5)
+        cancellation.raise_if_cancelled()
+    monkeypatch.setattr(AttachmentProcessor, 'prepare', delayed)
+    window.attachment_tray.add_paths([text_file(tmp_path, 'cancelled.txt')])
+    wait_for(entered.is_set)
+    window.attachment_tray.clear()
+    release.set()
+    wait_for(lambda: not window.attachment_tray.is_processing)
+    assert not list(window.service.store.attachment_store.root.glob('att-*'))
+
+
+def test_failed_preparation_removes_copy_and_preserves_selected_file(windows, tmp_path):
+    window = windows()
+    source = tmp_path / 'unsupported.exe'; source.write_bytes(b'Unsupported synthetic source')
+    window.attachment_tray.add_paths([source])
+    wait_for(lambda: not window.attachment_tray.is_processing)
+    assert window.attachment_tray.count == 1 and not window.attachment_tray.ready
+    assert not list(window.service.store.attachment_store.root.glob('att-*'))
+    assert source.read_bytes() == b'Unsupported synthetic source'
+
+
 def test_cloud_additions_while_processing_preserve_order(windows, tmp_path, monkeypatch):
     from app.conversation import cloud_attachments
     window = windows("cloud")

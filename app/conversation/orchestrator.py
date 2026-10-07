@@ -31,6 +31,7 @@ from app.conversation.skill_references import ConversationSkillReferences
 from app.conversation.local_documents import LocalDocuments, LocalDocumentCounter, with_local_document_guidance, with_local_image_guidance
 from app.security.host_access import HostAccessPolicy, HostReadScope
 from app.inference.engine import InferenceUnavailable
+from app.inference.cloud_errors import CloudErrorCode, CloudInferenceError
 from app.inference.attachments import AttachmentError, AttachmentContextError, attachment_references, has_attachments
 from app.inference.diagnostics import record_context_budget
 from app.runtime.cancellation import CancellationSource, TaskCancelled
@@ -257,9 +258,10 @@ class ConversationService:
         return getattr(self.inference, "supports_text_streaming", False) is True
 
     supports_skill_reporting = True
+    supports_admission_reporting = True
 
     def run(self, user_message: str, activity=None, *, skill_name: str | None = None, text_observer=None,
-            skill_observer=None, attachments=()) -> str:
+            skill_observer=None, attachments=(), admission_observer=None) -> str:
         """Run one turn; an optional explicit skill applies only to this message."""
         text = str(user_message).strip()
         references = attachment_references(attachments)
@@ -327,6 +329,11 @@ class ConversationService:
                 if has_attachments([*history, current]):
                     prepare_inputs([*history, current], cancellation=source.token)
             turn_id = self.store.begin_turn(text, attachments=references, cancellation=source.token)
+            if admission_observer is not None:
+                try:
+                    admission_observer()
+                except Exception:
+                    log.warning('The submitted-turn notification could not be delivered.')
             self._context_measurement = None
             self._active_turn_id = turn_id
             self._turn_result = None
@@ -399,9 +406,10 @@ class ConversationService:
                     status = (AgentRunStatus.CANCELLED if isinstance(exc, TaskCancelled) or
                               isinstance(exc, IncompleteResponseError) and exc.completion.finish_reason == "cancelled" else
                               AgentRunStatus.INCOMPLETE if isinstance(exc, IncompleteResponseError) else
-                              AgentRunStatus.MODEL_UNAVAILABLE if isinstance(exc, InferenceUnavailable) else
                               AgentRunStatus.CONTEXT_LIMIT if isinstance(exc, AttachmentContextError) or (
+                                  isinstance(exc, CloudInferenceError) and exc.code == CloudErrorCode.CONTEXT_OVERFLOW) or (
                                   isinstance(exc, SkillActivationError) and exc.code == SkillActivationErrorCode.CONTEXT_LIMIT) else
+                              AgentRunStatus.MODEL_UNAVAILABLE if isinstance(exc, InferenceUnavailable) else
                               AgentRunStatus.INTERNAL_FAILURE)
                     outcome = AgentRunResult(status=status, message=str(exc).strip()[:500] or "The turn stopped.",
                         steps=prior_outcome.steps if prior_outcome else 0,

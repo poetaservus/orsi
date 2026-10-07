@@ -381,5 +381,20 @@ profiles and plain requests retain their output settings. Counting retries consu
 capacity; permanent quota failures are not retried. A count error, source change,
 cancellation, oversized request or generation failure never loses attachments by falling
 back to text/local mode. Request storage remains disabled and inline transport creates no
-Files API resources to expire or clean up. Phase 5 covers broader context/recovery lifecycle
-cases. See [phase 4A](docs/attachments-phase4a.md) and [phase 4B](docs/attachments-phase4b.md).
+Files API resources to expire or clean up. See [phase 4A](docs/attachments-phase4a.md),
+[phase 4B](docs/attachments-phase4b.md) and [phase 5](docs/attachments-phase5.md).
+
+Composer imports have explicit in-process draft ownership shared by canonical storage root.
+The history verify/save/retain transaction serializes against draft abandonment. Only successful
+durable commits release ownership to history. Removal, failed preparation, late cancellation
+and closing remove only owned unsent snapshots/cache files, with parent pins, checked manifests,
+ordinary entries and no recursive traversal. Unknown/historical snapshots and original files
+are preserved; this is not an age-based global garbage collector.
+The composer retains its prepared cards while worker admission is pending. A durable-admission
+signal clears them safely; a rejected pre-admission request restores exact text, ordered source
+identities and the explicit skill chip, removing only its unsaved bubble. Started/stopped turns
+remain history and are never automatically retried. Source counting enforces minimum account
+reply space before admission; final cloud context overflow records a context-limit outcome.
+Existing recovery may project tool-result excerpts, but attachment groups and their original
+source bytes stay intact. Non-fitting protected requests stop explicitly. Reopening settles
+unfinished turns without replay; references survive stop/crash/archive and manual mode changes.

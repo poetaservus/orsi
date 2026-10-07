@@ -807,3 +807,28 @@ Prior main is retained at `archive/2026-10-07/main-before-cloud-attachment-capac
 verification, commit the bounded change, fast-forward local main and publish main under the
 standing user instruction. Remove only the merged local feature branch. Other active worktrees
 and remote feature/archive branches remain outside this operation. Phase 5 remains pending.
+
+## Attachment context and lifecycle, 7 October 2026
+
+`codex/attachment-lifecycle` starts from verified main `b61f602`. The user approved the final
+attachment implementation phase. The bounded change preserves rejected composer drafts until
+durable admission, transfers snapshot ownership atomically with history, cleans up owned unsent
+copies and records cloud context overflow distinctly. Existing context/prompt/routing/sampling
+and tool policies, profiles, one-attachment local limit, manual skill/model selection and GPU
+architecture are unchanged. See [phase 5 evidence and limitations](attachments-phase5.md).
+
+Final native full regression passed 2,260 tests and 15 subtests, with 57 optional skips and no
+failures/errors in 266.097 seconds. Expanded checks passed 291 tests; the final ownership/source
+handle recheck passed 85 tests. Real cloud stop/crash/archive and production-tool gates passed.
+GPU vision and actual 14B → VL → 14B switching passed with unchanged profiles/user selection and
+released owned processes. The 14B document gate read attachments correctly but omitted a requested
+stat call on two branch runs and the unchanged prior baseline. That model-choice limitation remains
+separate from passing lifecycle checks; its acceptance prompt/policy was not altered to pass.
+Compilation, dependency and whitespace checks passed. Numeric diagnostics contain no keys or
+source/response content, and live credentials remain session-only.
+
+Pre-integration refs/worktree maps and a verified complete-history bundle are preserved under
+ignored `state/backups/attachment-lifecycle-20261007/`; prior main is retained at
+`archive/2026-10-07/main-before-attachment-lifecycle`. Commit the verified change, fast-forward
+main and publish main under the standing user authorization. Remove only the merged local
+feature branch, preserving other active worktrees and remote feature/archive branches.

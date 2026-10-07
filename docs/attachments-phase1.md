@@ -14,9 +14,10 @@ The remaining implementation order is:
 
 1. **Complete:** shared storage and message format.
 2. **Complete:** composer selection, previews, removal, drop/paste and document processing.
-3. Local document input, then qualified vision input with a matching projector.
-4. Native cloud inputs, then provider/model capacity admission across the request.
-5. Attachment-aware context, recovery and end-to-end qualification.
+3. **Complete:** local document input and vision input with a matching projector.
+4. **Complete:** native cloud inputs and provider/model capacity admission.
+5. **Implemented:** [attachment-aware context, recovery and lifecycle qualification](attachments-phase5.md).
+   The phase 5 record distinguishes passing source/lifecycle gates from the existing 14B tool-call limitation.
 
 ## Storage contract
 
