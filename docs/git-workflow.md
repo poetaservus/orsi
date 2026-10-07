@@ -1,5 +1,31 @@
 # Git layout and baseline hygiene
 
+## Image-only input integration, 7 October 2026
+
+The bounded `codex/image-only-grounding` change starts from verified local main
+`8ae0aa0`. Shared local/cloud attachment guidance explains that supplied visual
+input is available independently of filesystem access and defines the behavior
+for image-only messages. Saved text and source bytes remain unchanged; no skill,
+tool, routing, sampling or profile changes accompany this prompt repair.
+
+The original image passed three repaired GPU full-pipeline checks; fresh runs
+before the repair also passed, so the original refusal was not reliably
+reproduced. The new synthetic image-only GPU gate passed, including a follow-up
+that retained the user's explicit task. All 145 focused regressions passed.
+The full suite recorded 2,289 passed, one unchanged native state-replacement
+retry assertion failure, 58 skipped and 15 subtests in 369.89 seconds. The first
+117-test isolated native recheck passed the original failing test but hit a
+different unchanged skill-reader directory-rename denial (116 passed, one
+failed); the fresh combined recheck passed all 117 tests in 1.87 seconds.
+These failures remain recorded and do not constitute a passing full suite.
+
+Before integration, refs and worktrees were saved with a verified complete
+bundle under `state/backups/image-only-grounding-20261007/`. The prior main is
+retained at `archive/2026-10-07/main-before-image-only-grounding`. The user's
+standing merge-and-push instruction authorizes promotion and publication of
+this bounded change. Other worktrees and historical tips remain untouched.
+See [image-only input](image-only-input.md) for evidence and limitations.
+
 `C:\Users\yaboy\Desktop\orsi_test` is the active linked checkout. Its shared Git directory is
 under `C:\Users\yaboy\Desktop\o.r.s.i\.git`; the original checkout remains on
 `archive/conversational-main-20260921`. That archive checkout is not the current application.

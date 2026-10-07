@@ -38,6 +38,63 @@ def visual(format="PNG", *, reverse=False):
     return bytes(output.data())
 
 
+def test_native_gpu_image_only_describes_pixels_and_continues_explicit_task(tmp_path):
+    """Keep the acceptance input empty: the application supplies visual intent."""
+    if os.name != 'nt':
+        pytest.skip('Native Windows GPU vision acceptance')
+    processes = subprocess.run(['tasklist.exe', '/FI', 'IMAGENAME eq llama-server.exe', '/FO', 'CSV', '/NH'],
+        capture_output=True, text=True, check=True, creationflags=subprocess.CREATE_NO_WINDOW)
+    if '"llama-server.exe"' in processes.stdout.lower():
+        pytest.skip('Another session owns a model server')
+    if detect_nvidia_memory_mib() is None:
+        pytest.skip('GPU vision acceptance requires NVIDIA offload')
+    profile = PATHS.config / 'model.json'
+    selection = PATHS.state / 'local_model_selection_v1.json'
+    before = profile.read_bytes()
+    selected_before = selection.read_bytes() if selection.exists() else None
+    catalog = LocalModelCatalog(PATHS.models, profile, load_model_config(), selection_path=tmp_path / 'selection.json')
+    config = catalog.configuration('Qwen3VL4BInstructQ4KM.gguf')
+    assert config.gpu_layers == -1
+    engine = LlamaServerInferenceEngine(config)
+    policy = HostAccessPolicy.full_local(application_root=tmp_path, user_home=tmp_path, acknowledged=True)
+    runtime = build_agent_runtime(engine, config=load_agent_feature_config(), portable_root=tmp_path,
+        state_directory=tmp_path / 'runtime', host_access_policy=policy)
+    app = ConversationService(engine, ConversationStore(tmp_path / 'chat.json'), agent_runtime=runtime,
+        portable_root=tmp_path, host_access_policy=policy)
+    app.set_approval_requester(lambda r: app.resolve_approval(r.approval_id, False))
+    owned = None
+    passed = False
+    summary = {'scope': 'image_only_gpu', 'gpu_layers': config.gpu_layers}
+    try:
+        engine.prepare()
+        url, key, owned = engine._ensure_started()
+        with urlopen(Request(url + '/props', headers={'Authorization': 'Bearer ' + key}), timeout=10) as reply:
+            summary['effective_context'] = json.load(reply)['default_generation_settings']['n_ctx']
+        assert summary['effective_context'] == config.context_length == 16384
+        ref = app.store.attachment_store.import_bytes(visual(), name='picture.png')
+        for index in range(3):
+            if index:
+                app.new_session()
+            words = app.run('', attachments=[ref]).casefold()
+            assert 'red' in words and 'blue' in words
+            assert app.store.visible_messages()[0].content == ''
+            assert not app.store.turns()[0].settled_calls and app.active_skill is None
+        app.run('For the next image I send, reply with only the color on its left.')
+        new = app.store.attachment_store.import_bytes(visual(reverse=True), name='next.png')
+        words = app.run('', attachments=[new]).casefold()
+        assert 'blue' in words and 'red' not in words
+        assert not app.store.turns()[-1].settled_calls
+        assert app.context_budget().fits
+        passed = True
+    finally:
+        app.shutdown()
+        released = owned is None or owned.poll() is not None
+        unchanged = profile.read_bytes() == before and (selection.read_bytes() if selection.exists() else None) == selected_before
+        summary.update(passed=passed, owned_process_released=released, user_profiles_and_selection_unchanged=unchanged)
+        (tmp_path / 'live-summary.json').write_text(json.dumps(summary, indent=2), encoding='utf8')
+        assert released and unchanged
+
+
 def test_native_visual_formats_followups_archive_tools_and_real_switch(tmp_path):
     if os.name != "nt":
         pytest.skip("Native Windows vision qualification")

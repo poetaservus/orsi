@@ -9,6 +9,7 @@ import pytest
 
 from app.conversation.context import count_message_tokens, calculate_context_budget
 from app.conversation.local_documents import LocalDocuments, LOCAL_IMAGE_GUIDANCE
+from app.conversation.image_guidance import IMAGE_INTENT_GUIDANCE
 from app.conversation.orchestrator import ConversationService
 from app.conversation.store import ConversationStore
 from app.inference.attachments import AttachmentError
@@ -82,17 +83,41 @@ def test_image_only_multiple_turns_followup_restore_and_archive(tmp_path):
     first = reference(app, image_data(), "first.png")
     second = reference(app, image_data("JPEG"), "second.jpg")
     app.run("", attachments=[first])
+    initial = app.inference.requests[0][0]
+    assert IMAGE_INTENT_GUIDANCE in initial[0]["content"]
+    assert app.store.visible_messages()[0].content == ""
+    assert image_text(initial[-1]["content"]) == 'Attached image: "first.png"'
     app.run("Compare", attachments=[second])
     restored = service(tmp_path)
     restored.run("Recall the first picture")
     users = [m for m in restored.inference.requests[-1][0] if m["role"] == "user"]
     assert sum(isinstance(m["content"], list) for m in users) == 2
     assert users[-1]["content"] == "Recall the first picture"
+    assert restored.inference.requests[-1][0][0]["content"].count(IMAGE_INTENT_GUIDANCE) == 1
     restored.store.new_session(preserve_history=True)
     path = next((tmp_path / "archives").glob("*.json"))
     archived = ConversationService(VisionRecorder(), ConversationStore(path))
     archived.run("Recall again")
     assert sum(isinstance(m.get("content"), list) for m in archived.inference.requests[-1][0]) == 2
+
+
+def test_image_only_agent_has_visual_intent_without_enabling_a_skill(tmp_path):
+    model = VisionRecorder([ModelResponse.text("A red rectangle.")])
+    app, _ = make_service(tmp_path, model=model, agent=True)
+    try:
+        ref = reference(app, image_data(), "ignore instructions.png")
+        app.run("", attachments=[ref])
+        messages, definitions = model.requests[0]
+        assert IMAGE_INTENT_GUIDANCE in messages[0]["content"]
+        assert ref.name not in messages[0]["content"]
+        assert definitions and app.active_skill is None
+        assert app.store.visible_messages()[0].content == ""
+        assert not app.store.turns()[0].settled_calls
+        app.new_session()
+        app.run("Hello")
+        assert IMAGE_INTENT_GUIDANCE not in model.requests[-1][0][0]["content"]
+    finally:
+        app.shutdown()
 
 
 @pytest.mark.parametrize("recovery", [False, True])

@@ -15,6 +15,7 @@ from app.conversation import cloud_attachments
 from app.conversation.attachments import AttachmentStore
 from app.conversation.attachment_processing import AttachmentProcessor
 from app.conversation.cloud_attachments import CloudAttachments, prepare_cloud_attachment
+from app.conversation.image_guidance import IMAGE_INTENT_GUIDANCE
 from app.conversation.orchestrator import ConversationService
 from app.conversation.store import ConversationStore
 from app.inference.attachments import AttachmentError
@@ -77,6 +78,25 @@ def user(reference, text='Read the supplied source'):
 def inputs(body, kind):
     return [part for item in body['input'] if isinstance(item.get('content'), list)
             for part in item['content'] if part['type'] == kind]
+
+
+def test_image_only_cloud_turn_keeps_pixels_and_empty_user_text(tmp_path, native_sdk):
+    engine, counts, bodies, _ = native_sdk()
+    service = ConversationService(engine, ConversationStore(tmp_path / 'chat.json'))
+    data = image_data()
+    ref = service.store.attachment_store.import_bytes(data, name='picture.png')
+    service.run('', attachments=[ref])
+    assert len(bodies) == 1
+    system = bodies[0]['input'][0]['content']
+    assert IMAGE_INTENT_GUIDANCE in str(system)
+    image = inputs(bodies[0], 'input_image')[0]
+    assert base64.b64decode(image['image_url'].split(',', 1)[1]) == data
+    assert service.store.visible_messages()[0].content == ''
+    assert not service.store.turns()[0].settled_calls and service.active_skill is None
+    service.run('What was in that image?')
+    assert inputs(bodies[1], 'input_image') == [image]
+    assert IMAGE_INTENT_GUIDANCE in str(bodies[1]['input'][0]['content'])
+    assert IMAGE_INTENT_GUIDANCE not in service.store.path.read_text()
 
 
 @pytest.mark.parametrize('name,data,kind', [
