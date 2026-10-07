@@ -302,3 +302,20 @@ metadata or Markdown into an execution or authority channel.
 
 See [Phase 6.2](docs/skill-runtime-phase6-2.md) for the frozen v1 interfaces and future adapter
 boundaries, and [Phase 6.1](docs/skill-runtime-phase6-1.md) for content-free skill observability.
+
+## Attachment input foundation
+
+User messages may retain ordered `AttachmentReference` metadata while immutable
+binary snapshots live outside conversation JSON in ignored state. The worker and
+conversation service preserve these references, including attachment-only messages
+and follow-ups. Legacy plain text history retains its model input shape.
+`AttachmentStore` publishes flushed copies atomically and verifies manifests,
+sizes and hashes before exposing a pinned read-only stream. Archives share the
+same copies; import/save failures do not remove existing history or referenced
+files. No attachment provides skill or filesystem execution authority.
+
+Attachment inference and counting require explicit adapter support. Lazy/hybrid
+wrappers preserve the selected mode, and unsupported backends reject attached
+requests before inference. Production adapters and agent attachment continuations
+remain disabled until the later provider phases. Composer selection and document
+processing are phase 2. See [the phase 1 contract and verification record](docs/attachments-phase1.md).

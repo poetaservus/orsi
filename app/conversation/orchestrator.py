@@ -30,6 +30,7 @@ from app.conversation.store import ConversationStore, TurnHistoryError
 from app.conversation.skill_references import ConversationSkillReferences
 from app.security.host_access import HostAccessPolicy, HostReadScope
 from app.inference.engine import InferenceUnavailable
+from app.inference.attachments import AttachmentError, attachment_references, has_attachments
 from app.inference.diagnostics import record_context_budget
 from app.runtime.cancellation import CancellationSource, TaskCancelled
 from app.runtime.activity import report_activity
@@ -253,10 +254,11 @@ class ConversationService:
     supports_skill_reporting = True
 
     def run(self, user_message: str, activity=None, *, skill_name: str | None = None, text_observer=None,
-            skill_observer=None) -> str:
+            skill_observer=None, attachments=()) -> str:
         """Run one turn; an optional explicit skill applies only to this message."""
         text = str(user_message).strip()
-        if not text:
+        references = attachment_references(attachments)
+        if not text and not references:
             raise ValueError("Enter a message first.")
         if not self._run_lock.acquire(blocking=False):
             raise RuntimeError("O.R.S.I is already replying.")
@@ -280,6 +282,7 @@ class ConversationService:
                     raise RuntimeError("The conversation is closed.")
                 self._cancellation = source
             report_activity(activity, "Preparing your request…")
+            self._admit_attachments(references, source.token, verify=True)
             if callable(activity_setter):
                 activity_setter(activity)
                 activity_attached = True
@@ -291,7 +294,7 @@ class ConversationService:
             # Local control commands are acknowledged without inference or durable
             # model history. '/skill' alone clears the current session selection.
             command = text.split(maxsplit=1)
-            if command[0] == "/skill" and skill_name is None:
+            if command and command[0] == "/skill" and skill_name is None and not references:
                 if len(command) == 1:
                     self._record_skill_event("deactivated", skill=self.active_skill, injected=False)
                     self._active_skill_name = None
@@ -306,7 +309,7 @@ class ConversationService:
                 return "Skill activated: " + json.dumps(label, ensure_ascii=True) + "."
             if self._history_persistence_failed:
                 raise TurnHistoryError("A settled turn could not be retained safely. Review its outcomes before retrying.")
-            turn_id = self.store.begin_turn(text)
+            turn_id = self.store.begin_turn(text, attachments=references, cancellation=source.token)
             self._context_measurement = None
             self._active_turn_id = turn_id
             self._turn_result = None
@@ -465,7 +468,11 @@ class ConversationService:
             raise RuntimeError("The conversation cannot fit the active model context window.")
         record_context_budget(log, request.budget, request_kind="conversation")
         self._record_skill_injection(request)
-        response = self.inference.respond(request.messages)
+        if has_attachments(request.messages):
+            response = self.inference.respond_with_attachments(request.messages,
+                attachment_store=self.store.attachment_store)
+        else:
+            response = self.inference.respond(request.messages)
         source.token.raise_if_cancelled()
         if isinstance(response, str) and getattr(response, "completion", None) is not None:
             if response.completion.incomplete and not response.strip():
@@ -694,12 +701,30 @@ class ConversationService:
             capability_names=capability_names,
         ).messages
 
+    def _admit_attachments(self, references=(), cancellation=None, *, verify=False):
+        retained = tuple(item for message in self.store.visible_messages() for item in message.attachments)
+        if not references and not retained:
+            return
+        if getattr(self.inference, "mode", "local") == "local" and len(references) > 1:
+            raise AttachmentError("Local mode accepts one file or image per message.")
+        if getattr(self.inference, "supports_attachment_inputs", False) is not True:
+            raise AttachmentError("Image and file input is not enabled for this model yet.")
+        if self.agent_enabled:
+            raise AttachmentError("Image and file input in agent mode is not enabled yet.")
+        if not callable(getattr(self.inference, "respond_with_attachments", None)) or not callable(
+                getattr(self.inference, "count_attachment_message_tokens", None)):
+            raise AttachmentError("This model does not implement image and file input yet.")
+        if verify:
+            for reference in retained:
+                self.store.attachment_store.verify(reference, cancellation=cancellation)
+
     def _model_request(
         self,
         *,
         capability_turn: bool | None = None,
         capability_names: tuple[str, ...] | None = None,
     ) -> ContextSelection:
+        self._admit_attachments()
         use_agent = self.agent_enabled and capability_turn is not False
         capabilities = (
             self.agent_capabilities if capability_names is None else capability_names
@@ -731,6 +756,11 @@ class ConversationService:
         core_prompt = prompt
         prompt = with_active_skill(core_prompt, skill, references=self._references.prompt_payload(
             available=use_agent and "skill.read_reference" in capabilities))
+        latest_user = next((message for message in reversed(history) if message.get("role") == "user"), None)
+        if latest_user and latest_user.get("attachments") and not calculate_context_budget(
+                self.inference, [{"role": "system", "content": prompt}, latest_user],
+                reserved_tokens=schema_reserve).fits:
+            raise AttachmentError("The attached message cannot fit the active model context window.")
         if skill is not None:
             latest_user = next((message for message in reversed(history) if message.get("role") == "user"), None)
             # Added guidance must not displace or truncate the current user task.

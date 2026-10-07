@@ -11,6 +11,8 @@ import uuid
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.state.storage import JsonStore
+from app.conversation.attachments import AttachmentStore
+from app.inference.attachments import AttachmentReference, attachment_references
 from app.inference.completion import CompletionMetadata, CompletionText
 from app.agent.contracts import AgentRunResult, AgentRunStatus, SettledCall
 from app.inference.openai_replay import OpenAIReplay, StoredOpenAIResponse, REPLAY_KEY
@@ -29,13 +31,29 @@ class ChatMessage(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     role: Literal["user", "assistant"]
-    content: str = Field(min_length=1)
+    content: str
+    attachments: tuple[AttachmentReference, ...] = ()
     timestamp: str = Field(default_factory=_now)
     completion: CompletionMetadata | None = None
     completion_history: list[CompletionMetadata] | None = None
     turn_id: str | None = None
     stopped: bool = False
     skill_name: str | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def validate_input(self):
+        attachment_references(self.attachments)
+        if self.role != "user" and self.attachments:
+            raise ValueError("Only user messages can carry input attachments.")
+        if not self.content and not self.attachments:
+            raise ValueError("Conversation messages cannot be empty.")
+        return self
+
+    def input_message(self) -> dict:
+        value = {"role": self.role, "content": self.content}
+        if self.attachments:
+            value["attachments"] = [item.model_dump(mode="json") for item in self.attachments]
+        return value
 
 
 class RecoveredCall(BaseModel):
@@ -116,8 +134,10 @@ class ConversationStore:
     The crash journal remains the execution authority. History never replays a call.
     """
 
-    def __init__(self, path: Path, *, start_fresh: bool = False):
+    def __init__(self, path: Path, *, start_fresh: bool = False, attachment_store: AttachmentStore | None = None):
         self.path = Path(path)
+        storage_parent = self.path.parent.parent if self.path.parent.name == "archives" else self.path.parent
+        self.attachment_store = attachment_store or AttachmentStore(storage_parent / "attachments")
         self._store = JsonStore(self.path)
         self._lock = RLock()
         with self._lock:
@@ -161,14 +181,17 @@ class ConversationStore:
         with self._lock:
             return deepcopy(self._conversation.messages)
 
-    def begin_turn(self, text: str) -> str:
+    def begin_turn(self, text: str, *, attachments=(), cancellation=None) -> str:
+        references = attachment_references(attachments)
+        for reference in references:
+            self.attachment_store.verify(reference, cancellation=cancellation)
         with self._lock:
             if any(turn.outcome is None for turn in self._conversation.turns):
                 raise TurnHistoryError("An unfinished turn must be settled before another operation can run.")
             proposed = self._conversation.model_copy(deep=True)
             turn_id = f"turn-{len(proposed.turns) + 1}"
             proposed.turns.append(TurnRecord(turn_id=turn_id, user_index=len(proposed.messages)))
-            proposed.messages.append(ChatMessage(role="user", content=text, turn_id=turn_id))
+            proposed.messages.append(ChatMessage(role="user", content=text, turn_id=turn_id, attachments=references))
             proposed.session_status = "active"
             self._commit(proposed)
             return turn_id
@@ -267,7 +290,7 @@ class ConversationStore:
                     continue
                 if index in stopped:
                     history.append({"role": "assistant", "content": self._stopped_text(stopped[index].outcome)})
-                history.append({"role": message.role, "content": message.content})
+                history.append(message.input_message())
                 turn = turns.get(index)
                 if turn is not None:
                     retained = set()
@@ -397,10 +420,10 @@ class ConversationStore:
                 completion_history=list(history) if informative and history else None))
             self._commit(proposed)
 
-    def messages(self) -> list[dict[str, str]]:
+    def messages(self) -> list[dict]:
         with self._lock:
             return [
-                {"role": message.role, "content": message.content}
+                message.input_message()
                 for message in self._conversation.messages
             ]
 

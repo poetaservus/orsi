@@ -94,8 +94,9 @@ def directory_identity_for_path(path: Path) -> str:
         kernel.CloseHandle(handle)
 
 
-def read_file_snapshot(path: Path, max_bytes: int, cancellation) -> tuple[bytes, str]:
-    """Read bounded bytes and identity from one non-following, write/delete-locked handle."""
+@contextmanager
+def open_file_snapshot(path: Path, max_bytes: int, cancellation):
+    """Open a bounded regular file without following links or sharing writes/deletes."""
     import msvcrt
 
     cancellation.raise_if_cancelled()
@@ -117,14 +118,20 @@ def read_file_snapshot(path: Path, max_bytes: int, cancellation) -> tuple[bytes,
         descriptor = msvcrt.open_osfhandle(handle, os.O_RDONLY | os.O_BINARY)
         transferred = True
         with os.fdopen(descriptor, "rb") as stream:
-            data = stream.read(max_bytes + 1)
-        cancellation.raise_if_cancelled()
-        if len(data) > max_bytes:
-            raise ValueError("The file exceeds the snapshot byte limit.")
-        return data, identity
+            yield stream, identity
     finally:
         if not transferred:
             kernel.CloseHandle(handle)
+
+
+def read_file_snapshot(path: Path, max_bytes: int, cancellation) -> tuple[bytes, str]:
+    """Read bounded bytes and identity from one non-following, write/delete-locked handle."""
+    with open_file_snapshot(path, max_bytes, cancellation) as (stream, identity):
+        data = stream.read(max_bytes + 1)
+    cancellation.raise_if_cancelled()
+    if len(data) > max_bytes:
+        raise ValueError("The file exceeds the snapshot byte limit.")
+    return data, identity
 
 
 @contextmanager

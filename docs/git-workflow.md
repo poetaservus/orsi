@@ -622,3 +622,27 @@ After verification, commit, fast-forward local main, and remove the merged local
 feature branch. The user's standing merge-and-push instruction authorizes
 publishing main only. Other active worktrees and remote feature/archive branches
 are outside this operation.
+
+## Attachment foundation, 7 October 2026
+
+`codex/attachment-foundation` starts from local main `2c96700`. The user approved
+phase 1 of the five-phase image/file input plan. The bounded change adds immutable
+snapshot storage and durable ordered references, worker/service/inference interfaces,
+local per-message admission and explicit unsupported-backend gates. Existing
+production adapters and the composer + placeholder remain disabled for attachments;
+extraction, actual vision and cloud uploads belong to later phases. See
+[the phase 1 implementation and verification record](attachments-phase1.md).
+
+Final focused native checks passed 160 tests in 9.21 seconds. Full native regression
+passed 2,070 tests and 15 subtests, with 49 existing skips and no failures in
+246.74 seconds. All 40 new attachment contract cases passed, including Windows
+source/copy handle checks. Live attachment model/API qualification is deferred
+to the provider phases. Dependency and Git whitespace checks passed. No user
+settings, model profiles, sampling or prompt policies were changed.
+
+Pre-change refs, worktree map and a verified complete-history bundle are preserved
+under ignored `state/backups/attachment-foundation-20261007/`. Prior main is retained
+at `archive/2026-10-07/main-before-attachment-foundation`. After verification, commit,
+fast-forward local main and remove the merged local feature branch. The user's
+standing merge-and-push instruction authorizes publishing main only; other active
+worktrees and remote feature/archive branches remain outside this operation.

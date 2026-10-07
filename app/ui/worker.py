@@ -4,6 +4,7 @@ import logging
 
 from PySide6.QtCore import QObject, Signal, Slot
 from app.inference.completion import CompletionText, IncompleteResponseError
+from app.inference.attachments import attachment_references
 
 
 log = logging.getLogger(__name__)
@@ -18,16 +19,19 @@ class ConversationWorker(QObject):
     text_updated = Signal(str)
     skill_used = Signal(str)
 
-    def __init__(self, service, message: str, *, skill_name: str | None = None):
+    def __init__(self, service, message: str, *, skill_name: str | None = None, attachments=()):
         super().__init__()
         self.service = service
         self.message = message
         self.skill_name = skill_name
+        self.attachments = attachment_references(attachments)
 
     @Slot()
     def run(self) -> None:
         try:
             kwargs = {}
+            if self.attachments:
+                kwargs["attachments"] = self.attachments
             if self.skill_name is not None:
                 kwargs["skill_name"] = self.skill_name
             if getattr(self.service, "supports_text_streaming", False) is True:

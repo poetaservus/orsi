@@ -5,6 +5,7 @@ from copy import deepcopy
 from dataclasses import dataclass, fields
 from math import ceil
 from typing import Any
+from app.inference.attachments import AttachmentError, has_attachments
 
 
 DEFAULT_SAFETY_BUFFER_TOKENS = 256
@@ -258,6 +259,11 @@ def _validated_safety_buffer(value: int) -> int:
 
 
 def count_message_tokens(inference, messages: list[dict[str, Any]]) -> int:
+    if has_attachments(messages):
+        counter = getattr(inference, "count_attachment_message_tokens", None)
+        if not callable(counter):
+            raise AttachmentError("This model cannot account for image and file input yet.")
+        return max(1, int(counter(deepcopy(messages))))
     if getattr(inference, "supports_openai_context", False) is True:
         return max(1, int(inference.count_context_message_tokens(messages)))
     counter = getattr(inference, "count_message_tokens", None)

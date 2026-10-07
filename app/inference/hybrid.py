@@ -6,6 +6,7 @@ from typing import Callable, Iterable
 
 from app.inference.cloud_errors import CloudInferenceError
 from app.inference.engine import InferenceEngine, InferenceUnavailable
+from app.inference.attachments import AttachmentError
 from app.inference.openai_replay import neutral_messages
 from app.runtime.activity import report_activity
 from app.inference.protocol import (
@@ -38,6 +39,18 @@ class LazyInferenceEngine(InferenceEngine):
 
     def respond(self, messages: list[dict[str, str]]) -> str:
         return self._get_engine().respond(messages)
+
+    @property
+    def supports_attachment_inputs(self):
+        return getattr(self._get_engine(), "supports_attachment_inputs", False) is True
+
+    def respond_with_attachments(self, messages, *, attachment_store):
+        if not self.supports_attachment_inputs:
+            raise AttachmentError("Image and file input is not enabled for this model yet.")
+        return self._get_engine().respond_with_attachments(messages, attachment_store=attachment_store)
+
+    def count_attachment_message_tokens(self, messages):
+        return self._get_engine().count_attachment_message_tokens(messages)
 
     def respond_with_capabilities(
         self,
@@ -159,6 +172,26 @@ class HybridInferenceEngine(InferenceEngine):
     def supports_openai_replay(self) -> bool:
         with self._lock:
             return getattr(self._engine_for(self._mode), "supports_openai_replay", False) is True
+
+    @property
+    def supports_attachment_inputs(self):
+        return getattr(self._engine_for(self.mode), "supports_attachment_inputs", False) is True
+
+    def respond_with_attachments(self, messages, *, attachment_store):
+        engine = self._engine_for(self.mode)
+        if getattr(engine, "supports_attachment_inputs", False) is not True:
+            raise AttachmentError("Image and file input is not enabled for this model yet.")
+        # The existing text fallback cannot preserve multimodal input. A failed
+        # attachment request remains in the explicitly selected mode.
+        result = engine.respond_with_attachments(messages, attachment_store=attachment_store)
+        self._refresh_limits(engine)
+        return result
+
+    def count_attachment_message_tokens(self, messages):
+        engine = self._engine_for(self.mode)
+        count = engine.count_attachment_message_tokens(messages)
+        self._refresh_limits(engine)
+        return count
 
     @property
     def supports_openai_context(self):
