@@ -194,3 +194,11 @@ labelled and unlabelled messages is under ignored
 220.54 seconds. Live model/API gates remain unrun; no paid API requests or
 key changes are made. This follow-up is committed and retained on the UI
 review branch.
+
+## Integration approval, 7 October 2026
+
+The user has approved merging all new changes into main and pushing to GitHub.
+This supersedes the review-branch retention recorded above. The verified source
+tip is `dd596eb`; integration adds documentation only and reuses the final
+1,974-test unrestricted confirmation. See the
+[integration and recovery record](git-workflow.md).

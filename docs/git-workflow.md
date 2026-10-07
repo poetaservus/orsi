@@ -525,3 +525,26 @@ folder-rename failures and the successful five-case isolated recheck remain
 in the verification record. No existing native implementation or acceptance
 test was changed. Live model/API gates remain unrun and separate from these
 passed checks; no paid API requests or key changes were made.
+
+## Working status UI integration, 7 October 2026
+
+The user now authorizes merging every new change into `main` and pushing it
+to GitHub. This supersedes the UI branch's review deferral above. The verified
+UI source tip is `dd596eb`, containing working status, inline highlights,
+composer placeholders, control styling and per-message skill captions.
+Local main starts at `ca90b4c`; fetched `origin/main` remains `92c3a7b`.
+Both are ancestors of the UI tip, so integration requires no source changes.
+The push includes the eleven earlier unpublished local-main commits as well
+as the five UI commits and this documentation record.
+
+The latest unrestricted full suite passed 1,974 tests and 15 subtests, with
+49 skips and no failures in 220.54 seconds. This integration reuses that
+verification of the unchanged source; live model/API gates remain unrun.
+See [the UI verification record](working-status-ui.md).
+
+Pre-integration refs, worktree map and a verified complete-history bundle are
+preserved under ignored `state/backups/working-status-integration-20261007/`.
+Preserve prior main at `archive/2026-10-07/main-before-working-status-ui`,
+commit this record, fast-forward local main and push only main to origin.
+Remove the merged local UI branch after successful integration. Other active
+worktrees and remote feature/archive branches are outside this operation.
