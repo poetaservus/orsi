@@ -1,5 +1,29 @@
 # Git layout and baseline hygiene
 
+## Native image generation integration, 7–8 October 2026
+
+Eight bounded `codex/image-generation-*` subphases start from local main
+`553e333`. Each was verified, committed, fast-forwarded into main and pushed
+under the user's explicit eight-subphase authorization; its merged local feature
+branch was removed. The port includes independent image settings, native cloud
+generation, original-resolution storage, follow-up editing, a cached animated
+placeholder, viewer/save presentation and cancellation/failure handling.
+Application startup resumes conversations containing generated images so their
+saved originals remain visible and editable.
+
+The final full suite passed 2,332 tests and 15 subtests, with 58 separately
+recorded opt-in/host-dependent skips. Actual generation, reopening, editing and
+transport release passed twice. Earlier access probes and native test failures
+remain recorded separately in [the image-generation record](image-generation.md).
+The final acceptance repair reuses immutable Windows DLL bindings shared by
+protected image reads; file identities, handles and permission checks stay fresh.
+
+All pre-port refs were preserved in the verified complete bundle under
+`state/backups/image-generation-20261007/`. Each prior integration tip is retained
+at `archive/2026-10-07/main-before-image-generation-<subphase>`. Other worktrees
+and their active branches remain untouched. Runtime image choices belong under
+ignored state; credentials and live image data were not committed.
+
 ## Image viewer overlay integration, 7 October 2026
 
 The bounded `codex/image-viewer-overlay` change starts from local main `9031aa6`.

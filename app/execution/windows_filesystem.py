@@ -3,6 +3,7 @@ from __future__ import annotations
 import ctypes
 from ctypes import wintypes
 from contextlib import contextmanager
+from functools import lru_cache
 import os
 from pathlib import Path
 
@@ -40,6 +41,13 @@ class _IoStatus(ctypes.Structure):
 def _kernel():
     if os.name != "nt":
         raise OSError("Folder creation requires Windows.")
+    return _kernel_bindings()
+
+
+@lru_cache(maxsize=1)
+def _kernel_bindings():
+    # Reuse immutable DLL bindings across snapshots; repeated LoadLibrary calls
+    # yield to Qt's main thread. Identities, handles and file checks stay fresh.
     kernel = ctypes.WinDLL("kernel32", use_last_error=True)
     kernel.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD,
                                   ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD,
