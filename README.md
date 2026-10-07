@@ -156,9 +156,12 @@ attachments, including follow-ups and tool continuations. The complete extracted
 counts toward context; oversized current messages fail visibly. For local images, manually
 choose Qwen3-VL 4B with its verified matching projector. PNG, JPEG, WebP and still GIF
 input supports follow-ups and native tool continuations, with image-aware context counting.
-The default 14B model remains selected until you change it. Cloud attachment sending
-remains pending phase 4. Unsupported input keeps the composer draft intact.
-See [documents](docs/attachments-phase3a.md) and [local images](docs/attachments-phase3b.md).
+The default 14B model remains selected until you change it. Cloud mode sends multiple
+images and files directly through OpenAI Responses, including PDF page visuals,
+follow-ups, restored chats and native tool continuations. Its worker checks the actual
+provider input-token count before generation. Unsupported input keeps the composer draft intact.
+See [documents](docs/attachments-phase3a.md), [local images](docs/attachments-phase3b.md)
+and [cloud input](docs/attachments-phase4a.md). Maximum-capacity qualification remains phase 4B.
 Unfinished code fences still appear in code boxes. Incomplete tool generation is rejected before
 argument repair or execution. The UI releases its controls even when the context meter cannot
 refresh. See [completion-state verification](docs/completion-state-2026-10-02.md).

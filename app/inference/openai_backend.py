@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 from concurrent.futures import CancelledError
 import logging
+import json
 import os
 from pathlib import Path
 from threading import RLock
@@ -28,6 +29,7 @@ from app.inference.openai_rate_limits import OpenAIRatePacer
 from app.settings.openai_cloud import OpenAIAccountRateLimits, OpenAICloudConfig, OpenAIModelCatalog
 from app.state.storage import JsonStore
 from app.runtime.activity import report_activity
+from app.inference.attachments import AttachmentError, has_attachments, attachment_references
 
 
 log = logging.getLogger(__name__)
@@ -232,6 +234,8 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
     supports_openai_replay = True
     supports_text_streaming = True
     supports_openai_context = True
+    supports_attachment_inputs = True
+    supports_native_attachment_tools = True
     def __init__(self, config: OpenAICloudConfig, api_key: str | None = None, *,
                  selection_path: Path | None = None, rate_limits_path: Path | None = None):
         self.config = config
@@ -242,6 +246,7 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
         self._text_observer = None
         self._request_cancellation = None
         self._closed = False
+        self._attachments = None
         self.context_revision = 0
         self.last_request_metrics = None
         self._configured_rate_limits = dict(config.rate_limits)
@@ -318,13 +323,48 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
         if self._closed:
             raise CloudInferenceError("The OpenAI backend is closed.", code=CloudErrorCode.CLOSED)
 
+    def set_attachment_store(self, store):
+        from app.conversation.cloud_attachments import CloudAttachments
+        with self._lock:
+            self._ensure_open()
+            self._attachments = CloudAttachments(store)
+
+    def _attachment_sources(self):
+        with self._lock:
+            self._ensure_open()
+            if self._attachments is None:
+                raise AttachmentError("The cloud attachment store is unavailable.")
+            return self._attachments
+
+    def admit_attachment_inputs(self, references, *, cancellation=None):
+        self._attachment_sources().admit(references, cancellation=cancellation)
+
+    def respond_with_attachments(self, messages, *, attachment_store):
+        self.set_attachment_store(attachment_store)
+        return self.respond(messages)
+
+    def count_attachment_message_tokens(self, messages):
+        return self._attachment_sources().estimate(context_input_items(messages, self.active_model))
+
+    def _project_attachments(self, inputs):
+        if not has_attachments(inputs):
+            return inputs, None
+        sources = self._attachment_sources()
+        report_activity(getattr(self, "_activity_observer", None), "Preparing cloud attachments…")
+        estimate = sources.estimate(inputs)
+        return sources.project(inputs, cancellation=self._request_cancellation), estimate
+
     def respond(self, messages: list[dict[str, str]]) -> str:
         neutral = neutral_messages(messages)
         if not neutral or any(not isinstance(message, dict)
-                or set(message) != {"role", "content"}
-                or message["role"] not in {"system", "user", "assistant"}
-                or not isinstance(message["content"], str) for message in neutral):
+                or set(message) not in ({"role", "content"}, {"role", "content", "attachments"})
+                or message.get("role") not in {"system", "user", "assistant"}
+                or not isinstance(message.get("content"), str)
+                or "attachments" in message and message.get("role") != "user" for message in neutral):
             raise ValueError("OpenAI text requests require a non-empty text-only transcript.")
+        for message in neutral:
+            if "attachments" in message:
+                attachment_references(message["attachments"])
         inputs = []
         for message, plain in zip(messages, neutral, strict=True):
             if REPLAY_KEY in message:
@@ -334,7 +374,9 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
                 inputs.extend(replay.items() if replay.model == self.active_model else [plain])
             else:
                 inputs.append(plain)
-        payload = self._request(inputs)
+        inputs, estimate = self._project_attachments(inputs)
+        payload = (self._request(inputs) if estimate is None else
+                   self._request(inputs, attachment_estimate=estimate))
         result = normalize_text_response(payload)
         if not result.completion.incomplete:
             result = CompletionText(result, openai_response=self._replay(payload))
@@ -346,7 +388,8 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
         except (TypeError, ValueError):
             raise _malformed() from None
 
-    def _request(self, inputs: list[dict], *, tools: list[dict] | None = None) -> dict:
+    def _request(self, inputs: list[dict], *, tools: list[dict] | None = None,
+                 attachment_estimate: int | None = None) -> dict:
         with self._lock:
             self._ensure_open()
             profile = self.catalog.current_profile
@@ -376,8 +419,12 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
             body["temperature"] = profile.temperature
         if tools is not None:
             body.update(tools=tools, tool_choice="auto", parallel_tool_calls=True)
-        estimated_input = estimate_input_tokens(inputs) + estimate_schema_tokens(tools)
-        if estimated_input + 256 > profile.max_input_tokens:
+        if attachment_estimate is not None:
+            from app.conversation.cloud_attachments import MAX_REQUEST_BYTES
+            if len(json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8")) > MAX_REQUEST_BYTES:
+                raise AttachmentError("The cloud request exceeds the transport size limit.")
+        estimated_input = (estimate_input_tokens(inputs) if attachment_estimate is None else attachment_estimate) + estimate_schema_tokens(tools)
+        if attachment_estimate is None and estimated_input + 256 > profile.max_input_tokens:
             raise _provider_error(None, "context_length_exceeded")
         state = ResponsesStreamState(observer)
         measurement = RequestMeasurement()
@@ -412,7 +459,7 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
                     response.headers["x-should-retry"] = "false"
 
         async def request():
-            nonlocal stream_opened, reservation
+            nonlocal stream_opened, reservation, estimated_input
             import httpx
             measurement.start()
             try:
@@ -420,13 +467,41 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
                 async with asyncio.timeout(self.config.timeout_seconds):
                     if cancellation is not None and cancellation.is_cancelled:
                         raise state.interrupted("cancelled")
-                    reservation = await pacer.acquire(profile.id, estimated_input + 256 + profile.max_output_tokens,
-                        activity=activity)
+                    if attachment_estimate is None:
+                        reservation = await pacer.acquire(profile.id, estimated_input + 256 + profile.max_output_tokens,
+                            activity=activity)
                     if runner.client is None:
                         runner.http_client = openai.DefaultAsyncHttpxClient(event_hooks={"response": [no_quota_retry]})
                         runner.client = openai.AsyncOpenAI(api_key=api_key, base_url=self.config.base_url,
                             timeout=self.config.timeout_seconds, max_retries=self.config.max_retries,
                             http_client=runner.http_client)
+                    if attachment_estimate is not None:
+                        # Counting runs only on the worker, never in the composer
+                        # or context meter. The source is native multimodal input,
+                        # so base64 bytes cannot be treated as text tokens.
+                        report_activity(activity, "Checking cloud attachment context…")
+                        count_reservation = await pacer.acquire(profile.id, 1, activity=activity)
+                        async def count_headers(response):
+                            pacer.observe(profile.id, response.headers)
+                        runner.http_client.event_hooks["request"] = []
+                        runner.http_client.event_hooks["response"] = [count_headers]
+                        try:
+                            count_body = {key: body[key] for key in (
+                                "model", "input", "reasoning", "truncation", "tools", "tool_choice", "parallel_tool_calls") if key in body}
+                            counted = await runner.client.responses.input_tokens.count(**count_body)
+                            actual = getattr(counted, "input_tokens", None)
+                            if type(actual) is not int or actual < 0 or actual > 2**63 - 1:
+                                raise _malformed()
+                            estimated_input = actual
+                            if actual + 256 > profile.max_input_tokens:
+                                raise _provider_error(None, "context_length_exceeded")
+                        finally:
+                            pacer.settle(count_reservation, TokenUsage(input_tokens=0, output_tokens=0, total_tokens=0))
+                        if cancellation is not None and cancellation.is_cancelled:
+                            raise state.interrupted("cancelled")
+                    if attachment_estimate is not None:
+                        reservation = await pacer.acquire(profile.id, estimated_input + 256 + profile.max_output_tokens,
+                            activity=activity)
                     runner.http_client.event_hooks["request"] = [request_hook]
                     runner.http_client.event_hooks["response"] = [no_quota_retry]
                     stream = await runner.client.responses.create(**body)
@@ -521,9 +596,11 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
         definitions = model_capability_definitions(capabilities, require_nonempty=True)
         tools = responses_function_tools(definitions)
         inputs = responses_input(messages, definitions, model_id=self.active_model)
+        inputs, estimate = self._project_attachments(inputs)
         previous_ids = {item["call_id"] for item in inputs if item.get("type") == "function_call"}
         try:
-            payload = self._request(inputs, tools=tools)
+            payload = (self._request(inputs, tools=tools) if estimate is None else
+                       self._request(inputs, tools=tools, attachment_estimate=estimate))
         except IncompleteResponseError as exc:
             return ModelResponse.failure(ModelProtocolFailureCode.OUTPUT_TRUNCATED,
                 "The OpenAI stream ended before completing its response; no tool calls can execute.").model_copy(
@@ -540,6 +617,8 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
         return estimate_schema_tokens(tools)
 
     def count_context_message_tokens(self, messages):
+        if has_attachments(messages):
+            return self.count_attachment_message_tokens(messages)
         return estimate_input_tokens(context_input_items(messages, self.active_model))
 
     def count_message_tokens(self, messages):
@@ -550,6 +629,7 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
             if self._closed:
                 return
             self._closed = True
+            self._attachments = None
             runner, self._runner = self._runner, None
             self._api_key = ""
             self._text_observer = None

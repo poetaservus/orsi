@@ -299,6 +299,7 @@ def model_capability_result_message(
 def native_chat_messages(
     messages: Iterable[dict[str, Any]],
     definitions: Iterable[ModelCapabilityDefinition],
+    *, allow_attachments: bool = False,
 ) -> list[dict[str, Any]]:
     """Translate a provider-neutral transcript to native chat/tool messages."""
     values = model_capability_definitions(definitions, require_nonempty=True)
@@ -315,13 +316,21 @@ def native_chat_messages(
         role = raw_message.get("role")
 
         if role in {"system", "user"}:
-            if outstanding or set(raw_message) != {"role", "content"}:
+            attached = allow_attachments and role == "user" and "attachments" in raw_message
+            expected = {"role", "content", "attachments"} if attached else {"role", "content"}
+            if outstanding or set(raw_message) != expected:
                 raise ValueError("Text messages cannot interrupt an unresolved capability call.")
+            if attached:
+                from app.inference.attachments import attachment_references
+                attachment_references(raw_message["attachments"])
+                _bounded_message_text(raw_message.get("content"))
             translated.append(
                 {"role": role, "content": (image_content(raw_message["content"])
                  if role == "user" and isinstance(raw_message.get("content"), list)
                  else _bounded_message_text(raw_message.get("content")))}
             )
+            if attached:
+                translated[-1]["attachments"] = deepcopy(raw_message["attachments"])
             continue
 
         if role == "assistant" and "capability_calls" not in raw_message:

@@ -355,3 +355,24 @@ The versioned vision configuration binds both model and projector hashes, verifi
 metadata, includes projector/encoder memory in context resolution and passes explicit native
 projector/image-token flags. Selection stays manual; cloud and the Python backend do not
 inherit local vision support. See [phase 3B](docs/attachments-phase3b.md).
+
+Phase 4A's `conversation/cloud_attachments.py` projects verified immutable snapshots
+to native Responses `input_image` and `input_file` parts only at transport dispatch.
+Durable history and agent transcripts retain bounded ordered source references rather
+than binary payloads or expiring provider IDs. Explicit native attachment tool support
+allows those references through the existing strict call/result validator; generic and
+local adapters retain their existing gates. Stateless replay retains the original user
+sources through follow-ups, reopened/archived histories and native continuations.
+Cloud composer preparation verifies file sources without applying local extraction limits
+or writing empty local document caches. Image validation/thumbnails retain the existing
+still-format and pixel guards. Scoped trusted guidance identifies source availability and
+document/spreadsheet limitations without granting attachment instructions authority.
+
+UI/context selection uses content-free offline size estimates. On the worker, the existing
+cancellable SDK transport calls Responses input-token counting with the same native input,
+reasoning and tool schemas before generation. Actual counts gate the profile's maximum input
+and account pacing; binary base64 is not counted as text. A count error, source change,
+cancellation, oversized request or generation failure never loses attachments by falling
+back to text/local mode. Request storage remains disabled and inline transport creates no
+Files API resources to expire or clean up. Phase 4B qualifies maximum capacities and phase 5
+covers broader context/recovery lifecycle cases. See [phase 4A](docs/attachments-phase4a.md).

@@ -29,9 +29,10 @@ class AttachmentPreparationWorker(QObject):
     progress = Signal(str, str)
     done = Signal()
 
-    def __init__(self, store, jobs):
+    def __init__(self, store, jobs, *, cloud=False):
         super().__init__()
         self.store, self.jobs = store, tuple(jobs)
+        self.cloud = cloud
 
     @Slot()
     def run(self):
@@ -53,7 +54,11 @@ class AttachmentPreparationWorker(QObject):
                             raise ValueError("Clipboard image conversion failed.")
                         reference = self.store.import_bytes(bytes(buffer.data()), name=job.name, cancellation=token)
                     self.progress.emit(job.key, "Preparing…")
-                    prepared = AttachmentProcessor(self.store).prepare(reference, cancellation=token)
+                    if self.cloud:
+                        from app.conversation.cloud_attachments import prepare_cloud_attachment
+                        prepared = prepare_cloud_attachment(self.store, reference, cancellation=token)
+                    else:
+                        prepared = AttachmentProcessor(self.store).prepare(reference, cancellation=token)
                     self.prepared.emit(job.key, prepared)
                 except TaskCancelled:
                     pass
@@ -181,7 +186,7 @@ class AttachmentTray(QWidget):
             return
         jobs, self._queued = tuple(self._queued), []
         self.thread = QThread()
-        self.worker = AttachmentPreparationWorker(self.store, jobs)
+        self.worker = AttachmentPreparationWorker(self.store, jobs, cloud=self.mode() == "cloud")
         self.worker.moveToThread(self.thread)
         self.thread.started.connect(self.worker.run)
         self.worker.prepared.connect(self._prepared)

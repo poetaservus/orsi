@@ -752,3 +752,29 @@ Final native regression passed **2,189 tests and 15 subtests, with 52 optional s
 no failures in 259.39 seconds**. GPU and CPU live vision gates passed separately; the
 full-run Windows fixture denials, isolated successful rechecks and optional skips are
 recorded in the phase contract. Dependency, compilation and whitespace checks passed.
+
+## Native cloud attachment input, 7 October 2026
+
+`codex/cloud-attachment-input` starts from verified local main `eebb431`. The user approved
+phase 4A of the attachment plan and authorized reuse of the existing API credential. The bounded
+change projects immutable references to native OpenAI image/file input, checks actual multimodal
+input tokens on the worker, and preserves source input through follow-ups, restored/archive
+chats and native tool continuations. Local adapters/profiles, sampling, manual skill/model
+selection, step budgets and user runtime settings remain unchanged. See
+[the phase 4A contract and qualification](attachments-phase4a.md).
+
+Expanded deterministic verification passed 326 tests. Default-profile real-cloud qualification
+passed seven synthetic source inputs, scanned PDF page recognition, two-image cross-turn recall,
+reopening/archive recall and actual stat/continuation with the twelve-tool production catalog.
+The key stayed in memory, source/response bodies stay in ignored synthetic fixture state, numeric
+diagnostics omit source and credential contents, and owned transport resources closed. Final full
+native regression passed 2,221 tests and 15 subtests, with 53 optional skips and no failures/errors
+in 278.479 seconds. Other cloud-profile access, maximum capacities and unrelated skipped gates
+are not relabeled as qualified. Compilation, dependency and whitespace checks passed.
+
+Pre-integration refs/worktree maps and a verified complete-history bundle with 76 refs are
+preserved under ignored `state/backups/cloud-attachment-input-20261007/`. Prior main is retained
+at `archive/2026-10-07/main-before-cloud-attachment-input`. Commit the bounded verified change,
+fast-forward local main and publish main under the user's standing merge-and-push instruction.
+Remove only this merged local feature branch. Other worktrees and remote feature/archive branches
+are outside this operation. Phase 4B capacity qualification and phase 5 lifecycle work remain.

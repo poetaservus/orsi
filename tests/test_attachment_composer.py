@@ -359,15 +359,16 @@ def test_attachment_gate_preserves_manual_skill_selection(windows, tmp_path):
 
 
 def test_cloud_additions_while_processing_preserve_order(windows, tmp_path, monkeypatch):
+    from app.conversation import cloud_attachments
     window = windows("cloud")
     entered, release = Event(), Event()
-    original = AttachmentProcessor.prepare
-    def delayed(self, ref, *, cancellation=None):
+    original = cloud_attachments.prepare_cloud_attachment
+    def delayed(store, ref, *, cancellation=None):
         if ref.name == "first.txt":
             entered.set()
             assert release.wait(5)
-        return original(self, ref, cancellation=cancellation)
-    monkeypatch.setattr(AttachmentProcessor, "prepare", delayed)
+        return original(store, ref, cancellation=cancellation)
+    monkeypatch.setattr(cloud_attachments, "prepare_cloud_attachment", delayed)
     first, second = text_file(tmp_path, "first.txt"), text_file(tmp_path, "second.txt")
     window.attachment_tray.add_paths([first])
     wait_for(entered.is_set)

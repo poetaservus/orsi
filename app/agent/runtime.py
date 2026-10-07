@@ -401,7 +401,8 @@ class AgentRuntime:
             raise TypeError("Agent model messages must be objects.")
         transcript = [deepcopy(message) for message in transcript]
         try:
-            native_chat_messages(transcript, definitions)
+            native_chat_messages(transcript, definitions,
+                allow_attachments=getattr(self.model, "supports_native_attachment_tools", False) is True)
             self._check_transcript_size(transcript)
         except (TypeError, ValueError):
             return self._stopped(

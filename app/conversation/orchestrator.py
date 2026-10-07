@@ -94,6 +94,9 @@ class ConversationService:
         self.inference = inference
         self.store = store
         self._documents = LocalDocuments(store.attachment_store)
+        attachment_setter = getattr(inference, "set_attachment_store", None)
+        if callable(attachment_setter):
+            attachment_setter(store.attachment_store)
         self.skill_registry = skill_registry if skill_registry is not None else SkillRegistry()
         self.automatic_skills_enabled = automatic_skills_enabled
         self._references = ConversationSkillReferences(enabled=skill_references_enabled)
@@ -735,13 +738,16 @@ class ConversationService:
             return
         if getattr(self.inference, "supports_attachment_inputs", False) is not True:
             raise AttachmentError("Image and file input is not enabled for this model yet.")
-        if self.agent_enabled:
+        if self.agent_enabled and getattr(self.inference, "supports_native_attachment_tools", False) is not True:
             raise AttachmentError("Image and file input in agent mode is not enabled yet.")
         if not callable(getattr(self.inference, "respond_with_attachments", None)) or not callable(
                 getattr(self.inference, "count_attachment_message_tokens", None)):
             raise AttachmentError("This model does not implement image and file input yet.")
         if verify:
-            for reference in retained:
+            admit = getattr(self.inference, "admit_attachment_inputs", None)
+            if callable(admit):
+                admit(references, cancellation=cancellation)
+            for reference in (*retained, *references):
                 self.store.attachment_store.verify(reference, cancellation=cancellation)
 
     def _model_request(
@@ -782,6 +788,9 @@ class ConversationService:
             raise SkillActivationError(SkillActivationErrorCode.MISSING_SKILL,
                                        "Active skill is unavailable. Select another skill or use /skill to clear it.")
         core_prompt = prompt
+        if has_attachments(history) and getattr(self.inference, "supports_native_attachment_tools", False) is True:
+            from app.conversation.cloud_attachments import CLOUD_ATTACHMENT_GUIDANCE
+            core_prompt += CLOUD_ATTACHMENT_GUIDANCE
         if document_inputs:
             if any(r.get("kind") == "file" for m in history for r in m.get("attachments", ())):
                 core_prompt = with_local_document_guidance(core_prompt)

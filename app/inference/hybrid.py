@@ -6,7 +6,7 @@ from typing import Callable, Iterable
 
 from app.inference.cloud_errors import CloudInferenceError
 from app.inference.engine import InferenceEngine, InferenceUnavailable
-from app.inference.attachments import AttachmentError
+from app.inference.attachments import AttachmentError, has_attachments
 from app.inference.openai_replay import neutral_messages
 from app.runtime.activity import report_activity
 from app.inference.protocol import (
@@ -196,6 +196,20 @@ class HybridInferenceEngine(InferenceEngine):
     @property
     def supports_attachment_inputs(self):
         return getattr(self._engine_for(self.mode), "supports_attachment_inputs", False) is True
+
+    @property
+    def supports_native_attachment_tools(self):
+        return getattr(self._engine_for(self.mode), "supports_native_attachment_tools", False) is True
+
+    def set_attachment_store(self, store):
+        setter = getattr(self.cloud, "set_attachment_store", None)
+        if callable(setter):
+            setter(store)
+
+    def admit_attachment_inputs(self, references, *, cancellation=None):
+        admit = getattr(self._engine_for(self.mode), "admit_attachment_inputs", None)
+        if callable(admit):
+            admit(references, cancellation=cancellation)
 
     @property
     def supports_local_document_inputs(self):
@@ -430,6 +444,7 @@ class HybridInferenceEngine(InferenceEngine):
         except CloudInferenceError as exc:
             if not (
                 self.fallback_to_local
+                and not has_attachments(messages)
                 and exc.allow_local_fallback
                 and self.local is not None
             ):
@@ -465,6 +480,7 @@ class HybridInferenceEngine(InferenceEngine):
         except CloudInferenceError as exc:
             if not (
                 self.fallback_to_local
+                and not has_attachments(messages)
                 and exc.allow_local_fallback
                 and self.local is not None
             ):

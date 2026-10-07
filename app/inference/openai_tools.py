@@ -202,7 +202,7 @@ def _neutral_responses_input(messages: Iterable[dict], definitions: Iterable[Mod
     # Reuse existing transcript bounds, scopes and complete call/result pairing,
     # then preserve actual Responses call IDs instead of the chat adapter's scoped IDs.
     try:
-        native = native_chat_messages(transcript, values)
+        native = native_chat_messages(transcript, values, allow_attachments=True)
         originals = [ModelCapabilityCall.model_validate(call) if isinstance(call, dict) else call
                      for message in transcript for call in message.get("capability_calls", [])]
     except (TypeError, ValueError, UnicodeError, RecursionError):
