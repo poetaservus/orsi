@@ -16,7 +16,7 @@ separately and an unavailable account/model is never a passed image check.
 | 1B | Native tool, image streaming events, image-only responses | 115 focused; 2,307 full-suite tests and 15 subtests passed, 58 skipped; live generation blocked by account access |
 | 2A | Original-resolution storage and assistant association | 76 focused; confirmation passed 2,307 full-suite tests and 15 subtests, 58 skipped |
 | 2B | Chat and viewer editing from original sources; settings dialog | 61 focused; 2,310 full-suite tests and 15 subtests passed, 58 skipped; live edit blocked by image-model access |
-| 3A | Cached grainy drifting placeholder | Pending |
+| 3A | Cached grainy drifting placeholder | 51 focused tests and 5 subtests; confirmation passed 2,312 tests and 15 subtests, 58 skipped; synthetic visual reviewed |
 | 3B | Aspect ratio, fade, thumbnails, viewer and save | Pending |
 | 4A | Failure, cancellation, manual retry and deduplication | Pending |
 | 4B | Acceptance and live generation/edit verification | Pending |
@@ -38,3 +38,8 @@ blocked capability had started. An isolated recheck cancelled before model entry
 instead. The complete 32-test runtime group then passed. These failures remain
 recorded separately from the subsequent full-suite confirmation; runtime behavior,
 the test and acceptance prompts were not changed to pass them.
+
+Phase 3A's first native full run recorded 2,311 passed and one Windows access-denied
+directory rename in the unchanged skill-reference-reader depth-limit test. This
+is retained as a failed run; the placeholder and the reader implementation were
+not changed to hide it. Native recheck and full confirmation are separate evidence.
