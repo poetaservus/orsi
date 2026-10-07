@@ -70,7 +70,7 @@ class ConversationService:
         host_access_policy: HostAccessPolicy | None = None,
         agent_error: str | None = None,
         skill_registry: SkillRegistry | None = None,
-        automatic_skills_enabled: bool = True,
+        automatic_skills_enabled: bool = False,
         skill_references_enabled: bool = True,
     ):
         if type(automatic_skills_enabled) is not bool:

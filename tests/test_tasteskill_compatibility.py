@@ -75,7 +75,7 @@ def test_large_upstream_skill_is_dropped_automatically_and_rejected_explicitly(t
     installer.install(FIXTURE / "skills" / "taste-skill")
     backend = BoundedBackend()
     service = ConversationService(backend, ConversationStore(tmp_path / "conversation.json"),
-                                  skill_registry=registry)
+                                  skill_registry=registry, automatic_skills_enabled=True)
     try:
         assert service.run(FRONTEND_TASKS[0][1]) == "Deterministic admission fixture."
         assert service.skill_selection.reason == "skill_context_limit"

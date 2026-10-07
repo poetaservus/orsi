@@ -101,6 +101,7 @@ def test_cloud_tools_start_without_local_server_or_model(tmp_path, monkeypatch, 
         skill_registry_override=registry)
     try:
         assert service is not None and error is None
+        assert service.automatic_skills_enabled is False
         assert inference.mode == "cloud" and inference.local is None
         assert "filesystem.stat" in service.agent_capabilities and "filesystem.read_text" in service.agent_capabilities
         assert inference.cloud._client is None

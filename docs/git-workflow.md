@@ -572,3 +572,26 @@ under ignored `state/backups/python-coder-skill-20261007/`. Preserve prior main 
 fast-forward local main, and remove the merged local feature branch. The user's
 earlier instruction to merge and push new changes authorizes publishing main;
 do not publish or delete remote feature/archive branches or alter other worktrees.
+
+## Explicit skill selection, 7 October 2026
+
+`codex/explicit-skill-selection` starts from local main `8fb396c`. The user reports
+an unselected follow-up acquiring a Python Coder skill and asks for explicit
+selection in both local and cloud modes. The bounded change disables automatic
+selection at the service default and application composition boundary. Explicit
+attachments and existing conversation history retain their established behavior.
+See [the implementation and verification record](explicit-skill-selection.md).
+
+Final native focused verification passed 313 tests with no failures or skips.
+Full native regression passed 2,010 tests and 15 subtests, with 49 existing skips
+and no failures in 230.82 seconds. The first run's three old-default test
+expectations and their explicit fixture updates are retained in the verification
+record; live model/API gates remain separate from deterministic checks.
+
+Pre-change refs, the worktree map and a verified complete-history bundle are
+preserved under ignored `state/backups/explicit-skill-selection-20261007/`.
+Prior main is preserved at `archive/2026-10-07/main-before-explicit-skill-selection`.
+After verification, commit, fast-forward local main and remove the merged local
+feature branch. The user's existing instruction to merge and push new changes
+authorizes publishing main only; other active worktrees and remote feature/archive
+branches are outside this operation.

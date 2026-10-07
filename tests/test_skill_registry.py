@@ -364,9 +364,11 @@ def test_application_startup_mixed_scopes_catalog_and_prompts_unchanged(tmp_path
         skill_registry_override=SkillRegistry(global_root=tmp_path / "absent"))
     assert error is None and empty_service.skill_registry.list() == ()
     assert empty_service.run("Help with this task") == "reply"
-    # Phase 3.2 may make one metadata-only selector call before normal answering.
+    # Shipped startup answers directly, whether the installed catalog is populated or empty.
+    assert service.automatic_skills_enabled is False and empty_service.automatic_skills_enabled is False
+    assert service.skill_selection.reason == empty_service.skill_selection.reason == "disabled"
     assert inference.calls[-1] == empty_inference.calls[-1]
-    assert len(inference.calls) == 2 and len(empty_inference.calls) == 1
+    assert len(inference.calls) == len(empty_inference.calls) == 1
     assert "PRIVATE" not in json.dumps(inference.calls)
     empty_service.shutdown()
 

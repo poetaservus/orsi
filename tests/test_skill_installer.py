@@ -446,7 +446,8 @@ def test_install_refresh_reaches_existing_conversation_and_remove_invalidates_ex
             self.answers.append(messages)
             return "reply"
     model, installer = Model(), manager(tmp_path)
-    service = ConversationService(model, ConversationStore(tmp_path / "chat.json"), skill_registry=installer.registry)
+    service = ConversationService(model, ConversationStore(tmp_path / "chat.json"),
+        skill_registry=installer.registry, automatic_skills_enabled=True)
     try:
         service.run("Design a frontend interface.")
         assert service.active_skill is None

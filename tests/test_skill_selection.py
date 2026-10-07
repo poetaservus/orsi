@@ -254,7 +254,8 @@ def test_full_native_catalog_is_identical_with_automatic_guidance(tmp_path):
 
 def test_empty_registry_skips_selector_without_changing_normal_prompt(tmp_path):
     model = Recorder()
-    service = ConversationService(model, ConversationStore(tmp_path / "chat.json"))
+    service = ConversationService(model, ConversationStore(tmp_path / "chat.json"),
+        automatic_skills_enabled=True)
     try:
         assert service.run("Hello") == "reply"
         assert service.skill_selection.reason == "empty_catalog" and not model.router_requests

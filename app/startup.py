@@ -202,6 +202,7 @@ def build_application(
                 inference,
                 store,
                 skill_registry=skill_registry,
+                automatic_skills_enabled=False,
                 agent_runtime=agent_runtime,
                 portable_root=PATHS.root if agent_runtime is not None else None,
                 allowed_read_roots=(

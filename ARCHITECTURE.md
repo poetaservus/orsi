@@ -277,7 +277,10 @@ routine cost gate and has not passed live GPU acceptance; see
 
 `app/runtime/skills/` supplies validated instruction definitions independently of the callable
 `CapabilityRegistry`. Startup discovers a `SkillRegistry` and passes it to `ConversationService`.
-Explicit session activation or a metadata-only automatic selector chooses zero or one skill;
+The shipped local and cloud modes require explicit message attachment or session activation
+to choose a skill. The service defaults automatic selection off, and startup explicitly disables
+it; the metadata-only selector remains available to callers that deliberately opt in.
+Plain follow-ups retain conversation history without a new skill injection. For a selected skill,
 conversation orchestration renders its exact body into a labelled, escaped, lower-priority prompt
 section through the existing admission policy. Provider adapters and the executor retain their
 existing interfaces. Optional skill metadata is inert and cannot register code or configuration.

@@ -32,8 +32,11 @@ on cancellation, provider failure or context rejection. An unavailable attachmen
 fails before inference; it is never silently replaced with another skill. The
 chip is separate from the plain prompt, preserving pasted text and Unicode.
 
-Subsequent messages resume the existing automatic selection behavior. Automatic
-selection can independently choose the same skill for another relevant request.
+As of 7 October 2026, skill selection is explicit in both local and cloud modes.
+An ordinary message or follow-up never selects a skill automatically. Previous
+messages and answers remain available as conversation context; attach a skill
+again if its instructions should apply to the next turn. See
+[the selection change and verification](explicit-skill-selection.md).
 If an older caller has explicitly activated a session skill, a message attachment
 temporarily overrides it and restores that earlier selection afterward. The
 existing session activation API and local slash-command path remain available.
@@ -85,7 +88,8 @@ chip cleared, controls recovered, and the owned server exited. Effective limits
 were 16,384 context tokens and 4,096 output tokens; the accepted model profile was
 byte-for-byte unchanged. Automatic selection was disabled only in this isolated
 fixture so that explicit attachment expiry could be measured independently.
-Production automatic routing is unchanged.
+Production automatic routing was unchanged at that verification revision; the
+[7 October explicit-selection change](explicit-skill-selection.md) disables it.
 
 The isolated audit uses synthetic state and a pinned open-source brand skill.
 Its content-free summary and visually reviewed Qt screenshots are ignored local

@@ -86,8 +86,10 @@ Restart O.R.S.I after CLI installation/removal to refresh the application's star
 In the desktop composer, type `/skill`, choose a name, and send your prompt with its blue chip.
 That attachment applies to that message. The underlying local command interface still supports
 session activation using `/skill exact-skill-name` and clearing it with `/skill`.
-A new chat clears selection. Automatic selection can choose one skill or no match for
-the current turn. Skills cannot add tools, change model configuration, or grant permissions.
+A new chat clears selection. Both local and cloud modes require explicit skill selection;
+plain messages and follow-ups use conversation history without automatically attaching a skill.
+See [explicit selection](docs/explicit-skill-selection.md). Skills cannot add tools, change
+model configuration, or grant permissions.
 Skill decision/injection events appear in `state/orsi.log` without prompt contents or hidden
 reasoning; see [observability](docs/skill-runtime-phase6-1.md).
 
