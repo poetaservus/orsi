@@ -778,3 +778,32 @@ at `archive/2026-10-07/main-before-cloud-attachment-input`. Commit the bounded v
 fast-forward local main and publish main under the user's standing merge-and-push instruction.
 Remove only this merged local feature branch. Other worktrees and remote feature/archive branches
 are outside this operation. Phase 4B capacity qualification and phase 5 lifecycle work remain.
+
+## Cloud attachment capacity, 7 October 2026
+
+`codex/cloud-attachment-capacity` starts from verified local main `150a49a`. The user approved
+phase 4B and retains authorization to reuse the existing API key for cloud verification.
+The bounded change measures source-bearing groups before admission, fits attachment reply
+allowances to account ceilings, adds numbered native source labels and preserves composer
+drafts on capacity rejection. Accepted model profiles, sampling, prompts, tool behavior,
+manual skill/model selection, local attachment count/GPU behavior and user settings are unchanged.
+See [the phase 4B capacity and verification record](attachments-phase4b.md).
+
+Live capacity qualification passed 1,500 images, a 49,999,999-byte PDF and 256 files; the original
+phase 4A follow-up/archive/tool-continuation gate also passed with unchanged requests. Initial
+live source-order recognition failures and the numbered-label repair are retained in the record.
+Skipped full-size JSON and other-profile qualification are separate from passed live gates.
+Credentials remain session-only, and numeric diagnostics omit source/response/key contents.
+
+Final full native verification passed 2,236 tests and 15 subtests, with 56 optional skips,
+no failures/errors and a duration of 258.313 seconds. Expanded focused checks passed 200
+tests before numbered labels and 67 after the label refinement. Compilation, dependency
+consistency and whitespace checks passed. Separate live gates and skipped qualification
+remain explicitly identified in the capacity record.
+
+Before integration, all 77 pre-change refs and the worktree map were preserved in a verified
+complete-history bundle under ignored `state/backups/cloud-attachment-capacity-20261007/`.
+Prior main is retained at `archive/2026-10-07/main-before-cloud-attachment-capacity`. After
+verification, commit the bounded change, fast-forward local main and publish main under the
+standing user instruction. Remove only the merged local feature branch. Other active worktrees
+and remote feature/archive branches remain outside this operation. Phase 5 remains pending.

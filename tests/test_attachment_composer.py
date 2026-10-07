@@ -358,6 +358,23 @@ def test_attachment_gate_preserves_manual_skill_selection(windows, tmp_path):
     assert window.service.active_skill is None and not window.service.inference.requests
 
 
+def test_cloud_capacity_rejection_preserves_complete_composer_draft(windows, tmp_path, monkeypatch):
+    from app.conversation import cloud_attachments
+    window = windows('cloud', enabled=True)
+    window.service.inference.validate_attachment_selection = cloud_attachments.validate_sources
+    window.attachment_tray.add_paths([text_file(tmp_path, 'one.txt'), text_file(tmp_path, 'two.txt')])
+    wait_for(lambda: not window.attachment_tray.is_processing)
+    references = window.attachment_tray.references
+    monkeypatch.setattr(cloud_attachments, 'MAX_FILE_BYTES', sum(r.size_bytes for r in references) - 1)
+    window.input.setPlainText('Keep this cloud draft')
+    window.skill_picker.selected_name = 'user-selected-skill'
+    window.submit()
+    assert window.attachment_tray.references == references
+    assert window.input.toPlainText() == 'Keep this cloud draft'
+    assert window.skill_picker.selected_name == 'user-selected-skill'
+    assert not window.service.inference.requests and window.thread is None
+
+
 def test_cloud_additions_while_processing_preserve_order(windows, tmp_path, monkeypatch):
     from app.conversation import cloud_attachments
     window = windows("cloud")

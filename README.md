@@ -159,9 +159,10 @@ input supports follow-ups and native tool continuations, with image-aware contex
 The default 14B model remains selected until you change it. Cloud mode sends multiple
 images and files directly through OpenAI Responses, including PDF page visuals,
 follow-ups, restored chats and native tool continuations. Its worker checks the actual
-provider input-token count before generation. Unsupported input keeps the composer draft intact.
+provider input-token count before admission and generation, caches only hashed numeric measurements,
+and fits the reply allowance to available account capacity. Unsupported input keeps the composer draft intact.
 See [documents](docs/attachments-phase3a.md), [local images](docs/attachments-phase3b.md)
-and [cloud input](docs/attachments-phase4a.md). Maximum-capacity qualification remains phase 4B.
+and [cloud input](docs/attachments-phase4a.md), with [capacity qualification](docs/attachments-phase4b.md).
 Unfinished code fences still appear in code boxes. Incomplete tool generation is rejected before
 argument repair or execution. The UI releases its controls even when the context meter cannot
 refresh. See [completion-state verification](docs/completion-state-2026-10-02.md).

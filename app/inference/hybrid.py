@@ -211,6 +211,16 @@ class HybridInferenceEngine(InferenceEngine):
         if callable(admit):
             admit(references, cancellation=cancellation)
 
+    def prepare_attachment_context(self, messages, *, cancellation=None):
+        prepare = getattr(self._engine_for(self.mode), "prepare_attachment_context", None)
+        if callable(prepare):
+            prepare(messages, cancellation=cancellation)
+
+    def validate_attachment_selection(self, references):
+        validate = getattr(self._engine_for(self.mode), "validate_attachment_selection", None)
+        if callable(validate):
+            validate(references)
+
     @property
     def supports_local_document_inputs(self):
         return self.mode == "local" and getattr(

@@ -55,6 +55,16 @@ class OpenAIRatePacer:
         self.budgets = {model: _Budget(limits.requests_per_minute, limits.tokens_per_minute)
             for model, limits in (configured or {}).items()}
 
+    def request_token_ceiling(self, model):
+        """Known model/project ceilings, never the temporary remaining balance."""
+        budget = self.budgets.get(model)
+        if budget is None:
+            return None
+        limits = [budget.tokens] if budget.tokens is not None else []
+        limits.extend(value[0] for resource, value in budget.headers.items()
+                      if resource in {'tokens', 'project-tokens'})
+        return min(limits) if limits else None
+
     def observe(self, model, headers):
         budget = self.budgets.setdefault(model, _Budget())
         now = self.clock()

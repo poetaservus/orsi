@@ -18,7 +18,7 @@ from app.inference.attachments import AttachmentError, attachment_references
 from app.inference.openai_context import estimate_input_tokens
 from app.runtime.cancellation import CancellationToken
 
-# Official Responses transport limits; capacity qualification belongs to 4B.
+# Official Responses transport limits; source tokens/account ceilings also apply.
 MAX_FILE_BYTES = 50_000_000
 MAX_REQUEST_BYTES = 512_000_000
 MAX_IMAGES = 1500
@@ -100,14 +100,20 @@ class CloudAttachments:
         for reference in validate_sources(references):
             prepare_cloud_attachment(self.store, reference, cancellation=cancellation)
 
-    def estimate(self, items):
+    def estimate(self, items, *, measured=None):
         """Offline UI estimate; the provider counts the actual input before generation."""
         plain = deepcopy(items)
         extra = 0
         for item in plain:
+            actual = measured(item) if measured is not None and item.get('attachments') else None
             references = attachment_references(item.pop('attachments', ()))
             if references and (item.get('role') != 'user' or not isinstance(item.get('content'), str)):
                 raise AttachmentError('Attachments must belong to a textual user message.')
+            if actual is not None:
+                # Replace the complete source-bearing group's estimate. Never
+                # treat compressed bytes as text or count the user's text twice.
+                extra += actual - estimate_input_tokens([item])
+                continue
             for reference in references:
                 source_type(reference)
                 if reference.kind == 'image':
@@ -119,7 +125,7 @@ class CloudAttachments:
                     # Compressed documents have no accurate offline byte/token
                     # mapping. This is deliberately labelled an estimate by the UI.
                     extra += ceil(reference.size_bytes / 3) + 256
-        return estimate_input_tokens(plain) + extra
+        return max(1, estimate_input_tokens(plain) + extra)
 
     def project(self, items, *, cancellation=None):
         token = cancellation or CancellationToken()
@@ -146,7 +152,7 @@ class CloudAttachments:
             if not references:
                 continue
             parts = [{'type': 'input_text', 'text': item['content']}]
-            for reference in references:
+            for source_index, reference in enumerate(references, start=1):
                 token.raise_if_cancelled()
                 prepare_cloud_attachment(self.store, reference, cancellation=token)
                 with self.store.open(reference, cancellation=token) as stream:
@@ -155,9 +161,12 @@ class CloudAttachments:
                 if len(raw) != reference.size_bytes:
                     raise AttachmentError('The attachment source changed before cloud input.')
                 data = 'data:' + source_type(reference) + ';base64,' + base64.b64encode(raw).decode('ascii')
+                # Keep order/name visible even when a native file parser omits
+                # metadata. Labels are user source data, never trusted guidance.
+                parts.append({'type': 'input_text', 'text':
+                    f'Attached {reference.kind} {source_index}: ' + json.dumps(reference.name)})
                 if reference.kind == 'image':
-                    parts.extend([{'type': 'input_text', 'text': 'Attached image: ' + json.dumps(reference.name)},
-                                  {'type': 'input_image', 'image_url': data, 'detail': 'auto'}])
+                    parts.append({'type': 'input_image', 'image_url': data, 'detail': 'auto'})
                 else:
                     parts.append({'type': 'input_file', 'filename': reference.name, 'file_data': data})
             item['content'] = parts

@@ -368,11 +368,18 @@ or writing empty local document caches. Image validation/thumbnails retain the e
 still-format and pixel guards. Scoped trusted guidance identifies source availability and
 document/spreadsheet limitations without granting attachment instructions authority.
 
-UI/context selection uses content-free offline size estimates. On the worker, the existing
-cancellable SDK transport calls Responses input-token counting with the same native input,
-reasoning and tool schemas before generation. Actual counts gate the profile's maximum input
-and account pacing; binary base64 is not counted as text. A count error, source change,
+UI/context selection uses offline estimates until the worker measures each source-bearing user
+group. A bounded memory cache contains only model/message hashes and numeric counts; root,
+model or credential changes invalidate it. Source bytes remain verified independently. This
+avoids rejecting sparse large documents based on their byte size. The existing cancellable SDK
+transport also counts the complete selected native input, reasoning and tool schemas before
+generation. Actual counts gate the profile's maximum input and account pacing; binary base64
+is not counted as text. Numbered quoted source labels preserve order and filename visibility.
+Attachment requests reduce their output allowance only when the fixed model/project token-rate
+ceiling requires it. Temporary remaining balances cause paced waits, not shorter replies. Saved
+profiles and plain requests retain their output settings. Counting retries consume request
+capacity; permanent quota failures are not retried. A count error, source change,
 cancellation, oversized request or generation failure never loses attachments by falling
 back to text/local mode. Request storage remains disabled and inline transport creates no
-Files API resources to expire or clean up. Phase 4B qualifies maximum capacities and phase 5
-covers broader context/recovery lifecycle cases. See [phase 4A](docs/attachments-phase4a.md).
+Files API resources to expire or clean up. Phase 5 covers broader context/recovery lifecycle
+cases. See [phase 4A](docs/attachments-phase4a.md) and [phase 4B](docs/attachments-phase4b.md).

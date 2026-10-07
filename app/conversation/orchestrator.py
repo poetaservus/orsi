@@ -294,10 +294,10 @@ class ConversationService:
             self._documents.allow_images = getattr(self.inference, "supports_local_image_inputs", False) is True
             if references and self._local_documents_enabled():
                 report_activity(activity, "Reading attached images…" if any(r.kind == "image" for r in references) else "Reading attached documents…")
-            self._admit_attachments(references, source.token, verify=True)
             if self.supports_text_streaming and callable(cancellation_setter):
                 cancellation_setter(source.token)
                 cancellation_attached = True
+            self._admit_attachments(references, source.token, verify=True)
             if skill_name is not None:
                 message_skill = self._activate_skill_locked(skill_name)
             # Local control commands are acknowledged without inference or durable
@@ -318,6 +318,14 @@ class ConversationService:
                 return "Skill activated: " + json.dumps(label, ensure_ascii=True) + "."
             if self._history_persistence_failed:
                 raise TurnHistoryError("A settled turn could not be retained safely. Review its outcomes before retrying.")
+            prepare_inputs = getattr(self.inference, "prepare_attachment_context", None)
+            if callable(prepare_inputs):
+                history = self._stored_agent_history()
+                current = {"role": "user", "content": text}
+                if references:
+                    current["attachments"] = [r.model_dump(mode="json") for r in references]
+                if has_attachments([*history, current]):
+                    prepare_inputs([*history, current], cancellation=source.token)
             turn_id = self.store.begin_turn(text, attachments=references, cancellation=source.token)
             self._context_measurement = None
             self._active_turn_id = turn_id
@@ -743,6 +751,9 @@ class ConversationService:
         if not callable(getattr(self.inference, "respond_with_attachments", None)) or not callable(
                 getattr(self.inference, "count_attachment_message_tokens", None)):
             raise AttachmentError("This model does not implement image and file input yet.")
+        validate = getattr(self.inference, "validate_attachment_selection", None)
+        if callable(validate):
+            validate(references)
         if verify:
             admit = getattr(self.inference, "admit_attachment_inputs", None)
             if callable(admit):

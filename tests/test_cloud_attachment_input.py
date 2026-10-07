@@ -37,7 +37,7 @@ from tests.test_openai_tools import function
 def native_sdk(monkeypatch):
     engines = []
     sdk_client = openai.AsyncOpenAI
-    def make(*, payloads=None, count=100, status=200, failure=None, engine_config=None):
+    def make(*, payloads=None, count=100, status=200, failure=None, engine_config=None, rate_headers=None):
         counts, generations = [], []
         values = iter(payloads) if payloads is not None else None
         def handle(request):
@@ -46,7 +46,7 @@ def native_sdk(monkeypatch):
                 counts.append(body)
                 if failure:
                     return failure(request)
-                return httpx.Response(status, json={'object': 'response.input_tokens', 'input_tokens': count}
+                return httpx.Response(status, headers=rate_headers, json={'object': 'response.input_tokens', 'input_tokens': count}
                     if status == 200 else {'error': {'code': 'rate_limit_exceeded', 'message': 'private body'}})
             assert request.url.path == '/v1/responses'
             generations.append(body)
@@ -55,7 +55,7 @@ def native_sdk(monkeypatch):
                          'status': 'completed', 'content': [{'type': 'output_text', 'text': 'Done', 'annotations': []}]}])
             return sse_response(value)
         http = httpx.AsyncClient(transport=httpx.MockTransport(handle))
-        client = sdk_client(api_key='fake-never-live', max_retries=0, http_client=http)
+        client = sdk_client(api_key='fake-never-live', max_retries=(engine_config.max_retries if engine_config else 0), http_client=http)
         def http_factory(**kwargs):
             http.event_hooks = kwargs['event_hooks']
             return http
@@ -95,8 +95,8 @@ def test_native_bytes_and_exact_provider_count_reach_stream(tmp_path, native_sdk
     service = ConversationService(engine, ConversationStore(tmp_path / 'chat.json'))
     ref = service.store.attachment_store.import_bytes(data, name=name)
     assert service.run('Read the supplied source', attachments=[ref]) == 'Done'
-    assert len(counts) == len(generations) == 1
-    assert counts[0]['input'] == generations[0]['input']
+    assert len(counts) == 2 and len(generations) == 1
+    assert counts[-1]['input'] == generations[0]['input']
     assert 'store' not in counts[0] and generations[0]['store'] is False
     assert generations[0]['truncation'] == 'disabled'
     part = inputs(generations[0], kind)[0]
@@ -123,7 +123,7 @@ def test_multiple_sources_followups_restart_and_archive_resend_verified_bytes(tm
     assert [p['filename'] for p in inputs(bodies[2], 'input_file')] == ['first.txt', 'second.pdf']
     reopened.new_session(preserve_history=True)
     reopened.run('New chat')
-    assert not inputs(bodies[3], 'input_file') and len(counts) == 3
+    assert not inputs(bodies[3], 'input_file') and len(counts) == 4
     archive = next((tmp_path / 'archives').glob('*.json'))
     archived = ConversationService(engine, ConversationStore(archive))
     archived.run('Recall the sources')
@@ -168,7 +168,7 @@ def test_service_native_tool_continuation_with_production_catalog_and_archive(tm
     (service.portable_root / 'probe.txt').write_text('stat target')
     ref = service.store.attachment_store.import_bytes(make_pdf(), name='evidence.pdf')
     assert service.run('Check probe.txt and use the attached PDF', attachments=[ref]) == 'Done'
-    assert len(counts) == len(bodies) == 2
+    assert len(counts) == 3 and len(bodies) == 2
     assert len(inputs(bodies[1], 'input_file')) == 1
     assert bodies[0]['input'][1] == bodies[1]['input'][1]
     assert bodies[1]['input'][-1]['type'] == 'function_call_output'

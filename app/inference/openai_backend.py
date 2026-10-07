@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import asyncio
 from concurrent.futures import CancelledError
+from collections import OrderedDict
+from hashlib import sha256
 import logging
 import json
 import os
@@ -247,6 +249,8 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
         self._request_cancellation = None
         self._closed = False
         self._attachments = None
+        self._attachment_counts = OrderedDict()
+        self.last_attachment_capacity = None
         self.context_revision = 0
         self.last_request_metrics = None
         self._configured_rate_limits = dict(config.rate_limits)
@@ -282,6 +286,8 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
             if changed:
                 self.context_revision += 1
                 self.last_request_metrics = None
+                self._attachment_counts.clear()
+                self.last_attachment_capacity = None
 
     def set_api_key(self, api_key: str) -> None:
         with self._lock:
@@ -289,6 +295,8 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
             runner, self._runner = self._runner, None
             self._api_key = str(api_key).strip()
             self.last_request_metrics = None
+            self._attachment_counts.clear()
+            self.last_attachment_capacity = None
             self._rate_pacer = OpenAIRatePacer(self._configured_rate_limits)
         self._close_runner(runner)
 
@@ -327,7 +335,41 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
         from app.conversation.cloud_attachments import CloudAttachments
         with self._lock:
             self._ensure_open()
+            if self._attachments is not None and self._attachments.store.root != store.root:
+                self._attachment_counts.clear()
             self._attachments = CloudAttachments(store)
+
+    def _attachment_count_key(self, message):
+        # Hashes/counts only; no filenames, paths, source bytes or user text in
+        # the cache. Profile and complete immutable metadata bind the measurement.
+        encoded = json.dumps([self.active_model, message], ensure_ascii=False,
+                             sort_keys=True, separators=(",", ":")).encode("utf-8")
+        return sha256(encoded).hexdigest()
+
+    def _measured_attachment_tokens(self, message):
+        with self._lock:
+            return self._attachment_counts.get(self._attachment_count_key(message))
+
+    def prepare_attachment_context(self, messages, *, cancellation=None):
+        """Worker-only measurement before context admission; UI counters stay offline."""
+        for message in messages:
+            if not message.get("attachments"):
+                continue
+            if cancellation is not None:
+                cancellation.raise_if_cancelled()
+            key = self._attachment_count_key(message)
+            with self._lock:
+                cached = self._attachment_counts.get(key)
+            if cached is not None:
+                continue
+            inputs = self._attachment_sources().project([message], cancellation=cancellation)
+            counted = self._request(inputs, attachment_estimate=0, count_only=True)
+            if cancellation is not None:
+                cancellation.raise_if_cancelled()
+            with self._lock:
+                self._attachment_counts[key] = counted["input_tokens"]
+                while len(self._attachment_counts) > 4096:
+                    self._attachment_counts.popitem(last=False)
 
     def _attachment_sources(self):
         with self._lock:
@@ -339,19 +381,24 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
     def admit_attachment_inputs(self, references, *, cancellation=None):
         self._attachment_sources().admit(references, cancellation=cancellation)
 
+    def validate_attachment_selection(self, references):
+        from app.conversation.cloud_attachments import validate_sources
+        validate_sources(references)
+
     def respond_with_attachments(self, messages, *, attachment_store):
         self.set_attachment_store(attachment_store)
         return self.respond(messages)
 
     def count_attachment_message_tokens(self, messages):
-        return self._attachment_sources().estimate(context_input_items(messages, self.active_model))
+        return self._attachment_sources().estimate(context_input_items(messages, self.active_model),
+            measured=self._measured_attachment_tokens)
 
     def _project_attachments(self, inputs):
         if not has_attachments(inputs):
             return inputs, None
         sources = self._attachment_sources()
         report_activity(getattr(self, "_activity_observer", None), "Preparing cloud attachments…")
-        estimate = sources.estimate(inputs)
+        estimate = sources.estimate(inputs, measured=self._measured_attachment_tokens)
         return sources.project(inputs, cancellation=self._request_cancellation), estimate
 
     def respond(self, messages: list[dict[str, str]]) -> str:
@@ -389,7 +436,7 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
             raise _malformed() from None
 
     def _request(self, inputs: list[dict], *, tools: list[dict] | None = None,
-                 attachment_estimate: int | None = None) -> dict:
+                 attachment_estimate: int | None = None, count_only: bool = False) -> dict:
         with self._lock:
             self._ensure_open()
             profile = self.catalog.current_profile
@@ -437,7 +484,7 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
             # arbitrary HTTP-hook exceptions as connection failures.
             if measurement.attempts:
                 try:
-                    reservation = await pacer.acquire(profile.id, estimated_input + 256 + profile.max_output_tokens,
+                    reservation = await pacer.acquire(profile.id, estimated_input + 256 + body["max_output_tokens"],
                         activity=activity)
                 except CloudInferenceError as exc:
                     admission_error = exc
@@ -481,9 +528,28 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
                         # so base64 bytes cannot be treated as text tokens.
                         report_activity(activity, "Checking cloud attachment context…")
                         count_reservation = await pacer.acquire(profile.id, 1, activity=activity)
+                        count_attempts = 0
+                        async def count_request(request):
+                            nonlocal count_attempts, count_reservation, admission_error
+                            if count_attempts:
+                                try:
+                                    count_reservation = await pacer.acquire(profile.id, 1, activity=activity)
+                                except CloudInferenceError as exc:
+                                    admission_error = exc
+                                    raise
+                            count_attempts += 1
                         async def count_headers(response):
+                            pacer.settle(count_reservation, TokenUsage(input_tokens=0, output_tokens=0, total_tokens=0))
                             pacer.observe(profile.id, response.headers)
-                        runner.http_client.event_hooks["request"] = []
+                            if response.status_code == 429:
+                                await response.aread()
+                                try:
+                                    code = _error_code(response.json())
+                                except ValueError:
+                                    code = None
+                                if code in _QUOTA_ERROR_CODES:
+                                    response.headers["x-should-retry"] = "false"
+                        runner.http_client.event_hooks["request"] = [count_request]
                         runner.http_client.event_hooks["response"] = [count_headers]
                         try:
                             count_body = {key: body[key] for key in (
@@ -499,8 +565,23 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
                             pacer.settle(count_reservation, TokenUsage(input_tokens=0, output_tokens=0, total_tokens=0))
                         if cancellation is not None and cancellation.is_cancelled:
                             raise state.interrupted("cancelled")
+                        if count_only:
+                            return {"status": "counted", "input_tokens": actual}
+                        ceiling = pacer.request_token_ceiling(profile.id)
+                        allowance = profile.max_output_tokens
+                        if ceiling is not None:
+                            allowance = min(allowance, ceiling - actual - 256)
+                        if allowance < 32:
+                            raise CloudInferenceError("The attached input leaves no reply space within the API token rate limit. "
+                                "Use fewer/smaller attachments or increase the model's API rate limit.", code=CloudErrorCode.RATE_LIMIT)
+                        body["max_output_tokens"] = allowance
+                        with self._lock:
+                            self.last_attachment_capacity = {"input_tokens": actual,
+                                "output_allowance": allowance, "token_rate_ceiling": ceiling}
+                        if allowance < profile.max_output_tokens:
+                            report_activity(activity, "Fitting the reply to cloud capacity…")
                     if attachment_estimate is not None:
-                        reservation = await pacer.acquire(profile.id, estimated_input + 256 + profile.max_output_tokens,
+                        reservation = await pacer.acquire(profile.id, estimated_input + 256 + body["max_output_tokens"],
                             activity=activity)
                     runner.http_client.event_hooks["request"] = [request_hook]
                     runner.http_client.event_hooks["response"] = [no_quota_retry]
@@ -566,7 +647,7 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
         outcome, usage, interrupted = "error", TokenUsage(), None
         try:
             payload = runner.run(request)
-            outcome = "completed" if payload.get("status") == "completed" else "incomplete"
+            outcome = "completed" if payload.get("status") in {"completed", "counted"} else "incomplete"
             usage = _token_usage(payload)
         except CancelledError:
             interrupted = state.interrupted("cancelled")
@@ -583,9 +664,10 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
             raise CloudInferenceError("The OpenAI transport is unavailable.", code=CloudErrorCode.PROVIDER_UNAVAILABLE) from None
         finally:
             metrics = measurement.finish(outcome)
-            with self._lock:
-                self.last_request_metrics = metrics
-            record_request_metrics(log, metrics, usage)
+            if not count_only:
+                with self._lock:
+                    self.last_request_metrics = metrics
+                record_request_metrics(log, metrics, usage)
             if interrupted is not None:
                 interrupted.completion = interrupted.completion.model_copy(update={"request_metrics": metrics})
                 interrupted.completion_history = (interrupted.completion,)
@@ -630,6 +712,8 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
                 return
             self._closed = True
             self._attachments = None
+            self._attachment_counts.clear()
+            self.last_attachment_capacity = None
             runner, self._runner = self._runner, None
             self._api_key = ""
             self._text_observer = None
