@@ -1,9 +1,9 @@
 """Shared chat composer paint, controls and typography."""
 from pathlib import Path
 
-from PySide6.QtCore import QRectF, QSize, Qt, Signal
+from PySide6.QtCore import QEasingCurve, QRectF, QSize, Qt, Signal, QVariantAnimation
 from PySide6.QtGui import QColor, QIcon, QLinearGradient, QPainter, QPainterPath, QPalette
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QPushButton, QTextEdit, QWidget
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QPushButton, QStyle, QStyleOptionButton, QTextEdit, QWidget
 
 ASSETS = Path(__file__).with_name("assets")
 COMPOSER_WIDTH = 799
@@ -58,6 +58,51 @@ class ComposerFrame(QFrame):
         painter.drawRoundedRect(rect.adjusted(2., 2., -2., -2.), max(1., radius - 2), max(1., radius - 2))
 
 
+class ComposerToolButton(QPushButton):
+    """Animate the painted button, keeping its hit target and layout stable."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._scale = 1.
+        self._pulse = QVariantAnimation(self)
+        self._pulse.setEasingCurve(QEasingCurve.Type.InOutCubic)
+        self._pulse.valueChanged.connect(self._set_scale)
+        self._pulse.finished.connect(lambda: self._set_scale(1. if not self.isDown() else .88))
+        self.pressed.connect(self._press)
+        self.released.connect(self._release)
+
+    def _set_scale(self, value):
+        self._scale = float(value)
+        self.update()
+
+    def _press(self):
+        self._pulse.stop()
+        self._pulse.setDuration(90)
+        self._pulse.setStartValue(self._scale)
+        self._pulse.setKeyValueAt(.3, self._scale)
+        self._pulse.setEndValue(.88)
+        self._pulse.start()
+
+    def _release(self):
+        self._pulse.stop()
+        self._pulse.setDuration(190)
+        self._pulse.setStartValue(self._scale)
+        self._pulse.setKeyValueAt(.3, .88)
+        self._pulse.setEndValue(1.)
+        self._pulse.start()
+
+    def paintEvent(self, event):  # noqa: N802
+        option = QStyleOptionButton()
+        self.initStyleOption(option)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.translate(self.width() / 2, self.height() / 2)
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        painter.scale(self._scale, self._scale)
+        painter.translate(-self.width() / 2, -self.height() / 2)
+        self.style().drawControl(QStyle.ControlElement.CE_PushButton, option, painter, self)
+
+
 def composer_tools(parent):
     tools = QWidget(parent)
     tools.setObjectName("composerTools")
@@ -69,7 +114,7 @@ def composer_tools(parent):
         ("composerAddPlaceholder", "plus.svg", "Attach images or files"),
         ("composerFolderPlaceholder", "folder.svg", "Folder (placeholder)"),
     ):
-        button = QPushButton(tools)
+        button = ComposerToolButton(tools) if asset == "plus.svg" else QPushButton(tools)
         button.setObjectName(name)
         button.setFixedSize(32, 32)
         button.setIcon(QIcon(str(ASSETS / asset)))

@@ -12,6 +12,7 @@ from app.ui.composer import (
     MessageInput, composer_tools, configure_input, configure_send,
 )
 from app.ui.message_images import MessageImageLoader
+from app.ui.motion import OpeningFade
 
 
 def _blurred_backdrop(parent):
@@ -114,6 +115,7 @@ class ImageViewer(QDialog):
         self.setWindowModality(Qt.WindowModality.WindowModal)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.opening = OpeningFade(self)
         self._backdrop = _blurred_backdrop(parent)
         self.loader = MessageImageLoader(store, self, size=QSize(4096, 4096), max_cached=2)
         self.loader.loaded.connect(self._refresh_send)

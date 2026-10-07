@@ -13,6 +13,7 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QScrollA
 from app.conversation.attachment_processing import AttachmentProcessor, MAX_IMAGE_PIXELS
 from app.runtime.cancellation import CancellationSource, TaskCancelled
 from app.inference.attachments import AttachmentReference, attachment_references
+from app.ui.motion import install_smooth_scroll
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,6 +105,7 @@ class AttachmentTray(QWidget):
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setFixedHeight(66)
+        install_smooth_scroll(scroll)
         self.content = QWidget()
         self.cards = QHBoxLayout(self.content)
         self.cards.setContentsMargins(0, 0, 0, 0)
@@ -181,6 +183,7 @@ class AttachmentTray(QWidget):
             status.setObjectName("attachmentDetail")
             name.setText(name.fontMetrics().elidedText(job.name, Qt.TextElideMode.ElideMiddle, 142))
             card.setToolTip("<qt>" + escape(job.name) + "</qt>")
+            card.setAccessibleName(job.name)
             labels.addWidget(name)
             labels.addWidget(status)
             row.addLayout(labels, 1)
@@ -191,7 +194,11 @@ class AttachmentTray(QWidget):
             remove.clicked.connect(lambda checked=False, key=job.key: self.remove(key))
             row.addWidget(remove)
             self.cards.insertWidget(self.cards.count() - 1, card)
-            self._entries[job.key] = dict(job=job, card=card, preview=preview, status=status, remove=remove, prepared=None)
+            entry = dict(job=job, card=card, preview=preview, name=name, status=status, remove=remove, prepared=None)
+            self._entries[job.key] = entry
+            if (job.image is not None or job.reference is not None and job.reference.kind == "image"
+                    or job.path is not None and job.path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".gif"}):
+                self._image_card(entry)
             self._queued.append(job)
         self.show()
         self.changed.emit()
@@ -225,9 +232,25 @@ class AttachmentTray(QWidget):
         tooltip = entry["job"].name + "\n" + detail + "\n" + "\n".join(prepared.processed.warnings)
         entry["card"].setToolTip("<qt>" + escape(tooltip).replace("\n", "<br/>") + "</qt>")
         if prepared.thumbnail is not None:
+            self._image_card(entry)
             entry["preview"].setPixmap(QPixmap.fromImage(prepared.thumbnail).scaled(
-                40, 40, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+                48, 48, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
         self.changed.emit()
+
+    @staticmethod
+    def _image_card(entry):
+        entry["name"].hide()
+        entry["status"].hide()
+        entry["card"].setFixedSize(56, 56)
+        entry["card"].layout().setContentsMargins(4, 4, 4, 4)
+        entry["preview"].setFixedSize(48, 48)
+        entry["preview"].setText("…")
+        entry["remove"].setParent(entry["card"])
+        entry["card"].layout().removeWidget(entry["remove"])
+        entry["remove"].setFixedSize(18, 18)
+        entry["remove"].move(38, 0)
+        entry["remove"].raise_()
+        entry["remove"].show()
 
     @Slot(str, str)
     def _progress(self, key, status):

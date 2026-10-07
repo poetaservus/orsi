@@ -86,14 +86,14 @@ def text_file(tmp_path, name="file.txt", content="file contents"):
 def test_plus_opens_single_file_picker_in_local_and_prepares_draft(windows, tmp_path, monkeypatch):
     window = windows()
     path = text_file(tmp_path)
-    called = []
-    def choose(*args):
-        called.append(args[1])
-        return str(path), ""
-    monkeypatch.setattr(QFileDialog, "getOpenFileName", choose)
     window.add_placeholder.click()
+    dialog = window._attachment_picker
+    assert dialog.fileMode() == QFileDialog.FileMode.ExistingFile
+    assert dialog.testOption(QFileDialog.Option.DontUseNativeDialog)
+    dialog.selectFile(str(path))
+    dialog.accept()
     wait_for(lambda: not window.attachment_tray.is_processing)
-    assert called and window.attachment_tray.ready and window.attachment_tray.count == 1
+    assert window._attachment_picker is None and window.attachment_tray.ready and window.attachment_tray.count == 1
     ref = window.attachment_tray.references[0]
     assert AttachmentProcessor(window.service.store.attachment_store).load(ref).text == "file contents"
     assert window.composer.height() == 130 and not window.attachment_tray.isHidden()
@@ -103,8 +103,11 @@ def test_plus_opens_single_file_picker_in_local_and_prepares_draft(windows, tmp_
 def test_cloud_picker_accepts_multiple_in_order_without_small_cap(windows, tmp_path, monkeypatch):
     window = windows("cloud")
     paths = [text_file(tmp_path, f"{i}.txt", str(i)) for i in range(12)]
-    monkeypatch.setattr(QFileDialog, "getOpenFileNames", lambda *args: ([str(p) for p in paths], ""))
     window.add_placeholder.click()
+    dialog = window._attachment_picker
+    assert dialog.fileMode() == QFileDialog.FileMode.ExistingFiles
+    monkeypatch.setattr(dialog, "selectedFiles", lambda: [str(p) for p in paths])
+    dialog.done(QFileDialog.DialogCode.Accepted)
     wait_for(lambda: not window.attachment_tray.is_processing)
     assert [ref.name for ref in window.attachment_tray.references] == [p.name for p in paths]
     assert window.attachment_tray.ready and window.attachment_tray.count == 12

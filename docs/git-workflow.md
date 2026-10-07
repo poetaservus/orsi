@@ -1,5 +1,26 @@
 # Git layout and baseline hygiene
 
+## Composer motion polish, 8 October 2026
+
+The bounded `codex/composer-motion-polish` change starts from local main
+`fe0909f`. Image drafts display thumbnails, the plus control pulses, wheel
+scrolling eases, and the image viewer and asynchronous Qt attachment picker
+fade open. Local-image lag/composer collapse was investigated only; admission,
+inference and composer-height behavior remain unchanged.
+
+Final native focused checks passed 160 tests and five subtests. Final full native
+regression passed 2,339 tests and 15 subtests, with 58 separately recorded skips
+in 331.03 seconds. Evidence, the earlier installer I/O failure/retry, synthetic visual
+checks and investigation limits are in [the verification record](composer-motion-polish.md).
+No live model/API gate was run.
+
+Refs/worktree identities and a verified complete-history bundle containing
+92 refs are retained under ignored `state/backups/composer-motion-20261008/`.
+Preserve prior main at `archive/2026-10-08/main-before-composer-motion-polish`,
+commit after verification, fast-forward local main and remove the merged local
+feature branch. Other active worktrees, remote refs and runtime settings remain
+untouched.
+
 ## Skill reference count, 8 October 2026
 
 The bounded `codex/skill-reference-count-32` change starts from local main

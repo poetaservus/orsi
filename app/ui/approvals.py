@@ -6,6 +6,7 @@ from typing import Callable
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import QFrame, QLabel, QPlainTextEdit, QVBoxLayout, QWidget
+from app.ui.motion import install_smooth_scroll
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,6 +73,7 @@ class InlineApproval(QFrame):
         preview = QPlainTextEdit(self)
         preview.setObjectName(name)
         preview.setReadOnly(True)
+        install_smooth_scroll(preview)
         preview.setPlainText(text)
         layout.addWidget(preview, 1)
         return preview

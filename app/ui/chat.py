@@ -21,6 +21,7 @@ from app.ui.code_highlighting import CodeHighlighter
 from app.ui.copy_button import CopyButton
 from app.ui.markdown import MarkdownLabel
 from app.ui.message_images import MessageImageLoader, MessageImageStrip
+from app.ui.motion import install_smooth_scroll
 from app.inference.completion import CompletionMetadata
 from app.inference.attachments import attachment_references
 
@@ -96,6 +97,7 @@ class _CodeBlock(QFrame):
         self.editor = QPlainTextEdit()
         self.editor.setObjectName("codeEditor")
         self.editor.setReadOnly(True)
+        install_smooth_scroll(self.editor)
         self.editor.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
         self.editor.setPlainText(code)
         fixed_font = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
@@ -517,6 +519,9 @@ class ChatView(QScrollArea):
         scroll_bar.actionTriggered.connect(self._on_user_scroll_action)
         scroll_bar.sliderMoved.connect(self._on_user_slider_moved)
         scroll_bar.valueChanged.connect(self._sync_generation_visibility)
+        scrolling = install_smooth_scroll(self)
+        scrolling.started.connect(self._begin_smooth_scroll)
+        scrolling.finished.connect(self._refresh_follow_tail_from_position)
 
     def add_message(
         self,
@@ -595,6 +600,7 @@ class ChatView(QScrollArea):
         row.deleteLater()
 
     def clear_messages(self) -> None:
+        self.smooth_scroll.stop()
         self.set_thinking(False)
         if self.generation_frame is not None:
             self.generation_frame.stop()
@@ -725,12 +731,15 @@ class ChatView(QScrollArea):
         return 0, 0
 
     def _scroll_to_bottom(self) -> None:
+        if not self._follow_tail:
+            return
         try:
             bar = self.verticalScrollBar()
         except RuntimeError:
             return
         self._setting_scroll_position = True
         try:
+            self.smooth_scroll.stop()
             bar.setValue(bar.maximum())
         finally:
             self._setting_scroll_position = False
@@ -747,6 +756,9 @@ class ChatView(QScrollArea):
         self._follow_tail = False
         QTimer.singleShot(0, self._refresh_follow_tail_from_position)
 
+    def _begin_smooth_scroll(self):
+        self._follow_tail = False
+
     def _on_user_slider_moved(self, value: int) -> None:
         bar = self.verticalScrollBar()
         self._follow_tail = bar.maximum() - value <= 12
@@ -759,6 +771,8 @@ class ChatView(QScrollArea):
         self._follow_tail = bar.maximum() - bar.value() <= 12
 
     def wheelEvent(self, event) -> None:  # noqa: N802 - Qt API name
+        if self.smooth_scroll.wheel(event):
+            return
         self._follow_tail = False
         super().wheelEvent(event)
         QTimer.singleShot(0, self._refresh_follow_tail_from_position)

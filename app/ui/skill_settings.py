@@ -9,6 +9,7 @@ from html import escape
 from app.runtime.skills.contracts import SkillLoadError, SkillParseError
 from app.runtime.skills.import_source import SkillImportError, prepare_import
 from app.runtime.skills.installer import SkillInstallError
+from app.ui.motion import install_smooth_scroll
 
 
 class SkillSourceInput(QLineEdit):
@@ -105,6 +106,7 @@ class SkillSettingsDialog(QDialog):
             layout.addWidget(label)
         self.preview_source.setWordWrap(False)
         self.preview_packages = QListWidget()
+        install_smooth_scroll(self.preview_packages)
         self.preview_packages.setAccessibleName("Packages to install")
         self.preview_packages.setMaximumHeight(100)
         self.preview_packages.hide()
@@ -123,6 +125,7 @@ class SkillSettingsDialog(QDialog):
         installed_row.addWidget(self.remove_button)
         layout.addLayout(installed_row)
         self.installed = QListWidget()
+        install_smooth_scroll(self.installed)
         self.installed.setMinimumHeight(100)
         self.installed.setAccessibleName("Installed skills")
         layout.addWidget(self.installed, 1)

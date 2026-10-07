@@ -7,6 +7,7 @@ from html import escape
 from PySide6.QtCore import QFile, QIODevice, QObject, QRectF, QRunnable, QSize, QThreadPool, Qt, Signal, Slot
 from PySide6.QtGui import QColor, QImage, QImageReader, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QScrollArea, QWidget
+from app.ui.motion import install_smooth_scroll
 
 from app.conversation.attachment_processing import MAX_IMAGE_PIXELS
 from app.runtime.cancellation import CancellationSource
@@ -176,6 +177,7 @@ class MessageImageStrip(QScrollArea):
         self.setWidgetResizable(False)
         self.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        install_smooth_scroll(self)
         self.setStyleSheet("QScrollArea#messageImages { background: transparent; border: none; }"
                            "QScrollArea#messageImages QWidget { background: transparent; }"
                            "QScrollBar:horizontal { background: transparent; height: 8px; margin: 0; }"

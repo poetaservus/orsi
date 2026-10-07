@@ -64,6 +64,7 @@ from app.ui.skill_settings import SkillSettingsDialog
 from app.ui.window_frame import CAPTION_HEIGHT, DragStrip, WindowControls, WindowsFrame
 from app.ui.attachments import AttachmentTray
 from app.ui.image_viewer import ImageViewer
+from app.ui.motion import AttachmentFileDialog
 from app.ui.composer import (
     ComposerFrame, MessageInput, COMPOSER_STYLE, composer_tools, configure_input, configure_send,
     COMPOSER_WIDTH as _COMPOSER_WIDTH, COMPOSER_HEIGHT as _COMPOSER_HEIGHT,
@@ -343,6 +344,7 @@ class MainWindow(QMainWindow):
         self._greeting_message = self._load_greeting_message()
         self.thread = None
         self._image_viewer = None
+        self._attachment_picker = None
         self._pending_image_reply = None
         self._image_request_draft = None
         self._image_in_flight = False
@@ -888,12 +890,21 @@ class MainWindow(QMainWindow):
     def _pick_attachments(self):
         if self.thread is not None or self.attachment_tray.store is None:
             return
-        if getattr(self.inference, "mode", "local") == "local":
-            path, _ = QFileDialog.getOpenFileName(self, "Attach an image or file", "", SUPPORTED_FILE_FILTER)
-            paths = [path] if path else []
-        else:
-            paths, _ = QFileDialog.getOpenFileNames(self, "Attach images or files", "", SUPPORTED_FILE_FILTER)
-        self.attachment_tray.add_paths(paths)
+        if self._attachment_picker is not None:
+            self._attachment_picker.raise_()
+            return
+        dialog = AttachmentFileDialog(self, cloud=getattr(self.inference, "mode", "local") == "cloud",
+                                      name_filter=SUPPORTED_FILE_FILTER)
+        self._attachment_picker = dialog
+
+        def finished(result):
+            self._attachment_picker = None
+            if result == QFileDialog.DialogCode.Accepted and not getattr(self, "_closing", False):
+                self.attachment_tray.add_paths(dialog.selectedFiles())
+            dialog.deleteLater()
+
+        dialog.finished.connect(finished)
+        dialog.open()
 
     def _open_image_viewer(self, references, index):
         if getattr(self, "_closing", False):
@@ -1525,6 +1536,8 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt API name
         self._closing = True
+        if self._attachment_picker is not None:
+            self._attachment_picker.reject()
         if self._image_viewer is not None:
             self._image_viewer.reject()
         self.attachment_tray.shutdown()

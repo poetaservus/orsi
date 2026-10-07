@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QPushButton, QVBoxLayout, QWidget,
 )
 
+from app.ui.motion import install_smooth_scroll
 
 _COMMAND = re.compile(r"(?:^|\s)(?P<command>/skill(?:[ \t]+(?P<query>[^\r\n]*))?)$")
 
@@ -54,6 +55,7 @@ class SkillPicker(QObject):
         body_layout = QVBoxLayout(body)
         body_layout.setContentsMargins(8, 6, 8, 8)
         self.items = QListWidget(body)
+        install_smooth_scroll(self.items)
         self.items.setObjectName("skillPickerList")
         self.items.setAccessibleName("Installed skills")
         self.items.setFocusPolicy(Qt.FocusPolicy.NoFocus)
