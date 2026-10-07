@@ -548,3 +548,27 @@ Preserve prior main at `archive/2026-10-07/main-before-working-status-ui`,
 commit this record, fast-forward local main and push only main to origin.
 Remove the merged local UI branch after successful integration. Other active
 worktrees and remote feature/archive branches are outside this operation.
+
+## Python Coder skill, 7 October 2026
+
+The user requests an open-source synthesis matching the editorial discipline of
+the O.R.S.I. flagship design package. `codex/python-coder-skill` starts from local
+main `5c1e613`. The bounded change adds the authored `skills/python-coder` package,
+twelve references, provenance/license notices, documentation and behavioral
+artifact checks. See [the research and verification record](python-coder-skill.md).
+No application runtime, provider configuration or existing installed skill is
+changed. The new package is installed through the existing package installer.
+
+Unrestricted focused checks passed 127 tests in 3.23 seconds. Full unrestricted
+Windows confirmation passed 2,000 tests and 15 subtests, with 49 existing skips
+and no failures in 247.00 seconds. Native package installation and all reference
+continuations round-trip correctly; the published examples are exercised for
+validation, failed saves, cleanup failures and structured concurrency. Live model
+qualification remains unrun and separate from these passed deterministic checks.
+
+Pre-change refs, worktree map and a verified complete-history bundle are preserved
+under ignored `state/backups/python-coder-skill-20261007/`. Preserve prior main at
+`archive/2026-10-07/main-before-python-coder-skill`. Commit the verified change,
+fast-forward local main, and remove the merged local feature branch. The user's
+earlier instruction to merge and push new changes authorizes publishing main;
+do not publish or delete remote feature/archive branches or alter other worktrees.
