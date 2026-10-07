@@ -31,6 +31,7 @@ app/
     contracts.py          bounded agent result and limit models
     feedback.py           protocol-recovery and text-fallback messages
     file_resolution.py    bounded same-folder filename disambiguation
+    read_progress.py      renews text-read allowances after settled file changes
     runtime.py            sequential model/tool continuation loop
   capabilities/
     catalog.py            single production registration path
@@ -97,6 +98,9 @@ and are not alternate implementations.
 7. The GUI presents only trusted approval data and resolves the approval. It does not decide policy.
 8. The journaled executor records intent and authorization, executes once, records the result, and
    returns structured output to the model.
+   Settled text edits/writes that prove a content change renew only that file's text-read repetition
+   allowances; unchanged/failed operations and duplicate batches retain the guard. See
+   [read progress verification](docs/version-aware-read-guard.md).
 9. The loop continues until final assistant text or a bounded terminal status. The orchestrator
    durably stores the terminal turn outcome, visible response and every settled call in the active session.
 

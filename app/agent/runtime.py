@@ -35,6 +35,7 @@ from app.agent.feedback import (
     safe_identifier,
 )
 from app.agent.file_resolution import filename_disambiguation_feedback
+from app.agent.read_progress import ReadProgressTracker
 from app.capabilities.contracts import (
     CapabilityArgumentError,
     CapabilityContext,
@@ -425,6 +426,7 @@ class AgentRuntime:
         capability_calls = 0
         protocol_failures = 0
         repeated: dict[str, int] = {}
+        read_progress = ReadProgressTracker()
         used_call_ids: set[str] = set()
         advertised_names = {item.name for item in definitions}
         required_fingerprints = tuple(call_fingerprint(call) for call in required_calls)
@@ -805,6 +807,7 @@ class AgentRuntime:
                         protocol_failures=protocol_failures,
                     )
                 results.append(outcome.result)
+                read_progress.observe(call, outcome.result, repeated)
                 if outcome.result.error is not None and outcome.result.error.code in {
                     CapabilityErrorCode.INVALID_ARGUMENTS, CapabilityErrorCode.UNKNOWN_CAPABILITY,
                 }:

@@ -595,3 +595,30 @@ After verification, commit, fast-forward local main and remove the merged local
 feature branch. The user's existing instruction to merge and push new changes
 authorizes publishing main only; other active worktrees and remote feature/archive
 branches are outside this operation.
+
+## Read progress guard, 7 October 2026
+
+`codex/version-aware-read-guard` starts from local main `d00fe59`. The reported
+cloud error was a false repetition stop on a third read after two successful
+edits to the same file. The bounded change uses settled native results to renew
+only the affected text-read allowances after proven content changes. No-progress
+calls, writes, duplicate batches, permissions and configured budgets retain their
+existing limits. See [the implementation and verification record](version-aware-read-guard.md).
+
+Pre-fix synthetic reproduction failed the seven progress expectations while
+passing eleven guard checks. Focused native verification after the fix passed
+136 tests with one existing host symbolic-link skip. Final full native regression
+passed 2,030 tests and 15 subtests, with 49 existing skips and no failures in
+241.63 seconds. The first run's unchanged installer cleanup and reader rename
+errors are retained in the verification record; all 133 tests in those groups
+passed their isolated native recheck. Live model/API gates remain separate from
+deterministic verification. Actual game files, model profiles and user settings
+are unchanged.
+
+Pre-change refs, the worktree map and a verified complete-history bundle are
+preserved under ignored `state/backups/version-aware-read-guard-20261007/`.
+Prior main is preserved at `archive/2026-10-07/main-before-version-aware-read-guard`.
+After verification, commit, fast-forward local main, and remove the merged local
+feature branch. The user's standing merge-and-push instruction authorizes
+publishing main only. Other active worktrees and remote feature/archive branches
+are outside this operation.
