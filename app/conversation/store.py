@@ -33,6 +33,7 @@ class ChatMessage(BaseModel):
     role: Literal["user", "assistant"]
     content: str
     attachments: tuple[AttachmentReference, ...] = ()
+    generated_images: tuple[AttachmentReference, ...] = ()
     timestamp: str = Field(default_factory=_now)
     completion: CompletionMetadata | None = None
     completion_history: list[CompletionMetadata] | None = None
@@ -43,9 +44,13 @@ class ChatMessage(BaseModel):
     @model_validator(mode="after")
     def validate_input(self):
         attachment_references(self.attachments)
+        attachment_references(self.generated_images)
+        if self.generated_images and (self.role != "assistant" or
+                any(ref.kind != "image" for ref in self.generated_images)):
+            raise ValueError("Generated images must belong to an assistant message.")
         if self.role != "user" and self.attachments:
             raise ValueError("Only user messages can carry input attachments.")
-        if not self.content and not self.attachments:
+        if not self.content and not self.attachments and not self.generated_images:
             raise ValueError("Conversation messages cannot be empty.")
         return self
 
@@ -239,7 +244,10 @@ class ConversationStore:
             self._commit(proposed)
 
     def finish_turn(self, turn_id: str, outcome: AgentRunResult, answer: str | None = None) -> str:
-        with self._lock:
+        images = attachment_references(getattr(answer, "generated_images", ()))
+        with self.attachment_store.protect_drafts(), self._lock:
+            for reference in images:
+                self.attachment_store.verify(reference)
             proposed = self._conversation.model_copy(deep=True)
             turn = self._turn(proposed, turn_id)
             if turn.outcome is not None:
@@ -253,10 +261,12 @@ class ConversationStore:
             value = answer if answer is not None else self._stopped_text(outcome)
             value = CompletionText(value, outcome.completion, outcome.completion_history)
             proposed.messages.append(ChatMessage(role="assistant", content=str(value), turn_id=turn_id,
+                generated_images=images,
                 stopped=outcome.status != AgentRunStatus.COMPLETED,
                 completion=outcome.completion if outcome.completion != CompletionMetadata() else None,
                 completion_history=list(outcome.completion_history) if outcome.completion_history else None))
             self._commit(proposed)
+            self.attachment_store.retain_drafts(images)
             return value
 
     def reconcile_journal(self, records) -> None:

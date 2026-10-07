@@ -631,7 +631,8 @@ class MainWindow(QMainWindow):
                 value = CompletionText(message.content, message.completion,
                     tuple(message.completion_history) if message.completion_history else None)
                 self.chat.add_message("User" if message.role == "user" else "Agent", value, message.stopped,
-                    skill_name=getattr(message, "skill_name", None), attachments=getattr(message, "attachments", ()))
+                    skill_name=getattr(message, "skill_name", None), attachments=getattr(message, "attachments", ()),
+                    images=getattr(message, "generated_images", ()))
             if self.chat._messages:
                 self._intro_active = False
         self._update_context_window()

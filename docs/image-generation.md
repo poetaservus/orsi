@@ -14,7 +14,7 @@ separately and an unavailable account/model is never a passed image check.
 | --- | --- | --- |
 | 1A | Separate image model, size, quality and format settings | 58 focused; 2,297 full-suite tests and 15 subtests passed, 58 optional gates skipped |
 | 1B | Native tool, image streaming events, image-only responses | 115 focused; 2,307 full-suite tests and 15 subtests passed, 58 skipped; live generation blocked by account access |
-| 2A | Original-resolution storage and assistant association | Pending |
+| 2A | Original-resolution storage and assistant association | 76 focused; confirmation passed 2,307 full-suite tests and 15 subtests, 58 skipped |
 | 2B | Chat and viewer editing from original sources | Pending |
 | 3A | Cached grainy drifting placeholder | Pending |
 | 3B | Aspect ratio, fade, thumbnails, viewer and save | Pending |
@@ -31,3 +31,10 @@ the diagnostic reports.
 
 References: [image generation](https://developers.openai.com/api/docs/guides/image-generation),
 [native image tool](https://developers.openai.com/api/docs/guides/tools-image-generation).
+
+Phase 2A's first native full run recorded 2,306 passed and one failure in the
+unchanged agent-runtime 30 ms cancellation test: the timer cancelled before its
+blocked capability had started. An isolated recheck cancelled before model entry
+instead. The complete 32-test runtime group then passed. These failures remain
+recorded separately from the subsequent full-suite confirmation; runtime behavior,
+the test and acceptance prompts were not changed to pass them.

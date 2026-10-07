@@ -275,6 +275,7 @@ class ConversationService:
 
         source = CancellationSource()
         turn_id = None
+        answer = None
         previous_explicit_skill = self._active_skill_name
         previous_automatic_skill = self._automatic_skill
         message_skill = None
@@ -451,6 +452,8 @@ class ConversationService:
                 return "The response was stopped."
             raise
         finally:
+            for reference in getattr(answer, "generated_images", ()):
+                self.store.attachment_store.discard_draft(reference)
             self._skill_observer = None
             self._reported_skill_name = None
             if activity_attached:

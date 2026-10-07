@@ -38,6 +38,10 @@ def test_native_image_only_pipeline_and_private_sources(monkeypatch, tmp_path, c
         encoded = payload["output"][0]["result"]
         assert encoded not in str(result) and encoded not in caplog.text
         assert encoded not in (tmp_path / "chat.json").read_text()
+        reopened = ConversationStore(tmp_path / "chat.json")
+        assert reopened.visible_messages()[-1].generated_images == (ref,)
+        assert not service.store.attachment_store.discard_draft(ref)
+        reopened.attachment_store.verify(ref)
     finally:
         service.shutdown()
     assert client.is_closed()

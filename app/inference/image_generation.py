@@ -55,9 +55,14 @@ def image_result(payload, *, store, settings, completion, cancellation=None):
         raise AttachmentError("The generated images exceed the safe storage limit.")
     references = []
     from app.conversation.attachment_processing import AttachmentProcessor
-    for index, (data, extension) in enumerate(decoded, 1):
-        ref = store.import_bytes(data, name=f"Generated image {index}.{extension}", cancellation=cancellation)
-        AttachmentProcessor(store).prepare(ref, cancellation=cancellation)
-        references.append(ref)
+    try:
+        for index, (data, extension) in enumerate(decoded, 1):
+            ref = store.import_bytes(data, name=f"Generated image {index}.{extension}", cancellation=cancellation, draft=True)
+            references.append(ref)
+            AttachmentProcessor(store).prepare(ref, cancellation=cancellation)
+    except Exception:
+        for reference in references:
+            store.discard_draft(reference)
+        raise
     return CompletionText("Image generated." if len(references) == 1 else "Images generated.", completion,
                           generated_images=tuple(references))
