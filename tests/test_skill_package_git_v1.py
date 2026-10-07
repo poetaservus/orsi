@@ -108,7 +108,7 @@ def test_git_reference_limits_reject_before_storage_creation(tmp_path, monkeypat
     if limit == "file":
         files["references/large.md"] = b"a" * (remote.MAX_REFERENCE_BYTES + 1)
     elif limit == "count":
-        files.update({f"references/{index}.md": b"doc" for index in range(17)})
+        files.update({f"references/{index}.md": b"doc" for index in range(33)})
     elif limit == "total":
         files.update({f"references/{index}.md": b"a" * remote.MAX_REFERENCE_BYTES for index in range(5)})
     else:
@@ -118,3 +118,16 @@ def test_git_reference_limits_reject_before_storage_creation(tmp_path, monkeypat
     local_transport(monkeypatch, repo)
     reject(Code.LIMIT_EXCEEDED, lambda: manager(tmp_path).install(URL))
     assert not (tmp_path / "storage").exists()
+
+
+def test_git_package_accepts_32_references_and_preserves_every_document(tmp_path, monkeypatch):
+    files = {"SKILL.md": skill()}
+    files.update({f"references/{index}.md": f"Document {index}".encode() for index in range(32)})
+    repo = repository(tmp_path, files)
+    local_transport(monkeypatch, repo)
+    installer = manager(tmp_path)
+    assert installer.install(URL).installed == ("frontend",)
+    installed = installer.installer.info("frontend")
+    assert _stored_files(installed.root_path, installer.installer.registry.max_bytes) == files
+    installer.installer.remove("frontend")
+    assert installer.installer.list() == ()

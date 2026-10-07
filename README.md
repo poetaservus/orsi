@@ -68,7 +68,8 @@ ORSI.cmd skill info "exact-skill-name"
 ```
 
 Folder/repository installation preserves `SKILL.md` and bounded Markdown documents beneath
-`references/`, including subfolders. A file or Raw link still imports one instruction file.
+`references/`, including subfolders: up to 32 references, 16 KiB per file and 64 KiB combined.
+A file or Raw link still imports one instruction file.
 Scripts, assets and dependencies are not installed or executed. The default global storage is
 `~/.orsi/skills/`. See the [package format](docs/skill-package-format-v1.md) and
 [installation verification](docs/skill-package-install-v1.md). The

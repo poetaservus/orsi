@@ -1,5 +1,25 @@
 # Git layout and baseline hygiene
 
+## Skill reference count, 8 October 2026
+
+The bounded `codex/skill-reference-count-32` change starts from local main
+`69d5856`. The shared package ceiling rises from 16 to 32 Markdown references,
+with byte limits, excerpts, cloud pacing, profiles and inference policies intact.
+The desktop `2d-game-dev` skill is installed into the global catalog; all 20
+references passed native reading and exact-byte verification, with the four
+existing skills and source bytes preserved.
+
+Unrestricted focused checks passed 338 tests; full native regression passed
+2,334 tests and 15 subtests, with 58 optional skips and no failures/errors in
+356.44 seconds. The restricted-run failures remain separate sandbox evidence.
+No live model/API gate was run. See [the verification record](skill-reference-count-32.md).
+
+Refs/worktree identities and a verified complete-history bundle containing
+91 refs are retained under ignored `state/backups/skill-reference-count-32-20261008/`.
+Preserve prior main at `archive/2026-10-08/main-before-skill-reference-count-32`,
+commit the verified change, fast-forward local main and remove the merged local
+feature branch. Other active worktrees and remote refs remain untouched.
+
 ## Native image generation integration, 7–8 October 2026
 
 Eight bounded `codex/image-generation-*` subphases start from local main

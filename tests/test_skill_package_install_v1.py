@@ -130,7 +130,7 @@ def test_reference_limits_include_all_documents_and_reject_atomically(tmp_path, 
     if limit == "file":
         (references / "behavior.md").write_bytes(b"a" * (MAX_REFERENCE_BYTES + 1))
     elif limit == "count":
-        for index in range(15):
+        for index in range(31):
             (references / f"extra-{index}.md").write_bytes(b"extra")
     elif limit == "total":
         for index in range(5):
@@ -143,6 +143,34 @@ def test_reference_limits_include_all_documents_and_reject_atomically(tmp_path, 
         monkeypatch.setattr(local, "MAX_INSTALL_BYTES", (source / "SKILL.md").stat().st_size + 1)
     assert_rejected(local.SkillInstallErrorCode.LIMIT_EXCEEDED, lambda: installer.install(source))
     assert not installer.storage_root.exists()
+
+
+def test_32_reference_package_preview_install_read_and_remove(tmp_path):
+    from app.runtime.cancellation import CancellationToken
+    from app.runtime.skills.reference_reader import SkillReferenceReader
+    from app.runtime.skills.reference_storage import FilesystemReferenceStorage
+
+    source, installer = pack(tmp_path), manager(tmp_path)
+    for index in range(30):
+        (source / f"references/extra-{index:02}.md").write_bytes(f"Document {index}".encode())
+    imported = prepare_import(str(source))
+    assert imported.reference_count == 32
+    assert install_import(installer, imported).installed == ("python-clamp",)
+    installed = installer.info("python-clamp")
+    expected = {p.relative_to(source).as_posix(): p.read_bytes() for p in source.rglob("*.md")}
+    assert local._stored_files(installed.root_path, installer.registry.max_bytes) == expected
+    assert len(json.loads((installed.root_path / MANIFEST_NAME).read_bytes())["files"]) == 33
+
+    reader = SkillReferenceReader(FilesystemReferenceStorage())
+    binding = reader.activate(installed, CancellationToken())
+    assert len(binding.resources) == 32
+    result = reader.read(binding, "references/extra-29.md", version=binding.version,
+                         cancellation=CancellationToken())
+    assert result["text"] == "Document 29" and result["complete_document"]
+    reader.deactivate()
+    assert installer.install(source).already_installed == ("python-clamp",)
+    installer.remove("python-clamp")
+    assert_clean(tmp_path, installer)
 
 
 def test_nested_markdown_and_reference_named_skill_are_data_not_new_skills(tmp_path):

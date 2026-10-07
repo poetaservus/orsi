@@ -425,7 +425,7 @@ def test_reader_is_not_exposed_in_production_catalog_before_conversation_wiring(
 def test_native_inventory_rejects_contract_violations_before_activation(native, change, code):
     root, skill, reader, old = native
     if change == "count":
-        for index in range(17): (root / f"references/extra{index}.md").write_bytes(b"extra")
+        for index in range(31): (root / f"references/extra{index}.md").write_bytes(b"extra")
     elif change == "total":
         for index in range(5): (root / f"references/large{index}.md").write_bytes(b"x" * MAX_REFERENCE_BYTES)
     elif change == "depth":

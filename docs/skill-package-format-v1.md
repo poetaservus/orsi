@@ -7,6 +7,8 @@ This is the Phase 1 contract and historical verification. Phase 2 now implements
 package imports; see [package installation](skill-package-install-v1.md).
 Phase 3 implements the [controlled reader](skill-reference-reader-v1.md).
 Phase 4 implements [on-demand conversation loading](skill-reference-conversations-v1.md).
+The supporting-file ceiling was raised from 16 to 32 on 8 October 2026;
+see [the count-limit verification](skill-reference-count-32.md).
 
 ## Delivery boundary
 
@@ -93,7 +95,7 @@ reference mentioned in instructions exists.
 | Contract limit | V1 ceiling |
 | --- | --- |
 | Entry point | Existing `MAX_SKILL_SIZE`: 1 MiB |
-| Supporting files | 16 per package |
+| Supporting files | 32 per package |
 | Individual supporting file | 16 KiB |
 | Combined supporting bytes | 64 KiB |
 | Combined package bytes | 1 MiB + 64 KiB |
