@@ -153,9 +153,12 @@ and clipboard image paste. Local mode accepts one attachment per message; cloud 
 can contain multiple. Documents are prepared as text with explicit visual limitations.
 Local models can read text/code, CSV/JSON, selectable-text PDFs, DOCX, PPTX and XLSX
 attachments, including follow-ups and tool continuations. The complete extracted text
-counts toward context; oversized current messages fail visibly. Images require phase 3B's
-vision support, and cloud attachment sending remains pending phase 4. Unsupported input
-keeps the composer draft intact. See [phase 3A](docs/attachments-phase3a.md).
+counts toward context; oversized current messages fail visibly. For local images, manually
+choose Qwen3-VL 4B with its verified matching projector. PNG, JPEG, WebP and still GIF
+input supports follow-ups and native tool continuations, with image-aware context counting.
+The default 14B model remains selected until you change it. Cloud attachment sending
+remains pending phase 4. Unsupported input keeps the composer draft intact.
+See [documents](docs/attachments-phase3a.md) and [local images](docs/attachments-phase3b.md).
 Unfinished code fences still appear in code boxes. Incomplete tool generation is rejected before
 argument repair or execution. The UI releases its controls even when the context meter cannot
 refresh. See [completion-state verification](docs/completion-state-2026-10-02.md).

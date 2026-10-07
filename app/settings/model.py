@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.settings.loader import load_json
 from app.settings.paths import PATHS
+from app.settings.vision import LocalVisionConfig
 
 
 @dataclass(frozen=True)
@@ -44,6 +45,7 @@ def detect_nvidia_memory_mib() -> tuple[int, int] | None:
 class ModelConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     model_path: str
+    vision: LocalVisionConfig | None = None
     context_length: int | Literal["auto"] = "auto"
     minimum_context_length: int = Field(4096, ge=512)
     maximum_context_length: int = Field(32768, ge=512)

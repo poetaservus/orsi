@@ -259,6 +259,12 @@ def _validated_safety_buffer(value: int) -> int:
 
 
 def count_message_tokens(inference, messages: list[dict[str, Any]]) -> int:
+    from app.inference.local_images import has_image_inputs
+    if has_image_inputs(messages):
+        counter = getattr(inference, "count_image_message_tokens", None)
+        if not callable(counter):
+            raise AttachmentError("This model cannot account for image input.")
+        return max(1, int(counter(deepcopy(messages))))
     if has_attachments(messages):
         counter = getattr(inference, "count_attachment_message_tokens", None)
         if not callable(counter):

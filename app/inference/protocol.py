@@ -13,6 +13,7 @@ from app.inference.contracts import ModelCapabilityDefinition
 from app.inference.completion import CompletionMetadata
 from app.inference.openai_replay import OpenAIReplay, neutral_messages
 from app.inference.tool_repair import StructuredCallDecodeError, decode_json_object
+from app.inference.local_images import image_content
 
 
 _CAPABILITY_NAME = re.compile(
@@ -317,7 +318,9 @@ def native_chat_messages(
             if outstanding or set(raw_message) != {"role", "content"}:
                 raise ValueError("Text messages cannot interrupt an unresolved capability call.")
             translated.append(
-                {"role": role, "content": _bounded_message_text(raw_message.get("content"))}
+                {"role": role, "content": (image_content(raw_message["content"])
+                 if role == "user" and isinstance(raw_message.get("content"), list)
+                 else _bounded_message_text(raw_message.get("content")))}
             )
             continue
 

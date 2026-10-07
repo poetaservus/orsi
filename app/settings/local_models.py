@@ -9,6 +9,7 @@ from app.settings.model import ModelConfig, detect_nvidia_memory_mib
 from app.settings.model_profiles import LocalModelProfile, LocalModelProfiles
 from app.settings.loader import load_json
 from app.state.storage import JsonStore
+from app.settings.vision import verify_vision_pair
 
 
 _SCALARS = {0: "B", 1: "b", 2: "H", 3: "h", 4: "I", 5: "i", 6: "f",
@@ -91,7 +92,7 @@ class LocalModel:
     @property
     def compatibility_note(self) -> str:
         if self.architecture == "qwen3vl":
-            return "Experimental: file editing may fail. No image input."
+            return "Vision requires the matching projector. Experimental: file editing may fail."
         return "Text and tools"
 
 
@@ -138,6 +139,8 @@ class LocalModelCatalog:
         self.models = []
         self.unavailable = []
         for path in sorted(models_directory.glob("*.gguf")):
+            if path.name.startswith("mmproj-"):
+                continue  # A projector is a bound resource, not a selectable language model.
             try:
                 self.models.append(inspect_model(path))
             except (OSError, ValueError, UnicodeError, struct.error) as exc:
@@ -212,6 +215,11 @@ class LocalModelCatalog:
             raise ValueError("This model file does not match its versioned profile.")
         gpu = detect_nvidia_memory_mib()
         target = profile.configuration
+        if target.vision is not None:
+            verify_vision_pair(target.model_copy(update={"model_path": str(model.path.resolve())}))
+        # Reserve projector weights and encoder scratch before resolving KV context.
+        vision_reserve = (int(target.vision.projector_size_bytes * 1.2 / 1048576) + 512
+                          if target.vision is not None else 0)
         # GGUF dimensions describe FP16 K/V storage. Q8_0 stores 32 values
         # plus a two-byte scale in 34 bytes; FP16 uses 64 bytes for 32 values.
         kv_bytes_per_token = ((model.kv_bytes_per_token * 17 + 31) // 32
@@ -220,6 +228,7 @@ class LocalModelCatalog:
         config = target.model_copy(update={"model_path": str(model.path.resolve()),
             "context_length": "auto", "maximum_context_length": maximum,
             "minimum_context_length": min(target.minimum_context_length, maximum),
+            "context_fixed_reserve_mib": target.context_fixed_reserve_mib + vision_reserve,
             "estimated_kv_bytes_per_token": kv_bytes_per_token})
         selection = config.select_context(native_context=model.native_context,
                                           gpu_offload_available=gpu is not None and target.gpu_layers != 0,
@@ -246,6 +255,14 @@ class LocalModelCatalog:
                 "context_vram_fraction", "context_free_vram_fraction", "context_model_size_multiplier",
                 "context_fixed_reserve_mib", "estimated_kv_bytes_per_token")},
         }
+        if target.vision is not None:
+            self._resolutions[model_id]["vision"] = {
+                "projector_sha256": target.vision.projector_sha256,
+                "projector_size_bytes": target.vision.projector_size_bytes,
+                "max_image_tokens": target.vision.max_image_tokens,
+                "extra_reserve_mib": vision_reserve,
+                "counting": "native_multimodal_with_bounded_offline_fallback",
+            }
         return effective
 
     def save(self, config: ModelConfig):

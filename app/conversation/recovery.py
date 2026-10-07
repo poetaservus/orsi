@@ -81,7 +81,8 @@ def _project_value(value, *, text_limit: int, item_limit: int, anchors: tuple[st
 
 
 def _anchors(messages: list[dict]) -> tuple[str, ...]:
-    requirements = "\n".join(m.get("content", "") for m in messages if m.get("role") == "user")
+    from app.inference.local_images import image_text
+    requirements = "\n".join(image_text(m.get("content", "")) for m in messages if m.get("role") == "user")
     # Quoted snippets, selectors and identifiers are literal hints, never routing decisions.
     quoted = re.findall(r'[`"\']([^`"\'\n]{3,200})[`"\']', requirements)
     tokens = re.findall(r"[.#]?[\w-]{4,}(?:[./\\][\w.-]+)*", requirements)

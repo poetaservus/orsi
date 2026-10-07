@@ -1378,6 +1378,8 @@ class MainWindow(QMainWindow):
             config = catalog.current_config
             model = next((item for item in catalog.models if item.id == catalog.current_id), None)
             note = model.compatibility_note if model else "Model unavailable"
+            if config.vision is not None:
+                note = "Image input available · Experimental file editing"
             self.local_model_details.setText(
                 f"{int(config.context_length):,} context · {config.max_tokens:,} reply limit\n"
                 f"Settings applied automatically\n{note}"
@@ -1386,7 +1388,7 @@ class MainWindow(QMainWindow):
             self.local_model_details.setToolTip(
                 f"Temperature {config.temperature} · Top-p {config.top_p} · Top-k {config.top_k}\n"
                 f"{'GPU acceleration' if config.gpu_layers != 0 else 'CPU'} · {config.cache_type.upper()} cache\n"
-                "Switching preserves your conversation. Vision attachments are not enabled."
+                "Switching preserves your conversation. Choose the Qwen vision model for image input."
             )
         else:
             self.local_model_details.setText("Local model selection is unavailable.")

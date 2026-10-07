@@ -380,9 +380,11 @@ def test_http_boundary_rejects_wrong_build_and_oversized_response():
             engine._request_completion({"messages": []})
 
 
+@pytest.mark.parametrize("vision_layers", [None, -1, 0])
 def test_server_launch_is_hidden_loopback_only_and_uses_qwen_jinja(
     monkeypatch,
     tmp_path: Path,
+    vision_layers,
 ):
     model = tmp_path / "model.gguf"
     model.touch()
@@ -412,8 +414,15 @@ def test_server_launch_is_hidden_loopback_only_and_uses_qwen_jinja(
         "app.inference.llama_server_backend.start_owned_process",
         popen,
     )
+    from app.settings.vision import LocalVisionConfig
+    vision = None
+    if vision_layers is not None:
+        vision = LocalVisionConfig(projector_path=str(tmp_path / "mmproj.gguf"), projector_size_bytes=1,
+            projector_sha256="1" * 64, model_size_bytes=1, model_sha256="2" * 64)
+        monkeypatch.setattr("app.inference.llama_server_backend.verify_vision_pair", lambda cfg: None)
     engine = LlamaServerInferenceEngine(
-        ModelConfig(model_path=str(model), context_length=4096),
+        ModelConfig(model_path=str(model), context_length=4096, vision=vision,
+            gpu_layers=vision_layers if vision_layers is not None else -1),
         server_executable=server,
     )
     monkeypatch.setattr(engine, "_wait_until_healthy", lambda *args: None)
@@ -429,6 +438,12 @@ def test_server_launch_is_hidden_loopback_only_and_uses_qwen_jinja(
     assert command[command.index("--cache-type-k") + 1] == "f16"
     assert command[command.index("--cache-type-v") + 1] == "f16"
     assert command[command.index("--api-key") + 1] == "test-key"
+    if vision is not None:
+        assert command[command.index("--mmproj") + 1] == str(vision.resolved_projector_path)
+        assert command[command.index("--image-max-tokens") + 1] == "4096"
+        assert ("--no-mmproj-offload" in command) == (vision_layers == 0)
+    else:
+        assert "--mmproj" not in command and "--image-max-tokens" not in command
     assert captured["kwargs"]["cwd"] == server.parent
     assert base_url == "http://127.0.0.1:54321"
     assert api_key == "test-key"

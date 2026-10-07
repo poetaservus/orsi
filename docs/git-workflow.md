@@ -727,3 +727,28 @@ ignored `state/backups/attached-document-grounding-20261007/`. Prior main is ret
 at `archive/2026-10-07/main-before-attached-document-grounding`. After full verification,
 commit, fast-forward/publish main under the standing user instruction and remove only
 the merged local feature branch. Other worktrees and remote branches remain untouched.
+
+## Local vision input, 7 October 2026
+
+`codex/local-vision-input` starts from verified local main `b47c01f`. Phase 3B adds bounded
+native image input for the explicitly selected Qwen3-VL 4B and verified matching projector,
+without changing the default 14B, its sampling, manual skill activation or tool permissions.
+The projector is an ignored local model resource; only its pinned identity is versioned.
+See [the local image contract and qualification](attachments-phase3b.md).
+
+GPU qualification covers visual formats, different images across turns, follow-up/archive
+recall, real native tool continuation and a real 14B → vision → 14B switch. The separate CPU
+image gate verifies its actual limits. Numeric diagnostics preserve no source/response bodies;
+all owned model servers exited, and user selection/profile bytes were preserved by the tests.
+Optional live gates and native Windows fixture failures remain separate verification evidence.
+
+Pre-change refs, worktree maps and a verified complete-history bundle are preserved under
+ignored `state/backups/local-vision-input-20261007/`. Prior main is retained at
+`archive/2026-10-07/main-before-local-vision-input`. After verification, commit the bounded
+change, fast-forward/publish main under the standing user authorization and remove only the
+merged local feature branch. Other active worktrees and remote branches are outside this work.
+
+Final native regression passed **2,189 tests and 15 subtests, with 52 optional skips and
+no failures in 259.39 seconds**. GPU and CPU live vision gates passed separately; the
+full-run Windows fixture denials, isolated successful rechecks and optional skips are
+recorded in the phase contract. Dependency, compilation and whitespace checks passed.

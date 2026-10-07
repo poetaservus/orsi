@@ -179,6 +179,10 @@ class LlamaCppInferenceEngine(LocalDocumentInputs, InferenceEngine):
     ) -> ModelResponse:
         if not messages:
             raise InferenceUnavailable("Local inference received an empty conversation.")
+        from app.inference.local_images import has_image_inputs
+        if has_image_inputs(messages):
+            from app.inference.attachments import AttachmentError
+            raise AttachmentError("The Python local backend is not qualified for image input. Use the native vision model.")
         definitions = model_capability_definitions(
             capabilities,
             require_nonempty=True,

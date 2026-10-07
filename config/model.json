@@ -86,7 +86,15 @@
         "min_p": 0.0,
         "repeat_penalty": 1.0,
         "presence_penalty": 0.0,
-        "cache_type": "f16"
+        "cache_type": "f16",
+        "vision": {
+          "projector_path": "models/mmproj-Qwen3VL-4B-Instruct-F16.gguf",
+          "projector_size_bytes": 836180256,
+          "projector_sha256": "256f3a43bd4205ffef48d6b92715e1e70b5b0e9aef06522584967513a9985331",
+          "model_size_bytes": 2497281664,
+          "model_sha256": "66358cb18bb6b3b1b6675aa412c7a88ef01d228f481184d13668e5201c730a0a",
+          "max_image_tokens": 4096
+        }
       }
     }
   ]

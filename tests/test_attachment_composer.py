@@ -230,6 +230,28 @@ def test_local_image_gate_keeps_draft_and_reports_vision_requirement(windows, tm
     assert "vision model" in window.attachment_hint.toolTip()
 
 
+def test_selected_vision_model_dispatches_image_without_automatic_skill(windows, tmp_path):
+    window = windows()
+    engine = window.service.inference
+    engine.supports_local_document_inputs = True
+    engine.supports_local_image_inputs = True
+    engine.prepare_image_inputs = lambda: None
+    engine.count_image_message_tokens = lambda messages: 600
+    image = QImage(30, 30, QImage.Format.Format_RGB32);image.fill(QColor("white"))
+    mime = QMimeData();mime.setImageData(image)
+    window.attachment_tray.add_mime(mime)
+    wait_for(lambda: not window.attachment_tray.is_processing)
+    ref = window.attachment_tray.references[0]
+    window.input.setPlainText("Read image")
+    window.submit()
+    wait_for(lambda: window.thread is None)
+    assert window.attachment_tray.count == 0
+    assert window.service.store.visible_messages()[0].attachments == (ref,)
+    assert isinstance(engine.requests[0][-1]["content"], list)
+    assert window.service.store.visible_messages()[0].skill_name is None
+    assert window.chat._messages[-1]._content == "Reply"
+
+
 def test_failed_file_can_be_removed_and_does_not_reach_model(windows, tmp_path):
     window = windows()
     path = tmp_path / "bad.exe"

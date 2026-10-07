@@ -28,7 +28,7 @@ from app.conversation.prompt import (
 from app.conversation.result_grounding import grounded_text_read_answer
 from app.conversation.store import ConversationStore, TurnHistoryError
 from app.conversation.skill_references import ConversationSkillReferences
-from app.conversation.local_documents import LocalDocuments, LocalDocumentCounter, with_local_document_guidance
+from app.conversation.local_documents import LocalDocuments, LocalDocumentCounter, with_local_document_guidance, with_local_image_guidance
 from app.security.host_access import HostAccessPolicy, HostReadScope
 from app.inference.engine import InferenceUnavailable
 from app.inference.attachments import AttachmentError, AttachmentContextError, attachment_references, has_attachments
@@ -284,13 +284,14 @@ class ConversationService:
                     raise RuntimeError("The conversation is closed.")
                 self._cancellation = source
             report_activity(activity, "Preparing your request…")
-            self._documents.clear()
-            if references and self._local_documents_enabled():
-                report_activity(activity, "Reading attached documents…")
-            self._admit_attachments(references, source.token, verify=True)
             if callable(activity_setter):
                 activity_setter(activity)
                 activity_attached = True
+            self._documents.clear()
+            self._documents.allow_images = getattr(self.inference, "supports_local_image_inputs", False) is True
+            if references and self._local_documents_enabled():
+                report_activity(activity, "Reading attached images…" if any(r.kind == "image" for r in references) else "Reading attached documents…")
+            self._admit_attachments(references, source.token, verify=True)
             if self.supports_text_streaming and callable(cancellation_setter):
                 cancellation_setter(source.token)
                 cancellation_attached = True
@@ -719,10 +720,18 @@ class ConversationService:
             raise AttachmentError("Local mode accepts one file or image per message.")
         if self._local_documents_enabled():
             if any(reference.kind == "image" for reference in (*retained, *references)):
-                raise AttachmentError("Local image input requires a qualified vision model and will be enabled in phase 3B.")
+                if getattr(self.inference, "supports_local_image_inputs", False) is not True:
+                    raise AttachmentError("Choose the qualified Qwen vision model to read images. The current model does not support image input.")
+                self._documents.allow_images = True
+                if verify:
+                    # Only actual worker-time admission may load a vision model.
+                    self.inference.prepare_image_inputs()
             if verify:
                 for reference in (*retained, *references):
-                    self._documents.load(reference, cancellation=cancellation)
+                    if reference.kind == "image" and reference not in references:
+                        self.store.attachment_store.verify(reference, cancellation=cancellation)
+                    else:
+                        self._documents.load(reference, cancellation=cancellation)
             return
         if getattr(self.inference, "supports_attachment_inputs", False) is not True:
             raise AttachmentError("Image and file input is not enabled for this model yet.")
@@ -774,7 +783,10 @@ class ConversationService:
                                        "Active skill is unavailable. Select another skill or use /skill to clear it.")
         core_prompt = prompt
         if document_inputs:
-            core_prompt = with_local_document_guidance(core_prompt)
+            if any(r.get("kind") == "file" for m in history for r in m.get("attachments", ())):
+                core_prompt = with_local_document_guidance(core_prompt)
+            if any(r.get("kind") == "image" for m in history for r in m.get("attachments", ())):
+                core_prompt = with_local_image_guidance(core_prompt)
         prompt = with_active_skill(core_prompt, skill, references=self._references.prompt_payload(
             available=use_agent and "skill.read_reference" in capabilities))
         latest_user = next((message for message in reversed(history) if message.get("role") == "user"), None)

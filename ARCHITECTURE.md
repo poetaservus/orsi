@@ -341,3 +341,17 @@ before verification on the next turn and on session reset. The lazy startup hint
 document/image admission checks without loading a model in the GUI. The PDF cache adds
 an optional readable-page count; older PDF caches are regenerated from verified snapshots
 before local use. See [phase 3A](docs/attachments-phase3a.md).
+
+Phase 3B extends local source projection with typed inline image parts. Original bytes and
+references remain immutable in state; the conversation worker decodes verified still images
+to orientation-correct lossless PNG transport, without resizing or OCR. Native protocol
+validation permits only bounded inline image bytes in user messages, never URLs/paths or
+privileged roles. Images remain intact through native call/result continuations and context
+recovery. Binary transport has separate per-image/request bounds while existing transcript
+text/call/result size limits remain enforced. The native adapter counts actual image patches
+through the pinned `/v1/chat/completions/input_tokens` route on an idle owned server; offline
+counting reserves the enforced maximum image patch count. Counting never starts a server.
+The versioned vision configuration binds both model and projector hashes, verifies compatible
+metadata, includes projector/encoder memory in context resolution and passes explicit native
+projector/image-token flags. Selection stays manual; cloud and the Python backend do not
+inherit local vision support. See [phase 3B](docs/attachments-phase3b.md).

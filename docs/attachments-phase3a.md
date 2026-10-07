@@ -10,7 +10,8 @@ Preparation retains phase 2's text-only limitations: no OCR, chart/image/layout 
 formula execution or recalculation. Extraction warnings travel with the document text.
 PDFs containing no selectable text fail before inference; mixed PDFs retain readable pages
 and warnings for unread pages. Empty text files remain explicit empty sources. Images still
-require phase 3B's qualified vision model/projector. Cloud input remains gated until phase 4,
+require [phase 3B's qualified vision model/projector](attachments-phase3b.md), now implemented.
+Cloud input remains gated until phase 4,
 including follow-ups in a chat with local attachments. Switching back to local resumes use
 of retained references. No implicit cloud/local fallback discards attached material.
 

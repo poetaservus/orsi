@@ -23,7 +23,8 @@ class LazyInferenceEngine(InferenceEngine):
     """Loads a heavyweight backend only when that mode is actually used."""
 
     def __init__(self, factory: Callable[[], InferenceEngine], *, context_length: int,
-                 max_response_tokens: int = 512, supports_local_document_inputs: bool | None = None):
+                 max_response_tokens: int = 512, supports_local_document_inputs: bool | None = None,
+                 supports_local_image_inputs: bool = False):
         self._factory = factory
         self._engine = None
         self._initialization_error = None
@@ -32,6 +33,7 @@ class LazyInferenceEngine(InferenceEngine):
         self.context_length = int(context_length)
         self.max_response_tokens = int(max_response_tokens)
         self._local_document_hint = supports_local_document_inputs
+        self._local_image_hint = supports_local_image_inputs
 
     @property
     def is_loaded(self) -> bool:
@@ -55,6 +57,17 @@ class LazyInferenceEngine(InferenceEngine):
         if not self.supports_attachment_inputs:
             raise AttachmentError("Image and file input is not enabled for this model yet.")
         return self._get_engine().respond_with_attachments(messages, attachment_store=attachment_store)
+
+    @property
+    def supports_local_image_inputs(self):
+        return (getattr(self._engine, "supports_local_image_inputs", False) is True
+                if self._engine is not None else self._local_image_hint)
+
+    def prepare_image_inputs(self):
+        return self._get_engine().prepare_image_inputs()
+
+    def count_image_message_tokens(self, messages):
+        return self._get_engine().count_image_message_tokens(messages)
 
     def count_attachment_message_tokens(self, messages, **kwargs):
         return self._get_engine().count_attachment_message_tokens(messages, **kwargs)
@@ -188,6 +201,21 @@ class HybridInferenceEngine(InferenceEngine):
     def supports_local_document_inputs(self):
         return self.mode == "local" and getattr(
             self._engine_for(self.mode), "supports_local_document_inputs", False) is True
+
+    @property
+    def supports_local_image_inputs(self):
+        return self.mode == "local" and getattr(self.local, "supports_local_image_inputs", False) is True
+
+    def prepare_image_inputs(self):
+        if not self.supports_local_image_inputs:
+            raise AttachmentError("The selected mode/model does not support local images.")
+        self.local.prepare_image_inputs()
+        self._refresh_limits(self.local)
+
+    def count_image_message_tokens(self, messages):
+        if not self.supports_local_image_inputs:
+            raise AttachmentError("The selected mode/model cannot account for local images.")
+        return self.local.count_image_message_tokens(messages)
 
     def respond_with_attachments(self, messages, *, attachment_store):
         engine = self._engine_for(self.mode)
@@ -362,7 +390,8 @@ class HybridInferenceEngine(InferenceEngine):
                     return backend
                 candidate = LazyInferenceEngine(
                     load_selected,
-                    context_length=config.context_length, max_response_tokens=config.max_tokens)
+                    context_length=config.context_length, max_response_tokens=config.max_tokens,
+                    supports_local_document_inputs=True, supports_local_image_inputs=config.vision is not None)
                 with self._lock:
                     if self._closed:
                         raise InferenceUnavailable("Inference is closed.")

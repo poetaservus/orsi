@@ -253,6 +253,7 @@ class AttachmentProcessor:
                     from PySide6.QtCore import QSize, Qt
                     from PySide6.QtGui import QImageReader
                     reader = QImageReader(str(self.store.root / reference.id / "content"))
+                    reader.setAutoTransform(True)
                     reader.setDecideFormatFromContent(True)
                     image_format = bytes(reader.format()).decode("ascii", errors="ignore")
                     expected = {".png": "png", ".jpg": "jpeg", ".jpeg": "jpeg", ".webp": "webp", ".gif": "gif"}

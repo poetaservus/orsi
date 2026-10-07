@@ -21,6 +21,11 @@ class LocalModelProfile(BaseModel):
 
     @model_validator(mode="after")
     def validate_target(self):
+        if self.configuration.vision is not None and (
+                self.architecture != "qwen3vl"
+                or self.sha256 != self.configuration.vision.model_sha256
+                or self.size_bytes != self.configuration.vision.model_size_bytes):
+            raise ValueError("Vision configuration must bind to the profile's model identity.")
         if Path(self.configuration.model_path).name != self.model_id:
             raise ValueError("The profile ID must match its model filename.")
         if not isinstance(self.configuration.context_length, int):

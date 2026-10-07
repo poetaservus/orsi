@@ -81,6 +81,28 @@ def test_metadata_parser_rejects_oversized_values_without_loading_tensors(tmp_pa
         read_model_metadata(model)
 
 
+def test_projector_resource_is_not_a_model_choice(tmp_path):
+    model = write_model(tmp_path / "renamed.gguf")
+    (tmp_path / "mmproj-vision.gguf").write_bytes(b"resource")
+    catalog = LocalModelCatalog(tmp_path, tmp_path / "config.json", ModelConfig(model_path=str(model)))
+    assert [m.id for m in catalog.models] == ["renamed.gguf"] and not catalog.unavailable
+
+
+def test_vision_encoder_memory_is_reserved_before_context_selection(catalog, monkeypatch):
+    from app.settings.vision import LocalVisionConfig
+    entry = next(m for m in catalog.models if m.id == "new.gguf")
+    profile = catalog.profile(entry)
+    vision = LocalVisionConfig(projector_path="projector.gguf", projector_size_bytes=836180256,
+        projector_sha256="1" * 64, model_size_bytes=entry.path.stat().st_size, model_sha256="2" * 64)
+    monkeypatch.setattr(catalog, "profile", lambda model: profile.model_copy(update={"configuration": profile.configuration.model_copy(update={"vision": vision})}))
+    verified=[]
+    monkeypatch.setattr("app.settings.local_models.verify_vision_pair", lambda cfg: verified.append(cfg))
+    config = catalog.configuration("new.gguf")
+    assert verified and config.context_fixed_reserve_mib == profile.configuration.context_fixed_reserve_mib + 1468
+    assert catalog._resolutions["new.gguf"]["vision"]["projector_sha256"] == vision.projector_sha256
+    assert config.sampling_parameters() == profile.configuration.sampling_parameters()
+
+
 def test_profile_replaces_all_previous_settings_and_respects_cpu_fallback(catalog, monkeypatch):
     catalog.current_config = catalog.current_config.model_copy(update={
         "temperature": 1.8, "top_p": 0.2, "top_k": 2, "min_p": 0.9,

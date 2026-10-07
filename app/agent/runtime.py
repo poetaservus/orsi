@@ -1413,7 +1413,8 @@ class AgentRuntime:
         return None
 
     def _check_transcript_size(self, transcript: list[dict[str, Any]]) -> None:
-        if json_size(transcript) > self.limits.max_transcript_bytes:
+        from app.inference.local_images import image_accounting_messages
+        if json_size(image_accounting_messages(transcript)) > self.limits.max_transcript_bytes:
             raise ValueError("The agent transcript exceeds its safe size limit.")
 
     def _transcript_within_limit(self, transcript: list[dict[str, Any]]) -> bool:

@@ -114,7 +114,7 @@ def build_application(
             model_size_bytes=model_config.resolved_model_path.stat().st_size,
         )
         backend_factory = (LlamaServerInferenceEngine
-                           if agent_config is not None and agent_config.filesystem_stat_enabled
+                           if getattr(model_config, "vision", None) is not None or (agent_config is not None and agent_config.filesystem_stat_enabled)
                            else LlamaCppInferenceEngine)
         if backend_factory is LlamaServerInferenceEngine and not (
             PATHS.root / "runtime" / "llama-server" / "llama-server.exe"
@@ -134,6 +134,7 @@ def build_application(
             context_length=context_hint.length,
             max_response_tokens=model_config.max_tokens,
             supports_local_document_inputs=True,
+            supports_local_image_inputs=getattr(model_config, "vision", None) is not None,
         )
     except Exception as exc:
         log.exception("Local inference could not be configured.")

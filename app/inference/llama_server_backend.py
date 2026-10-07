@@ -22,6 +22,9 @@ from app.inference.completion import CompletionText, IncompleteResponseError
 from app.inference.owned_process import OwnedProcess, ProcessOwnershipError, start_owned_process
 from app.inference.startup_diagnostics import StartupDiagnostics
 from app.settings.model import ModelConfig, detect_nvidia_memory_mib
+from app.settings.vision import verify_vision_pair
+from app.inference.attachments import AttachmentError
+from app.inference.local_images import has_image_inputs, image_accounting_messages, image_count_messages, MAX_IMAGE_REQUEST_BYTES
 from app.inference.protocol import (
     ModelCapabilityDefinition,
     ModelResponse,
@@ -65,6 +68,10 @@ class LlamaServerInferenceEngine(LocalDocumentInputs, InferenceEngine):
             raise InferenceUnavailable(
                 f"No local GGUF model found at {model_path}. Update config/model.json."
             )
+        try:
+            verify_vision_pair(config)
+        except ValueError as exc:
+            raise InferenceUnavailable(str(exc)) from exc
         executable = (
             server_executable
             if server_executable is not None
@@ -116,6 +123,59 @@ class LlamaServerInferenceEngine(LocalDocumentInputs, InferenceEngine):
         self._token_count_cache: dict[str, int] = {}
 
     @property
+    def supports_local_image_inputs(self):
+        return getattr(self.config, "vision", None) is not None
+
+    def prepare_image_inputs(self):
+        if not self.supports_local_image_inputs:
+            raise AttachmentError("Choose the qualified Qwen vision model to read images.")
+        self.prepare()
+
+    def count_image_message_tokens(self, messages):
+        if not self.supports_local_image_inputs:
+            raise AttachmentError("This local model cannot account for images.")
+        image_accounting_messages(messages)
+        countable = image_count_messages(messages)
+        # The pinned server counts image patches using the actual projector,
+        # without encoding images or generating a completion. Never start it
+        # from a context meter; worker admission/explicit selection prepares it.
+        with self._lifecycle_lock:
+            process, url, key = self._process, self._base_url, self._api_key
+            ready = not self._closed and process is not None and process.poll() is None and not self._request_active.is_set()
+        payload = json.dumps({"messages": countable}, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        digest = sha256(payload).hexdigest()
+        if ready:
+            with self._lifecycle_lock:
+                cached = self._token_count_cache.get("image:" + digest)
+            if cached is not None:
+                return cached
+            request = Request(url + "/v1/chat/completions/input_tokens", data=payload, method="POST", headers={
+                "Authorization": "Bearer " + key, "Content-Type": "application/json"})
+            try:
+                with urlopen(request, timeout=5) as response:
+                    raw = response.read(16385)
+                result = json.loads(raw.decode("utf-8")) if len(raw) <= 16384 else None
+                count = result.get("input_tokens") if isinstance(result, dict) else None
+                if type(count) is int and count > 0:
+                    count += 16 * len(messages) + 256
+                    with self._lifecycle_lock:
+                        if len(self._token_count_cache) >= 128:
+                            self._token_count_cache.clear()
+                        if self._process is process and not self._closed:
+                            self._token_count_cache["image:" + digest] = count
+                    return count
+            except (OSError, URLError, ValueError, UnicodeError, RecursionError):
+                pass
+        plain = deepcopy(countable)
+        image_count = 0
+        for message in plain:
+            if isinstance(message.get("content"), list):
+                parts = message["content"]
+                image_count += sum(p["type"] == "image_url" for p in parts)
+                message["content"] = "\n".join(p["text"] for p in parts if p["type"] == "text")
+        return self.count_message_tokens(plain) + image_count * (self.config.vision.max_image_tokens + 64)
+
+    @property
     def is_running(self) -> bool:
         with self._lifecycle_lock:
             return self._process is not None and self._process.poll() is None
@@ -127,6 +187,8 @@ class LlamaServerInferenceEngine(LocalDocumentInputs, InferenceEngine):
         Offline/failed counting keeps the existing byte heuristic and never loads
         a model solely to refresh the UI or estimate admission.
         """
+        if has_image_inputs(messages):
+            return self.count_image_message_tokens(messages)
         self.require_text_messages(messages)
         encoded_bytes = sum(
             len(str(message.get("content", "")).encode("utf-8", errors="replace"))
@@ -190,6 +252,7 @@ class LlamaServerInferenceEngine(LocalDocumentInputs, InferenceEngine):
 
     def respond(self, messages: list[dict[str, str]]) -> str:
         self.require_text_messages(messages)
+        self._validate_images(messages)
         if not messages:
             raise InferenceUnavailable("Local inference received an empty conversation.")
         completion = self._request_completion(
@@ -218,6 +281,7 @@ class LlamaServerInferenceEngine(LocalDocumentInputs, InferenceEngine):
     ) -> ModelResponse:
         if not messages:
             raise InferenceUnavailable("Local inference received an empty conversation.")
+        self._validate_images(messages)
         definitions = model_capability_definitions(
             capabilities,
             require_nonempty=True,
@@ -288,6 +352,8 @@ class LlamaServerInferenceEngine(LocalDocumentInputs, InferenceEngine):
             ).encode("utf-8")
         except (TypeError, ValueError, UnicodeError, RecursionError) as exc:
             raise ValueError("Local inference requests require valid JSON data.") from exc
+        if has_image_inputs(body.get("messages", ())) and len(encoded) > MAX_IMAGE_REQUEST_BYTES:
+            raise AttachmentError("The image request exceeds the local transport limit.")
 
         with self._request_lock:
             base_url, api_key, process = self._ensure_started()
@@ -390,6 +456,12 @@ class LlamaServerInferenceEngine(LocalDocumentInputs, InferenceEngine):
                 "--log-colors",
                 "off",
             ]
+            if self.config.vision is not None:
+                verify_vision_pair(self.config)
+                command.extend(["--mmproj", str(self.config.vision.resolved_projector_path),
+                                "--image-max-tokens", str(self.config.vision.max_image_tokens)])
+                if self.config.gpu_layers == 0:
+                    command.append("--no-mmproj-offload")
             try:
                 process = _launch_owned_server(
                     command,
@@ -421,6 +493,12 @@ class LlamaServerInferenceEngine(LocalDocumentInputs, InferenceEngine):
             self._stop_process(process)
             raise
         return base_url, api_key, process
+
+    def _validate_images(self, messages):
+        if has_image_inputs(messages):
+            if not self.supports_local_image_inputs:
+                raise AttachmentError("The selected local model does not support image input.")
+            image_accounting_messages(messages)
 
     def _wait_until_healthy(
         self,
