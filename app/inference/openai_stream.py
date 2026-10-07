@@ -26,6 +26,8 @@ _PASSIVE = {"response.in_progress", "response.content_part.done", "response.outp
 _KNOWN_EVENTS = _PASSIVE | set(_TERMINALS) | {"response.created", "error",
     "response.output_item.added", "response.content_part.added", "response.output_text.delta",
     "response.refusal.delta", "response.function_call_arguments.delta", "response.output_item.done"}
+_IMAGE_EVENTS = {"response.image_generation_call." + suffix for suffix in
+                 ("in_progress", "generating", "partial_image", "completed")}
 
 
 class StreamProtocolError(ValueError):
@@ -37,8 +39,9 @@ class StreamProtocolError(ValueError):
 
 
 class ResponsesStreamState:
-    def __init__(self, observer=None):
+    def __init__(self, observer=None, *, allow_images=False, activity=None):
         self.observer = observer
+        self.allow_images, self.activity = allow_images, activity
         self.started = False
         self.identity = None
         self.sequence = -1
@@ -75,7 +78,7 @@ class ResponsesStreamState:
     def accept(self, event):
         value = event.model_dump(mode="json", exclude_none=True)
         kind = value.get("type")
-        self.last_event = kind if isinstance(kind, str) and kind in _KNOWN_EVENTS else "unrecognized"
+        self.last_event = kind if isinstance(kind, str) and kind in (_KNOWN_EVENTS | _IMAGE_EVENTS) else "unrecognized"
         self.events += 1
         self.bytes += len(json.dumps(value, ensure_ascii=False, allow_nan=False).encode("utf-8"))
         if self.events > _MAX_EVENTS or self.bytes > _MAX_EVENT_BYTES:
@@ -112,7 +115,8 @@ class ResponsesStreamState:
         if kind == "response.output_item.added":
             index, item = value.get("output_index"), value.get("item")
             if (type(index) is not int or index != len(self.items) or index >= 64 or not isinstance(item, dict)
-                    or item.get("type") not in {"message", "function_call", "reasoning"}
+                    or item.get("type") not in ({"message", "function_call", "reasoning", "image_generation_call"}
+                                               if self.allow_images else {"message", "function_call", "reasoning"})
                     or not isinstance(item.get("id"), str)):
                 raise StreamProtocolError("invalid_output_item")
             self.items[index] = item
@@ -144,6 +148,12 @@ class ResponsesStreamState:
             final = value.get("item")
             if item is None or not isinstance(final, dict) or any(final.get(key) != item.get(key) for key in ("id", "type")):
                 raise StreamProtocolError("unknown_completed_item")
+        elif kind in _IMAGE_EVENTS and self.allow_images:
+            item = self.items.get(value.get("output_index"))
+            if item is None or item.get("type") != "image_generation_call" or item.get("id") != value.get("item_id"):
+                raise StreamProtocolError("invalid_output_item")
+            from app.runtime.activity import report_activity
+            report_activity(self.activity, "Generating image…")
         elif kind not in _PASSIVE:
             raise StreamProtocolError("unsupported_event")
         return None

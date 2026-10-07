@@ -13,7 +13,7 @@ separately and an unavailable account/model is never a passed image check.
 | Subphase | Scope | Verification |
 | --- | --- | --- |
 | 1A | Separate image model, size, quality and format settings | 58 focused; 2,297 full-suite tests and 15 subtests passed, 58 optional gates skipped |
-| 1B | Native tool, image streaming events, image-only responses | Pending |
+| 1B | Native tool, image streaming events, image-only responses | 115 focused; 2,307 full-suite tests and 15 subtests passed, 58 skipped; live generation blocked by account access |
 | 2A | Original-resolution storage and assistant association | Pending |
 | 2B | Chat and viewer editing from original sources | Pending |
 | 3A | Cached grainy drifting placeholder | Pending |

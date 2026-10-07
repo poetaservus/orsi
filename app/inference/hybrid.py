@@ -206,6 +206,15 @@ class HybridInferenceEngine(InferenceEngine):
         if callable(setter):
             setter(store)
 
+    @property
+    def supports_image_generation(self):
+        return self.mode == "cloud" and getattr(self.cloud, "supports_image_generation", False) is True
+
+    def generate_images(self, messages):
+        if not self.supports_image_generation:
+            raise InferenceUnavailable("Switch to Cloud to generate images.")
+        return self.cloud.generate_images(messages)
+
     def admit_attachment_inputs(self, references, *, cancellation=None):
         admit = getattr(self._engine_for(self.mode), "admit_attachment_inputs", None)
         if callable(admit):

@@ -102,13 +102,15 @@ class CompletionText(str):
     """
     def __new__(cls, content: str, completion: CompletionMetadata | None = None,
                 history: tuple[CompletionMetadata, ...] | None = None, *, status_message: str | None = None,
-                openai_response=None):
+                openai_response=None, generated_images=None):
         value = super().__new__(cls, content)
         value.completion = completion or getattr(content, "completion", CompletionMetadata())
         value.completion_history = history if history is not None else getattr(
             content, "completion_history", (value.completion,))
         value.status_message = status_message or getattr(content, "status_message", None)
         value.openai_response = openai_response or getattr(content, "openai_response", None)
+        value.generated_images = tuple(generated_images if generated_images is not None else
+                                       getattr(content, "generated_images", ()))
         return value
 
     @property

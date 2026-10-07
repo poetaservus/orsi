@@ -238,6 +238,7 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
     supports_openai_context = True
     supports_attachment_inputs = True
     supports_native_attachment_tools = True
+    supports_image_generation = True
     def __init__(self, config: OpenAICloudConfig, api_key: str | None = None, *,
                  selection_path: Path | None = None, rate_limits_path: Path | None = None):
         self.config = config
@@ -438,8 +439,19 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
         except (TypeError, ValueError):
             raise _malformed() from None
 
+    def generate_images(self, messages):
+        from app.inference.image_generation import image_result
+        settings = self.image_settings.current
+        inputs, estimate = self._project_attachments(messages)
+        report_activity(getattr(self, "_activity_observer", None), "Generating image…")
+        payload = self._request(inputs, tools=[settings.tool(self.active_model)],
+                                attachment_estimate=estimate, image_generation=True)
+        return image_result(payload, store=self._attachment_sources().store,
+            settings=settings, completion=_completion_metadata(payload), cancellation=self._request_cancellation)
+
     def _request(self, inputs: list[dict], *, tools: list[dict] | None = None,
-                 attachment_estimate: int | None = None, count_only: bool = False) -> dict:
+                 attachment_estimate: int | None = None, count_only: bool = False,
+                 image_generation: bool = False) -> dict:
         with self._lock:
             self._ensure_open()
             profile = self.catalog.current_profile
@@ -469,6 +481,8 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
             body["temperature"] = profile.temperature
         if tools is not None:
             body.update(tools=tools, tool_choice="auto", parallel_tool_calls=True)
+        if image_generation:
+            body["tool_choice"] = {"type": "image_generation"}
         if attachment_estimate is not None:
             from app.conversation.cloud_attachments import MAX_REQUEST_BYTES
             if len(json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8")) > MAX_REQUEST_BYTES:
@@ -476,7 +490,7 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
         estimated_input = (estimate_input_tokens(inputs) if attachment_estimate is None else attachment_estimate) + estimate_schema_tokens(tools)
         if attachment_estimate is None and estimated_input + 256 > profile.max_input_tokens:
             raise _provider_error(None, "context_length_exceeded")
-        state = ResponsesStreamState(observer)
+        state = ResponsesStreamState(observer, allow_images=image_generation, activity=activity)
         measurement = RequestMeasurement()
         stream_opened = False
         reservation = None
@@ -590,7 +604,7 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
                     runner.http_client.event_hooks["response"] = [no_quota_retry]
                     stream = await runner.client.responses.create(**body)
                     stream_opened = True
-                    report_activity(activity, "Generating response…")
+                    report_activity(activity, "Generating image…" if image_generation else "Generating response…")
                     async with stream:
                         async for event in stream:
                             payload = state.accept(event)

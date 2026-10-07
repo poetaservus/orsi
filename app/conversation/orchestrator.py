@@ -265,6 +265,9 @@ class ConversationService:
         """Run one turn; an optional explicit skill applies only to this message."""
         text = str(user_message).strip()
         references = attachment_references(attachments)
+        from app.inference.image_generation import image_request
+        image_turn = (getattr(self.inference, "supports_image_generation", False) is True
+                      and skill_name is None and image_request(text, has_image=any(r.kind == "image" for r in references)))
         if not text and not references:
             raise ValueError("Enter a message first.")
         if not self._run_lock.acquire(blocking=False):
@@ -342,7 +345,7 @@ class ConversationService:
             self.skill_selection = SkillSelection()
             if self._active_skill_name is not None:
                 self.skill_selection = SkillSelection(name=self._active_skill_name, reason="explicit")
-            elif self.automatic_skills_enabled:
+            elif self.automatic_skills_enabled and not image_turn:
                 candidates = tuple(SkillCandidate(skill.name, skill.description) for skill in self.skill_registry.list())
                 if candidates:
                     report_activity(activity, "Choosing a skill…")
@@ -379,8 +382,15 @@ class ConversationService:
             if text_observer is not None and callable(preview_setter):
                 preview_setter(text_observer)
                 preview_attached = True
-            if self.agent_runtime is None:
-                answer = self._run_chat_turn(source, activity)
+            if image_turn or self.agent_runtime is None:
+                if image_turn:
+                    current = {"role": "user", "content": text.removeprefix("/image ")}
+                    if references:
+                        current["attachments"] = [r.model_dump(mode="json") for r in references]
+                    answer = self.inference.generate_images([current])
+                    source.token.raise_if_cancelled()
+                else:
+                    answer = self._run_chat_turn(source, activity)
                 value = CompletionText(answer)
                 self._turn_result = AgentRunResult(
                     status=AgentRunStatus.INCOMPLETE if value.completion.incomplete else AgentRunStatus.COMPLETED,

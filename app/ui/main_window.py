@@ -1152,6 +1152,7 @@ class MainWindow(QMainWindow):
             text,
             error,
             duration_seconds=duration_seconds,
+            images=getattr(text, "generated_images", ()),
         )
         if notice:
             self.chat.add_message("Agent", notice)
