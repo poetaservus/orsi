@@ -154,6 +154,9 @@ can contain multiple. Documents are prepared as text with explicit visual limita
 Sent images appear inside the user's bubble, with a larger preview for one image or
 an ordered row of miniatures for several. Long rows scroll horizontally; saved previews
 also appear in reopened and archived chats. See [image previews](docs/chat-image-previews.md).
+Click a picture to inspect it in a near-fullscreen viewer, browse the other pictures,
+and send the viewed image with a new prompt. Cloud mode can explicitly include the
+whole set; local mode sends one image. See [the viewer](docs/image-viewer.md).
 Local models can read text/code, CSV/JSON, selectable-text PDFs, DOCX, PPTX and XLSX
 attachments, including follow-ups and tool continuations. The complete extracted text
 counts toward context; oversized current messages fail visibly. For local images, manually

@@ -12,6 +12,7 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QScrollA
 
 from app.conversation.attachment_processing import AttachmentProcessor, MAX_IMAGE_PIXELS
 from app.runtime.cancellation import CancellationSource, TaskCancelled
+from app.inference.attachments import AttachmentReference, attachment_references
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,6 +22,7 @@ class AttachmentJob:
     cancellation: CancellationSource
     path: Path | None = None
     image: QImage | None = None
+    reference: AttachmentReference | None = None
 
 
 class AttachmentPreparationWorker(QObject):
@@ -44,7 +46,9 @@ class AttachmentPreparationWorker(QObject):
                 try:
                     token.raise_if_cancelled()
                     self.progress.emit(job.key, "Copying…")
-                    if job.path is not None:
+                    if job.reference is not None:
+                        reference = job.reference
+                    elif job.path is not None:
                         reference = self.store.import_file(job.path, cancellation=token, draft=True)
                     else:
                         if job.image.width() * job.image.height() > MAX_IMAGE_PIXELS:
@@ -71,7 +75,7 @@ class AttachmentPreparationWorker(QObject):
                     self.failed.emit(job.key, str(exc) if isinstance(exc, AttachmentError) else
                                      "The attachment could not be prepared. Try another file.")
                 finally:
-                    if reference is not None and not handed_off:
+                    if reference is not None and job.reference is None and not handed_off:
                         self.store.discard_draft(reference)
         finally:
             self.done.emit()
@@ -129,6 +133,11 @@ class AttachmentTray(QWidget):
     def add_paths(self, paths):
         jobs = [AttachmentJob(uuid4().hex, Path(path).name, CancellationSource(), path=Path(path)) for path in paths]
         self._add(jobs)
+
+    def add_references(self, references):
+        """Reuse saved originals; viewer pixels must never replace source bytes."""
+        self._add([AttachmentJob(uuid4().hex, ref.name, CancellationSource(), reference=ref)
+                   for ref in attachment_references(references)])
 
     def add_mime(self, mime):
         if mime.hasUrls() and all(url.isLocalFile() for url in mime.urls()):

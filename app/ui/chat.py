@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from html import escape
 
-from PySide6.QtCore import QElapsedTimer, QRect, QRectF, QTimer, Qt
+from PySide6.QtCore import QElapsedTimer, QRect, QRectF, QTimer, Qt, Signal
 from PySide6.QtGui import QColor, QFontDatabase, QLinearGradient, QPainter, QPen
 from PySide6.QtWidgets import (
     QFrame,
@@ -116,7 +116,7 @@ class _CodeBlock(QFrame):
 
 
 class _Message(QFrame):
-    def __init__(self, content: str, *, from_user: bool, error: bool = False, attachments=(), image_loader=None):
+    def __init__(self, content: str, *, from_user: bool, error: bool = False, attachments=(), images=(), image_loader=None):
         super().__init__()
         self.from_user = from_user
         self._content = content
@@ -146,7 +146,10 @@ class _Message(QFrame):
         self._text_labels: list[QLabel | MarkdownLabel] = []
         self._code_blocks: list[_CodeBlock] = []
         self.label = None
-        images = tuple(ref for ref in self.attachments if ref.kind == "image")
+        images = (tuple(ref for ref in self.attachments if ref.kind == "image")
+                  if from_user else attachment_references(images))
+        if any(ref.kind != "image" for ref in images):
+            raise ValueError("Displayed output images must be saved image references.")
         self.image_strip = MessageImageStrip(images, image_loader) if images and image_loader else None
         if self.image_strip is not None:
             layout.addWidget(self.image_strip)
@@ -436,6 +439,8 @@ class _MessageBand(QWidget):
 class ChatView(QScrollArea):
     """Chat-style conversation view without sender name tags."""
 
+    image_activated = Signal(object, int)
+
     def __init__(self, parent: QWidget | None = None, *, attachment_store=None):
         super().__init__(parent)
         self.image_loader = MessageImageLoader(attachment_store, self) if attachment_store is not None else None
@@ -513,6 +518,7 @@ class ChatView(QScrollArea):
         duration_seconds: float | None = None,
         skill_name: str | None = None,
         attachments=(),
+        images=(),
     ) -> _MessageBand:
         from_user = sender.casefold() == "user"
         # Sending a message always follows the conversation tail. Incoming
@@ -520,8 +526,10 @@ class ChatView(QScrollArea):
         # scrolled upward while O.R.S.I was working.
         if from_user:
             self._follow_tail = True
-        message = _Message(content, from_user=from_user, error=error, attachments=attachments,
+        message = _Message(content, from_user=from_user, error=error, attachments=attachments, images=images,
                            image_loader=self.image_loader)
+        if message.image_strip is not None:
+            message.image_strip.image_activated.connect(self.image_activated)
         band_width = self._message_area_width()
 
         row = QWidget()

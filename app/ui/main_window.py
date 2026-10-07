@@ -65,6 +65,7 @@ from app.ui.skill_picker import SkillPicker
 from app.ui.skill_settings import SkillSettingsDialog
 from app.ui.window_frame import CAPTION_HEIGHT, DragStrip, WindowControls, WindowsFrame
 from app.ui.attachments import AttachmentTray
+from app.ui.image_viewer import ImageViewer
 from app.conversation.attachment_processing import SUPPORTED_FILE_FILTER
 
 
@@ -394,6 +395,8 @@ class MainWindow(QMainWindow):
         self._preferences_store = preferences_store
         self._greeting_message = self._load_greeting_message()
         self.thread = None
+        self._image_viewer = None
+        self._pending_image_reply = None
         self.worker = None
         self._active_user_message_band = None
         self._approval_panel = None
@@ -470,6 +473,7 @@ class MainWindow(QMainWindow):
 
         attachment_store = getattr(getattr(service, "store", None), "attachment_store", None)
         self.chat = ChatView(attachment_store=attachment_store)
+        self.chat.image_activated.connect(self._open_image_viewer)
         content_layout.addWidget(self.chat, 1)
 
         self.settings_panel = QFrame(root)
@@ -966,6 +970,43 @@ class MainWindow(QMainWindow):
             paths, _ = QFileDialog.getOpenFileNames(self, "Attach images or files", "", SUPPORTED_FILE_FILTER)
         self.attachment_tray.add_paths(paths)
 
+    def _open_image_viewer(self, references, index):
+        if getattr(self, "_closing", False):
+            return
+        if self._image_viewer is not None:
+            self._image_viewer.raise_()
+            return
+        viewer = ImageViewer(self.attachment_tray.store, references, index,
+                             cloud=getattr(self.inference, "mode", "local") == "cloud", parent=self)
+        self._image_viewer = viewer
+        viewer.set_reply_available(self.thread is None and self.service is not None)
+        viewer.reply_requested.connect(self._reply_from_image_viewer)
+        viewer.finished.connect(self._image_viewer_closed)
+        viewer.show()
+
+    def _image_viewer_closed(self, *_):
+        # Closing during preparation cancels automatic submission. The staged
+        # prompt remains in the main composer for an explicit manual retry.
+        self._pending_image_reply = None
+        self._image_viewer = None
+
+    def _reply_from_image_viewer(self, references, prompt):
+        viewer = self._image_viewer
+        if viewer is None or getattr(self, "_closing", False):
+            return
+        if self.thread is not None or self.attachment_tray.is_processing:
+            viewer.status.setText("Wait for the current operation to finish.")
+            return
+        if self.input.toPlainText().strip() or self.attachment_tray.count:
+            viewer.status.setText("Your main composer has a draft. Close this viewer to finish it, or clear it before sending.")
+            return
+        viewer.set_preparing()
+        self._pending_image_reply = viewer
+        self.input.setPlainText(prompt)
+        self.attachment_tray.add_references(references)
+        if not self.attachment_tray.is_processing:
+            self._attachment_idle()
+
     def _message_composer_height(self):
         return _COMPOSER_HEIGHT + (76 if self.attachment_tray.count else 0) + (26 if not self.attachment_hint.isHidden() else 0)
 
@@ -987,6 +1028,15 @@ class MainWindow(QMainWindow):
     def _attachment_idle(self):
         if getattr(self, "_closing", False):
             self.close()
+            return
+        viewer = self._pending_image_reply
+        if viewer is not None:
+            self._pending_image_reply = None
+            # The established send path handles model support, API readiness,
+            # admission, draft recovery and manual skill selection.
+            viewer.accept()
+            if self.attachment_tray.count and self.attachment_tray.ready:
+                self.submit()
 
     def dragEnterEvent(self, event):  # noqa: N802
         mime = event.mimeData()
@@ -1202,6 +1252,8 @@ class MainWindow(QMainWindow):
             self.close()
 
     def _set_busy(self, busy: bool) -> float | None:
+        if self._image_viewer is not None:
+            self._image_viewer.set_reply_available(not busy and self.service is not None)
         self._preview_active = busy
         self.send.setEnabled(not busy)
         self.stop.setEnabled(busy and self.service is not None)
@@ -1251,6 +1303,8 @@ class MainWindow(QMainWindow):
     def create_new_session(self) -> None:
         if self.thread is not None:
             return
+        if self._image_viewer is not None:
+            self._image_viewer.reject()
         reset = getattr(self.service, "new_session", None)
         if not callable(reset):
             return
@@ -1504,6 +1558,8 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt API name
         self._closing = True
+        if self._image_viewer is not None:
+            self._image_viewer.reject()
         self.attachment_tray.shutdown()
         self._animate_composer_height(_COMPOSER_HEIGHT, animated=False)
         try:

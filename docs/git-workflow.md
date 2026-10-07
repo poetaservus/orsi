@@ -857,3 +857,32 @@ retained at `archive/2026-10-07/main-before-chat-image-previews`. After verifica
 commit, fast-forward main, publish main under the standing user authorization and
 remove only the merged local feature branch. Other worktrees and remote branches
 remain untouched.
+
+## Image viewer and follow-up composer, 7 October 2026
+
+`codex/image-viewer-reply` starts from main `023f10c`. Clicking a miniature opens a
+near-screen-size image viewer with navigation and an image follow-up composer.
+Replies reuse verified original references through the established attachment/send
+path, preserve existing drafts and cancel automatic sending if the viewer closes
+during preparation. Local mode retains one image per message; cloud can explicitly
+include the set. A trusted output-image display hook supports future cloud generation,
+which remains unimplemented. See [the contract and qualification](image-viewer.md).
+
+Expanded focused native checks passed 162 tests and five subtests; final viewer/composer
+checks passed 41 tests. Actual synthetic rendering, compilation, dependency consistency
+and whitespace checks passed. The initial full run recorded 2,287 passed, one unchanged
+reader-fixture Windows rename denial, 57 skipped and 15 subtests in 373.36 seconds.
+The first isolated reader recheck recorded 72 passed and a different rename denial;
+the second passed all 73 tests. The final full rerun recorded **2,287 passed, one
+unchanged registry rename failure, 57 skipped and 15 subtests** in **378.15 seconds**.
+All **112 registry/reader tests passed** their final combined native recheck. Both
+full-run failures remain explicit unresolved Windows verification evidence; no full
+run is labeled passing, and skill-reader/registry behavior or assertions were not
+changed. Live model/API gates remain separately skipped for this UI change.
+
+Pre-integration refs/worktree maps and a verified complete-history bundle are
+preserved under ignored `state/backups/image-viewer-reply-20261007/`; prior main is
+retained at `archive/2026-10-07/main-before-image-viewer-reply`. Commit the bounded
+change, fast-forward main, publish main under the standing user authorization and
+remove only the merged local feature branch. Other active worktrees, remote branches,
+user settings, accepted profiles and inference policies remain unchanged.

@@ -17,9 +17,10 @@ class _PreviewSignals(QObject):
 
 
 class _PreviewJob(QRunnable):
-    def __init__(self, store, reference):
+    def __init__(self, store, reference, size):
         super().__init__()
         self.store, self.reference = store, reference
+        self.size = size
         self.cancellation = CancellationSource()
         self.signals = _PreviewSignals()
 
@@ -41,12 +42,14 @@ class _PreviewJob(QRunnable):
                         size = reader.size()
                         if (size.width() > 0 and size.height() > 0
                                 and size.width() * size.height() <= MAX_IMAGE_PIXELS):
-                            reader.setScaledSize(size.scaled(QSize(560, 360), Qt.AspectRatioMode.KeepAspectRatio))
+                            if size.width() > self.size.width() or size.height() > self.size.height():
+                                reader.setScaledSize(size.scaled(self.size, Qt.AspectRatioMode.KeepAspectRatio))
                             image = reader.read()
                             token.raise_if_cancelled()
                             # Some codecs ignore the decoder's scaled size.
-                            image = image.scaled(560, 360, Qt.AspectRatioMode.KeepAspectRatio,
-                                                 Qt.TransformationMode.SmoothTransformation)
+                            if not image.isNull() and (image.width() > self.size.width() or image.height() > self.size.height()):
+                                image = image.scaled(self.size, Qt.AspectRatioMode.KeepAspectRatio,
+                                                     Qt.TransformationMode.SmoothTransformation)
                     finally:
                         source.close()
         except Exception:
@@ -58,9 +61,10 @@ class _PreviewJob(QRunnable):
 class MessageImageLoader(QObject):
     loaded = Signal(str)
 
-    def __init__(self, store, parent=None):
+    def __init__(self, store, parent=None, *, size=QSize(560, 360), max_cached=32):
         super().__init__(parent)
         self.store = store
+        self.size, self.max_cached = size, max_cached
         self.pool = QThreadPool(self)
         self.pool.setMaxThreadCount(2)
         self._jobs = {}
@@ -72,7 +76,7 @@ class MessageImageLoader(QObject):
             self._images.move_to_end(key)
             return self._images[key]
         if key not in self._jobs:
-            job = _PreviewJob(self.store, reference)
+            job = _PreviewJob(self.store, reference, self.size)
             self._jobs[key] = job
             job.signals.finished.connect(self._finished)
             self.pool.start(job)
@@ -85,7 +89,7 @@ class MessageImageLoader(QObject):
             return
         del self._jobs[key]
         self._images[key] = image
-        while len(self._images) > 32:
+        while len(self._images) > self.max_cached:
             self._images.popitem(last=False)
         self.loaded.emit(key)
 
@@ -98,6 +102,8 @@ class MessageImageLoader(QObject):
 
 
 class _ImagePreview(QWidget):
+    activated = Signal()
+
     def __init__(self, reference, loader, size):
         super().__init__()
         self.reference, self.loader = reference, loader
@@ -105,8 +111,24 @@ class _ImagePreview(QWidget):
         self.setAutoFillBackground(False)
         self.setFixedSize(size)
         self.setAccessibleName("Attached image: " + reference.name)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setToolTip("<qt>" + escape(f"{reference.name} · {reference.size_bytes:,} bytes") + "</qt>")
         loader.loaded.connect(self._loaded)
+
+    def mouseReleaseEvent(self, event):  # noqa: N802
+        if event.button() == Qt.MouseButton.LeftButton and self.rect().contains(event.position().toPoint()):
+            self.activated.emit()
+            event.accept()
+        else:
+            super().mouseReleaseEvent(event)
+
+    def keyPressEvent(self, event):  # noqa: N802
+        if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):
+            self.activated.emit()
+            event.accept()
+        else:
+            super().keyPressEvent(event)
 
     @Slot(str)
     def _loaded(self, key):
@@ -145,6 +167,8 @@ class _ImagePreview(QWidget):
 
 
 class MessageImageStrip(QScrollArea):
+    image_activated = Signal(object, int)
+
     def __init__(self, references, loader):
         super().__init__()
         self.setObjectName("messageImages")
@@ -166,8 +190,10 @@ class MessageImageStrip(QScrollArea):
         layout.setSpacing(8)
         self.single = len(references) == 1
         size = QSize(280, 180) if self.single else QSize(112, 96)
-        self.previews = [_ImagePreview(ref, loader, size) for ref in references]
-        for preview in self.previews:
+        self.references = tuple(references)
+        self.previews = [_ImagePreview(ref, loader, size) for ref in self.references]
+        for index, preview in enumerate(self.previews):
+            preview.activated.connect(lambda index=index: self.image_activated.emit(self.references, index))
             layout.addWidget(preview)
         self.natural_width = min(480, size.width() * len(references) + 8 * (len(references) - 1))
         self.content.setFixedSize(size.width() * len(references) + 8 * (len(references) - 1), size.height())

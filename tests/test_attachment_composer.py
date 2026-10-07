@@ -248,6 +248,105 @@ def test_reopened_history_displays_saved_image_after_original_is_removed(windows
         reopened.close()
 
 
+def saved_picture(window, color="#3366aa", name="original.png"):
+    from PySide6.QtCore import QBuffer, QIODevice
+    image = QImage(1800, 1000, QImage.Format.Format_RGB32)
+    image.fill(QColor(color))
+    buffer = QBuffer()
+    buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+    assert image.save(buffer, "PNG")
+    ref = window.service.store.attachment_store.import_bytes(bytes(buffer.data()), name=name)
+    return ref
+
+
+@pytest.mark.parametrize("all_images", [False, True])
+def test_viewer_cloud_reply_reuses_original_references_and_normal_send_path(windows, all_images):
+    window = windows("cloud", enabled=True)
+    refs = (saved_picture(window), saved_picture(window, "#dd8822", "second.png"))
+    window.chat.add_message("User", "Earlier images", attachments=refs)
+    window._open_image_viewer(refs, 1)
+    viewer = window._image_viewer
+    wait_for(lambda: refs[1].id in viewer.loader._images)
+    viewer.include_all.setChecked(all_images)
+    viewer.prompt.setPlainText("Look at the fine detail")
+    viewer.send.click()
+    wait_for(lambda: window.thread is None and window._pending_image_reply is None and not window.attachment_tray.is_processing)
+    expected = refs if all_images else refs[1:]
+    assert window.service.store.visible_messages()[0].attachments == expected
+    assert window.service.store.visible_messages()[0].content == "Look at the fine detail"
+    assert window.service.store.visible_messages()[0].skill_name is None
+    assert window.attachment_tray.count == 0 and window._image_viewer is None
+    assert len(window.service.inference.requests) == 1
+    for ref in refs:
+        window.service.store.attachment_store.verify(ref)
+
+
+def test_viewer_reply_protects_main_composer_draft(windows):
+    window = windows("cloud", enabled=True)
+    ref = saved_picture(window)
+    window.input.setPlainText("My existing draft")
+    window._open_image_viewer((ref,), 0)
+    viewer = window._image_viewer
+    wait_for(lambda: ref.id in viewer.loader._images)
+    viewer.prompt.setPlainText("Another prompt")
+    viewer.send.click()
+    assert window.input.toPlainText() == "My existing draft"
+    assert not window.service.inference.requests and window.attachment_tray.count == 0
+    assert "has a draft" in viewer.status.text()
+    viewer.reject()
+
+
+def test_closing_viewer_during_preparation_cancels_auto_send_but_keeps_draft(windows, monkeypatch):
+    from app.conversation import cloud_attachments
+    window = windows("cloud", enabled=True)
+    ref = saved_picture(window)
+    entered, release = Event(), Event()
+    original = cloud_attachments.prepare_cloud_attachment
+    def delayed(*args, **kwargs):
+        entered.set()
+        assert release.wait(10)
+        return original(*args, **kwargs)
+    monkeypatch.setattr(cloud_attachments, "prepare_cloud_attachment", delayed)
+    window._open_image_viewer((ref,), 0)
+    viewer = window._image_viewer
+    wait_for(lambda: ref.id in viewer.loader._images)
+    viewer.prompt.setPlainText("A prompt to keep")
+    viewer.send.click()
+    wait_for(entered.is_set)
+    viewer.reject()
+    release.set()
+    wait_for(lambda: not window.attachment_tray.is_processing)
+    assert not window.service.inference.requests
+    assert window.input.toPlainText() == "A prompt to keep" and window.attachment_tray.references == (ref,)
+    window.attachment_tray.clear()
+    window.service.store.attachment_store.verify(ref)
+
+
+@pytest.mark.parametrize("vision", [False, True])
+def test_local_viewer_reply_keeps_one_original_and_respects_model_image_gate(windows, vision):
+    window = windows()
+    engine = window.service.inference
+    engine.supports_local_document_inputs = True
+    engine.supports_local_image_inputs = vision
+    engine.prepare_image_inputs = lambda: None
+    engine.count_image_message_tokens = lambda messages: 600
+    refs = (saved_picture(window), saved_picture(window, "blue", "other.png"))
+    window._open_image_viewer(refs, 1)
+    viewer = window._image_viewer
+    wait_for(lambda: refs[1].id in viewer.loader._images)
+    assert not viewer.include_all.isEnabled()
+    viewer.prompt.setPlainText("Inspect this")
+    viewer.send.click()
+    wait_for(lambda: not window.attachment_tray.is_processing and window.thread is None)
+    if vision:
+        assert window.service.store.visible_messages()[0].attachments == refs[1:]
+        assert len(engine.requests) == 1 and window.attachment_tray.count == 0
+    else:
+        assert not engine.requests and window.input.toPlainText() == "Inspect this"
+        assert window.attachment_tray.references == refs[1:]
+        assert "vision model" in window.attachment_hint.toolTip()
+
+
 def test_local_image_gate_keeps_draft_and_reports_vision_requirement(windows, tmp_path):
     window = windows()
     window.service.inference.supports_local_document_inputs = True
