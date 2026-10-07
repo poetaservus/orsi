@@ -499,6 +499,11 @@ class MainWindow(QMainWindow):
         self.cloud_model_details.setObjectName("settingsLabel")
         self.cloud_model_details.setWordWrap(True)
         settings_layout.addWidget(self.cloud_model_details)
+        self.image_settings_button = QPushButton("Image generation…")
+        self.image_settings_button.setObjectName("manageSkillsButton")
+        self.image_settings_button.setFixedHeight(38)
+        settings_layout.addWidget(self.image_settings_button)
+        self.image_settings_button.clicked.connect(self._open_image_settings)
         self._sync_cloud_model_selector()
         self.cloud_model_selector.currentIndexChanged.connect(self._select_cloud_model)
 
@@ -1193,6 +1198,7 @@ class MainWindow(QMainWindow):
             and getattr(self.inference, "cloud_model_catalog", None) is not None
         )
         self.skills_button.setEnabled(not busy and callable(getattr(self.service, "install_skill", None)))
+        self.image_settings_button.setEnabled(not busy and self.service is not None)
         duration_seconds = self.chat.set_thinking(busy)
         self.activity.set_activity("" if busy else self._ready_status())
         return duration_seconds
@@ -1317,6 +1323,7 @@ class MainWindow(QMainWindow):
         self.activity.set_activity(self._ready_status())
 
     def _sync_cloud_model_selector(self):
+        self.image_settings_button.setVisible(getattr(self.inference, "supports_image_generation", False) is True)
         catalog = getattr(self.inference, "cloud_model_catalog", None)
         available = catalog is not None
         for widget in (self.cloud_model_label, self.cloud_model_selector, self.cloud_model_details):
@@ -1338,6 +1345,14 @@ class MainWindow(QMainWindow):
             )
 
     @Slot(int)
+    def _open_image_settings(self):
+        if self.thread is not None or getattr(self.inference, "supports_image_generation", False) is not True:
+            return
+        from app.ui.image_settings import ImageSettingsDialog
+        cloud = getattr(self.inference, "cloud", self.inference)
+        self._image_settings_dialog = ImageSettingsDialog(cloud.image_settings, self.service.select_image_settings, self)
+        self._image_settings_dialog.open()
+
     def _select_cloud_model(self, index):
         catalog = getattr(self.inference, "cloud_model_catalog", None)
         if self.thread is not None or self.service is None or catalog is None or index < 0:

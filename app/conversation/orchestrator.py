@@ -265,6 +265,10 @@ class ConversationService:
         """Run one turn; an optional explicit skill applies only to this message."""
         text = str(user_message).strip()
         references = attachment_references(attachments)
+        if not references and skill_name is None and getattr(self.inference, "supports_image_generation", False) is True:
+            from app.conversation.image_followup import latest_generated_sources, visual_followup
+            if visual_followup(text):
+                references = latest_generated_sources(self.store.visible_messages())
         from app.inference.image_generation import image_request
         image_turn = (getattr(self.inference, "supports_image_generation", False) is True
                       and skill_name is None and image_request(text, has_image=any(r.kind == "image" for r in references)))
@@ -654,6 +658,21 @@ class ConversationService:
             self.inference.select_local_model(model_id)
             self._references.reset()
             self._reference_runtime = None
+        finally:
+            self._run_lock.release()
+
+    def select_image_settings(self, settings) -> None:
+        if not self._run_lock.acquire(blocking=False):
+            raise RuntimeError("Finish the current request before changing image settings.")
+        try:
+            with self._cancellation_lock:
+                if self._closed:
+                    raise RuntimeError("The conversation is closed.")
+            if getattr(self.inference, "supports_image_generation", False) is not True:
+                raise InferenceUnavailable("Switch to Cloud to change image settings.")
+            cloud = getattr(self.inference, "cloud", self.inference)
+            settings.tool(cloud.active_model)
+            cloud.image_settings.select(settings)
         finally:
             self._run_lock.release()
 

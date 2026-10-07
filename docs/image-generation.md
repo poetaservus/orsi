@@ -15,7 +15,7 @@ separately and an unavailable account/model is never a passed image check.
 | 1A | Separate image model, size, quality and format settings | 58 focused; 2,297 full-suite tests and 15 subtests passed, 58 optional gates skipped |
 | 1B | Native tool, image streaming events, image-only responses | 115 focused; 2,307 full-suite tests and 15 subtests passed, 58 skipped; live generation blocked by account access |
 | 2A | Original-resolution storage and assistant association | 76 focused; confirmation passed 2,307 full-suite tests and 15 subtests, 58 skipped |
-| 2B | Chat and viewer editing from original sources | Pending |
+| 2B | Chat and viewer editing from original sources; settings dialog | 61 focused; 2,310 full-suite tests and 15 subtests passed, 58 skipped; live edit blocked by image-model access |
 | 3A | Cached grainy drifting placeholder | Pending |
 | 3B | Aspect ratio, fade, thumbnails, viewer and save | Pending |
 | 4A | Failure, cancellation, manual retry and deduplication | Pending |
