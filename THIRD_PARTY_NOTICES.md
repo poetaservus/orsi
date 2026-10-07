@@ -1,5 +1,17 @@
 # Third-party notices
 
+## Attachment document parsers
+
+The portable runtime installs pypdf 6.19.0 (BSD-3-Clause) and defusedxml 0.7.1
+(Python Software Foundation License). Their source projects are
+[pypdf](https://github.com/py-pdf/pypdf) and
+[defusedxml](https://github.com/tiran/defusedxml).
+The installed distributions retain their complete licenses at
+`pypdf-6.19.0.dist-info/licenses/LICENSE` and
+`defusedxml-0.7.1.dist-info/LICENSE` inside the portable site-packages directory.
+Portable redistribution must preserve those distribution/license directories.
+No source from these libraries was copied into the application.
+
 ## OpenCode
 
 O.R.S.I.'s model-first capability routing, bounded structured-call repair, invalid-call feedback,

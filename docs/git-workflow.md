@@ -646,3 +646,30 @@ at `archive/2026-10-07/main-before-attachment-foundation`. After verification, c
 fast-forward local main and remove the merged local feature branch. The user's
 standing merge-and-push instruction authorizes publishing main only; other active
 worktrees and remote feature/archive branches remain outside this operation.
+
+## Attachment composer and preparation, 7 October 2026
+
+`codex/attachment-composer` starts from local main `b0f271b`. The user approved
+phase 2 of the image/file input plan. The bounded change activates + selection,
+ordered removable draft cards, image thumbnails, local file dropping and clipboard
+input. A cancellable worker copies and prepares supported images/documents outside
+the GUI event thread. Production attachment inference remains gated until the
+provider phases; unavailable sending retains the complete draft and manual skill.
+See [the phase 2 contract and verification record](attachments-phase2.md).
+
+Final focused native checks passed 150 tests and five subtests in 13.26 seconds.
+Full native regression passed 2,119 tests and 15 subtests, with 49 existing skips
+and no failures in 251.16 seconds. All 49 new composer/preparation cases passed.
+The initial batch test's event-loop starvation and its actual Qt-loop check are
+recorded separately; acceptance prompts were unchanged. Actual composer rendering
+was visually inspected. Dependencies and Git whitespace checks passed. Live
+attachment model/API gates remain deferred to the provider phases; no paid API
+requests were made. User settings, profiles and existing model/tool policies
+were unchanged.
+
+Pre-change refs, worktree map and a verified complete-history bundle are preserved
+under ignored `state/backups/attachment-composer-20261007/`. Prior main is retained
+at `archive/2026-10-07/main-before-attachment-composer`. After verification, commit,
+fast-forward local main and remove the merged local feature branch. The user's
+standing merge-and-push instruction authorizes publishing main only; other active
+worktrees and remote feature/archive branches remain outside this operation.

@@ -11,6 +11,8 @@ dependencies = [
   "pydantic>=2.7,<3",
   "openai==2.54.0",
   "PyYAML>=6.0.2,<7",
+  "pypdf==6.19.0",
+  "defusedxml==0.7.1",
 ]
 
 [project.optional-dependencies]

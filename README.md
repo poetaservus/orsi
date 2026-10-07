@@ -148,6 +148,11 @@ native caption/resize handling and Snap styles. Closing uses the existing model/
 Assistant prose supports Markdown emphasis, lists, headings and inline code. Replies use light
 formatting where helpful and respect explicit code-only or plain-text requests. User messages stay
 literal; copying a full response retains its original Markdown and code.
+The composer + button selects attachment drafts, with thumbnails, removal, file dropping
+and clipboard image paste. Local mode accepts one attachment per message; cloud drafts
+can contain multiple. Documents are prepared as text with explicit visual limitations.
+Sending these attachments is staged behind the upcoming local/cloud input adapters;
+the draft stays intact when sending is unavailable. See [phase 2](docs/attachments-phase2.md).
 Unfinished code fences still appear in code boxes. Incomplete tool generation is rejected before
 argument repair or execution. The UI releases its controls even when the context meter cannot
 refresh. See [completion-state verification](docs/completion-state-2026-10-02.md).

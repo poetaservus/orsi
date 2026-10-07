@@ -317,5 +317,15 @@ files. No attachment provides skill or filesystem execution authority.
 Attachment inference and counting require explicit adapter support. Lazy/hybrid
 wrappers preserve the selected mode, and unsupported backends reject attached
 requests before inference. Production adapters and agent attachment continuations
-remain disabled until the later provider phases. Composer selection and document
-processing are phase 2. See [the phase 1 contract and verification record](docs/attachments-phase1.md).
+remain disabled until the later provider phases. See
+[the phase 1 contract and verification record](docs/attachments-phase1.md).
+
+Phase 2's `ui/attachments.py` owns ordered composer drafts and a cancellable Qt
+preparation worker, while `conversation/attachment_processing.py` reads verified
+snapshots and caches versioned text/dimension records beside them. The GUI renders
+image previews and explicit document limitations; it does not parse documents or
+encode clipboard images on the event thread. Removing entries, resetting sessions
+and closing cancel outstanding preparation. Unsupported inference leaves the
+draft intact before requesting credentials or beginning a model turn. Extraction
+cannot activate skills or grant filesystem/tool authority. See
+[the phase 2 preparation contract and verification record](docs/attachments-phase2.md).

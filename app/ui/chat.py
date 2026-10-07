@@ -21,6 +21,7 @@ from app.ui.code_highlighting import CodeHighlighter
 from app.ui.copy_button import CopyButton
 from app.ui.markdown import MarkdownLabel
 from app.inference.completion import CompletionMetadata
+from app.inference.attachments import attachment_references
 
 
 _FENCE_OPEN = re.compile(r"^[ \t]*(`{3,}|~{3,})([^\r\n]*)(?:\r?\n|$)", re.MULTILINE)
@@ -114,10 +115,11 @@ class _CodeBlock(QFrame):
 
 
 class _Message(QFrame):
-    def __init__(self, content: str, *, from_user: bool, error: bool = False):
+    def __init__(self, content: str, *, from_user: bool, error: bool = False, attachments=()):
         super().__init__()
         self.from_user = from_user
         self._content = content
+        self.attachments = attachment_references(attachments) if from_user else ()
         self.completion = getattr(content, "completion", CompletionMetadata())
         self.completion_history = getattr(content, "completion_history", ())
         if from_user:
@@ -143,6 +145,15 @@ class _Message(QFrame):
         self._text_labels: list[QLabel | MarkdownLabel] = []
         self._code_blocks: list[_CodeBlock] = []
         self.label = None
+        for reference in self.attachments:
+            attachment = QLabel(("Image · " if reference.kind == "image" else "File · ") + reference.name)
+            attachment.setObjectName("messageAttachment")
+            attachment.setTextFormat(Qt.TextFormat.PlainText)
+            attachment.setWordWrap(True)
+            attachment.setStyleSheet("color: #b1b8c8; font-size: 12px; padding: 3px 0;")
+            attachment.setToolTip(f"{reference.name} · {reference.size_bytes:,} bytes")
+            self._text_labels.append(attachment)
+            layout.addWidget(attachment)
 
         parts = (
             [("text", "", content)]
@@ -490,6 +501,7 @@ class ChatView(QScrollArea):
         *,
         duration_seconds: float | None = None,
         skill_name: str | None = None,
+        attachments=(),
     ) -> _MessageBand:
         from_user = sender.casefold() == "user"
         # Sending a message always follows the conversation tail. Incoming
@@ -497,7 +509,7 @@ class ChatView(QScrollArea):
         # scrolled upward while O.R.S.I was working.
         if from_user:
             self._follow_tail = True
-        message = _Message(content, from_user=from_user, error=error)
+        message = _Message(content, from_user=from_user, error=error, attachments=attachments)
         band_width = self._message_area_width()
 
         row = QWidget()

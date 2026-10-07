@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
     QFrame,
+    QFileDialog,
     QGraphicsBlurEffect,
     QGraphicsOpacityEffect,
     QGraphicsPixmapItem,
@@ -62,6 +63,8 @@ from app.ui.worker import ConversationWorker, ModelSwitchWorker
 from app.ui.skill_picker import SkillPicker
 from app.ui.skill_settings import SkillSettingsDialog
 from app.ui.window_frame import CAPTION_HEIGHT, DragStrip, WindowControls, WindowsFrame
+from app.ui.attachments import AttachmentTray
+from app.conversation.attachment_processing import SUPPORTED_FILE_FILTER
 
 
 log = logging.getLogger(__name__)
@@ -136,6 +139,16 @@ def _apply_greeting_font(widget: QWidget) -> None:
 
 class MessageInput(QTextEdit):
     submit_requested = Signal()
+    attachments_requested = Signal(object)
+
+    def canInsertFromMimeData(self, source):  # noqa: N802
+        return source.hasImage() or (source.hasUrls() and all(u.isLocalFile() for u in source.urls())) or super().canInsertFromMimeData(source)
+
+    def insertFromMimeData(self, source):  # noqa: N802
+        if source.hasImage() or (source.hasUrls() and all(u.isLocalFile() for u in source.urls())):
+            self.attachments_requested.emit(source)
+        else:
+            super().insertFromMimeData(source)
 
     def keyPressEvent(self, event) -> None:  # noqa: N802 - Qt API name
         is_return = event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter)
@@ -374,6 +387,7 @@ class MainWindow(QMainWindow):
         _load_ui_font()
         del hostname
         self.service = service
+        self.setAcceptDrops(True)
         self.inference = inference
         self.startup_error = startup_error
         self._preferences_store = preferences_store
@@ -579,7 +593,22 @@ class MainWindow(QMainWindow):
         self._message_composer = QWidget(self.composer)
         self._message_composer.setObjectName("messageComposer")
         self._composer_stack.addWidget(self._message_composer)
-        composer_layout = QHBoxLayout(self._message_composer)
+        message_layout = QVBoxLayout(self._message_composer)
+        message_layout.setContentsMargins(0, 0, 0, 0)
+        message_layout.setSpacing(0)
+        store = getattr(getattr(service, "store", None), "attachment_store", None)
+        self.attachment_tray = AttachmentTray(store, lambda: getattr(self.inference, "mode", "local"), self._message_composer)
+        message_layout.addWidget(self.attachment_tray)
+        self.attachment_hint = QLabel(self._message_composer)
+        self.attachment_hint.setObjectName("attachmentHint")
+        self.attachment_hint.setTextFormat(Qt.TextFormat.PlainText)
+        self.attachment_hint.setFixedHeight(26)
+        self.attachment_hint.hide()
+        message_layout.addWidget(self.attachment_hint)
+        composer_row = QWidget(self._message_composer)
+        composer_row.setFixedHeight(_COMPOSER_HEIGHT)
+        message_layout.addWidget(composer_row)
+        composer_layout = QHBoxLayout(composer_row)
         composer_layout.setContentsMargins(22, 7, 20, 7)
         composer_layout.setSpacing(6)
         composer_layout.setAlignment(Qt.AlignmentFlag.AlignBottom)
@@ -592,7 +621,7 @@ class MainWindow(QMainWindow):
         self.add_placeholder = QPushButton(self.composer_tools)
         self.folder_placeholder = QPushButton(self.composer_tools)
         for button, name, asset, description in (
-            (self.add_placeholder, "composerAddPlaceholder", "plus.svg", "Add (placeholder)"),
+            (self.add_placeholder, "composerAddPlaceholder", "plus.svg", "Attach images or files"),
             (self.folder_placeholder, "composerFolderPlaceholder", "folder.svg", "Folder (placeholder)"),
         ):
             button.setObjectName(name)
@@ -658,6 +687,12 @@ class MainWindow(QMainWindow):
         self.new_session_button.clicked.connect(self.create_new_session)
         self.settings_button.clicked.connect(self._toggle_settings)
         self.input.submit_requested.connect(self.submit)
+        self.add_placeholder.clicked.connect(self._pick_attachments)
+        self.add_placeholder.setEnabled(store is not None)
+        self.input.attachments_requested.connect(self.attachment_tray.add_mime)
+        self.attachment_tray.changed.connect(self._refresh_attachment_composer)
+        self.attachment_tray.notice.connect(self._attachment_notice)
+        self.attachment_tray.idle.connect(self._attachment_idle)
         self.chat.verticalScrollBar().valueChanged.connect(self.bottom_glass.update)
         self.chat.verticalScrollBar().rangeChanged.connect(lambda *_: self.bottom_glass.update())
         self._greeting_save_timer = QTimer(self)
@@ -674,7 +709,7 @@ class MainWindow(QMainWindow):
                 value = CompletionText(message.content, message.completion,
                     tuple(message.completion_history) if message.completion_history else None)
                 self.chat.add_message("User" if message.role == "user" else "Agent", value, message.stopped,
-                    skill_name=getattr(message, "skill_name", None))
+                    skill_name=getattr(message, "skill_name", None), attachments=getattr(message, "attachments", ()))
             if self.chat._messages:
                 self._intro_active = False
         self._update_context_window()
@@ -919,6 +954,53 @@ class MainWindow(QMainWindow):
         dialog.exec()
         dialog.deleteLater()
 
+    def _pick_attachments(self):
+        if self.thread is not None or self.attachment_tray.store is None:
+            return
+        if getattr(self.inference, "mode", "local") == "local":
+            path, _ = QFileDialog.getOpenFileName(self, "Attach an image or file", "", SUPPORTED_FILE_FILTER)
+            paths = [path] if path else []
+        else:
+            paths, _ = QFileDialog.getOpenFileNames(self, "Attach images or files", "", SUPPORTED_FILE_FILTER)
+        self.attachment_tray.add_paths(paths)
+
+    def _message_composer_height(self):
+        return _COMPOSER_HEIGHT + (76 if self.attachment_tray.count else 0) + (26 if not self.attachment_hint.isHidden() else 0)
+
+    def _refresh_attachment_composer(self):
+        if not self.attachment_tray.count:
+            self.attachment_hint.hide()
+        height = self._message_composer_height()
+        if self._approval_panel is None and self.composer.height() != height:
+            self._animate_composer_height(height, animated=False)
+
+    def _attachment_notice(self, text):
+        self.attachment_hint.setToolTip(text)
+        self.attachment_hint.setText(self.attachment_hint.fontMetrics().elidedText(
+            text, Qt.TextElideMode.ElideRight, max(150, self.composer.width() - 44)))
+        self.attachment_hint.show()
+        if self._approval_panel is None:
+            self._animate_composer_height(self._message_composer_height(), animated=False)
+
+    def _attachment_idle(self):
+        if getattr(self, "_closing", False):
+            self.close()
+
+    def dragEnterEvent(self, event):  # noqa: N802
+        mime = event.mimeData()
+        if self.thread is None and self.attachment_tray.store is not None and (
+                mime.hasImage() or mime.hasUrls() and all(u.isLocalFile() for u in mime.urls())):
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dropEvent(self, event):  # noqa: N802
+        if self.thread is None and self.attachment_tray.store is not None:
+            self.attachment_tray.add_mime(event.mimeData())
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
     def _skills_changed(self) -> None:
         name = self.skill_picker.selected_name
         if name is not None and self.service.skill_registry.get(name) is None:
@@ -929,8 +1011,22 @@ class MainWindow(QMainWindow):
         if self.thread is None and self.skill_picker.accept_current():
             return
         message = self.input.toPlainText().strip()
-        if not message or self.thread is not None:
+        attachments = self.attachment_tray.references
+        if (not message and not self.attachment_tray.count) or self.thread is not None:
             return
+        if self.attachment_tray.count:
+            if not self.attachment_tray.ready:
+                self._attachment_notice("Wait for preparation, remove failed attachments, or keep only one attachment in local mode.")
+                return
+            # Do this before clearing text/skill/draft or asking for an API key.
+            try:
+                admit = getattr(self.service, "_admit_attachments", None)
+                if not callable(admit):
+                    raise ValueError("Image and file sending is not enabled for this model yet.")
+                admit(attachments)
+            except Exception:
+                self._attachment_notice("Attachments are ready. Sending images and files will be available in the next updates.")
+                return
         if self.startup_error:
             self.chat.add_message("Agent", self.startup_error, True)
             return
@@ -941,10 +1037,11 @@ class MainWindow(QMainWindow):
         self.skill_picker.clear_selection()
         self.input.clear()
         self._leave_intro_mode()
-        self._active_user_message_band = self.chat.add_message("User", message)
+        self._active_user_message_band = self.chat.add_message("User", message, attachments=attachments)
+        self.attachment_tray.clear()
         self._set_busy(True)
         self.thread = QThread()
-        self.worker = ConversationWorker(self.service, message, skill_name=skill_name)
+        self.worker = ConversationWorker(self.service, message, skill_name=skill_name, attachments=attachments)
         self.worker.moveToThread(self.thread)
         self.thread.started.connect(self.worker.run)
         self.worker.finished.connect(self._worker_succeeded)
@@ -995,7 +1092,7 @@ class MainWindow(QMainWindow):
             self._composer_stack.removeWidget(panel)
             panel.hide()
         self._composer_stack.setCurrentWidget(self._message_composer)
-        self._animate_composer_height(_COMPOSER_HEIGHT)
+        self._animate_composer_height(self._message_composer_height())
         if self.input.isEnabled():
             self.input.setFocus()
 
@@ -1084,6 +1181,8 @@ class MainWindow(QMainWindow):
         self.send.setVisible(not busy)
         self.stop.setVisible(busy)
         self.input.setEnabled(not busy)
+        self.add_placeholder.setEnabled(not busy and self.attachment_tray.store is not None)
+        self.attachment_tray.set_editable(not busy)
         self.model_selector.setEnabled(not busy and self.inference is not None)
         self.local_model_selector.setEnabled(
             not busy and self.service is not None and self.inference is not None
@@ -1134,6 +1233,8 @@ class MainWindow(QMainWindow):
             self.chat.add_message("Agent", str(exc), True)
             return
         self.chat.clear_messages()
+        self.attachment_tray.clear()
+        self.attachment_hint.hide()
         self.skill_picker.clear_selection()
         self.input.clear()
         self._activate_intro_mode()
@@ -1210,6 +1311,9 @@ class MainWindow(QMainWindow):
         self._sync_inference_selector()
         self._sync_local_model_selector()
         self._sync_cloud_model_selector()
+        self._refresh_attachment_composer()
+        if requested == "local" and self.attachment_tray.count > 1:
+            self._attachment_notice("Local mode allows one attachment per message. Remove the extra attachments to continue.")
         self._update_context_window()
         self.activity.set_activity(self._ready_status())
 
@@ -1371,6 +1475,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt API name
         self._closing = True
+        self.attachment_tray.shutdown()
         self._animate_composer_height(_COMPOSER_HEIGHT, animated=False)
         try:
             if self._greeting_save_timer.isActive():
@@ -1394,11 +1499,12 @@ class MainWindow(QMainWindow):
                         close()
                 except Exception:
                     log.warning("Inference cleanup failed.")
-        if self.thread is not None and self.thread.isRunning():
+        if self.attachment_tray.is_processing or self.thread is not None and self.thread.isRunning():
             # Let the cancelled worker unwind with Qt's event loop still alive.
             # Never destroy a running QThread or force-terminate a file write.
             self.setEnabled(False)
-            self.thread.quit()
+            if self.thread is not None:
+                self.thread.quit()
             event.ignore()
             return
         self.chat.set_thinking(False)
@@ -1682,6 +1788,13 @@ QPushButton#composerAddPlaceholder:hover, QPushButton#composerFolderPlaceholder:
 QPushButton#composerAddPlaceholder:pressed, QPushButton#composerFolderPlaceholder:pressed {
     background: rgba(255, 255, 255, 8);
 }
+QWidget#attachmentTray, QWidget#attachmentTray QWidget { background: transparent; }
+QFrame#attachmentCard { background: rgba(19, 22, 30, 120); border: 1px solid rgba(145, 152, 171, 35); border-radius: 11px; }
+QLabel#attachmentName { color: #d6d9e0; font-size: 12px; border: none; }
+QLabel#attachmentDetail, QLabel#attachmentPreview { color: #a6aebe; font-size: 10px; border: none; }
+QPushButton#attachmentRemove { color: #bec4d0; background: transparent; border: none; border-radius: 7px; font-size: 17px; padding: 0; }
+QPushButton#attachmentRemove:hover { background: rgba(255, 255, 255, 15); color: #eeeeef; }
+QLabel#attachmentHint { color: #b5bccb; font-size: 11px; background: transparent; padding-left: 20px; padding-right: 20px; }
 QFrame#inlineApproval QLabel { background: transparent; border: none; font-size: 14px; }
 QLabel#approvalTitle { color: #eeeeef; font-weight: 500; }
 QLabel#approvalHint { color: #c6c9d2; }

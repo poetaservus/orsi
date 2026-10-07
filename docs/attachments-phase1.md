@@ -4,7 +4,8 @@
 
 This phase provides immutable attachment snapshots, durable message references,
 worker/service plumbing, and explicit inference interfaces. Production image and
-document adapters are not enabled yet. The composer + button remains a placeholder.
+document adapters are not enabled yet. At phase 1 integration, the composer + button
+remained a placeholder; [phase 2](attachments-phase2.md) now implements draft preparation.
 No model requests, uploads, extraction, OCR or vision qualification were performed
 for this phase. Existing plain text conversations and explicit skill selection
 retain their behavior.
@@ -12,7 +13,7 @@ retain their behavior.
 The remaining implementation order is:
 
 1. **Complete:** shared storage and message format.
-2. Composer selection, previews, removal, drop/paste and document processing.
+2. **Complete:** composer selection, previews, removal, drop/paste and document processing.
 3. Local document input, then qualified vision input with a matching projector.
 4. Native cloud inputs, then provider/model capacity admission across the request.
 5. Attachment-aware context, recovery and end-to-end qualification.
