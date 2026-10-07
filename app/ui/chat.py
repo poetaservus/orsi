@@ -20,6 +20,7 @@ from app.ui.status import ThinkingDots
 from app.ui.code_highlighting import CodeHighlighter
 from app.ui.copy_button import CopyButton
 from app.ui.markdown import MarkdownLabel
+from app.ui.message_images import MessageImageLoader, MessageImageStrip
 from app.inference.completion import CompletionMetadata
 from app.inference.attachments import attachment_references
 
@@ -115,7 +116,7 @@ class _CodeBlock(QFrame):
 
 
 class _Message(QFrame):
-    def __init__(self, content: str, *, from_user: bool, error: bool = False, attachments=()):
+    def __init__(self, content: str, *, from_user: bool, error: bool = False, attachments=(), image_loader=None):
         super().__init__()
         self.from_user = from_user
         self._content = content
@@ -145,7 +146,13 @@ class _Message(QFrame):
         self._text_labels: list[QLabel | MarkdownLabel] = []
         self._code_blocks: list[_CodeBlock] = []
         self.label = None
+        images = tuple(ref for ref in self.attachments if ref.kind == "image")
+        self.image_strip = MessageImageStrip(images, image_loader) if images and image_loader else None
+        if self.image_strip is not None:
+            layout.addWidget(self.image_strip)
         for reference in self.attachments:
+            if reference.kind == "image" and self.image_strip is not None:
+                continue
             attachment = QLabel(("Image · " if reference.kind == "image" else "File · ") + reference.name)
             attachment.setObjectName("messageAttachment")
             attachment.setTextFormat(Qt.TextFormat.PlainText)
@@ -255,7 +262,8 @@ class _Message(QFrame):
             ),
             default=0,
         )
-        natural_width = max(natural_text_width, natural_code_width)
+        image_width = self.image_strip.natural_width if self.image_strip is not None else 0
+        natural_width = max(natural_text_width, natural_code_width, image_width)
         minimum = min(360, maximum) if self._code_blocks else max(36, horizontal_padding + 24)
         minimum = min(maximum, max(minimum, minimum_width))
         target = min(maximum, max(minimum, natural_width + horizontal_padding + 4))
@@ -272,9 +280,11 @@ class _Message(QFrame):
                 ).width()
                 for label in self._text_labels
             )
-            target = min(target, max(minimum, wrapped_width + horizontal_padding + 4))
+            target = min(target, max(minimum, max(wrapped_width, image_width) + horizontal_padding + 4))
         content_width = max(24, target - horizontal_padding)
         self.setFixedWidth(target)
+        if self.image_strip is not None:
+            self.image_strip.set_available_width(content_width)
         for label in labels:
             label.setFixedWidth(content_width)
             if isinstance(label, MarkdownLabel):
@@ -426,8 +436,9 @@ class _MessageBand(QWidget):
 class ChatView(QScrollArea):
     """Chat-style conversation view without sender name tags."""
 
-    def __init__(self, parent: QWidget | None = None):
+    def __init__(self, parent: QWidget | None = None, *, attachment_store=None):
         super().__init__(parent)
+        self.image_loader = MessageImageLoader(attachment_store, self) if attachment_store is not None else None
         self.setObjectName("chatView")
         self.setWidgetResizable(True)
         self.setFrameShape(QFrame.Shape.NoFrame)
@@ -509,7 +520,8 @@ class ChatView(QScrollArea):
         # scrolled upward while O.R.S.I was working.
         if from_user:
             self._follow_tail = True
-        message = _Message(content, from_user=from_user, error=error, attachments=attachments)
+        message = _Message(content, from_user=from_user, error=error, attachments=attachments,
+                           image_loader=self.image_loader)
         band_width = self._message_area_width()
 
         row = QWidget()
@@ -564,6 +576,8 @@ class ChatView(QScrollArea):
 
     def clear_messages(self) -> None:
         self.set_thinking(False)
+        if self.image_loader is not None:
+            self.image_loader.clear()
         for row in self._message_rows:
             self._layout.removeWidget(row)
             row.deleteLater()

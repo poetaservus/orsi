@@ -832,3 +832,28 @@ ignored `state/backups/attachment-lifecycle-20261007/`; prior main is retained a
 `archive/2026-10-07/main-before-attachment-lifecycle`. Commit the verified change, fast-forward
 main and publish main under the standing user authorization. Remove only the merged local
 feature branch, preserving other active worktrees and remote feature/archive branches.
+
+## Sent image previews, 7 October 2026
+
+`codex/chat-image-previews` starts from verified main `990d401`. Image attachments
+now appear inside user bubbles: one larger rounded preview or an ordered row of
+miniatures, with horizontal scrolling for long rows and snapshot-backed restoration.
+Background verification/decoding and a bounded cache keep large image selections
+responsive. Only display, documentation and tests change; inference and user settings
+retain their existing behavior. See [the preview contract and evidence](chat-image-previews.md).
+
+Expanded focused checks passed 144 tests and five subtests; final UI/composer checks
+passed 72 tests and five subtests, and the final format/cache group passed 12 tests.
+The first full run's unchanged native skill-reader rename denial passed its entire
+73-test isolated recheck. Final full native regression passed **2,274 tests and 15
+subtests**, with **57 optional skips**, no failures/errors, in **330.37 seconds**.
+Actual app rendering was visually inspected using synthetic images. Compilation,
+dependencies and whitespace checks passed; live model/API gates remain separate and
+were not rerun for this display change.
+
+Pre-integration refs and worktree maps are preserved in a verified complete-history
+bundle under ignored `state/backups/chat-image-previews-20261007/`. Prior main is
+retained at `archive/2026-10-07/main-before-chat-image-previews`. After verification,
+commit, fast-forward main, publish main under the standing user authorization and
+remove only the merged local feature branch. Other worktrees and remote branches
+remain untouched.

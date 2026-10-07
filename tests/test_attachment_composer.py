@@ -214,6 +214,40 @@ def test_local_document_adapter_sends_prepared_text_and_retains_reference(window
     assert window.chat._messages[-1]._content == "Reply"
 
 
+@pytest.mark.parametrize("archived", [False, True])
+def test_reopened_history_displays_saved_image_after_original_is_removed(windows, tmp_path, archived):
+    window = windows("cloud", enabled=True)
+    source = tmp_path / "saved-photo.png"
+    image = QImage(320, 200, QImage.Format.Format_RGB32)
+    image.fill(QColor("#4455cc"))
+    assert image.save(str(source))
+    window.attachment_tray.add_paths([source])
+    wait_for(lambda: not window.attachment_tray.is_processing)
+    ref = window.attachment_tray.references[0]
+    window.input.setPlainText("Remember this picture")
+    window.submit()
+    wait_for(lambda: window.thread is None)
+    source.unlink()
+    path = window.service.store.path
+    if archived:
+        window.service.store.new_session(preserve_history=True)
+        path = next((path.parent / "archives").glob("*.json"))
+    store = ConversationStore(path)
+    window.close()
+    reopened = MainWindow(ConversationService(Recorder("cloud", True), store), "test")
+    reopened.resize(1280, 800)
+    reopened.show()
+    try:
+        wait_for(lambda: ref.id in reopened.chat.image_loader._images)
+        assert not reopened.chat.image_loader._images[ref.id].isNull()
+        assert reopened.chat._messages[0].image_strip.previews[0].reference == ref
+        assert reopened.chat._messages[0].label.text() == "Remember this picture"
+    finally:
+        reopened.chat.image_loader.clear()
+        wait_for(lambda: reopened.chat.image_loader.pool.activeThreadCount() == 0)
+        reopened.close()
+
+
 def test_local_image_gate_keeps_draft_and_reports_vision_requirement(windows, tmp_path):
     window = windows()
     window.service.inference.supports_local_document_inputs = True
@@ -250,6 +284,9 @@ def test_selected_vision_model_dispatches_image_without_automatic_skill(windows,
     assert isinstance(engine.requests[0][-1]["content"], list)
     assert window.service.store.visible_messages()[0].skill_name is None
     assert window.chat._messages[-1]._content == "Reply"
+    wait_for(lambda: ref.id in window.chat.image_loader._images)
+    assert not window.chat.image_loader._images[ref.id].isNull()
+    assert window.chat._messages[0].image_strip.previews[0].reference == ref
 
 
 def test_failed_file_can_be_removed_and_does_not_reach_model(windows, tmp_path):

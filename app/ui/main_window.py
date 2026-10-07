@@ -468,7 +468,8 @@ class MainWindow(QMainWindow):
         content_layout.setSpacing(0)
         root_layout.addWidget(content, 1)
 
-        self.chat = ChatView()
+        attachment_store = getattr(getattr(service, "store", None), "attachment_store", None)
+        self.chat = ChatView(attachment_store=attachment_store)
         content_layout.addWidget(self.chat, 1)
 
         self.settings_panel = QFrame(root)

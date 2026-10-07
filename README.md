@@ -151,6 +151,9 @@ literal; copying a full response retains its original Markdown and code.
 The composer + button selects attachment drafts, with thumbnails, removal, file dropping
 and clipboard image paste. Local mode accepts one attachment per message; cloud drafts
 can contain multiple. Documents are prepared as text with explicit visual limitations.
+Sent images appear inside the user's bubble, with a larger preview for one image or
+an ordered row of miniatures for several. Long rows scroll horizontally; saved previews
+also appear in reopened and archived chats. See [image previews](docs/chat-image-previews.md).
 Local models can read text/code, CSV/JSON, selectable-text PDFs, DOCX, PPTX and XLSX
 attachments, including follow-ups and tool continuations. The complete extracted text
 counts toward context; oversized current messages fail visibly. For local images, manually
