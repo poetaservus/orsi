@@ -48,7 +48,10 @@ def test_complete_preview_snapshot_survives_source_changes_and_releases_handles(
     assert imported.total_bytes == sum(map(len, expected.values()))
     assert not installer.storage_root.exists()
     (source / "references/behavior.md").write_bytes(b"Changed after preview")
-    source.rename(tmp_path / "released-source")
+    from app.state.atomic import rename_state_directory
+    # Released owned handles are still required: persistent denial fails. Allow
+    # unrelated Windows scanners the same short tolerance as state publication.
+    rename_state_directory(source, tmp_path / "released-source")
     assert install_import(installer, imported).installed == ("python-clamp",)
     installed = installer.info("python-clamp")
     assert local._stored_files(installed.root_path, installer.registry.max_bytes) == expected

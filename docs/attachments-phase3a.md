@@ -88,3 +88,8 @@ The initial full run also passed the same totals in 336.25 seconds. Of the skips
 gates and one is this phase's opt-in smoke (run separately above). Native vision, cloud
 attachments, per-model live matrices and visual/OCR interpretation are not qualified by
 these checks.
+
+A subsequent generic “read this PDF” request revealed that the model could still look for
+the original filename despite successful extraction. The
+[attached-document grounding repair](attached-document-grounding.md) adds scoped trusted
+source guidance and verifies the natural request with both synthetic and actual PDFs.

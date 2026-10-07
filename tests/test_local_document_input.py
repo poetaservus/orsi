@@ -6,8 +6,8 @@ from types import SimpleNamespace
 import pytest
 
 from app.conversation.attachment_processing import AttachmentProcessor
-from app.conversation.context import select_context_request
-from app.conversation.local_documents import LocalDocuments, LocalDocumentCounter
+from app.conversation.context import calculate_context_budget, select_context_request
+from app.conversation.local_documents import LocalDocuments, LocalDocumentCounter, LOCAL_DOCUMENT_GUIDANCE
 from app.conversation.orchestrator import ConversationService
 from app.conversation.store import ConversationStore
 from app.inference.attachments import AttachmentError
@@ -258,6 +258,47 @@ def test_projection_respects_cancellation(tmp_path):
         service._documents.project([{"role": "user", "content": "Read", "attachments": [ref]}], cancellation=source.token)
 
 
+@pytest.mark.parametrize("agent", [False, True])
+def test_generic_read_request_has_authoritative_source_guidance_and_honest_budget(tmp_path, agent):
+    model = DocumentRecorder()
+    service, _ = agent_service(tmp_path, model=model, agent=agent)
+    try:
+        ref = reference(service, make_pdf(text="Alex Morgan, Python developer at Riverstone Labs"), "Candidate_CV_EN_revised.pdf")
+        service.run("can you read this pdf please", attachments=[ref], skill_name="style")
+        messages, tools = model.requests[0]
+        policy = messages[0]["content"]
+        assert policy.count("ATTACHED DOCUMENT INPUT") == 1
+        assert "O.R.S.I has already read" in policy
+        assert "Do not look for the" in policy and "display labels, not filesystem paths" in policy
+        assert policy.index("ATTACHED DOCUMENT INPUT") < policy.index("\nACTIVE SKILL\n")
+        assert "Alex Morgan" not in policy and "Candidate_CV" not in policy
+        assert "Alex Morgan" in documents(messages[-1])[0]["text"]
+        request = service._model_request(capability_turn=agent)
+        expected = calculate_context_budget(model, request.messages,
+            reserved_tokens=request.budget.capability_schema_reserve)
+        assert request.budget == expected
+        assert request.budget.system_message_tokens == model.count_message_tokens([request.messages[0]])
+        service.run("What did the attached PDF say?")
+        assert model.requests[-1][0][0]["content"].count("ATTACHED DOCUMENT INPUT") == 1
+        assert any("Alex Morgan" in m.get("content", "") for m in model.requests[-1][0])
+        service.new_session()
+        service.run("Read an ordinary file")
+        assert "ATTACHED DOCUMENT INPUT" not in model.requests[-1][0][0]["content"]
+    finally:
+        service.shutdown()
+
+
+def test_direct_adapter_projection_supplies_source_policy_once_without_a_system_message(tmp_path):
+    service = make_service(tmp_path)
+    ref = reference(service)
+    messages = [{"role": "user", "content": "Read", "attachments": [ref.model_dump(mode="json")]}]
+    documents = LocalDocuments(service.store.attachment_store)
+    rendered = documents.project(messages)
+    assert rendered[0] == {"role": "system", "content": LOCAL_DOCUMENT_GUIDANCE.strip()}
+    assert documents.project(rendered) == rendered
+    assert messages[0]["attachments"]
+
+
 @pytest.mark.parametrize("backend", [LlamaServerInferenceEngine, LlamaCppInferenceEngine])
 def test_production_backends_project_before_transport_and_counting(tmp_path, backend):
     service = make_service(tmp_path)
@@ -276,7 +317,7 @@ def test_production_backends_project_before_transport_and_counting(tmp_path, bac
         engine.model = SimpleNamespace(create_chat_completion=complete, metadata={},
                                       tokenize=lambda data, **kwargs: list(data))
     assert engine.respond_with_attachments(messages, attachment_store=service.store.attachment_store) == "Read evidence"
-    assert documents(sent[0]["messages"][0])[0]["text"] == "Evidence transported"
+    assert documents(next(m for m in sent[0]["messages"] if m["role"] == "user"))[0]["text"] == "Evidence transported"
     assert not any("attachments" in m for m in sent[0]["messages"])
     count = engine.count_attachment_message_tokens(messages, attachment_store=service.store.attachment_store)
     rendered = LocalDocuments(service.store.attachment_store).project(messages)

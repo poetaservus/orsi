@@ -28,7 +28,7 @@ from app.conversation.prompt import (
 from app.conversation.result_grounding import grounded_text_read_answer
 from app.conversation.store import ConversationStore, TurnHistoryError
 from app.conversation.skill_references import ConversationSkillReferences
-from app.conversation.local_documents import LocalDocuments, LocalDocumentCounter
+from app.conversation.local_documents import LocalDocuments, LocalDocumentCounter, with_local_document_guidance
 from app.security.host_access import HostAccessPolicy, HostReadScope
 from app.inference.engine import InferenceUnavailable
 from app.inference.attachments import AttachmentError, AttachmentContextError, attachment_references, has_attachments
@@ -773,6 +773,8 @@ class ConversationService:
             raise SkillActivationError(SkillActivationErrorCode.MISSING_SKILL,
                                        "Active skill is unavailable. Select another skill or use /skill to clear it.")
         core_prompt = prompt
+        if document_inputs:
+            core_prompt = with_local_document_guidance(core_prompt)
         prompt = with_active_skill(core_prompt, skill, references=self._references.prompt_payload(
             available=use_agent and "skill.read_reference" in capabilities))
         latest_user = next((message for message in reversed(history) if message.get("role") == "user"), None)

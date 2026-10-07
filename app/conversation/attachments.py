@@ -13,6 +13,7 @@ from uuid import uuid4
 from app.inference.attachments import AttachmentError, AttachmentReference
 from app.runtime.cancellation import CancellationToken
 from app.state.storage import JsonStore
+from app.state.atomic import rename_state_directory
 
 
 _CHUNK_BYTES = 1024 * 1024
@@ -117,7 +118,7 @@ class AttachmentStore:
                     JsonStore(staging / "metadata.json").save(reference.model_dump(mode="json"))
                     token.raise_if_cancelled()
                     # Publish the blob and its manifest together; no half-imported reference is returned.
-                    staging.rename(self.root / reference.id)
+                    rename_state_directory(staging, self.root / reference.id, cancellation=token)
                     return reference
                 finally:
                     if staging.exists():

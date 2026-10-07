@@ -699,3 +699,31 @@ at `archive/2026-10-07/main-before-local-document-input`. After full verificatio
 commit, fast-forward local main, publish main under the user's standing authorization
 and remove only the merged local feature branch. Other worktrees and remote branches
 remain outside this operation.
+
+## Attached document source grounding, 7 October 2026
+
+`codex/attached-document-grounding` starts from local main `4e4134b`. A real attached
+PDF was successfully extracted, but the 14B model searched the user's disk instead.
+The bounded repair clarifies available document source text in scoped trusted policy;
+plain chats, routing, tool implementations, profiles and sampling are unchanged.
+Validation also exposed Windows snapshot-directory rename denials. Snapshot publication
+now uses the existing state writer's short bounded tolerance, with cancellation and
+immutable-byte/parent-pin protections preserved; the native handle-release fixture uses
+that tolerance without accepting persistent leaked handles.
+See [the failure analysis and verification](attached-document-grounding.md).
+
+Final expanded focused checks passed 200 tests. The accepted 14B live check passed both generic
+attachment reading with zero filesystem calls and explicit native file operations
+with attached source. The user's actual PDF also passed an isolated read with no
+filesystem calls, preserving their active conversation and prepared source bytes.
+Content-free summaries retain only numeric counts/fixed outcomes, and owned servers
+exited. Optional live gates and the initial full suites' Windows snapshot/fixture
+rename errors are recorded separately from passed checks.
+Final full native regression passed 2,157 tests and 15 subtests, with 50 optional
+skips and no failures in 264.16 seconds. Dependencies and whitespace checks passed.
+
+Pre-change refs/worktree maps and a verified history bundle are preserved under
+ignored `state/backups/attached-document-grounding-20261007/`. Prior main is retained
+at `archive/2026-10-07/main-before-attached-document-grounding`. After full verification,
+commit, fast-forward/publish main under the standing user instruction and remove only
+the merged local feature branch. Other worktrees and remote branches remain untouched.

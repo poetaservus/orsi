@@ -73,6 +73,15 @@ def test_accepted_14b_document_followup_restore_pdf_and_native_continuation(tmp_
         agent = ConversationService(engine, ConversationStore(portable / "chat.json"),
                                     agent_runtime=runtime, portable_root=portable, host_access_policy=policy)
         agent.set_approval_requester(lambda record: agent.resolve_approval(record.approval_id, False))
+        # A natural read request supplies no factual-answer cue and must not
+        # cause the model to locate the already-extracted attachment on disk.
+        cv = agent.store.attachment_store.import_bytes(
+            make_pdf(text="Alex Morgan. Python developer. Employer: Riverstone Labs. Experience: five years."),
+            name="Candidate_CV_EN_revised.pdf")
+        answer = agent.run("can you read this pdf please", attachments=[cv])
+        assert any(fact in answer.casefold() for fact in ("alex morgan", "riverstone", "python developer"))
+        assert not agent.store.turns()[-1].settled_calls
+        agent.new_session()
         note = agent.store.attachment_store.import_bytes(b"Dispatch count: 82\n", name="dispatch.txt")
         answer = agent.run("Check fixture.txt with filesystem.stat, then give the dispatch count from the attached document.", attachments=[note])
         assert "82" in answer
