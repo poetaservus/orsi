@@ -15,6 +15,7 @@ from app.conversation.attachments import AttachmentStore
 from app.inference.attachments import AttachmentReference, attachment_references
 from app.inference.completion import CompletionMetadata, CompletionText
 from app.agent.contracts import AgentRunResult, AgentRunStatus, SettledCall
+from app.settings.agent_limits import MAX_AGENT_CAPABILITY_CALLS, MAX_AGENT_MODEL_REQUESTS
 from app.inference.openai_replay import OpenAIReplay, StoredOpenAIResponse, REPLAY_KEY
 from app.inference.protocol import model_capability_calls_message, model_capability_result_message
 
@@ -85,9 +86,9 @@ class TurnRecord(BaseModel):
     started_at: str = Field(default_factory=_now)
     ended_at: str | None = None
     outcome: AgentRunResult | None = None
-    settled_calls: list[SettledCall] = Field(default_factory=list, max_length=32)
-    recovered_calls: list[RecoveredCall] = Field(default_factory=list, max_length=32)
-    provider_responses: list[StoredOpenAIResponse] = Field(default_factory=list, max_length=32, repr=False)
+    settled_calls: list[SettledCall] = Field(default_factory=list, max_length=MAX_AGENT_CAPABILITY_CALLS)
+    recovered_calls: list[RecoveredCall] = Field(default_factory=list, max_length=MAX_AGENT_CAPABILITY_CALLS)
+    provider_responses: list[StoredOpenAIResponse] = Field(default_factory=list, max_length=MAX_AGENT_MODEL_REQUESTS, repr=False)
     reference_scope: SkillReferenceScope | None = None
 
 

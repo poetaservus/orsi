@@ -914,7 +914,9 @@ def test_agent_runtime_is_connected_only_through_the_startup_feature_gate():
         "full_local_read_enabled": True,
         "runtime_limits": {
             "max_steps": 24,
-            "cloud_max_steps": 32,
+            "cloud_max_steps": 128,
+            "cloud_max_model_requests": 128,
+            "cloud_max_capability_calls": 256,
             "max_capability_calls": 32,
             "max_identical_calls": 2,
             "max_protocol_failures": 2,

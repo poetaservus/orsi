@@ -25,6 +25,7 @@ from app.agent.contracts import (
     model_unavailable_message,
 )
 from app.settings.agent import AgentRuntimeLimits
+from app.agent.progress import WORK_BUDGET_STATUSES, WORK_BUDGET_MESSAGE, work_budget_progress
 from app.agent.feedback import (
     call_fingerprint,
     constrained_fallback_messages,
@@ -195,6 +196,14 @@ class AgentRuntime:
         """Select the per-turn step budget from the active inference mode."""
         return self.limits.cloud_max_steps if getattr(self.model, "mode", None) == "cloud" else self.limits.max_steps
 
+    @property
+    def effective_max_model_requests(self) -> int:
+        return self.limits.cloud_max_model_requests if getattr(self.model, "mode", None) == "cloud" else self.limits.max_model_requests
+
+    @property
+    def effective_max_capability_calls(self) -> int:
+        return self.limits.cloud_max_capability_calls if getattr(self.model, "mode", None) == "cloud" else self.limits.max_capability_calls
+
     def purge_terminal_records(self) -> tuple[str, ...]:
         """Apply the journal's explicit privacy retention policy."""
         return self.executor.journal.purge()
@@ -309,7 +318,7 @@ class AgentRuntime:
         recovery = _RecoveryUsage()
         result = self._run(messages, _completion_history=history, _settled_calls=settled,
                            _recovery=recovery, **kwargs)
-        return result.model_copy(update={"completion_history": tuple(history),
+        result = result.model_copy(update={"completion_history": tuple(history),
             "settled_calls": tuple(settled),
             "model_requests": recovery.model_requests,
             "consecutive_format_failures": recovery.consecutive_format_failures,
@@ -319,6 +328,12 @@ class AgentRuntime:
             "inference_requests": recovery.inference_requests,
             "estimated_input_tokens": recovery.estimated_input_tokens,
             "completion": result.completion if result.completion.incomplete or not history else history[-1]})
+        if getattr(self.model, "mode", None) == "cloud" and result.status in WORK_BUDGET_STATUSES:
+            result = result.model_copy(update={"message": WORK_BUDGET_MESSAGE,
+                "partial_text": work_budget_progress(result),
+                "completion": result.completion.model_copy(update={
+                    "finish_reason": "agent_budget_limit", "interrupted": True})})
+        return result
 
     def _run(
         self,
@@ -432,7 +447,7 @@ class AgentRuntime:
         advertised_names = {item.name for item in definitions}
         required_fingerprints = tuple(call_fingerprint(call) for call in required_calls)
         if (
-            len(required_calls) > self.limits.max_capability_calls
+            len(required_calls) > self.effective_max_capability_calls
             or len(set(required_fingerprints)) != len(required_fingerprints)
             or any(call.capability not in advertised_names for call in required_calls)
         ):
@@ -447,8 +462,9 @@ class AgentRuntime:
         completed_required: set[str] = set()
         planned_response = ModelResponse.calls(required_calls) if required_calls else None
         structured_fallback = False
-        log.info("Agent step budget: mode=%s max_steps=%s",
-            "cloud" if getattr(self.model, "mode", None) == "cloud" else "local", self.effective_max_steps)
+        log.info("Agent step budget: mode=%s max_steps=%s max_model_requests=%s max_capability_calls=%s",
+            "cloud" if getattr(self.model, "mode", None) == "cloud" else "local", self.effective_max_steps,
+            self.effective_max_model_requests, self.effective_max_capability_calls)
 
         while True:
             if recovery.semantic_corrections >= self.limits.max_semantic_corrections:
@@ -485,7 +501,7 @@ class AgentRuntime:
                     protocol_failures=protocol_failures,
                 )
 
-            if planned_response is None and recovery.model_requests >= self.limits.max_model_requests:
+            if planned_response is None and recovery.model_requests >= self.effective_max_model_requests:
                 return self._stopped(AgentRunStatus.MODEL_REQUEST_LIMIT,
                     "The agent stopped after reaching its total model-request limit.",
                     steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
@@ -531,7 +547,7 @@ class AgentRuntime:
                     structured_fallback = True
                     if _completion_history is not None:
                         _completion_history.append(response.completion)
-                    if recovery.model_requests >= self.limits.max_model_requests:
+                    if recovery.model_requests >= self.effective_max_model_requests:
                         return self._stopped(AgentRunStatus.MODEL_REQUEST_LIMIT,
                             "The agent stopped before exceeding its total model-request limit.",
                             steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
@@ -677,7 +693,7 @@ class AgentRuntime:
                         protocol_failures,
                     )
                 continue
-            if capability_calls + len(calls) > self.limits.max_capability_calls:
+            if capability_calls + len(calls) > self.effective_max_capability_calls:
                 return self._stopped(
                     AgentRunStatus.CAPABILITY_CALL_LIMIT,
                     "The agent stopped before exceeding its capability-call limit.",

@@ -97,7 +97,7 @@ def reader_pairs(messages):
     return [m for m in messages if m.get("role") == "capability" and m["result"]["capability"] == "skill.read_reference"]
 
 
-@pytest.mark.parametrize("mode,steps", [("cloud", 32), ("local", 24)])
+@pytest.mark.parametrize("mode,steps", [("cloud", 128), ("local", 24)])
 def test_skill_scoped_runtime_uses_active_mode_step_budget(tmp_path, mode, steps):
     def inspect_budget():
         assert service._reference_runtime is not service.agent_runtime

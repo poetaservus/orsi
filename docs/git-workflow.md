@@ -1,5 +1,28 @@
 # Git layout and baseline hygiene
 
+## Cloud runtime work budget, 8 October 2026
+
+The bounded `codex/cloud-runtime-budget` fix starts from local main `0ff7bff`.
+Cloud turns receive 128 steps, 128 model requests and 256 calls, with matching
+durable history capacity and a paused-task progress summary at a work-budget
+stop. Existing metadata batches may contain seven calls, each independently
+authorized and journaled. Local budgets, model profiles, sampling, routing,
+context policy and mutation approvals remain in place. See
+[the behavior and verification record](cloud-runtime-budget.md).
+
+Final native focused regression passed 246 tests in 87.76 seconds. Full native
+regression passed 2,414 tests and 15 subtests in 422.06 seconds, with 58 separately
+recorded optional/host-dependent skips and no failures/errors. An initial
+temporary Git-folder cleanup failure passed both the focused and full reruns;
+installer code was not changed. No live provider gate was run.
+
+A verified complete-history bundle containing 104 refs and ref/worktree maps
+is preserved under ignored `state/backups/cloud-runtime-budget-20261008/`.
+Preserve prior main at `archive/2026-10-08/main-before-cloud-runtime-budget`,
+commit after verification, fast-forward local main and remove only this merged
+feature branch. Other worktrees, remote refs and live runtime selection remain
+outside the operation. Restart the normal main launcher to load the new budget.
+
 ## Greeting input visibility, 8 October 2026
 
 The bounded `codex/greeting-input-visibility` GUI fix starts from local main

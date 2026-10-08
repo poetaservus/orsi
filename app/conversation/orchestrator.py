@@ -601,6 +601,10 @@ class ConversationService:
                                       status_message=result.message)
             raise IncompleteResponseError(result.message or "The response is incomplete.",
                 result.completion, history=result.completion_history)
+        if result.status in {AgentRunStatus.STEP_LIMIT, AgentRunStatus.MODEL_REQUEST_LIMIT,
+                             AgentRunStatus.CAPABILITY_CALL_LIMIT} and result.partial_text is not None:
+            return CompletionText(result.partial_text, result.completion, result.completion_history,
+                                  status_message=result.message)
         if result.status != AgentRunStatus.COMPLETED:
             raise RuntimeError(result.message or "The bounded agent run did not complete.")
 
@@ -826,6 +830,7 @@ class ConversationService:
             prompt = compact_agent_system_prompt(
                 self.host_read_scope or HostReadScope.PORTABLE_ROOT,
                 capabilities,
+                allow_read_batches=getattr(self.inference, "mode", None) == "cloud",
                 user_home=(
                     str(self.host_access_policy.user_home)
                     if self.host_access_policy is not None

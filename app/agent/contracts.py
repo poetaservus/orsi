@@ -8,6 +8,9 @@ from app.inference.engine import InferenceUnavailable
 from app.inference.completion import CompletionMetadata
 from app.inference.protocol import ModelCapabilityCall, model_capability_calls_message, model_capability_result_message
 from app.capabilities.contracts import CapabilityResult
+from app.settings.agent_limits import (
+    MAX_AGENT_STEPS, MAX_AGENT_MODEL_REQUESTS, MAX_AGENT_CAPABILITY_CALLS, MAX_AGENT_COMPLETIONS,
+)
 
 
 class AgentRunStatus(StrEnum):
@@ -59,20 +62,21 @@ class AgentRunResult(BaseModel):
     status: AgentRunStatus
     assistant_text: str | None = Field(default=None, min_length=1, max_length=1_000_000)
     message: str | None = Field(default=None, min_length=1, max_length=500)
-    steps: int = Field(ge=0, le=32)
-    capability_calls: int = Field(ge=0, le=32)
-    protocol_failures: int = Field(ge=0, le=32)
-    consecutive_format_failures: int = Field(default=0, ge=0, le=32)
-    semantic_corrections: int = Field(default=0, ge=0, le=32)
-    model_requests: int = Field(default=0, ge=0, le=32)
-    inference_requests: int = Field(default=0, ge=0, le=32)
+    steps: int = Field(ge=0, le=MAX_AGENT_STEPS)
+    capability_calls: int = Field(ge=0, le=MAX_AGENT_CAPABILITY_CALLS)
+    protocol_failures: int = Field(ge=0, le=MAX_AGENT_STEPS)
+    consecutive_format_failures: int = Field(default=0, ge=0, le=MAX_AGENT_STEPS)
+    semantic_corrections: int = Field(default=0, ge=0, le=MAX_AGENT_STEPS)
+    model_requests: int = Field(default=0, ge=0, le=MAX_AGENT_MODEL_REQUESTS)
+    # Includes compaction requests; it is accounting, not the execution budget.
+    inference_requests: int = Field(default=0, ge=0)
     estimated_input_tokens: int = Field(default=0, ge=0)
     context_projections: int = Field(default=0, ge=0)
     context_compactions: int = Field(default=0, ge=0)
     completion: CompletionMetadata = Field(default_factory=CompletionMetadata)
-    completion_history: tuple[CompletionMetadata, ...] = Field(default=(), max_length=64)
+    completion_history: tuple[CompletionMetadata, ...] = Field(default=(), max_length=MAX_AGENT_COMPLETIONS)
     partial_text: str | None = Field(default=None, min_length=1, max_length=1_000_000)
-    settled_calls: tuple[SettledCall, ...] = Field(default=(), max_length=32)
+    settled_calls: tuple[SettledCall, ...] = Field(default=(), max_length=MAX_AGENT_CAPABILITY_CALLS)
 
     @model_validator(mode="after")
     def validate_terminal_outcome(self):

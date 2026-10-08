@@ -7,6 +7,10 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.settings.loader import load_json
 from app.settings.paths import PATHS
+from app.settings.agent_limits import (
+    MAX_AGENT_STEPS, MAX_LOCAL_AGENT_STEPS,
+    MAX_AGENT_MODEL_REQUESTS, MAX_AGENT_CAPABILITY_CALLS,
+)
 
 
 _FILESYSTEM_STAT_GATE = "ORSI_ENABLE_FILESYSTEM_STAT"
@@ -24,7 +28,6 @@ _APPLICATION_LAUNCH_GATE = "ORSI_ENABLE_APPLICATION_LAUNCH"
 _FULL_LOCAL_READ_GATE = "ORSI_ENABLE_FULL_LOCAL_READ"
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 _FALSE_VALUES = {"0", "false", "no", "off"}
-MAX_AGENT_STEPS = 32
 
 
 class AgentRuntimeLimits(BaseModel):
@@ -32,14 +35,16 @@ class AgentRuntimeLimits(BaseModel):
 
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
 
-    max_steps: int = Field(default=24, ge=1, le=MAX_AGENT_STEPS)
+    max_steps: int = Field(default=24, ge=1, le=MAX_LOCAL_AGENT_STEPS)
     cloud_max_steps: int = Field(default=MAX_AGENT_STEPS, ge=1, le=MAX_AGENT_STEPS)
     max_capability_calls: int = Field(default=32, ge=1, le=32)
+    cloud_max_capability_calls: int = Field(default=MAX_AGENT_CAPABILITY_CALLS, ge=1, le=MAX_AGENT_CAPABILITY_CALLS)
     max_identical_calls: int = Field(default=2, ge=1, le=8)
     max_protocol_failures: int = Field(default=2, ge=1, le=8)
     # Existing configuration key now limits consecutive format failures.
     max_semantic_corrections: int = Field(default=4, ge=1, le=32)
     max_model_requests: int = Field(default=32, ge=1, le=32)
+    cloud_max_model_requests: int = Field(default=MAX_AGENT_MODEL_REQUESTS, ge=1, le=MAX_AGENT_MODEL_REQUESTS)
     overall_timeout_seconds: float | None = Field(default=None, gt=0, le=3_600)
     poll_interval_seconds: float = Field(default=0.01, gt=0, le=1.0)
     max_transcript_bytes: int = Field(

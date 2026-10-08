@@ -76,6 +76,8 @@ class CompletionMetadata(BaseModel):
 
     @property
     def failure_message(self) -> str | None:
+        if self.finish_reason == "agent_budget_limit":
+            return "Task paused at its cloud work budget; completed operations are retained."
         return _FAILURE_MESSAGES.get(self.failure_reason)
 
     @property

@@ -248,6 +248,33 @@ def test_short_partial_reply_keeps_incomplete_notice_readable(qt_app):
         chat.close()
 
 
+def test_budget_pause_uses_finished_signal_and_restored_paused_notice(qt_app):
+    from app.ui.worker import ConversationWorker
+    from app.ui.chat import ChatView
+    completion = CompletionMetadata(finish_reason="agent_budget_limit", interrupted=True)
+    partial = CompletionText("Task paused before completion. Completed operations are retained.", completion)
+    class Service:
+        def run(self, *args):
+            return partial
+    worker = ConversationWorker(Service(), "Continue the task")
+    finished, failed = [], []
+    worker.finished.connect(finished.append)
+    worker.failed.connect(failed.append)
+    worker.run()
+    assert finished == [partial] and failed == []
+    chat = ChatView()
+    try:
+        # Reopened messages carry durable metadata, without a transient status_message.
+        restored = CompletionText(str(partial), CompletionMetadata.model_validate_json(completion.model_dump_json()))
+        chat.add_message("Agent", restored)
+        item = chat._messages[-1]
+        assert item.completion.incomplete
+        assert "Task paused" in item.completion_label.text()
+        assert "model-step limit" not in item.completion_label.text()
+    finally:
+        chat.close()
+
+
 @pytest.mark.parametrize("failure", [False, True])
 def test_context_meter_failure_cannot_hide_response_or_lock_ui_controls(qt_app, failure):
     from PySide6.QtTest import QTest
