@@ -60,19 +60,24 @@ def test_navigation_close_and_compact_layout_keep_controls_reachable(app):
         app.processEvents()
         panel = window.settings_panel
         assert window._root.rect().contains(panel.geometry())
-        assert [button.text() for button in panel.navigation] == ["General", "Skills", "Image Generation"]
+        assert [button.text() for button in panel.navigation] == ["General", "Models", "Skills", "Image Generation", "Appearance"]
         for index, button in enumerate(panel.navigation):
             QTest.mouseClick(button, Qt.MouseButton.LeftButton)
             assert panel.pages.currentIndex() == index
             assert sum(item.isChecked() for item in panel.navigation) == 1
-        assert not window.image_settings_button.isEnabled()
+        assert not window.image_settings_page.save_button.isEnabled()
         panel.navigation[0].click()
         app.processEvents()
-        positions = [control.mapTo(panel, QPoint()).x() for control in (
-            window.theme_selector, window.model_selector, window.local_model_selector,
-            window.gui_language_selector, window.response_language_selector)]
+        positions = []
+        for section, control in (("Appearance", window.theme_selector), ("Models", window.model_selector),
+                                 ("Models", window.local_model_selector), ("Appearance", window.gui_language_selector),
+                                 ("General", window.response_language_selector)):
+            panel.show_section(section)
+            app.processEvents()
+            positions.append(control.mapTo(panel, QPoint()).x())
         assert len(set(positions)) == 1
-        panel.more_button.click()
+        assert all(not control.isEnabled() for control in panel.future_settings.values())
+        panel.show_section("General")
         app.processEvents()
         scroll = panel.pages.currentWidget()
         scroll.ensureWidgetVisible(window.greeting_input)
@@ -92,11 +97,12 @@ def test_navigation_close_and_compact_layout_keep_controls_reachable(app):
 def test_larger_panel_drags_independently_and_keeps_position_during_chat_layout(app):
     window = MainWindow(None, "TEST")
     try:
+        window.resize(1600, 1000)
         window.show()
         window.settings_button.click()
         app.processEvents()
         panel = window.settings_panel
-        assert panel.size().width() == 886 and panel.size().height() == 611
+        assert panel.size().width() == 1120 and panel.size().height() == 740
         original = panel.pos()
         window_position = window.pos()
         header = panel.drag_strip
@@ -255,22 +261,41 @@ def test_image_section_saves_through_existing_settings_handler(app, tmp_path):
     inference.image_settings = store
 
     class Service:
+        fail = False
+
         def select_image_settings(self, settings):
+            if self.fail:
+                raise RuntimeError("Synthetic save failure")
             store.select(settings)
 
     window = MainWindow(Service(), "TEST", inference=inference)
     try:
         window.show()
         window.settings_button.click()
-        window.settings_panel.navigation[2].click()
-        assert window.image_settings_button.isVisible() and window.image_settings_button.isEnabled()
-        window.image_settings_button.click()
-        dialog = window._image_settings_dialog
-        dialog.choices["size"].setCurrentText("1024x1536")
-        dialog._save()
+        window._open_image_settings()
+        page = window.image_settings_page
+        assert page.save_button.isVisible() and page.save_button.isEnabled()
+        assert not page.isWindow() and QApplication.activeModalWidget() is None
+        page.choices["size"].setCurrentText("1024x1536")
+        window.settings_panel.show_section("General")
+        window.settings_panel.hide()
+        window._open_image_settings()
+        window._set_busy(True)
+        assert not page.save_button.isEnabled()
+        window._set_busy(False)
+        assert page.choices["size"].currentText() == "1024x1536"
+        page.save_button.click()
+        assert page.isVisible() and window.settings_panel.isVisible()
         assert store.current.size == "1024x1536"
         assert ImageSettingsStore(ImageGenerationSettings(), store.store.path).current.size == "1024x1536"
+        window.service.fail = True
+        page.choices["size"].setCurrentText("1536x1024")
+        page.save_button.click()
+        assert store.current.size == "1024x1536" and "Could not save" in page.notice.text()
+        assert page.choices["size"].currentText() == "1536x1024"
+        page.reset_button.click()
+        assert page.choices["size"].currentText() == "1024x1536"
         window._set_busy(True)
-        assert not window.image_settings_button.isEnabled()
+        assert not window.image_settings_page.save_button.isEnabled()
     finally:
         window.close()

@@ -9,14 +9,15 @@ see [package installation and its verification](skill-package-install-v1.md).
 
 ## User workflow
 
-1. Open Settings, then **Manage skills…**.
+1. Open Settings, then the **Skills** tab. Its controls are embedded in the
+   main settings panel; see [the current layout](settings-embedded-tabs.md).
 2. Paste a public GitHub repository link for complete packages, or a `SKILL.md`
    file/Raw link for instructions alone. File links ending in `?plain=1` remain
    supported. Alternatively, choose/drop a local skill folder or `.md` file.
 3. Click **Preview** to check names, descriptions, source, reference count and
    total content size. Multiple packages are listed before publication. Pressing
    Enter in the source field previews; it does not install.
-4. Click **Install**, then **Done**. The skill is immediately available in the
+4. Click **Install**. The skill is immediately available in the
    existing `/skill` chooser, without restarting the app. Choosing it still
    attaches it to one outgoing message.
 
@@ -30,7 +31,7 @@ Importing a single Markdown file replaces the manual staging-folder step.
 The file must contain valid skill frontmatter, including a name and description.
 Installation copies its exact reviewed bytes as `SKILL.md`. Matching existing
 content is a no-op; an existing name with different content must be explicitly
-removed before reinstalling. This dialog does not overwrite installed skills.
+removed before reinstalling. These controls do not overwrite installed skills.
 
 Choosing a folder/repository preserves bounded `references/**/*.md` content
 alongside the entry point. The preview captures all installed bytes; changing the
@@ -57,11 +58,13 @@ are unchanged.
 
 ## Implementation boundary
 
-`SkillSettingsDialog` is opened by one Settings button. Preview, installation and
-removal each run on an owned, one-shot Qt thread. The dialog joins a completed
-worker before releasing it or closing; controls are disabled while it works.
-The rest of the UI remains responsive during a network preview. Closing or
-pressing Escape cannot destroy a running worker.
+`SkillSettingsPage` is embedded directly in the Skills tab. Preview, installation
+and removal each run on an owned, one-shot Qt thread. The page joins a completed
+worker before releasing it; controls and conflicting chat actions are disabled
+while it works. Tabs and the settings close button remain responsive. Hiding
+Settings preserves its draft and running operation; closing the application
+waits for that operation to finish before shutting down its service. A compatibility
+dialog wraps the same page for existing direct callers and regression tests.
 
 For single-file import, the source adapter accepts HTTPS GitHub file/raw URLs and downloads from
 `raw.githubusercontent.com`, without redirects, proxies or credentials. It caps

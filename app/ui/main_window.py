@@ -60,7 +60,6 @@ from app.ui.context_window import ContextWindowBar
 from app.ui.status import ConversationStatus
 from app.ui.worker import ConversationWorker, ModelSwitchWorker
 from app.ui.skill_picker import SkillPicker
-from app.ui.skill_settings import SkillSettingsDialog
 from app.ui.settings_panel import SettingsPanel
 from app.ui.settings_motion import SettingsIconButton
 from app.ui.window_frame import CAPTION_HEIGHT, DragStrip, WindowControls, WindowsFrame
@@ -345,6 +344,7 @@ class MainWindow(QMainWindow):
         self._preferences_store = preferences_store
         self._greeting_message = self._load_greeting_message()
         self.thread = None
+        self._settings_busy = False
         self._image_viewer = None
         self._attachment_picker = None
         self._pending_image_reply = None
@@ -485,10 +485,6 @@ class MainWindow(QMainWindow):
         self.cloud_model_details = QLabel()
         self.cloud_model_details.setObjectName("settingsLabel")
         self.cloud_model_details.setWordWrap(True)
-        self.image_settings_button = QPushButton("Image generation…")
-        self.image_settings_button.setObjectName("manageSkillsButton")
-        self.image_settings_button.setFixedHeight(38)
-        self.image_settings_button.clicked.connect(self._open_image_settings)
         self.cloud_model_selector.currentIndexChanged.connect(self._select_cloud_model)
 
         self.greeting_input = QLineEdit()
@@ -496,12 +492,6 @@ class MainWindow(QMainWindow):
         self.greeting_input.setFixedHeight(38)
         self.greeting_input.setMaxLength(_GREETING_MAX_LENGTH)
         self.greeting_input.setText(self._greeting_message)
-
-        self.skills_button = QPushButton("Manage skills…")
-        self.skills_button.setObjectName("manageSkillsButton")
-        self.skills_button.setFixedHeight(38)
-        self.skills_button.setEnabled(callable(getattr(service, "install_skill", None)))
-        self.skills_button.clicked.connect(self._manage_skills)
 
         self.activity = ConversationStatus(
             self._ready_status() if not startup_error else "Model unavailable"
@@ -857,12 +847,23 @@ class MainWindow(QMainWindow):
             self.settings_panel.navigation[self.settings_panel.pages.currentIndex()].setFocus()
 
     def _manage_skills(self) -> None:
-        if self.thread is not None or not callable(getattr(self.service, "install_skill", None)):
-            return
-        dialog = SkillSettingsDialog(self.service, self)
-        dialog.catalog_changed.connect(self._skills_changed)
-        dialog.exec()
-        dialog.deleteLater()
+        self.settings_panel.show_section("Skills")
+        self.settings_panel.show()
+        self.settings_panel.raise_()
+
+    def _settings_worker_busy(self, busy):
+        self._settings_busy = busy
+        available = not busy and self.thread is None and not getattr(self, "_closing", False)
+        self.send.setEnabled(available)
+        self.input.setEnabled(available)
+        self.new_session_button.setEnabled(available and self.service is not None)
+        self.model_selector.setEnabled(available and self.inference is not None)
+        self._sync_local_model_selector()
+        self._sync_cloud_model_selector()
+
+    def _settings_worker_idle(self):
+        if getattr(self, "_closing", False):
+            QTimer.singleShot(0, self.close)
 
     def _pick_attachments(self):
         if self.thread is not None or self.attachment_tray.store is None:
@@ -977,7 +978,7 @@ class MainWindow(QMainWindow):
             return
         message = self.input.toPlainText().strip()
         attachments = self.attachment_tray.references
-        if (not message and not self.attachment_tray.count) or self.thread is not None:
+        if (not message and not self.attachment_tray.count) or self.thread is not None or self._settings_busy:
             return
         if self.attachment_tray.count:
             if not self.attachment_tray.ready:
@@ -1188,30 +1189,27 @@ class MainWindow(QMainWindow):
         if self._image_viewer is not None:
             self._image_viewer.set_reply_available(not busy and self.service is not None)
         self._preview_active = busy
-        self.send.setEnabled(not busy)
+        self.send.setEnabled(not busy and not self._settings_busy)
         self.stop.setEnabled(busy and self.service is not None)
         self.send.setVisible(not busy)
         self.stop.setVisible(busy)
-        self.input.setEnabled(not busy)
+        self.input.setEnabled(not busy and not self._settings_busy)
         self.add_placeholder.setEnabled(not busy and self.attachment_tray.store is not None)
         self.attachment_tray.set_editable(not busy)
-        self.model_selector.setEnabled(not busy and self.inference is not None)
+        self.model_selector.setEnabled(not busy and not self._settings_busy and self.inference is not None)
         self.local_model_selector.setEnabled(
-            not busy and self.service is not None and self.inference is not None
+            not busy and not self._settings_busy and self.service is not None and self.inference is not None
             and self.inference.mode == "local"
             and bool(getattr(getattr(self.inference, "model_catalog", None), "models", ()))
         )
-        self.new_session_button.setEnabled(not busy and self.service is not None)
+        self.new_session_button.setEnabled(not busy and not self._settings_busy and self.service is not None)
         self.cloud_model_selector.setEnabled(
-            not busy and self.service is not None and self.inference is not None
+            not busy and not self._settings_busy and self.service is not None and self.inference is not None
             and self.inference.mode == "cloud"
             and getattr(self.inference, "cloud_model_catalog", None) is not None
         )
-        self.skills_button.setEnabled(not busy and callable(getattr(self.service, "install_skill", None)))
-        self.image_settings_button.setEnabled(
-            not busy and getattr(self.inference, "supports_image_generation", False) is True
-            and callable(getattr(self.service, "select_image_settings", None))
-        )
+        self.skill_settings_page.set_available(not busy and not getattr(self, "_closing", False))
+        self._sync_image_settings(busy=busy or self._settings_busy)
         duration_seconds = self.chat.set_thinking(busy)
         self.activity.set_activity("" if busy else self._ready_status())
         return duration_seconds
@@ -1250,7 +1248,7 @@ class MainWindow(QMainWindow):
             self.chat.generation_frame.stop("Stopping image generation…")
 
     def create_new_session(self) -> None:
-        if self.thread is not None:
+        if self.thread is not None or self._settings_busy:
             return
         if self._image_viewer is not None:
             self._image_viewer.reject()
@@ -1326,7 +1324,7 @@ class MainWindow(QMainWindow):
 
     @Slot(int)
     def _select_inference_mode(self, index: int) -> None:
-        if self.inference is None or index < 0:
+        if self.inference is None or self._settings_busy or index < 0:
             return
         requested = self.model_selector.itemData(index)
         previous = self.inference.mode
@@ -1348,12 +1346,7 @@ class MainWindow(QMainWindow):
         self.activity.set_activity(self._ready_status())
 
     def _sync_cloud_model_selector(self):
-        image_available = (getattr(self.inference, "supports_image_generation", False) is True
-                           and callable(getattr(self.service, "select_image_settings", None)))
-        self.image_settings_button.setEnabled(image_available and self.thread is None)
-        self.settings_panel.image_hint.setText(
-            "Configure image generation using your existing cloud settings." if image_available else
-            "Image generation settings are unavailable in the current mode. Use a supported cloud model.")
+        self._sync_image_settings(busy=self.thread is not None or self._settings_busy)
         catalog = getattr(self.inference, "cloud_model_catalog", None)
         available = catalog is not None
         for widget in (self.cloud_model_row, self.cloud_model_label, self.cloud_model_selector, self.cloud_model_details):
@@ -1365,7 +1358,7 @@ class MainWindow(QMainWindow):
         self.cloud_model_selector.blockSignals(False)
         self.cloud_model_selector.setEnabled(bool(
             available and self.service is not None and self.inference.mode == "cloud"
-            and self.thread is None
+            and self.thread is None and not self._settings_busy
         ))
         if available:
             profile = catalog.current_profile
@@ -1376,18 +1369,24 @@ class MainWindow(QMainWindow):
 
             self.cloud_model_selector.setToolTip(self.cloud_model_details.text())
 
-    @Slot(int)
-    def _open_image_settings(self):
-        if self.thread is not None or getattr(self.inference, "supports_image_generation", False) is not True:
-            return
-        from app.ui.image_settings import ImageSettingsDialog
+    def _sync_image_settings(self, *, busy=False):
         cloud = getattr(self.inference, "cloud", self.inference)
-        self._image_settings_dialog = ImageSettingsDialog(cloud.image_settings, self.service.select_image_settings, self)
-        self._image_settings_dialog.open()
+        store = getattr(cloud, "image_settings", None)
+        apply_settings = getattr(self.service, "select_image_settings", None)
+        available = getattr(self.inference, "supports_image_generation", False) is True
+        self.image_settings_page.set_context(store, apply_settings, available=available, busy=busy)
+        self.settings_panel.image_hint.setText(
+            "These preferences apply to your next generated image." if available and store is not None else
+            "Image generation is unavailable in the current mode. Choose a supported cloud model in Models.")
+
+    def _open_image_settings(self):
+        self.settings_panel.show_section("Image Generation")
+        self.settings_panel.show()
+        self.settings_panel.raise_()
 
     def _select_cloud_model(self, index):
         catalog = getattr(self.inference, "cloud_model_catalog", None)
-        if self.thread is not None or self.service is None or catalog is None or index < 0:
+        if self.thread is not None or self._settings_busy or self.service is None or catalog is None or index < 0:
             self._sync_cloud_model_selector()
             return
         requested = self.cloud_model_selector.itemData(index)
@@ -1414,7 +1413,7 @@ class MainWindow(QMainWindow):
             self.local_model_selector.setCurrentIndex(-1)
         self.local_model_selector.blockSignals(False)
         enabled = bool(catalog and catalog.models and self.service is not None
-                       and self.inference.mode == "local" and self.thread is None)
+                       and self.inference.mode == "local" and self.thread is None and not self._settings_busy)
         self.local_model_selector.setEnabled(enabled)
         if catalog:
             config = catalog.current_config
@@ -1439,7 +1438,7 @@ class MainWindow(QMainWindow):
 
     @Slot(int)
     def _select_local_model(self, index):
-        if self.thread is not None or self.service is None or index < 0:
+        if self.thread is not None or self._settings_busy or self.service is None or index < 0:
             return
         catalog = getattr(self.inference, "model_catalog", None)
         requested = self.local_model_selector.itemData(index)
@@ -1527,6 +1526,12 @@ class MainWindow(QMainWindow):
         self._closing = True
         self.settings_panel.hide()
         self.settings_button.reset()
+        if self.skill_settings_page.thread is not None:
+            # The embedded page owns its import/install worker. Let its transaction
+            # finish and join before shutting down the service or closing its parent.
+            self.setEnabled(False)
+            event.ignore()
+            return
         if self._attachment_picker is not None:
             self._attachment_picker.reject()
         if self._image_viewer is not None:

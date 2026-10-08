@@ -2,7 +2,7 @@
 from PySide6.QtCore import QThread, Qt, Signal, Slot
 from PySide6.QtWidgets import (
     QDialog, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QListWidget,
-    QListWidgetItem, QMessageBox, QPushButton, QVBoxLayout,
+    QListWidgetItem, QMessageBox, QPushButton, QSizePolicy, QVBoxLayout, QWidget,
 )
 from html import escape
 
@@ -59,8 +59,11 @@ class SkillSettingsWorker(QThread):
             self.failed.emit("The skill operation could not be completed. Try again.")
 
 
-class SkillSettingsDialog(QDialog):
+class SkillSettingsPage(QWidget):
     catalog_changed = Signal()
+    close_requested = Signal()
+    busy_changed = Signal(bool)
+    idle = Signal()
 
     def __init__(self, service, parent=None):
         super().__init__(parent)
@@ -68,18 +71,14 @@ class SkillSettingsDialog(QDialog):
         self.prepared = None
         self.thread = self.worker = None
         self._action = None
-        self.setObjectName("skillSettings")
-        self.setWindowTitle("Skills")
-        self.setMinimumWidth(600)
-        self.resize(640, 610)
-        self.setStyleSheet(_STYLE)
+        self._available = getattr(service, "skill_registry", None) is not None
+        self.setObjectName("skillSettingsPage")
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 18, 20, 18)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
-        title = QLabel("Skills")
-        title.setObjectName("skillsTitle")
-        layout.addWidget(title)
-        layout.addWidget(QLabel("Paste a GitHub repository or skill-file link, or drop a folder/file."))
+        source_hint = QLabel("Paste a GitHub repository or skill-file link, or drop a folder/file.")
+        source_hint.setWordWrap(True)
+        layout.addWidget(source_hint)
         source_row = QHBoxLayout()
         self.source = SkillSourceInput()
         self.source.setAccessibleName("Skill repository, folder or Markdown file")
@@ -105,6 +104,7 @@ class SkillSettingsDialog(QDialog):
             label.hide()
             layout.addWidget(label)
         self.preview_source.setWordWrap(False)
+        self.preview_source.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.preview_packages = QListWidget()
         install_smooth_scroll(self.preview_packages)
         self.preview_packages.setAccessibleName("Packages to install")
@@ -126,7 +126,7 @@ class SkillSettingsDialog(QDialog):
         layout.addLayout(installed_row)
         self.installed = QListWidget()
         install_smooth_scroll(self.installed)
-        self.installed.setMinimumHeight(100)
+        self.installed.setMinimumHeight(150)
         self.installed.setAccessibleName("Installed skills")
         layout.addWidget(self.installed, 1)
         self.status = QLabel()
@@ -135,6 +135,7 @@ class SkillSettingsDialog(QDialog):
         layout.addWidget(self.status)
         self.close_button = QPushButton("Done")
         layout.addWidget(self.close_button)
+        self.close_button.hide()
         # Enter in the source prepares a preview; it never installs implicitly.
         for button in (self.browse, self.browse_folder, self.preview_button, self.install_button, self.remove_button, self.close_button):
             button.setAutoDefault(False)
@@ -146,7 +147,7 @@ class SkillSettingsDialog(QDialog):
         self.install_button.clicked.connect(self._install)
         self.remove_button.clicked.connect(self._remove)
         self.installed.currentItemChanged.connect(self._update_buttons)
-        self.close_button.clicked.connect(self.accept)
+        self.close_button.clicked.connect(self.close_requested)
         self._refresh_installed()
 
     def _source_changed(self):
@@ -170,7 +171,8 @@ class SkillSettingsDialog(QDialog):
 
     def _refresh_installed(self):
         self.installed.clear()
-        for skill in self.service.skill_registry.list():
+        registry = getattr(self.service, "skill_registry", None)
+        for skill in registry.list() if registry is not None else ():
             item = QListWidgetItem(" ".join(skill.name.split())[:128])
             item.setData(Qt.ItemDataRole.UserRole, skill.name)
             item.setData(Qt.ItemDataRole.UserRole + 1,
@@ -182,7 +184,7 @@ class SkillSettingsDialog(QDialog):
         self._update_buttons()
 
     def _update_buttons(self, *args):
-        busy = self.thread is not None
+        busy = self.thread is not None or not self._available
         self.source.setEnabled(not busy)
         self.browse.setEnabled(not busy)
         self.browse_folder.setEnabled(not busy)
@@ -194,8 +196,12 @@ class SkillSettingsDialog(QDialog):
         self.installed.setEnabled(not busy)
         self.close_button.setEnabled(not busy)
 
+    def set_available(self, available):
+        self._available = bool(available and getattr(self.service, "skill_registry", None) is not None)
+        self._update_buttons()
+
     def _preview(self):
-        if self.thread is None and self.source.text().strip():
+        if self._available and self.thread is None and self.source.text().strip():
             self.prepared = None
             self.preview_packages.clear()
             self.preview_packages.hide()
@@ -208,6 +214,8 @@ class SkillSettingsDialog(QDialog):
             self._start("install", self.prepared)
 
     def _remove(self):
+        if not self._available or self.thread is not None:
+            return
         item = self.installed.currentItem()
         if item is None or not item.data(Qt.ItemDataRole.UserRole + 1):
             return
@@ -222,7 +230,7 @@ class SkillSettingsDialog(QDialog):
             self._start("remove", name)
 
     def _start(self, action, value):
-        if self.thread is not None:
+        if self.thread is not None or not self._available:
             return
         self._action = action
         self.status.setText({"preview": "Checking skill…", "install": "Installing…", "remove": "Removing…"}[action])
@@ -232,6 +240,7 @@ class SkillSettingsDialog(QDialog):
         self.worker.failed.connect(self.status.setText)
         self.thread.finished.connect(self._finished)
         self._update_buttons()
+        self.busy_changed.emit(True)
         self.thread.start()
 
     @Slot(object)
@@ -250,8 +259,7 @@ class SkillSettingsDialog(QDialog):
             description = " ".join(skill.description.split())
             self.preview_description.setText(description if len(description) <= 240 else description[:237] + "…")
             self.preview_description.setToolTip("<qt>" + escape(description[:512]) + "</qt>")
-            self.preview_source.setText(self.preview_source.fontMetrics().elidedText(
-                "Source: " + result.source[:2048], Qt.TextElideMode.ElideRight, self.width() - 44))
+            self._refresh_preview_source()
             self.preview_source.setToolTip("<qt>" + escape(result.source[:2048]) + "</qt>")
             skill_label = "skill" if result.skill_count == 1 else "skills"
             reference_label = "reference" if result.reference_count == 1 else "references"
@@ -261,7 +269,7 @@ class SkillSettingsDialog(QDialog):
                 label.show()
             self.status.setText("Ready to install.")
             self.layout().activate()
-            self.setMinimumHeight(max(610, self.layout().heightForWidth(self.width())))
+            self.updateGeometry()
         else:
             if self._action == "install":
                 self.status.setText(f"Installed {len(result.installed)}; already present {len(result.already_installed)}. "
@@ -271,6 +279,15 @@ class SkillSettingsDialog(QDialog):
             self._refresh_installed()
             self.catalog_changed.emit()
 
+    def _refresh_preview_source(self):
+        if self.prepared is not None:
+            self.preview_source.setText(self.preview_source.fontMetrics().elidedText(
+                "Source: " + self.prepared.source[:2048], Qt.TextElideMode.ElideRight, max(0, self.width() - 16)))
+
+    def resizeEvent(self, event):  # noqa: N802
+        super().resizeEvent(event)
+        self._refresh_preview_source()
+
     @Slot()
     def _finished(self):
         # finished may precede native thread-local cleanup. Join before releasing
@@ -279,13 +296,51 @@ class SkillSettingsDialog(QDialog):
         self.thread.deleteLater()
         self.thread = self.worker = None
         self._update_buttons()
-
-    def done(self, result):
-        if self.thread is None:
-            super().done(result)
+        self.busy_changed.emit(False)
+        self.idle.emit()
 
     def closeEvent(self, event):  # noqa: N802
         if self.thread is not None:
+            event.ignore()
+        else:
+            super().closeEvent(event)
+
+
+class SkillSettingsDialog(QDialog):
+    """Compatibility shell around the same reusable skill controls."""
+    catalog_changed = Signal()
+
+    def __init__(self, service, parent=None):
+        super().__init__(parent)
+        self.setObjectName("skillSettings")
+        self.setWindowTitle("Skills")
+        self.setMinimumWidth(600)
+        self.resize(640, 610)
+        self.setStyleSheet(_STYLE)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(20, 18, 20, 18)
+        self.page = SkillSettingsPage(service, self)
+        layout.addWidget(self.page)
+        self.page.close_button.show()
+        self.page.close_requested.connect(self.accept)
+        self.page.catalog_changed.connect(self.catalog_changed)
+
+    @property
+    def thread(self):
+        return self.page.thread
+
+    def __getattr__(self, name):
+        page = self.__dict__.get("page")
+        if page is not None:
+            return getattr(page, name)
+        raise AttributeError(name)
+
+    def done(self, result):
+        if self.page.thread is None:
+            super().done(result)
+
+    def closeEvent(self, event):  # noqa: N802
+        if self.page.thread is not None:
             event.ignore()
         else:
             super().closeEvent(event)

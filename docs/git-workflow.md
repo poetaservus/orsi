@@ -1,5 +1,21 @@
 # Git layout and baseline hygiene
 
+## Embedded settings tabs, 8 October 2026
+
+The bounded `codex/settings-embedded-tabs` GUI change starts from local main
+`009510e`. A larger antialiased panel groups everyday preferences, models,
+embedded Skills and Image Generation controls, and appearance. Future options
+are disabled placeholders. Existing service handlers and user runtime stores
+remain in place; see [the layout and verification record](settings-embedded-tabs.md).
+
+Final native GUI/skills/frame checks passed 60 tests and 15 subtests. Full native
+regression passed 2,398 tests and 15 subtests in 334.09 seconds, with 58 separately
+recorded optional/host-dependent skips and no failures/errors. Synthetic normal,
+compact and 2× display renders were inspected. No live model/API gate was run.
+Preserve prior main at `archive/2026-10-08/main-before-settings-embedded-tabs`,
+commit the verified change, fast-forward local main and remove only the merged
+feature branch. Other worktrees and remote refs remain outside the operation.
+
 ## Visual-output routing, 8 October 2026
 
 The bounded `codex/visual-output-routing` repair starts from local main `993e5dd`.

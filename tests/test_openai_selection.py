@@ -89,11 +89,12 @@ def test_qt_selector_applies_reverts_and_disables_without_network(monkeypatch, t
         window.resize(760, 600)
         window.show()
         window.settings_button.click()
+        window.settings_panel.show_section("Models")
         app.processEvents()
         selector = window.cloud_model_selector
         assert selector.currentText() == "GPT-6 Luna" and selector.isEnabled()
         assert selector.isVisible() and window.local_model_selector.isHidden()
-        assert window.settings_panel.isAncestorOf(window.skills_button)
+        assert window.settings_panel.isAncestorOf(window.skill_settings_page)
         assert window.settings_panel.isAncestorOf(window.activity)
         assert window.settings_panel.geometry().bottom() < window.height()
         sol = selector.findData("gpt-6.1-sol")

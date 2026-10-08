@@ -8,7 +8,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 pytest.importorskip("PySide6")
-from PySide6.QtCore import QMimeData, QPointF, Qt, QTimer, QUrl
+from PySide6.QtCore import QMimeData, QPointF, Qt, QUrl
 from PySide6.QtGui import QDropEvent
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QMessageBox, QPushButton
@@ -57,21 +57,124 @@ def ui(tmp_path, app):
 
 def test_settings_is_the_only_management_entry_and_busy_state_preserves_draft(ui):
     window, dialog, service, model = ui
-    assert window.settings_panel.isAncestorOf(window.skills_button)
+    page = window.skill_settings_page
+    assert window.settings_panel.isAncestorOf(page) and not page.isWindow()
     assert not window.composer.findChildren(QPushButton, "manageSkillsButton")
     window.input.setPlainText("Keep draft")
     window._set_busy(True)
-    assert not window.skills_button.isEnabled()
+    assert not page.source.isEnabled()
     window._set_busy(False)
-    assert window.skills_button.isEnabled() and window.input.toPlainText() == "Keep draft"
-    opened = []
-    def close_modal():
-        manager = QApplication.activeModalWidget()
-        opened.append(isinstance(manager, SkillSettingsDialog))
-        manager.close_button.click()
-    QTimer.singleShot(0, close_modal)
-    window.skills_button.click()
-    assert opened == [True]
+    assert page.source.isEnabled() and window.input.toPlainText() == "Keep draft"
+    dialog.close()
+    window._manage_skills()
+    assert page.isVisible() and QApplication.activeModalWidget() is None
+    assert window.settings_panel.pages.currentIndex() == window.settings_panel.section_names.index("Skills")
+    assert not model.requests
+
+
+def test_embedded_install_remove_and_tab_changes_preserve_drafts(ui, tmp_path, monkeypatch):
+    window, dialog, service, model = ui
+    dialog.close()
+    window._manage_skills()
+    page = window.skill_settings_page
+    source = tmp_path / "SKILL.md"
+    source.write_bytes(DATA)
+    window.input.setPlainText("Keep this chat draft")
+    page.source.setText(str(source))
+    page.preview_button.click()
+    wait_worker(page)
+    prepared = page.prepared
+    window.resize(760, 600)
+    QApplication.processEvents()
+    scroll = window.settings_panel.pages.currentWidget()
+    assert scroll.widget().width() == scroll.viewport().width()
+    assert page.browse_folder.mapTo(scroll.viewport(), page.browse_folder.rect().topRight()).x() < scroll.viewport().width()
+    assert page.preview_source.width() <= scroll.viewport().width()
+    window.settings_panel.show_section("General")
+    window.settings_panel.hide()
+    window._manage_skills()
+    assert page.prepared is prepared and page.source.text() == str(source)
+    page.install_button.click()
+    wait_worker(page)
+    assert service.skill_registry.get("imported") is not None
+    assert page.installed.count() == 3 and window.input.isEnabled()
+    assert page.isVisible() and QApplication.activeModalWidget() is None
+    window.input.setPlainText("/skill imp")
+    window.input.moveCursor(window.input.textCursor().MoveOperation.End)
+    QApplication.processEvents()
+    assert window.skill_picker.items.count() == 1
+    window.skill_picker._choose(window.skill_picker.items.item(0))
+    assert window.skill_picker.selected_name == "imported"
+    for row in range(page.installed.count()):
+        if page.installed.item(row).data(Qt.ItemDataRole.UserRole) == "imported":
+            page.installed.setCurrentRow(row)
+            break
+    monkeypatch.setattr(QMessageBox, "exec", lambda self: QMessageBox.StandardButton.Yes)
+    page.remove_button.click()
+    wait_worker(page)
+    assert service.skill_registry.get("imported") is None
+    assert service.skill_registry.get("style") is not None
+    assert window.skill_picker.selected_name is None and not model.requests
+
+
+def test_embedded_worker_can_finish_after_panel_hidden_without_sending(ui, monkeypatch):
+    window, dialog, service, model = ui
+    dialog.close()
+    window._manage_skills()
+    page = window.skill_settings_page
+    release = Event()
+
+    def slow(url, limit):
+        assert release.wait(5)
+        return DATA
+
+    monkeypatch.setattr(import_source, "_download", slow)
+    page.source.setText(RAW)
+    window.input.setPlainText("Keep this draft")
+    page.preview_button.click()
+    try:
+        assert page.thread is not None and not window.send.isEnabled()
+        assert not window.new_session_button.isEnabled() and not window.input.isEnabled()
+        window.settings_panel.show_section("General")
+        window.settings_panel.hide()
+        window.submit()
+        assert not model.requests and window.input.toPlainText() == "Keep this draft"
+    finally:
+        release.set()
+        wait_worker(page)
+    assert page.prepared.definition.name == "imported"
+    assert window.send.isEnabled() and window.input.isEnabled() and not window._settings_busy
+    assert service.skill_registry.get("imported") is None
+
+
+def test_close_waits_for_embedded_worker_before_service_shutdown(ui, monkeypatch):
+    window, dialog, service, model = ui
+    dialog.close()
+    page = window.skill_settings_page
+    release = Event()
+    shutdowns = []
+
+    def slow(url, limit):
+        assert release.wait(5)
+        return DATA
+
+    monkeypatch.setattr(import_source, "_download", slow)
+    monkeypatch.setattr(service, "shutdown", lambda: shutdowns.append(page.thread), raising=False)
+    page.source.setText(RAW)
+    page.preview_button.click()
+    try:
+        window.close()
+        assert window.isVisible() and not window.isEnabled()
+        assert not shutdowns and page.thread is not None
+    finally:
+        release.set()
+        wait_worker(page)
+    for _ in range(100):
+        QApplication.processEvents()
+        if not window.isVisible():
+            break
+        QTest.qWait(10)
+    assert not window.isVisible() and shutdowns == [None]
     assert not model.requests
 
 
