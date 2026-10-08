@@ -1,5 +1,21 @@
 # Git layout and baseline hygiene
 
+## Greeting input visibility, 8 October 2026
+
+The bounded `codex/greeting-input-visibility` GUI fix starts from local main
+`d1dfcb7`. Greeting uses a prominent full-width field beneath its label in
+General, preserving the existing saving behavior. Native focused checks passed
+45 tests and five subtests, including actual clicks, keyboard editing and
+preference restoration at normal/minimum window sizes. See
+[the verification record](greeting-input-visibility.md).
+
+Full native regression passed 2,399 tests and 15 subtests in 371.53 seconds,
+with 58 separately recorded optional/host-dependent skips and no failures/errors.
+Preserve prior main at
+`archive/2026-10-08/main-before-greeting-input-visibility`, commit after
+verification, fast-forward local main and remove only the merged feature branch.
+Other worktrees and remote refs remain outside the operation.
+
 ## Embedded settings tabs, 8 October 2026
 
 The bounded `codex/settings-embedded-tabs` GUI change starts from local main

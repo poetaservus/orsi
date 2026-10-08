@@ -126,7 +126,25 @@ class SettingsPanel(QFrame):
         general, models, skills, images, appearance = self.page_layouts
         self.future_settings = {}
         self._heading(general, "General", "Everyday preferences for O.R.S.I.")
-        self._row(general, "Greeting", "Your welcome message", window.greeting_input)
+        greeting_row = QFrame()
+        greeting_row.setObjectName("settingRow")
+        greeting_layout = QVBoxLayout(greeting_row)
+        greeting_layout.setContentsMargins(0, 12, 0, 14)
+        greeting_layout.setSpacing(6)
+        greeting_label = QLabel("Greeting")
+        greeting_label.setObjectName("settingName")
+        greeting_label.setBuddy(window.greeting_input)
+        greeting_layout.addWidget(greeting_label)
+        greeting_description = QLabel("Your welcome message")
+        greeting_description.setObjectName("settingsDescription")
+        greeting_layout.addWidget(greeting_description)
+        window.greeting_input.setAccessibleName("Greeting message")
+        window.greeting_input.setPlaceholderText("Enter your welcome message")
+        window.greeting_input.setMinimumWidth(0)
+        window.greeting_input.setFixedHeight(44)
+        window.greeting_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        greeting_layout.addWidget(window.greeting_input)
+        general.addWidget(greeting_row)
         window.response_language_selector = self._placeholder("Response Language")
         self._row(general, "Response Language", "Preferred reply language · Coming soon",
                   window.response_language_selector)
@@ -325,6 +343,12 @@ QFrame#settingsPanel QComboBox, QFrame#settingsPanel QLineEdit {
     background: #343f50; border: 1px solid #4a5667; border-radius: 4px;
     color: #e4e5eb; font-size: 14px; padding: 1px 6px;
 }
+QFrame#settingsPanel QLineEdit#greetingInput {
+    background: #293747; border: 1px solid #64758a; border-radius: 5px;
+    font-size: 16px; padding: 0 10px; selection-background-color: #51627a;
+}
+QFrame#settingsPanel QLineEdit#greetingInput:hover,
+QFrame#settingsPanel QLineEdit#greetingInput:focus { border-color: #a1b5ce; }
 QWidget#skillSettingsPage, QWidget#imageSettingsPage { background: transparent; }
 QWidget#skillSettingsPage QLabel, QWidget#imageSettingsPage QLabel { font-size: 14px; }
 QWidget#skillSettingsPage QLineEdit, QWidget#skillSettingsPage QListWidget {

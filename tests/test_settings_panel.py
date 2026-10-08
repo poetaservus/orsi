@@ -51,6 +51,48 @@ def test_placeholder_controls_do_not_change_preferences_or_draft(app, tmp_path):
         window.close()
 
 
+def test_greeting_field_is_visible_clickable_and_persists_at_all_window_sizes(app, tmp_path):
+    preferences = JsonStore(tmp_path / "ui.json")
+    preferences.save({"greeting_message": "Hello", "unrelated": "keep"})
+    window = MainWindow(None, "TEST", preferences_store=preferences)
+    try:
+        window.show()
+        window.settings_button.click()
+        window.settings_panel.show_section("General")
+        for size in ((1280, 800), (760, 600)):
+            window.resize(*size)
+            app.processEvents()
+            scroll = window.settings_panel.pages.currentWidget()
+            field = window.greeting_input
+            visible_rect = field.rect().translated(field.mapTo(scroll.viewport(), QPoint()))
+            assert field.isVisible() and field.isEnabled()
+            assert scroll.viewport().rect().contains(visible_rect)
+            assert field.width() >= scroll.viewport().width() - 16
+            center = field.mapTo(window.settings_panel, field.rect().center())
+            assert window.settings_panel.childAt(center) is field
+            QTest.mouseClick(field, Qt.MouseButton.LeftButton)
+            assert field.hasFocus()
+            QTest.keyClick(field, Qt.Key.Key_A, Qt.KeyboardModifier.ControlModifier)
+            QTest.keyClicks(field, "Welcome back")
+            QTest.keyClick(field, Qt.Key.Key_Tab)
+            app.processEvents()
+            assert window.startup_greeting.text() == "Welcome back"
+            assert preferences.load() == {"greeting_message": "Welcome back", "unrelated": "keep"}
+        window.settings_panel.show_section("Appearance")
+        window.settings_panel.hide()
+        window.settings_button.click()
+        window.settings_panel.show_section("General")
+        app.processEvents()
+        assert window.greeting_input.isVisible() and window.greeting_input.text() == "Welcome back"
+    finally:
+        window.close()
+    restored = MainWindow(None, "TEST", preferences_store=preferences)
+    try:
+        assert restored.greeting_input.text() == "Welcome back"
+    finally:
+        restored.close()
+
+
 def test_navigation_close_and_compact_layout_keep_controls_reachable(app):
     window = MainWindow(None, "TEST")
     try:
