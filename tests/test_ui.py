@@ -253,7 +253,7 @@ class UiTests(unittest.TestCase):
         surface, chat = window.bottom_glass.backdrop_widgets()
         self.assertIs(surface, window._content)
         self.assertIs(chat, window.chat)
-        self.assertIs(window.model_selector.parentWidget(), window.settings_panel)
+        self.assertTrue(window.settings_panel.isAncestorOf(window.model_selector))
         pasted = ("A full paragraph.\n\n" * 3000).rstrip()
         window.input.setPlainText(pasted)
 

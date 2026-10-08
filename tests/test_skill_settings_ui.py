@@ -57,7 +57,7 @@ def ui(tmp_path, app):
 
 def test_settings_is_the_only_management_entry_and_busy_state_preserves_draft(ui):
     window, dialog, service, model = ui
-    assert window.skills_button.parentWidget() is window.settings_panel
+    assert window.settings_panel.isAncestorOf(window.skills_button)
     assert not window.composer.findChildren(QPushButton, "manageSkillsButton")
     window.input.setPlainText("Keep draft")
     window._set_busy(True)

@@ -61,6 +61,7 @@ from app.ui.status import ConversationStatus
 from app.ui.worker import ConversationWorker, ModelSwitchWorker
 from app.ui.skill_picker import SkillPicker
 from app.ui.skill_settings import SkillSettingsDialog
+from app.ui.settings_panel import SettingsPanel
 from app.ui.window_frame import CAPTION_HEIGHT, DragStrip, WindowControls, WindowsFrame
 from app.ui.attachments import AttachmentTray
 from app.ui.image_viewer import ImageViewer
@@ -428,20 +429,7 @@ class MainWindow(QMainWindow):
         self.chat.image_activated.connect(self._open_image_viewer)
         content_layout.addWidget(self.chat, 1)
 
-        self.settings_panel = QFrame(root)
-        self.settings_panel.setObjectName("settingsPanel")
-        self.settings_panel.setFixedSize(400, 422)
-        settings_layout = QVBoxLayout(self.settings_panel)
-        settings_layout.setContentsMargins(18, 16, 18, 16)
-        settings_layout.setSpacing(8)
-
-        settings_title = QLabel("Settings")
-        settings_title.setObjectName("settingsTitle")
-        settings_layout.addWidget(settings_title)
-
-        model_label = QLabel("Run with")
-        model_label.setObjectName("settingsLabel")
-        settings_layout.addWidget(model_label)
+        self.settings_panel = SettingsPanel(root)
 
         self.model_selector = QComboBox()
         self.model_selector.setObjectName("modelSelector")
@@ -457,11 +445,9 @@ class MainWindow(QMainWindow):
                 self.model_selector.addItem(label, mode)
             self._sync_inference_selector()
             self.model_selector.currentIndexChanged.connect(self._select_inference_mode)
-        settings_layout.addWidget(self.model_selector)
 
-        self.local_model_label = QLabel("Local model")
+        self.local_model_label = QLabel("Local Model")
         self.local_model_label.setObjectName("settingsLabel")
-        settings_layout.addWidget(self.local_model_label)
         self.local_model_selector = QComboBox()
         self.local_model_selector.setObjectName("modelSelector")
         self.local_model_selector.setAccessibleName("Local model")
@@ -479,18 +465,14 @@ class MainWindow(QMainWindow):
             )
         if self.local_model_selector.count() == 0:
             self.local_model_selector.addItem("No supported local models found", None)
-        settings_layout.addWidget(self.local_model_selector)
         self.local_model_details = QLabel()
         self.local_model_details.setObjectName("settingsLabel")
         self.local_model_details.setWordWrap(True)
         self.local_model_details.setMinimumHeight(36)
-        settings_layout.addWidget(self.local_model_details)
-        self._sync_local_model_selector()
         self.local_model_selector.currentIndexChanged.connect(self._select_local_model)
 
-        self.cloud_model_label = QLabel("Cloud model")
+        self.cloud_model_label = QLabel("Cloud Model")
         self.cloud_model_label.setObjectName("settingsLabel")
-        settings_layout.addWidget(self.cloud_model_label)
         self.cloud_model_selector = QComboBox()
         self.cloud_model_selector.setObjectName("modelSelector")
         self.cloud_model_selector.setAccessibleName("Cloud model")
@@ -499,41 +481,33 @@ class MainWindow(QMainWindow):
         for profile in getattr(getattr(cloud_catalog, "config", None), "profiles", ()):
             label = {"gpt-6-luna": "GPT-6 Luna", "gpt-6.1-sol": "GPT-6.1 Sol"}.get(profile.id, profile.id)
             self.cloud_model_selector.addItem(label, profile.id)
-        settings_layout.addWidget(self.cloud_model_selector)
         self.cloud_model_details = QLabel()
         self.cloud_model_details.setObjectName("settingsLabel")
         self.cloud_model_details.setWordWrap(True)
-        settings_layout.addWidget(self.cloud_model_details)
         self.image_settings_button = QPushButton("Image generation…")
         self.image_settings_button.setObjectName("manageSkillsButton")
         self.image_settings_button.setFixedHeight(38)
-        settings_layout.addWidget(self.image_settings_button)
         self.image_settings_button.clicked.connect(self._open_image_settings)
-        self._sync_cloud_model_selector()
         self.cloud_model_selector.currentIndexChanged.connect(self._select_cloud_model)
-
-        greeting_label = QLabel("Greeting")
-        greeting_label.setObjectName("settingsLabel")
-        settings_layout.addWidget(greeting_label)
 
         self.greeting_input = QLineEdit()
         self.greeting_input.setObjectName("greetingInput")
         self.greeting_input.setFixedHeight(38)
         self.greeting_input.setMaxLength(_GREETING_MAX_LENGTH)
         self.greeting_input.setText(self._greeting_message)
-        settings_layout.addWidget(self.greeting_input)
 
         self.skills_button = QPushButton("Manage skills…")
         self.skills_button.setObjectName("manageSkillsButton")
         self.skills_button.setFixedHeight(38)
         self.skills_button.setEnabled(callable(getattr(service, "install_skill", None)))
         self.skills_button.clicked.connect(self._manage_skills)
-        settings_layout.addWidget(self.skills_button)
 
         self.activity = ConversationStatus(
             self._ready_status() if not startup_error else "Model unavailable"
         )
-        settings_layout.addWidget(self.activity)
+        self.settings_panel.populate(self)
+        self._sync_local_model_selector()
+        self._sync_cloud_model_selector()
         self.settings_panel.hide()
 
         self.bottom_glass = BottomGlassPane(content)
@@ -755,7 +729,10 @@ class MainWindow(QMainWindow):
         self.context_window.raise_()
         self.window_controls.move(self._root.width() - self.window_controls.width() - 8, 8)
         self.window_controls.raise_()
-        self.settings_panel.move(8, _CHAT_TOP_INSET)
+        self.settings_panel.resize(min(805, self._root.width() - 32),
+                                   min(555, self._root.height() - 64))
+        self.settings_panel.move((self._root.width() - self.settings_panel.width()) // 2,
+                                 (self._root.height() - self.settings_panel.height()) // 2)
         if self.settings_panel.isVisible():
             self.settings_panel.raise_()
 
@@ -878,6 +855,7 @@ class MainWindow(QMainWindow):
         self.settings_panel.setVisible(visible)
         if visible:
             self.settings_panel.raise_()
+            self.settings_panel.navigation[self.settings_panel.pages.currentIndex()].setFocus()
 
     def _manage_skills(self) -> None:
         if self.thread is not None or not callable(getattr(self.service, "install_skill", None)):
@@ -1231,7 +1209,10 @@ class MainWindow(QMainWindow):
             and getattr(self.inference, "cloud_model_catalog", None) is not None
         )
         self.skills_button.setEnabled(not busy and callable(getattr(self.service, "install_skill", None)))
-        self.image_settings_button.setEnabled(not busy and self.service is not None)
+        self.image_settings_button.setEnabled(
+            not busy and getattr(self.inference, "supports_image_generation", False) is True
+            and callable(getattr(self.service, "select_image_settings", None))
+        )
         duration_seconds = self.chat.set_thinking(busy)
         self.activity.set_activity("" if busy else self._ready_status())
         return duration_seconds
@@ -1368,10 +1349,15 @@ class MainWindow(QMainWindow):
         self.activity.set_activity(self._ready_status())
 
     def _sync_cloud_model_selector(self):
-        self.image_settings_button.setVisible(getattr(self.inference, "supports_image_generation", False) is True)
+        image_available = (getattr(self.inference, "supports_image_generation", False) is True
+                           and callable(getattr(self.service, "select_image_settings", None)))
+        self.image_settings_button.setEnabled(image_available and self.thread is None)
+        self.settings_panel.image_hint.setText(
+            "Configure image generation using your existing cloud settings." if image_available else
+            "Image generation settings are unavailable in the current mode. Use a supported cloud model.")
         catalog = getattr(self.inference, "cloud_model_catalog", None)
         available = catalog is not None
-        for widget in (self.cloud_model_label, self.cloud_model_selector, self.cloud_model_details):
+        for widget in (self.cloud_model_row, self.cloud_model_label, self.cloud_model_selector, self.cloud_model_details):
             widget.setVisible(available and self.inference.mode == "cloud")
         self.cloud_model_selector.blockSignals(True)
         self.cloud_model_selector.setCurrentIndex(
@@ -1388,6 +1374,8 @@ class MainWindow(QMainWindow):
             self.cloud_model_details.setText(
                 f"{profile.effective_context_length:,} context · {profile.max_output_tokens:,} reply limit\n{status}"
             )
+
+            self.cloud_model_selector.setToolTip(self.cloud_model_details.text())
 
     @Slot(int)
     def _open_image_settings(self):
@@ -1417,7 +1405,7 @@ class MainWindow(QMainWindow):
     def _sync_local_model_selector(self):
         catalog = getattr(self.inference, "model_catalog", None)
         local_mode = self.inference is None or self.inference.mode == "local"
-        for widget in (self.local_model_label, self.local_model_selector, self.local_model_details):
+        for widget in (self.local_model_row, self.local_model_label, self.local_model_selector, self.local_model_details):
             widget.setVisible(local_mode)
         self.local_model_selector.blockSignals(True)
         index = self.local_model_selector.findData(catalog.current_id) if catalog else -1
@@ -1445,6 +1433,8 @@ class MainWindow(QMainWindow):
                 f"{'GPU acceleration' if config.gpu_layers != 0 else 'CPU'} · {config.cache_type.upper()} cache\n"
                 "Switching preserves your conversation. Choose the Qwen vision model for image input."
             )
+            self.local_model_selector.setToolTip(
+                self.local_model_details.text() + "\n" + self.local_model_details.toolTip())
         else:
             self.local_model_details.setText("Local model selection is unavailable.")
 
@@ -1878,7 +1868,6 @@ QComboBox#modelSelector {
     border: 1px solid #3c3c3c;
     border-radius: 12px;
     padding: 0 12px;
-    min-width: 92px;
     font-family: Saira;
     font-size: 13px;
     font-weight: 400;
