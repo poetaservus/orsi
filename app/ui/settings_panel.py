@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
 from app.ui.settings_motion import SettingsDragStrip, SettingsIconButton
 from app.ui.skill_settings import SkillSettingsPage
 from app.ui.image_settings import ImageSettingsPage
-from app.ui.notification_settings import NotificationSoundControl
+from app.ui.notification_settings import NotificationSoundControl, NotificationSwitch
 
 
 class ApprovalPlaceholder(QCheckBox):
@@ -152,16 +152,16 @@ class SettingsPanel(QFrame):
         window.tool_approval_toggle = ApprovalPlaceholder()
         self._row(general, "Tool execution approval", "Tool approval preferences · Coming soon",
                   window.tool_approval_toggle)
-        window.notification_toggle = QCheckBox("Enable notifications", self)
+        window.notification_toggle = NotificationSwitch(self)
         window.notification_toggle.setAccessibleName("Notifications")
         window.notification_toggle.setChecked(window.notifications.enabled)
         window.notification_toggle.toggled.connect(
             lambda enabled: window.notifications.configure(enabled=enabled))
-        self._stacked_row(general, "Notifications", "Alerts when O.R.S.I is in the background or minimized",
-                  window.notification_toggle)
+        self._row(general, "Notifications", "Alerts while O.R.S.I is in the background",
+                  window.notification_toggle, control_size=(44, 24))
         window.notification_sound = NotificationSoundControl(window.notifications, self)
-        self._stacked_row(general, "Notification sound", "Choose a sound for responses, approvals, images and task errors",
-                  window.notification_sound)
+        self._row(general, "Notification sound", "Choose your alert sound",
+                  window.notification_sound, control_size=(196, 32))
         general.addSpacing(20)
         general.addWidget(window.activity)
         general.addStretch()
@@ -242,29 +242,8 @@ class SettingsPanel(QFrame):
         layout.addSpacing(20)
 
     @staticmethod
-    def _stacked_row(layout, title, hint, control):
-        row = QFrame()
-        row.setObjectName("settingRow")
-        vertical = QVBoxLayout(row)
-        vertical.setContentsMargins(0, 12, 0, 14)
-        vertical.setSpacing(6)
-        label = QLabel(title)
-        label.setObjectName("settingName")
-        label.setBuddy(control)
-        description = QLabel(hint)
-        description.setObjectName("settingsDescription")
-        description.setWordWrap(True)
-        vertical.addWidget(label)
-        vertical.addWidget(description)
-        control.setMinimumWidth(0)
-        control.setFixedHeight(40)
-        control.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        vertical.addWidget(control)
-        layout.addWidget(row)
-        return row
-
-    @staticmethod
-    def _row(layout, title, hint, control, *, indent=0, separator=True):
+    def _row(layout, title, hint, control, *, indent=0, separator=True,
+             control_size=(240, 40)):
         row = QFrame()
         row.setObjectName("settingRow" if separator else "settingRowPlain")
         horizontal = QHBoxLayout(row)
@@ -281,11 +260,11 @@ class SettingsPanel(QFrame):
         labels.addWidget(description)
         horizontal.addLayout(labels, 1)
         if isinstance(control, QComboBox):
-            control.setFixedSize(240, 40)
+            control.setFixedSize(*control_size)
             control.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
             control.setMinimumContentsLength(1)
         elif not isinstance(control, ApprovalPlaceholder):
-            control.setFixedSize(240, 40)
+            control.setFixedSize(*control_size)
         if not isinstance(control, ApprovalPlaceholder):
             control.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         horizontal.addWidget(control, 0, Qt.AlignmentFlag.AlignVCenter)

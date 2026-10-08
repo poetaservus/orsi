@@ -27,12 +27,18 @@ the old enum namespace; reading the typed state getter avoids its conversion
 error. A native smoke run exposed that incompatibility, and the repaired run
 completed successfully.
 
-The enable checkbox, sound selector and preview button now occupy their own
+The initial correction placed the enable checkbox, sound selector and preview button in
 full-width rows beneath the notification labels. Controls no longer depend on
 space to the right of the explanatory text. The preview uses a bundled vector
 play icon, avoiding unavailable font glyphs at larger display scaling. General
 settings retains `noti_1.ogg`, `noti_2.ogg`, Silent and custom-file choices, and
 preserves saved values across closing/reopening settings and restarting ORSI.
+
+The subsequent compact settings revision replaces that layout with right-aligned
+controls: a 44 × 24 animated neutral switch and a 196 × 32 sound/preview group.
+Labels and short descriptions remain on the left. The switch retains checkbox
+accessibility, keyboard focus and Space activation, with an explicit focus ring.
+The compact layout supersedes the full-width presentation described above.
 
 ## Verification
 

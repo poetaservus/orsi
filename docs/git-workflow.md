@@ -1,5 +1,29 @@
 # Git layout and baseline hygiene
 
+## Compact notification settings, 8 October 2026
+
+The bounded `codex/compact-notification-settings` change starts from local main
+`ab04871`. General settings now places a compact sound picker/preview group and
+an animated sliding notification switch at the right of their rows. The switch
+matches the supplied dark-track/light-thumb reference and supports mouse, Space
+and keyboard focus. Normal/minimum renders were inspected at 100% and 200% scale.
+Existing sound choices, preference persistence and notification delivery remain
+in place. See [the updated layout record](notification-bugfixes.md).
+
+Focused checks passed 31 tests at 200% scaling using the suite's expected Qt
+offscreen platform. An initial forced Windows-platform run passed 30 tests but
+one pre-existing native-notification mock failed when its partial WinDLL stub
+reached the real window-frame constructor; product code was not changed for it.
+Full unrestricted Windows regression passed 2,437 tests and 15 subtests, with
+58 optional skips and no failures/errors, in 376.20 seconds. Compilation and
+whitespace checks passed. Live model/provider gates were not run for this
+presentation-only revision. Isolated renders and test reports are retained in
+`state/compact-notifications-preview/` and `state/compact-notifications-*.xml`.
+
+Preserve prior main at `archive/2026-10-08/main-before-compact-notification-settings`,
+commit the verified change, fast-forward local main and remove only the merged
+feature branch. Other worktrees and remote refs remain outside the operation.
+
 ## Notification corrections, 8 October 2026
 
 The bounded `codex/notification-bugfixes` change starts from local main `696162a`.

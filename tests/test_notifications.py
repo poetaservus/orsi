@@ -250,7 +250,13 @@ def test_notification_settings_visible_and_clickable_after_open_and_reopen(app, 
                 visible = control.rect().translated(control.mapTo(scroll.viewport(), QPoint()))
                 assert control.isVisible() and control.isEnabled()
                 assert scroll.viewport().rect().contains(visible)
-                assert control.width() >= scroll.viewport().width() - 16
+                row = control.parentWidget()
+                assert control.geometry().right() >= row.width() - 2
+                assert control.width() <= 196
+                label = row.layout().itemAt(0).layout().itemAt(0).widget()
+                assert label.geometry().right() < control.geometry().left()
+            assert window.notification_toggle.size().width() == 44
+            assert window.notification_toggle.text() == ""
             selector = window.notification_sound.selector
             preview = window.notification_sound.preview
             assert selector.isVisible() and preview.isVisible()
@@ -265,6 +271,10 @@ def test_notification_settings_visible_and_clickable_after_open_and_reopen(app, 
                              pos=QPoint(10, window.notification_toggle.height() // 2))
             assert window.notification_toggle.isChecked() != before
             assert store.load()["notifications"]["enabled"] != before
+            window.notification_toggle.setFocus()
+            QTest.keyClick(window.notification_toggle, Qt.Key.Key_Space)
+            assert window.notification_toggle.isChecked() == before
+            assert store.load()["notifications"]["enabled"] == before
             window.settings_panel.hide()
     finally:
         window.close()

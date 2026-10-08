@@ -1,9 +1,55 @@
 """Notification sound selector embedded in General settings."""
 from pathlib import Path
 
-from PySide6.QtCore import QSize
-from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QComboBox, QFileDialog, QHBoxLayout, QPushButton, QWidget
+from PySide6.QtCore import QEasingCurve, QRectF, QSize, Qt, QVariantAnimation
+from PySide6.QtGui import QColor, QIcon, QPainter, QPen
+from PySide6.QtWidgets import QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QPushButton, QWidget
+
+
+class NotificationSwitch(QCheckBox):
+    """Keyboard-accessible switch with the settings panel's neutral styling."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(44, 24)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._position = 0.0
+        self._slide = QVariantAnimation(self)
+        self._slide.setDuration(140)
+        self._slide.setEasingCurve(QEasingCurve.Type.InOutCubic)
+        self._slide.valueChanged.connect(self._move_thumb)
+        self.toggled.connect(self._animate)
+
+    def _move_thumb(self, value):
+        self._position = float(value)
+        self.update()
+
+    def _animate(self, checked):
+        self._slide.stop()
+        target = 1.0 if checked else 0.0
+        if not self.isVisible():
+            self._move_thumb(target)
+            return
+        self._slide.setStartValue(self._position)
+        self._slide.setEndValue(target)
+        self._slide.start()
+
+    def hitButton(self, position):  # noqa: N802
+        return self.rect().contains(position)
+
+    def paintEvent(self, event):  # noqa: N802
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor("#343b48"))
+        painter.drawRoundedRect(QRectF(0, 3, 44, 18), 9, 9)
+        painter.setBrush(QColor("#e4e5eb" if self.isEnabled() else "#a7adb7"))
+        painter.drawRoundedRect(QRectF(3 + 24 * self._position, 5, 14, 14), 5, 5)
+        if self.hasFocus():
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.setPen(QPen(QColor("#9baec6"), 1))
+            painter.drawRoundedRect(QRectF(0.5, 1, 43, 22), 10, 10)
 
 
 class NotificationSoundControl(QWidget):
@@ -27,6 +73,7 @@ class NotificationSoundControl(QWidget):
         self.selector.setMinimumWidth(0)
         self.selector.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         self.selector.setMinimumContentsLength(1)
+        self.selector.setFixedHeight(32)
         self.selector.currentIndexChanged.connect(self._selected)
         self.preview = QPushButton()
         self.preview.setObjectName("notificationPreview")
@@ -34,7 +81,7 @@ class NotificationSoundControl(QWidget):
         self.preview.setIconSize(QSize(16, 16))
         self.preview.setAccessibleName("Preview notification sound")
         self.preview.setToolTip("Preview notification sound")
-        self.preview.setFixedSize(40, 40)
+        self.preview.setFixedSize(32, 32)
         self.preview.setEnabled(bool(manager.sound))
         self.preview.clicked.connect(manager.play_sound)
         layout.addWidget(self.selector, 1)
