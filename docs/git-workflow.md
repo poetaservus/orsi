@@ -1,5 +1,22 @@
 # Git layout and baseline hygiene
 
+## Image preview motion, 8 October 2026
+
+The bounded `codex/image-preview-motion` change starts from local main `a982423`.
+The image generation placeholder gains wider/faster drifting red and dark navy
+clouds, a padded status row, a pulsing dot and a text reflection. Request behavior,
+result transfer and original-image bytes are unchanged.
+
+Native focused checks passed 36 tests. Full native regression passed 2,339 tests
+and 15 subtests, with 58 separately recorded skips, in 325.30 seconds. Synthetic
+rendering and verification evidence are in [the verification record](image-preview-motion.md). No live
+model/API gate was run. Historical refs and worktree identities are retained
+in a verified complete-history bundle under ignored
+`state/backups/image-preview-motion-20261008/`. Preserve prior main at
+`archive/2026-10-08/main-before-image-preview-motion`, commit after verification,
+fast-forward local main and remove only the merged feature branch. Other active
+worktrees, remote refs and runtime settings remain untouched.
+
 ## Composer motion polish, 8 October 2026
 
 The bounded `codex/composer-motion-polish` change starts from local main
