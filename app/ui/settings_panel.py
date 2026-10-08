@@ -1,12 +1,13 @@
 """Presentation-only settings shell; actions remain owned by MainWindow."""
 from pathlib import Path
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QKeySequence, QPainter, QShortcut
+from PySide6.QtCore import QPoint, QSize, Qt
+from PySide6.QtGui import QColor, QFont, QKeySequence, QPainter, QShortcut
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QFrame, QHBoxLayout, QLabel, QPushButton,
     QScrollArea, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget,
 )
+from app.ui.settings_motion import SettingsHeader, SettingsIconButton
 
 
 class ApprovalPlaceholder(QCheckBox):
@@ -31,34 +32,47 @@ class ApprovalPlaceholder(QCheckBox):
 
 
 class SettingsPanel(QFrame):
+    preferred_size = QSize(886, 611)
+
     def __init__(self, parent):
         super().__init__(parent)
         self.setObjectName("settingsPanel")
         self.setStyleSheet(_STYLE)
-        self.resize(805, 555)
+        self.resize(self.preferred_size)
+        self.user_positioned = False
+        self._close_pending = False
+        font = self.font()
+        font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+        font.setHintingPreference(QFont.HintingPreference.PreferVerticalHinting)
+        self.setFont(font)
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(25, 18, 25, 24)
-        outer.setSpacing(10)
+        outer.setContentsMargins(28, 20, 28, 26)
+        outer.setSpacing(11)
         escape = QShortcut(QKeySequence("Escape"), self)
         escape.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         escape.activated.connect(self.hide)
-        header = QHBoxLayout()
+        self.header = SettingsHeader(self)
+        header = QHBoxLayout(self.header)
+        header.setContentsMargins(0, 0, 0, 0)
         title = QLabel("Settings")
+        title.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
         title.setObjectName("settingsHeading")
         header.addWidget(title, 1)
-        self.close_button = QPushButton("×")
+        self.close_button = SettingsIconButton(duration=200)
         self.close_button.setObjectName("settingsClose")
         self.close_button.setAccessibleName("Close settings")
-        self.close_button.setFixedSize(28, 28)
-        self.close_button.clicked.connect(self.hide)
+        self.close_button.setToolTip("Close settings")
+        self.close_button.setFixedSize(32, 32)
+        self.close_button.clicked.connect(self._close_with_feedback)
+        self.close_button.pulse_finished.connect(self._finish_close)
         header.addWidget(self.close_button, 0, Qt.AlignmentFlag.AlignTop)
-        outer.addLayout(header)
+        outer.addWidget(self.header)
         line = QFrame()
         line.setObjectName("settingsDivider")
         line.setFixedHeight(1)
         outer.addWidget(line)
         body = QHBoxLayout()
-        body.setSpacing(18)
+        body.setSpacing(20)
         nav = QVBoxLayout()
         nav.setSpacing(4)
         self.pages = QStackedWidget()
@@ -69,7 +83,7 @@ class SettingsPanel(QFrame):
             button.setObjectName("settingsNavigation")
             button.setCheckable(True)
             button.setAutoExclusive(True)
-            button.setFixedSize(155, 32)
+            button.setFixedSize(171, 36)
             button.clicked.connect(lambda checked=False, i=index: self.pages.setCurrentIndex(i))
             self.navigation.append(button)
             nav.addWidget(button)
@@ -183,17 +197,46 @@ class SettingsPanel(QFrame):
         labels.addWidget(description)
         horizontal.addLayout(labels, 1)
         if isinstance(control, QComboBox):
-            control.setFixedSize(168, 26)
+            control.setFixedSize(185, 29)
             control.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
             control.setMinimumContentsLength(1)
         elif not isinstance(control, ApprovalPlaceholder):
-            control.setFixedSize(168, 32)
+            control.setFixedSize(185, 35)
         if not isinstance(control, ApprovalPlaceholder):
             control.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         horizontal.addWidget(control, 0, Qt.AlignmentFlag.AlignVCenter)
         label.setBuddy(control)
         layout.addWidget(row)
         return row
+
+    def bounded_position(self, position):
+        parent = self.parentWidget()
+        return QPoint(max(8, min(position.x(), parent.width() - self.width() - 8)),
+                      max(44, min(position.y(), parent.height() - self.height() - 8)))
+
+    def fit_to_parent(self):
+        parent = self.parentWidget()
+        self.resize(min(self.preferred_size.width(), parent.width() - 32),
+                    min(self.preferred_size.height(), parent.height() - 64))
+        position = self.pos() if self.user_positioned else QPoint(
+            (parent.width() - self.width()) // 2, (parent.height() - self.height()) // 2)
+        self.move(self.bounded_position(position))
+
+    def _close_with_feedback(self):
+        if not self._close_pending:
+            self._close_pending = True
+            self.close_button.pulse()
+
+    def _finish_close(self):
+        if self._close_pending:
+            self.hide()
+
+    def hideEvent(self, event):  # noqa: N802
+        self._close_pending = False
+        self.close_button.reset()
+        self.header._drag_offset = None
+        self.header.setCursor(Qt.CursorShape.OpenHandCursor)
+        super().hideEvent(event)
 
     def keyPressEvent(self, event):  # noqa: N802
         if event.key() == Qt.Key.Key_Escape:
@@ -213,22 +256,24 @@ QWidget#settingsPage, QStackedWidget, QScrollArea, QScrollArea > QWidget > QWidg
     background: transparent; border: none;
 }
 QFrame#settingsPanel QLabel { background: transparent; border: none; }
-QLabel#settingsHeading { font-size: 28px; font-weight: 400; }
-QLabel#settingsSectionTitle { font-size: 16px; font-weight: 500; }
-QLabel#settingName { font-size: 14px; font-weight: 500; }
-QLabel#settingsDescription { font-size: 10px; color: #d9dde5; }
+QLabel#settingsHeading { font-size: 31px; font-weight: 400; }
+QLabel#settingsSectionTitle { font-size: 18px; font-weight: 500; }
+QLabel#settingName { font-size: 16px; font-weight: 500; }
+QLabel#settingsDescription { font-size: 12px; color: #d9dde5; }
 QFrame#settingsDivider { background: rgba(207, 214, 227, 42); border: none; }
 QFrame#settingRow { background: transparent; border: none; border-bottom: 1px solid rgba(207, 214, 227, 42); }
 QFrame#settingRowPlain { background: transparent; border: none; }
-QPushButton#settingsNavigation { text-align: left; padding-left: 8px; font-size: 16px;
+QPushButton#settingsNavigation { text-align: left; padding-left: 9px; font-size: 18px;
     border: none; border-radius: 5px; background: transparent; }
 QPushButton#settingsNavigation:checked, QPushButton#settingsNavigation:hover { background: rgba(185, 197, 213, 17); }
-QPushButton#settingsClose { background: transparent; border: none; font-size: 24px; color: #a5acb6; }
-QPushButton#settingsClose:hover { color: white; }
-QPushButton#settingsMore { background: transparent; border: none; font-size: 11px; color: #c9ced8; padding: 8px 0; }
+QPushButton#settingsClose { background: transparent; border: none; border-radius: 5px; }
+QPushButton#settingsClose:hover { background: rgba(255,255,255,18); }
+QPushButton#settingsClose:pressed { background: rgba(255,255,255,30); }
+QPushButton#settingsMore { background: transparent; border: none; font-size: 12px; color: #c9ced8; padding: 9px 0; }
+QPushButton#settingsMore:hover { color: white; }
 QFrame#settingsPanel QComboBox, QFrame#settingsPanel QLineEdit {
     background: #343f50; border: 1px solid #4a5667; border-radius: 4px;
-    color: #e4e5eb; font-size: 11px; padding: 1px 6px;
+    color: #e4e5eb; font-size: 12px; padding: 1px 6px;
 }
 QFrame#settingsPanel QComboBox:disabled { color: #9da8b8; }
 QFrame#settingsPanel QComboBox::drop-down { width: 20px; border: none; }

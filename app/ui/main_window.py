@@ -62,6 +62,7 @@ from app.ui.worker import ConversationWorker, ModelSwitchWorker
 from app.ui.skill_picker import SkillPicker
 from app.ui.skill_settings import SkillSettingsDialog
 from app.ui.settings_panel import SettingsPanel
+from app.ui.settings_motion import SettingsIconButton
 from app.ui.window_frame import CAPTION_HEIGHT, DragStrip, WindowControls, WindowsFrame
 from app.ui.attachments import AttachmentTray
 from app.ui.image_viewer import ImageViewer
@@ -393,7 +394,7 @@ class MainWindow(QMainWindow):
         self.new_session_button.setAccessibleName("New session")
         self.new_session_button.setEnabled(service is not None)
 
-        self.settings_button = QPushButton()
+        self.settings_button = SettingsIconButton(svg=_ICON_DIRECTORY / "top_settings.svg")
         self.settings_button.setObjectName("topBarButton")
         self.settings_button.setFixedSize(_TOP_BUTTON_WIDTH, _TOP_BUTTON_HEIGHT)
         self.settings_button.setIcon(QIcon(str(_ICON_DIRECTORY / "top_settings.svg")))
@@ -729,10 +730,7 @@ class MainWindow(QMainWindow):
         self.context_window.raise_()
         self.window_controls.move(self._root.width() - self.window_controls.width() - 8, 8)
         self.window_controls.raise_()
-        self.settings_panel.resize(min(805, self._root.width() - 32),
-                                   min(555, self._root.height() - 64))
-        self.settings_panel.move((self._root.width() - self.settings_panel.width()) // 2,
-                                 (self._root.height() - self.settings_panel.height()) // 2)
+        self.settings_panel.fit_to_parent()
         if self.settings_panel.isVisible():
             self.settings_panel.raise_()
 
@@ -854,6 +852,7 @@ class MainWindow(QMainWindow):
         visible = not self.settings_panel.isVisible()
         self.settings_panel.setVisible(visible)
         if visible:
+            self.settings_button.pulse(180.0)
             self.settings_panel.raise_()
             self.settings_panel.navigation[self.settings_panel.pages.currentIndex()].setFocus()
 
@@ -1526,6 +1525,8 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt API name
         self._closing = True
+        self.settings_panel.hide()
+        self.settings_button.reset()
         if self._attachment_picker is not None:
             self._attachment_picker.reject()
         if self._image_viewer is not None:

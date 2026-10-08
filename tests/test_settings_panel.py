@@ -1,12 +1,14 @@
 """Settings navigation, placeholder boundaries and existing action routing."""
 import os
+from time import monotonic
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 
 pytest.importorskip("PySide6")
-from PySide6.QtCore import QPoint, Qt
+from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
+from PySide6.QtGui import QEnterEvent, QMouseEvent
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
@@ -18,6 +20,13 @@ from app.ui.main_window import MainWindow
 @pytest.fixture(scope="module")
 def app():
     return QApplication.instance() or QApplication([])
+
+
+def wait_for(predicate):
+    deadline = monotonic() + 2
+    while not predicate() and monotonic() < deadline:
+        QTest.qWait(10)
+    assert predicate()
 
 
 def test_placeholder_controls_do_not_change_preferences_or_draft(app, tmp_path):
@@ -75,7 +84,101 @@ def test_navigation_close_and_compact_layout_keep_controls_reachable(app):
         assert panel.isHidden()
         window.settings_button.click()
         QTest.mouseClick(panel.close_button, Qt.MouseButton.LeftButton)
-        assert panel.isHidden()
+        wait_for(panel.isHidden)
+    finally:
+        window.close()
+
+
+def test_larger_panel_drags_independently_and_keeps_position_during_chat_layout(app):
+    window = MainWindow(None, "TEST")
+    try:
+        window.show()
+        window.settings_button.click()
+        app.processEvents()
+        panel = window.settings_panel
+        assert panel.size().width() == 886 and panel.size().height() == 611
+        original = panel.pos()
+        window_position = window.pos()
+        header = panel.header
+        local = QPoint(90, 20)
+        global_start = header.mapToGlobal(local)
+        QTest.mousePress(header, Qt.MouseButton.LeftButton, pos=local)
+        target = global_start + QPoint(70, 40)
+        move = QMouseEvent(QMouseEvent.Type.MouseMove, QPointF(header.mapFromGlobal(target)),
+                           QPointF(target), Qt.MouseButton.NoButton, Qt.MouseButton.LeftButton,
+                           Qt.KeyboardModifier.NoModifier)
+        app.sendEvent(header, move)
+        QTest.mouseRelease(header, Qt.MouseButton.LeftButton, pos=local)
+        assert panel.pos() == original + QPoint(70, 40)
+        assert panel.user_positioned
+        assert window.pos() == window_position
+        dragged = panel.pos()
+        window._position_overlays()
+        window.input.setPlainText("Keep draft while dragging")
+        app.processEvents()
+        assert panel.pos() == dragged
+        window.settings_button.click()
+        window.settings_button.click()
+        assert panel.pos() == dragged
+        window.resize(760, 600)
+        app.processEvents()
+        assert window._root.rect().contains(panel.geometry())
+        local = QPoint(90, 20)
+        target = header.mapToGlobal(local) + QPoint(5000, 5000)
+        QTest.mousePress(header, Qt.MouseButton.LeftButton, pos=local)
+        move = QMouseEvent(QMouseEvent.Type.MouseMove, QPointF(header.mapFromGlobal(target)),
+                           QPointF(target), Qt.MouseButton.NoButton, Qt.MouseButton.LeftButton,
+                           Qt.KeyboardModifier.NoModifier)
+        app.sendEvent(header, move)
+        QTest.mouseRelease(header, Qt.MouseButton.LeftButton, pos=local)
+        assert window._root.rect().contains(panel.geometry())
+        assert window.input.toPlainText() == "Keep draft while dragging"
+    finally:
+        window.close()
+
+
+def test_vector_button_feedback_keeps_hit_targets_and_finishes_or_cancels(app):
+    window = MainWindow(None, "TEST")
+    try:
+        window.show()
+        app.processEvents()
+        cog = window.settings_button
+        geometry = cog.geometry()
+        window.settings_button.click()
+        assert cog.animation.state() == cog.animation.State.Running
+        cog.animation.setCurrentTime(160)
+        assert cog.scale == pytest.approx(0.82)
+        assert cog.angle == pytest.approx(90.0)
+        assert cog.geometry() == geometry
+        wait_for(lambda: cog.animation.state() == cog.animation.State.Stopped)
+        assert cog.scale == pytest.approx(1.0) and cog.angle == pytest.approx(180.0)
+        panel = window.settings_panel
+        close = panel.close_button
+        # Deliver widget enter/leave events directly: moving the OS pointer in a
+        # background test window does not reliably deliver these on Windows.
+        app.sendEvent(close, QEvent(QEvent.Type.Leave))
+        app.processEvents()
+        rest = close.grab().toImage()
+        center = QPointF(close.rect().center())
+        app.sendEvent(close, QEnterEvent(center, center, QPointF(close.mapToGlobal(center.toPoint()))))
+        app.processEvents()
+        assert close.underMouse()
+        before = close.grab().toImage()
+        assert before != rest
+        QTest.mouseClick(close, Qt.MouseButton.LeftButton)
+        assert panel.isVisible()
+        close.animation.setCurrentTime(100)
+        assert close.scale == pytest.approx(0.82)
+        assert close.grab().toImage() != before
+        wait_for(panel.isHidden)
+        window.settings_button.click()
+        assert cog.animation.state() == cog.animation.State.Running
+        close.click()
+        panel.navigation[0].setFocus()
+        QTest.keyClick(panel.navigation[0], Qt.Key.Key_Escape)
+        assert panel.isHidden() and close.animation.state() == close.animation.State.Stopped
+        window.close()
+        assert cog.animation.state() == cog.animation.State.Stopped
     finally:
         window.close()
 
