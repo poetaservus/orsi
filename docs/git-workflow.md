@@ -1,5 +1,24 @@
 # Git layout and baseline hygiene
 
+## Visual-output routing, 8 October 2026
+
+The bounded `codex/visual-output-routing` repair starts from local main `993e5dd`.
+It recognizes reference sheets and other visual outputs within the creation
+clause, removes the fixed adjective-length cutoff, preserves written/analysis
+tasks, and resolves original images for referential creation and view changes.
+The fresh-start policy and backend/model settings remain unchanged.
+
+Final native focused checks passed 113 tests. Full native regression passed
+2,388 tests and 15 subtests, with 58 separately recorded skips, in 278.33 seconds.
+Stable composer reproduction, original-byte checks and qualification limits are in
+[the verification record](visual-output-routing.md). No live API gate was run.
+A verified complete-history bundle containing 97 refs and worktree identities
+is retained under ignored `state/backups/visual-output-routing-20261008/`.
+Preserve prior main at `archive/2026-10-08/main-before-visual-output-routing`,
+commit after verification, fast-forward local main and remove only the merged
+feature branch. Other worktrees, remote refs and live runtime state remain
+untouched.
+
 ## Photograph routing and fresh startup, 8 October 2026
 
 The bounded `codex/image-routing-fresh-start` repair starts from local main

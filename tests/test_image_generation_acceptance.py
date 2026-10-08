@@ -153,3 +153,42 @@ def test_editorial_photograph_request_uses_images_with_agent_enabled(native_sdk,
         assert not runtime.executor.journal.records
     finally:
         service.shutdown()
+
+
+def test_reference_sheet_request_generates_through_composer(presentation_app, native_sdk, tmp_path, monkeypatch):
+    prompt = (
+        "generate A clean, professional character modeling reference sheet in a Japanese manga art style, "
+        "with expressive ink lines, an off-white background, and subtle measurement guides.\n\n"
+        "The image shows a fictional swordsman in a full-body T-pose, with side and back views, "
+        "a facial close-up, hand details and costume labels."
+    )
+    engine, _, bodies, _ = native_sdk(payloads=[image_payload()])
+    hybrid = HybridInferenceEngine(local=None, cloud=engine, default_mode="cloud", fallback_to_local=False)
+    runtime = build_agent_runtime(hybrid, config=AgentFeatureConfig(filesystem_stat_enabled=True),
+                                  portable_root=tmp_path, state_directory=tmp_path / "state")
+    service = ConversationService(hybrid, ConversationStore(tmp_path / "chat.json"),
+                                  agent_runtime=runtime, portable_root=tmp_path)
+    window = MainWindow(service, "REFERENCE SHEET REPRODUCTION", inference=hybrid)
+    window.show()
+    previews = []
+    start_preview = window.chat.start_image_generation
+
+    def record_preview(*args):
+        start_preview(*args)
+        previews.append(window.chat.generation_frame)
+
+    monkeypatch.setattr(window.chat, "start_image_generation", record_preview)
+    try:
+        window.input.setPlainText(prompt)
+        window.submit()
+        assert window._image_in_flight
+        wait_for(lambda: window.thread is None)
+        assert len(bodies) == 1 and bodies[0]["tool_choice"] == {"type": "image_generation"}
+        assert [item["content"] for item in bodies[0]["input"] if item["role"] == "user"] == [prompt]
+        result = service.store.visible_messages()[-1].generated_images
+        assert result and window.chat._messages[-1].image_strip.references == result
+        assert previews and all(frame is window.chat._messages[-1].image_strip for frame in previews)
+        assert not runtime.executor.journal.records
+    finally:
+        window.close()
+        service.shutdown()

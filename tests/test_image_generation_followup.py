@@ -38,6 +38,36 @@ def test_edit_after_restart_uses_original_bytes_and_analysis_stays_normal(native
         second.shutdown()
 
 
+@pytest.mark.parametrize("prompt", [
+    "now generate this character from sideway also for 3d model reference",
+    "Generate a side view",
+    "Generate it again",
+])
+def test_generate_view_followup_reuses_retained_original(native_sdk, tmp_path, prompt):
+    engine, _, bodies, _ = native_sdk(payloads=[image_payload(), image_payload()])
+    service = ConversationService(engine, ConversationStore(tmp_path / "chat.json"))
+    try:
+        original = service.run("Draw a fictional character").generated_images
+        with service.store.attachment_store.open(original[0]) as source:
+            expected = source.read()
+        assert service.will_generate_images(prompt)
+        result = service.run(prompt)
+        assert result.generated_images and len(bodies) == 2
+        assert bodies[-1]["tool_choice"] == {"type": "image_generation"}
+        sent = inputs(bodies[-1], "input_image")
+        assert len(sent) == 1 and base64.b64decode(sent[0]["image_url"].split(",", 1)[1]) == expected
+        assert service.store.visible_messages()[-2].attachments == original
+    finally:
+        service.shutdown()
+
+
+@pytest.mark.parametrize("prompt", ["Create this folder", "Generate a detailed report with photographs",
+                                    "Generate a new image of a forest"])
+def test_unrelated_creation_does_not_inherit_generated_image(prompt):
+    from app.conversation.image_followup import visual_followup
+    assert not visual_followup(prompt)
+
+
 def test_image_settings_dialog_preserves_choices_and_busy_guard(tmp_path):
     app = QApplication.instance() or QApplication([])
     store = ImageSettingsStore(ImageGenerationSettings(), tmp_path / "images.json")
