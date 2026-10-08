@@ -1,5 +1,26 @@
 # Git layout and baseline hygiene
 
+## Greeting reference appearance, 8 October 2026
+
+The bounded `codex/greeting-reference-style` GUI change starts from local main
+`7993af0`. Greeting shares the exact flat input style used by the Skills source
+field in the user's reference, including its border, corner radius, spacing,
+font and height. The original input and saving handlers remain in place. See
+[the appearance and verification record](greeting-reference-style.md).
+
+Normal and compact renders were pixel-identical to the reference control at
+equal size and text. Native focused checks passed 60 tests and 13 subtests.
+An initial full-suite installer file I/O failure passed all 26 installer checks
+on an independent rerun. No installer or acceptance-prompt changes were made.
+Final full native regression passed 2,414 tests and 15 subtests in 404.64 seconds,
+with 58 separately recorded optional/host skips and no failures or errors.
+No live API gate was run.
+
+Preserve prior main at `archive/2026-10-08/main-before-greeting-reference-style`,
+commit after full verification, fast-forward local main and remove only the
+merged feature branch. Other worktrees and remote refs remain outside the
+operation. Restart the normal launcher to load the reference appearance.
+
 ## Greeting composer appearance, 8 October 2026
 
 The bounded `codex/greeting-composer-style` GUI change starts from local main

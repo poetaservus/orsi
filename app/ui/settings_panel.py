@@ -2,13 +2,12 @@
 from pathlib import Path
 
 from PySide6.QtCore import QPoint, QRectF, QSize, Qt
-from PySide6.QtGui import QColor, QFont, QKeySequence, QLinearGradient, QPainter, QPalette, QPen, QShortcut
+from PySide6.QtGui import QColor, QFont, QKeySequence, QLinearGradient, QPainter, QPen, QShortcut
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QFrame, QHBoxLayout, QLabel, QPushButton,
     QScrollArea, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget,
 )
 from app.ui.settings_motion import SettingsDragStrip, SettingsIconButton
-from app.ui.composer import COMPOSER_HEIGHT, ComposerFrame
 from app.ui.skill_settings import SkillSettingsPage
 from app.ui.image_settings import ImageSettingsPage
 
@@ -142,22 +141,9 @@ class SettingsPanel(QFrame):
         window.greeting_input.setAccessibleName("Greeting message")
         window.greeting_input.setPlaceholderText("Enter your welcome message")
         window.greeting_input.setMinimumWidth(0)
-        window.greeting_input.setFixedHeight(44)
-        window.greeting_input.setFrame(False)
+        window.greeting_input.setFixedHeight(42)
         window.greeting_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        palette = window.greeting_input.palette()
-        palette.setColor(QPalette.ColorRole.PlaceholderText, QColor("#a2a8ba"))
-        window.greeting_input.setPalette(palette)
-        greeting_composer = ComposerFrame()
-        greeting_composer.setObjectName("greetingComposer")
-        greeting_composer.setFixedHeight(COMPOSER_HEIGHT)
-        greeting_composer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
-        input_layout = QHBoxLayout(greeting_composer)
-        input_layout.setContentsMargins(22, 5, 22, 5)
-        input_layout.addWidget(window.greeting_input)
-        greeting_composer.setFocusProxy(window.greeting_input)
-        greeting_composer.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
-        greeting_layout.addWidget(greeting_composer)
+        greeting_layout.addWidget(window.greeting_input)
         general.addWidget(greeting_row)
         window.response_language_selector = self._placeholder("Response Language")
         self._row(general, "Response Language", "Preferred reply language · Coming soon",
@@ -357,19 +343,14 @@ QFrame#settingsPanel QComboBox, QFrame#settingsPanel QLineEdit {
     background: #343f50; border: 1px solid #4a5667; border-radius: 4px;
     color: #e4e5eb; font-size: 14px; padding: 1px 6px;
 }
-QFrame#settingsPanel QLineEdit#greetingInput {
-    color: #dedee0; background: transparent; border: none; padding: 0;
-    font-size: 17px; font-weight: 400; selection-background-color: #666666;
-}
-QFrame#settingsPanel QFrame#greetingComposer { background: transparent; border: none; }
-QFrame#settingsPanel QLineEdit#greetingInput:hover,
-QFrame#settingsPanel QLineEdit#greetingInput:focus { background: transparent; border: none; }
 QWidget#skillSettingsPage, QWidget#imageSettingsPage { background: transparent; }
 QWidget#skillSettingsPage QLabel, QWidget#imageSettingsPage QLabel { font-size: 14px; }
+QFrame#settingsPanel QLineEdit#greetingInput,
 QWidget#skillSettingsPage QLineEdit, QWidget#skillSettingsPage QListWidget {
     background: #343f50; color: #e4e5eb; border: 1px solid #4a5667;
     border-radius: 6px; padding: 8px; font-size: 14px;
 }
+QFrame#settingsPanel QLineEdit#greetingInput,
 QWidget#skillSettingsPage QLineEdit { min-height: 24px; }
 QWidget#skillSettingsPage QListWidget::item { padding: 6px; }
 QWidget#skillSettingsPage QListWidget::item:selected { background: #51627a; }
