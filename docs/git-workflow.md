@@ -1,5 +1,24 @@
 # Git layout and baseline hygiene
 
+## Photograph routing and fresh startup, 8 October 2026
+
+The bounded `codex/image-routing-fresh-start` repair starts from local main
+`e5c9c89`. Photograph requests, including the screenshot's `Genereate` spelling,
+reach native image generation. Startup starts an empty active session and
+archives the prior conversation/image references through the existing safe
+archive path, replacing the earlier generated-image resume exception.
+
+Native focused confirmation passed 136 tests and five subtests. Full native
+regression passed 2,348 tests and 15 subtests, with 58 separately recorded skips,
+in 276.67 seconds. Exact-prompt SDK reproduction and archival checks are in
+[the verification record](image-routing-fresh-start.md). No live model/API gate
+was run. A verified complete-history bundle containing 96 refs and worktree
+identities is retained under ignored `state/backups/image-routing-fresh-start-20261008/`.
+Preserve prior main at `archive/2026-10-08/main-before-image-routing-fresh-start`,
+commit after verification, fast-forward local main and remove only the merged
+feature branch. Other active worktrees, remote refs and runtime settings remain
+untouched.
+
 ## Image preview motion, 8 October 2026
 
 The bounded `codex/image-preview-motion` change starts from local main `a982423`.

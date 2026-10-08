@@ -67,7 +67,7 @@ def test_generation_reopen_and_viewer_edit_with_agent_enabled(presentation_app, 
         service.shutdown()
 
 
-def test_application_restart_resumes_generated_image_chat_and_can_edit(presentation_app, native_sdk, monkeypatch, tmp_path):
+def test_application_restart_starts_empty_and_archives_generated_image_chat(presentation_app, native_sdk, monkeypatch, tmp_path):
     from unittest.mock import Mock
     import app.startup as startup
     from app.inference.engine import InferenceUnavailable
@@ -82,6 +82,8 @@ def test_application_restart_resumes_generated_image_chat_and_can_edit(presentat
     try:
         original = first.run("Draw a blue circle").generated_images
         session_id = first.store.session_id
+        with first.store.attachment_store.open(original[0]) as source:
+            original_bytes = source.read()
     finally:
         first.shutdown()
 
@@ -96,12 +98,21 @@ def test_application_restart_resumes_generated_image_chat_and_can_edit(presentat
     assert error is None and service is not None
     window = None
     try:
-        assert service.store.session_id == session_id
-        assert service.store.visible_messages()[-1].generated_images == original
-        assert not list((path.parent / "archives").glob("*.json"))
+        assert service.store.session_id != session_id
+        assert not service.store.visible_messages() and not service.store.turns()
+        assert not service.will_generate_images("Make the background darker")
+        archives = list((path.parent / "archives").glob("*.json"))
+        assert len(archives) == 1
+        archived = ConversationStore(archives[0])
+        assert archived.session_id == session_id
+        assert archived.visible_messages()[-1].generated_images == original
+        with archived.attachment_store.open(original[0]) as source:
+            assert source.read() == original_bytes
         window = MainWindow(service, "SYNTHETIC RESTART", inference=hybrid)
         window.show()
-        assert window.chat._messages[-1].image_strip.references == original
+        assert not window.chat._messages and window.startup_greeting.isVisible()
+        window.attachment_tray.add_references(original)
+        wait_for(lambda: window.attachment_tray.ready)
         window.input.setPlainText("Make the background darker")
         window.submit()
         wait_for(lambda: len(bodies) == 1 and window.thread is None)
@@ -113,4 +124,32 @@ def test_application_restart_resumes_generated_image_chat_and_can_edit(presentat
     finally:
         if window is not None:
             window.close()
+        service.shutdown()
+
+
+def test_editorial_photograph_request_uses_images_with_agent_enabled(native_sdk, tmp_path):
+    prompt = (
+        "Genereate an Editorial interior design photograph of a minimalist Scandinavian living room.\n\n"
+        "Scene layout: A low-profile, light beige linen modular sofa sits against a soft matte off-white wall, "
+        "anchored by a round boucle area rug in cream. A single black-stained oak coffee table stands in "
+        "the center with a single ceramic vase and a thin art monograph book resting on it. In the "
+        "background corner, a tall fiddle-leaf fig tree in a raw terracotta pot adds a touch of organic green.\n\n"
+        "Lighting and atmosphere: Soft, diffused morning daylight streams in from a large off-camera "
+        "window on the left, casting gentle, natural shadows across the pale engineered hardwood floor.\n\n"
+        "Composition and style: Eye-level straight-on interior shot, clean architectural framing, "
+        "photorealistic textures, warm neutral color palette, quiet and serene mood, no extra people."
+    )
+    engine, _, bodies, _ = native_sdk(payloads=[image_payload()])
+    runtime = build_agent_runtime(engine, config=AgentFeatureConfig(filesystem_stat_enabled=True),
+                                  portable_root=tmp_path, state_directory=tmp_path / "state")
+    service = ConversationService(engine, ConversationStore(tmp_path / "chat.json"),
+                                  agent_runtime=runtime, portable_root=tmp_path)
+    try:
+        assert service.will_generate_images(prompt)
+        result = service.run(prompt)
+        assert result.generated_images and len(bodies) == 1
+        assert bodies[0]["tool_choice"] == {"type": "image_generation"}
+        assert [item["content"] for item in bodies[0]["input"] if item["role"] == "user"] == [prompt]
+        assert not runtime.executor.journal.records
+    finally:
         service.shutdown()

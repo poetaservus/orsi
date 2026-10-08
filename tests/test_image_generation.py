@@ -52,6 +52,14 @@ def test_native_image_only_pipeline_and_private_sources(monkeypatch, tmp_path, c
     ("/image soft landscape", False, True), ("What is in this image?", True, False),
     ("Describe the picture", True, False), ("How do I create an image?", False, False),
     ("Make the background darker", True, True), ("Hello", False, False),
+    ("Generate an Editorial interior design photograph of a minimalist Scandinavian living room.", False, True),
+    ("Genereate an Editorial interior design photograph of a minimalist Scandinavian living room.", False, True),
+    ("Genereate a photograph of a living room", False, True),
+    ("Create two photographs of a forest", False, True),
+    ("Describe the photograph", True, False),
+    ("Generate a prompt for a photograph of a living room", False, False),
+    ("Genereate a prompt for a photograph of a living room", False, False),
+    ("How can I generate photographs?", False, False),
 ])
 def test_generation_intent_preserves_analysis(text, has_image, expected):
     assert image_request(text, has_image=has_image) is expected

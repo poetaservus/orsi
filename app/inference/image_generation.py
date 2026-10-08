@@ -8,10 +8,11 @@ import re
 from app.inference.attachments import AttachmentError
 from app.inference.completion import CompletionText, IncompleteResponseError
 
-_CREATE = re.compile(r"\b(?:generate|create|make|design|render)\b.{0,100}\b(?:images?|pictures?|photos?|illustrations?|artworks?|logos?|posters?|thumbnails?|wallpapers?)\b|\b(?:draw|paint|sketch|illustrate)\b", re.I | re.S)
+_CREATE_VERBS = r"(?:generate|genereate|create|make|design|render)"
+_CREATE = re.compile(rf"\b{_CREATE_VERBS}\b.{{0,100}}\b(?:images?|pictures?|photos?|photographs?|illustrations?|artworks?|logos?|posters?|thumbnails?|wallpapers?)\b|\b(?:draw|paint|sketch|illustrate)\b", re.I | re.S)
 _EDIT = re.compile(r"\b(?:edit|change|replace|remove|add|make|darken|brighten|crop|resize|turn|adjust|give|put|transform)\b", re.I)
 _EXPLAIN = re.compile(r"\b(?:how\s+(?:do|can|to)|explain|describe|analy[sz]e|what\s+(?:is|are|does))\b", re.I)
-_TEXT_REQUEST = re.compile(r"\b(?:generate|create|make|design|render)\s+(?:(?:me|a|an|the|some|python|javascript)\s+)*(?:list|script|code|program|function|report|document|table|instructions|prompt)\b", re.I)
+_TEXT_REQUEST = re.compile(rf"\b{_CREATE_VERBS}\s+(?:(?:me|a|an|the|some|python|javascript)\s+)*(?:list|script|code|program|function|report|document|table|instructions|prompt)\b", re.I)
 
 
 def image_request(text, *, has_image=False):
