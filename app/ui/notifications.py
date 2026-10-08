@@ -3,7 +3,7 @@ import logging
 import sys
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QUrl
+from PySide6.QtCore import QEvent, QObject, QUrl
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
 
@@ -29,6 +29,8 @@ class NotificationManager(QObject):
         self.player = None
         self.audio = None
         self.closed = False
+        self._sound_preview = False
+        window.installEventFilter(self)
         try:
             payload = store.load({}) if store is not None else {}
             values = payload.get("notifications", {}) if isinstance(payload, dict) else {}
@@ -69,7 +71,7 @@ class NotificationManager(QObject):
         path = SOUNDS / self.sound if self.sound in {"noti_1.ogg", "noti_2.ogg"} else Path(self.sound)
         return path if path.is_file() else SOUNDS / "noti_1.ogg"
 
-    def play_sound(self):
+    def play_sound(self, *, preview=True):
         if self.closed or QApplication.platformName() in {"offscreen", "minimal"}:
             return
         path = self.sound_path()
@@ -77,15 +79,13 @@ class NotificationManager(QObject):
             return
         try:
             if self.player is None:
-                from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
-                self.audio = QAudioOutput(self)
-                self.audio.setVolume(0.8)
-                self.player = QMediaPlayer(self)
-                self.player.setAudioOutput(self.audio)
+                from app.ui.notification_audio import NotificationAudio
+                self.player = NotificationAudio(self)
                 self.player.errorOccurred.connect(lambda *_: log.warning("Notification sound playback failed."))
+            self._sound_preview = preview
             self.player.stop()
             self.player.setSource(QUrl.fromLocalFile(str(path.resolve())))
-            self.player.play()
+            self.player.play(allowed=lambda: not self.closed and (preview or self.enabled and self._needs_attention()))
         except Exception:
             log.warning("Notification sound playback is unavailable.")
 
@@ -105,12 +105,10 @@ class NotificationManager(QObject):
     def notify(self, event):
         if self.closed or not self.enabled or getattr(self.window, "_closing", False):
             return
-        title, message = EVENTS[event]
-        self.play_sound()
-        # Foreground users already see the result or inline approval. Sound still
-        # confirms completion; desktop popups are for background/minimized use.
-        if self.window.isActiveWindow() and not self.window.isMinimized():
+        if not self._needs_attention():
             return
+        title, message = EVENTS[event]
+        self.play_sound(preview=False)
         QApplication.alert(self.window)
         try:
             self._ensure_backend()
@@ -122,6 +120,15 @@ class NotificationManager(QObject):
                     self.backend.showMessage(title, message)
         except Exception:
             log.warning("Desktop notifications are unavailable.")
+
+    def _needs_attention(self):
+        return self.window.isMinimized() or not self.window.isActiveWindow()
+
+    def eventFilter(self, watched, event):  # noqa: N802
+        if (watched is self.window and event.type() == QEvent.Type.WindowActivate
+                and self.player is not None and not self._sound_preview):
+            self.player.stop()
+        return super().eventFilter(watched, event)
 
     def open_window(self):
         if self.closed or getattr(self.window, "_closing", False):
@@ -139,8 +146,7 @@ class NotificationManager(QObject):
             return
         self.closed = True
         if self.player is not None:
-            self.player.stop()
-            self.player.setSource(QUrl())
+            self.player.shutdown()
         if self.backend is not None:
             if sys.platform == "win32":
                 self.backend.shutdown()

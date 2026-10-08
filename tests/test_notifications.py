@@ -7,7 +7,8 @@ from unittest.mock import Mock
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtCore import QUrl
+from PySide6.QtCore import QEvent, QPoint, QUrl, Qt
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
 from app.conversation.attachments import AttachmentStore
@@ -170,7 +171,7 @@ def test_playback_uses_selected_ogg_and_silent_stops_playback(app, monkeypatch):
         window.close()
 
 
-def test_foreground_sound_background_popup_disabled_and_shutdown(app, monkeypatch):
+def test_foreground_quiet_background_popup_disabled_and_shutdown(app, monkeypatch):
     window = MainWindow(None, "test")
     manager = window.notifications
     manager.backend = Mock()
@@ -179,24 +180,93 @@ def test_foreground_sound_background_popup_disabled_and_shutdown(app, monkeypatc
     monkeypatch.setattr(window, "isActiveWindow", lambda: True)
     try:
         manager.notify("response")
-        play.assert_called_once()
+        play.assert_not_called()
         manager.backend.show_message.assert_not_called()
         monkeypatch.setattr(window, "isActiveWindow", lambda: False)
         manager.notify("approval")
         manager.backend.show_message.assert_called_once_with(*EVENTS["approval"])
         manager.enabled = False
         manager.notify("image")
-        assert play.call_count == 2
+        assert play.call_count == 1
         manager.enabled = True
         manager.player = Mock()
         manager.shutdown()
-        manager.player.stop.assert_called_once()
-        manager.player.setSource.assert_called_once_with(QUrl())
+        manager.player.shutdown.assert_called_once()
         manager.backend.shutdown.assert_called_once()
         manager.notify("response")
-        assert play.call_count == 2
+        assert play.call_count == 1
     finally:
         # Shutdown is idempotent for the actual backend/player.
+        window.close()
+
+
+@pytest.mark.parametrize("event", EVENTS)
+def test_all_automatic_events_are_quiet_in_foreground(app, monkeypatch, event):
+    window = MainWindow(None, "test")
+    manager = window.notifications
+    manager.backend = Mock()
+    play = Mock()
+    monkeypatch.setattr(manager, "play_sound", play)
+    monkeypatch.setattr(window, "isActiveWindow", lambda: True)
+    try:
+        manager.notify(event)
+        play.assert_not_called()
+        manager.backend.show_message.assert_not_called()
+        monkeypatch.setattr(window, "isMinimized", lambda: True)
+        manager.notify(event)
+        play.assert_called_once_with(preview=False)
+        manager.backend.show_message.assert_called_once_with(*EVENTS[event])
+    finally:
+        window.close()
+
+
+def test_returning_to_orsi_cancels_alert_audio_but_preserves_explicit_preview(app):
+    window = MainWindow(None, "test")
+    window.notifications.player = Mock()
+    try:
+        app.sendEvent(window, QEvent(QEvent.Type.WindowActivate))
+        window.notifications.player.stop.assert_called_once()
+        window.notifications._sound_preview = True
+        app.sendEvent(window, QEvent(QEvent.Type.WindowActivate))
+        assert window.notifications.player.stop.call_count == 1
+    finally:
+        window.close()
+
+
+@pytest.mark.parametrize("size", [(1280, 800), (760, 600)])
+def test_notification_settings_visible_and_clickable_after_open_and_reopen(app, tmp_path, size):
+    store = JsonStore(tmp_path / "ui.json")
+    window = MainWindow(None, "test", preferences_store=store)
+    try:
+        window.resize(*size)
+        window.show()
+        for _ in range(2):
+            window.settings_button.click()
+            app.processEvents()
+            scroll = window.settings_panel.pages.currentWidget()
+            for control in (window.notification_toggle, window.notification_sound):
+                scroll.ensureWidgetVisible(control)
+                app.processEvents()
+                visible = control.rect().translated(control.mapTo(scroll.viewport(), QPoint()))
+                assert control.isVisible() and control.isEnabled()
+                assert scroll.viewport().rect().contains(visible)
+                assert control.width() >= scroll.viewport().width() - 16
+            selector = window.notification_sound.selector
+            preview = window.notification_sound.preview
+            assert selector.isVisible() and preview.isVisible()
+            assert window.notification_sound.rect().contains(selector.geometry())
+            assert window.notification_sound.rect().contains(preview.geometry())
+            selector.setCurrentIndex(selector.findData("noti_2.ogg"))
+            assert store.load()["notifications"]["sound"] == "noti_2.ogg"
+            scroll.ensureWidgetVisible(window.notification_toggle)
+            app.processEvents()
+            before = window.notification_toggle.isChecked()
+            QTest.mouseClick(window.notification_toggle, Qt.MouseButton.LeftButton,
+                             pos=QPoint(10, window.notification_toggle.height() // 2))
+            assert window.notification_toggle.isChecked() != before
+            assert store.load()["notifications"]["enabled"] != before
+            window.settings_panel.hide()
+    finally:
         window.close()
 
 

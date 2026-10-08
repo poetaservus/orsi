@@ -1,5 +1,10 @@
 # Desktop notifications, 8 October 2026
 
+The [notification corrections](notification-bugfixes.md) update foreground
+behavior, audio onset and control visibility. Automatic alerts are now quiet
+while ORSI is active; only an explicit sound preview plays in the foreground.
+The record below describes the original integration and its verification.
+
 The bounded `codex/desktop-notifications` change starts from local main `d6c2d6b`.
 ORSI sends one attention event when a response finishes, an actionable inline tool
 approval appears, an image result arrives, or a task fails. Streaming updates,

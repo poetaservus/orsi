@@ -152,15 +152,15 @@ class SettingsPanel(QFrame):
         window.tool_approval_toggle = ApprovalPlaceholder()
         self._row(general, "Tool execution approval", "Tool approval preferences · Coming soon",
                   window.tool_approval_toggle)
-        window.notification_toggle = QCheckBox("Enabled")
+        window.notification_toggle = QCheckBox("Enable notifications", self)
         window.notification_toggle.setAccessibleName("Notifications")
         window.notification_toggle.setChecked(window.notifications.enabled)
         window.notification_toggle.toggled.connect(
             lambda enabled: window.notifications.configure(enabled=enabled))
-        self._row(general, "Notifications", "Responses, tool approval, images and task errors",
+        self._stacked_row(general, "Notifications", "Alerts when O.R.S.I is in the background or minimized",
                   window.notification_toggle)
-        window.notification_sound = NotificationSoundControl(window.notifications)
-        self._row(general, "Notification sound", "Sound on completion · Desktop alerts when in background",
+        window.notification_sound = NotificationSoundControl(window.notifications, self)
+        self._stacked_row(general, "Notification sound", "Choose a sound for responses, approvals, images and task errors",
                   window.notification_sound)
         general.addSpacing(20)
         general.addWidget(window.activity)
@@ -240,6 +240,28 @@ class SettingsPanel(QFrame):
         description.setWordWrap(True)
         layout.addWidget(description)
         layout.addSpacing(20)
+
+    @staticmethod
+    def _stacked_row(layout, title, hint, control):
+        row = QFrame()
+        row.setObjectName("settingRow")
+        vertical = QVBoxLayout(row)
+        vertical.setContentsMargins(0, 12, 0, 14)
+        vertical.setSpacing(6)
+        label = QLabel(title)
+        label.setObjectName("settingName")
+        label.setBuddy(control)
+        description = QLabel(hint)
+        description.setObjectName("settingsDescription")
+        description.setWordWrap(True)
+        vertical.addWidget(label)
+        vertical.addWidget(description)
+        control.setMinimumWidth(0)
+        control.setFixedHeight(40)
+        control.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        vertical.addWidget(control)
+        layout.addWidget(row)
+        return row
 
     @staticmethod
     def _row(layout, title, hint, control, *, indent=0, separator=True):
@@ -353,6 +375,11 @@ QFrame#settingsPanel QComboBox, QFrame#settingsPanel QLineEdit {
     background: #343f50; border: 1px solid #4a5667; border-radius: 4px;
     color: #e4e5eb; font-size: 14px; padding: 1px 6px;
 }
+QFrame#settingsPanel QPushButton#notificationPreview {
+    background: #343f50; border: 1px solid #4a5667; border-radius: 4px;
+}
+QFrame#settingsPanel QPushButton#notificationPreview:hover { background: #51627a; }
+QFrame#settingsPanel QPushButton#notificationPreview:disabled { background: #343f50; }
 QWidget#skillSettingsPage, QWidget#imageSettingsPage { background: transparent; }
 QWidget#skillSettingsPage QLabel, QWidget#imageSettingsPage QLabel { font-size: 14px; }
 QFrame#settingsPanel QLineEdit#greetingInput,

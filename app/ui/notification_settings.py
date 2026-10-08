@@ -1,12 +1,15 @@
 """Notification sound selector embedded in General settings."""
 from pathlib import Path
 
+from PySide6.QtCore import QSize
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QComboBox, QFileDialog, QHBoxLayout, QPushButton, QWidget
 
 
 class NotificationSoundControl(QWidget):
     def __init__(self, manager, parent=None):
         super().__init__(parent)
+        self.setObjectName("notificationSoundControl")
         self.manager = manager
         self.dialog = None
         layout = QHBoxLayout(self)
@@ -25,10 +28,13 @@ class NotificationSoundControl(QWidget):
         self.selector.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         self.selector.setMinimumContentsLength(1)
         self.selector.currentIndexChanged.connect(self._selected)
-        self.preview = QPushButton("▶")
+        self.preview = QPushButton()
+        self.preview.setObjectName("notificationPreview")
+        self.preview.setIcon(QIcon(str(Path(__file__).with_name("assets") / "notification_play.svg")))
+        self.preview.setIconSize(QSize(16, 16))
         self.preview.setAccessibleName("Preview notification sound")
         self.preview.setToolTip("Preview notification sound")
-        self.preview.setFixedSize(32, 32)
+        self.preview.setFixedSize(40, 40)
         self.preview.setEnabled(bool(manager.sound))
         self.preview.clicked.connect(manager.play_sound)
         layout.addWidget(self.selector, 1)

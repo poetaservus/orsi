@@ -1,5 +1,29 @@
 # Git layout and baseline hygiene
 
+## Notification corrections, 8 October 2026
+
+The bounded `codex/notification-bugfixes` change starts from local main `696162a`.
+Automatic alerts are quiet while ORSI is active. Buffered audio preserves the
+entire sound with device-start padding, and General settings places the enable,
+sound and preview controls in full-width rows beneath their labels. Existing
+user preferences, original OGG files and tool/inference behavior are preserved.
+See [behavior and verification](notification-bugfixes.md).
+
+Focused unrestricted checks passed 64 tests, with a final 31-test notification/
+audio/settings recheck after the scalable preview icon change. Native playback
+of both OGG files, foreground silence and resource cleanup passed. Normal and
+minimum settings renders were inspected at 100% and 200% scaling. Final full
+unrestricted regression passed 2,437 tests and 15 subtests, with 58 separately
+recorded optional skips, no failures/errors, in 400.28 seconds. The first full
+run and installer recheck's unchanged temporary-folder cleanup failures remain
+recorded separately; its process-ownership cases and fresh full suite passed.
+No live model/provider gate was run.
+
+Preserve prior main at `archive/2026-10-08/main-before-notification-bugfixes`,
+commit after verification, fast-forward local main and remove only the merged
+feature branch. Other worktrees and remote refs remain outside the operation.
+Restart ORSI to load the fixes.
+
 ## Desktop notifications, 8 October 2026
 
 The bounded `codex/desktop-notifications` change starts from local main `d6c2d6b`.
