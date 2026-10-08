@@ -1,5 +1,25 @@
 # Git layout and baseline hygiene
 
+## Greeting composer appearance, 8 October 2026
+
+The bounded `codex/greeting-composer-style` GUI change starts from local main
+`db8f80c`. Greeting now uses the shared antialiased composer pill and gradient,
+with matching text styling and comfortable padding. The existing input object
+and saving handlers remain in place. See
+[the appearance and verification record](greeting-composer-style.md).
+
+Native focused settings/frame/personality/composer checks passed 49 tests and
+eight subtests in 18.37 seconds. Final full native regression passed 2,414 tests
+and 15 subtests in 442.24 seconds, with 58 separately recorded optional/host
+skips and no failures/errors. A stalled initial image-viewer check passed both
+its isolated rerun and the fresh full suite. Normal, compact and placeholder
+renders were inspected using isolated preferences. No live API gate was run.
+
+Preserve prior main at `archive/2026-10-08/main-before-greeting-composer-style`,
+commit after verification, fast-forward local main and remove only this merged
+feature branch. Other worktrees and remote refs remain outside the operation.
+Restart the normal launcher to load the restyle.
+
 ## Cloud runtime work budget, 8 October 2026
 
 The bounded `codex/cloud-runtime-budget` fix starts from local main `0ff7bff`.

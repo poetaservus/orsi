@@ -67,7 +67,7 @@ def test_greeting_field_is_visible_clickable_and_persists_at_all_window_sizes(ap
             visible_rect = field.rect().translated(field.mapTo(scroll.viewport(), QPoint()))
             assert field.isVisible() and field.isEnabled()
             assert scroll.viewport().rect().contains(visible_rect)
-            assert field.width() >= scroll.viewport().width() - 16
+            assert field.parentWidget().width() >= scroll.viewport().width() - 16
             center = field.mapTo(window.settings_panel, field.rect().center())
             assert window.settings_panel.childAt(center) is field
             QTest.mouseClick(field, Qt.MouseButton.LeftButton)
