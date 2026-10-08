@@ -61,6 +61,7 @@ from app.ui.status import ConversationStatus
 from app.ui.worker import ConversationWorker, ModelSwitchWorker
 from app.ui.skill_picker import SkillPicker
 from app.ui.settings_panel import SettingsPanel
+from app.ui.notifications import NotificationManager
 from app.ui.settings_motion import SettingsIconButton
 from app.ui.window_frame import CAPTION_HEIGHT, DragStrip, WindowControls, WindowsFrame
 from app.ui.attachments import AttachmentTray
@@ -343,6 +344,7 @@ class MainWindow(QMainWindow):
         self.startup_error = startup_error
         self._preferences_store = preferences_store
         self._greeting_message = self._load_greeting_message()
+        self.notifications = NotificationManager(self, preferences_store)
         self.thread = None
         self._settings_busy = False
         self._image_viewer = None
@@ -1080,6 +1082,7 @@ class MainWindow(QMainWindow):
         self._animate_composer_height(height)
         panel.setFocus()
         self._set_working_activity("Waiting for your approval…")
+        self.notifications.notify("approval")
 
     def _approval_finished(self) -> None:
         panel = self._approval_panel
@@ -1173,6 +1176,8 @@ class MainWindow(QMainWindow):
         )
         if notice:
             self.chat.add_message("Agent", notice)
+        if not cancelled:
+            self.notifications.notify("error" if error else "image" if images else "response")
 
     @Slot()
     def _thread_finished(self) -> None:
@@ -1537,6 +1542,8 @@ class MainWindow(QMainWindow):
         if self._image_viewer is not None:
             self._image_viewer.reject()
         self.attachment_tray.shutdown()
+        self.notification_sound.shutdown()
+        self.notifications.shutdown()
         self._animate_composer_height(_COMPOSER_HEIGHT, animated=False)
         try:
             if self._greeting_save_timer.isActive():

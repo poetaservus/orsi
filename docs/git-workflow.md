@@ -1,5 +1,27 @@
 # Git layout and baseline hygiene
 
+## Desktop notifications, 8 October 2026
+
+The bounded `codex/desktop-notifications` change starts from local main `d6c2d6b`.
+ORSI alerts for completed responses, actionable tool approvals, completed images
+and task errors. General settings includes an enable control and sound selection,
+using the supplied `noti_1.ogg` by default, with `noti_2.ogg`, Silent and custom
+local audio options. See [behavior and verification](desktop-notifications.md).
+
+Focused unrestricted checks passed 51 tests. Both bundled OGG files played to
+completion without audio errors; native shell delivery, minimized-window restore
+and resource cleanup passed. Normal and compact settings renders were inspected.
+Final full unrestricted Windows regression passed 2,424 tests and 15 subtests,
+with 58 separately recorded skips, no failures/errors, in 391.68 seconds.
+An initial unchanged installer cleanup failure passed all 60 installer checks
+independently and the fresh full suite. No live model/provider gate was run.
+
+Preserve prior main at `archive/2026-10-08/main-before-desktop-notifications`,
+commit after verification, fast-forward local main and remove only the merged
+feature branch. Other worktrees, remote refs, existing user preferences, model
+profiles and inference policy remain outside the operation. Restart ORSI to load
+the notification controls and event handling.
+
 ## Greeting reference appearance, 8 October 2026
 
 The bounded `codex/greeting-reference-style` GUI change starts from local main

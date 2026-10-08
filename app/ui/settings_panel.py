@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
 from app.ui.settings_motion import SettingsDragStrip, SettingsIconButton
 from app.ui.skill_settings import SkillSettingsPage
 from app.ui.image_settings import ImageSettingsPage
+from app.ui.notification_settings import NotificationSoundControl
 
 
 class ApprovalPlaceholder(QCheckBox):
@@ -151,7 +152,16 @@ class SettingsPanel(QFrame):
         window.tool_approval_toggle = ApprovalPlaceholder()
         self._row(general, "Tool execution approval", "Tool approval preferences · Coming soon",
                   window.tool_approval_toggle)
-        self._future(general, "Notifications", "Sound and desktop notifications")
+        window.notification_toggle = QCheckBox("Enabled")
+        window.notification_toggle.setAccessibleName("Notifications")
+        window.notification_toggle.setChecked(window.notifications.enabled)
+        window.notification_toggle.toggled.connect(
+            lambda enabled: window.notifications.configure(enabled=enabled))
+        self._row(general, "Notifications", "Responses, tool approval, images and task errors",
+                  window.notification_toggle)
+        window.notification_sound = NotificationSoundControl(window.notifications)
+        self._row(general, "Notification sound", "Sound on completion · Desktop alerts when in background",
+                  window.notification_sound)
         general.addSpacing(20)
         general.addWidget(window.activity)
         general.addStretch()
