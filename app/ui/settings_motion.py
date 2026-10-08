@@ -68,7 +68,9 @@ class SettingsIconButton(QPushButton):
             painter.drawLine(QLineF(5, -5, -5, 5))
 
 
-class SettingsHeader(QWidget):
+class SettingsDragStrip(QWidget):
+    """A dedicated top-edge hit area, separate from the title and close control."""
+
     def __init__(self, panel):
         super().__init__(panel)
         self.panel = panel

@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QFrame, QHBoxLayout, QLabel, QPushButton,
     QScrollArea, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget,
 )
-from app.ui.settings_motion import SettingsHeader, SettingsIconButton
+from app.ui.settings_motion import SettingsDragStrip, SettingsIconButton
 
 
 class ApprovalPlaceholder(QCheckBox):
@@ -51,7 +51,11 @@ class SettingsPanel(QFrame):
         escape = QShortcut(QKeySequence("Escape"), self)
         escape.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         escape.activated.connect(self.hide)
-        self.header = SettingsHeader(self)
+        self.drag_strip = SettingsDragStrip(self)
+        self.drag_strip.setObjectName("settingsDragStrip")
+        self.drag_strip.setAccessibleName("Move settings")
+        self.drag_strip.setGeometry(12, 0, self.width() - 24, 18)
+        self.header = QWidget(self)
         header = QHBoxLayout(self.header)
         header.setContentsMargins(0, 0, 0, 0)
         title = QLabel("Settings")
@@ -62,6 +66,7 @@ class SettingsPanel(QFrame):
         self.close_button.setObjectName("settingsClose")
         self.close_button.setAccessibleName("Close settings")
         self.close_button.setToolTip("Close settings")
+        self.close_button.setCursor(Qt.CursorShape.ArrowCursor)
         self.close_button.setFixedSize(32, 32)
         self.close_button.clicked.connect(self._close_with_feedback)
         self.close_button.pulse_finished.connect(self._finish_close)
@@ -234,9 +239,15 @@ class SettingsPanel(QFrame):
     def hideEvent(self, event):  # noqa: N802
         self._close_pending = False
         self.close_button.reset()
-        self.header._drag_offset = None
-        self.header.setCursor(Qt.CursorShape.OpenHandCursor)
+        self.drag_strip._drag_offset = None
+        self.drag_strip.setCursor(Qt.CursorShape.OpenHandCursor)
         super().hideEvent(event)
+
+    def resizeEvent(self, event):  # noqa: N802
+        super().resizeEvent(event)
+        if hasattr(self, "drag_strip"):
+            self.drag_strip.setGeometry(12, 0, max(0, self.width() - 24), 18)
+            self.drag_strip.raise_()
 
     def keyPressEvent(self, event):  # noqa: N802
         if event.key() == Qt.Key.Key_Escape:

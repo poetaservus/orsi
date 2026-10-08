@@ -99,8 +99,8 @@ def test_larger_panel_drags_independently_and_keeps_position_during_chat_layout(
         assert panel.size().width() == 886 and panel.size().height() == 611
         original = panel.pos()
         window_position = window.pos()
-        header = panel.header
-        local = QPoint(90, 20)
+        header = panel.drag_strip
+        local = QPoint(90, 8)
         global_start = header.mapToGlobal(local)
         QTest.mousePress(header, Qt.MouseButton.LeftButton, pos=local)
         target = global_start + QPoint(70, 40)
@@ -123,7 +123,7 @@ def test_larger_panel_drags_independently_and_keeps_position_during_chat_layout(
         window.resize(760, 600)
         app.processEvents()
         assert window._root.rect().contains(panel.geometry())
-        local = QPoint(90, 20)
+        local = QPoint(90, 8)
         target = header.mapToGlobal(local) + QPoint(5000, 5000)
         QTest.mousePress(header, Qt.MouseButton.LeftButton, pos=local)
         move = QMouseEvent(QMouseEvent.Type.MouseMove, QPointF(header.mapFromGlobal(target)),
@@ -133,6 +133,33 @@ def test_larger_panel_drags_independently_and_keeps_position_during_chat_layout(
         QTest.mouseRelease(header, Qt.MouseButton.LeftButton, pos=local)
         assert window._root.rect().contains(panel.geometry())
         assert window.input.toPlainText() == "Keep draft while dragging"
+    finally:
+        window.close()
+
+
+def test_dragging_is_at_top_edge_and_does_not_overlap_close_button(app):
+    window = MainWindow(None, "TEST")
+    try:
+        window.show()
+        window.settings_button.click()
+        app.processEvents()
+        panel = window.settings_panel
+        for size in ((1280, 800), (760, 600)):
+            window.resize(*size)
+            app.processEvents()
+            assert panel.childAt(QPoint(100, 4)) is panel.drag_strip
+            close = panel.close_button
+            top_left = close.mapTo(panel, QPoint())
+            close_rect = close.rect().translated(top_left)
+            assert not panel.drag_strip.geometry().intersects(close_rect)
+            assert panel.childAt(close_rect.center()) is close
+            assert close.cursor().shape() == Qt.CursorShape.ArrowCursor
+            assert panel.header.cursor().shape() == Qt.CursorShape.ArrowCursor
+        position = panel.pos()
+        # Clicking the close area must activate its button rather than starting a drag.
+        QTest.mouseClick(panel.close_button, Qt.MouseButton.LeftButton)
+        assert panel.drag_strip._drag_offset is None and panel.pos() == position
+        wait_for(panel.isHidden)
     finally:
         window.close()
 
