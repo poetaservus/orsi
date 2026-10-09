@@ -134,9 +134,15 @@ class ProfileApplication(QObject):
                 loading.present()
             self._render(message, show_profile=show_profile)
         finally:
-            if loading is not None:
-                loading.close()
-                loading.deleteLater()
+            try:
+                if loading is not None:
+                    try:
+                        loading.dismiss()
+                    finally:
+                        loading.deleteLater()
+            finally:
+                # Retired views must survive the fade's local event loop.
+                self._collect_retired()
 
     def _render(self, message="", *, show_profile=False):
         old = self.window
@@ -215,7 +221,6 @@ class ProfileApplication(QObject):
                 page.password.setFocus()
         self.last_activity = monotonic()
         self.idle_timer.start()
-        self._collect_retired()
 
     def _collect_retired(self):
         keep = []

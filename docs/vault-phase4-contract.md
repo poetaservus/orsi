@@ -37,8 +37,10 @@ After successful password/recovery unlock, the bundled `orsi_start.png` covers
 the previous window's position and size while personal services and the full UI
 are composed. The artwork fills the area with its proportions preserved and
 centered cropping when needed. It is painted before blocking initialization,
-has no private content, and closes when the replacement view is shown (including
-the locked error view if initialization fails). The image lives with the UI
+has no private content, stays above other application windows, and fades in and
+out over 240 ms each with smooth easing. Fade-in finishes before blocking load;
+fade-out reveals the ready replacement (including the locked error view if
+initialization fails). Only the loading picture stays on top. The image lives with the UI
 assets and follows portable copies; no Desktop path is used at runtime.
 
 Desktop startup admits one owner per application directory. Repeated launches

@@ -1,5 +1,23 @@
 # Git layout and baseline hygiene
 
+## Vault picture stacking and fades, 9 October 2026
+
+`codex/vault-picture-fade` starts from local main `e21cd84`. The loading picture
+now stays above application windows and fades in/out with 240 ms cubic easing.
+Fade-in completes before blocking composition; fade-out reveals the ready view.
+Retired views are collected after the fade's local event loop. See
+[focused verification](vault-picture-fade-verification.md).
+
+Twenty-three existing focused Windows checks passed. Native local/portable
+checks verified the actual topmost style, stacking above a separate test process,
+intermediate native opacity values in both directions, geometry and failed-load
+cleanup. An actual desktop-entrypoint/repeated-launch probe also passed. The full
+suite and live provider/model tests were not run. All eight settings/selection
+preservation entries match; the user vault and running instance were left alone.
+Recovery evidence is under ignored `state/backups/vault-picture-fade-20261009/`.
+Preserve prior main at `archive/2026-10-09/main-before-vault-picture-fade`, commit,
+fast-forward main and remove only the merged local branch. No remote publication.
+
 ## Vault unlock picture, 9 October 2026
 
 `codex/vault-unlock-picture` starts from local main `c7f8916`. Successful unlock
