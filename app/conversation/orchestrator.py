@@ -261,26 +261,20 @@ class ConversationService:
     supports_admission_reporting = True
 
     def will_generate_images(self, text, *, attachments=(), skill_name=None):
-        from app.inference.image_generation import image_request
-        from app.conversation.image_followup import latest_generated_sources, visual_followup
-        if skill_name is not None or getattr(self.inference, "supports_image_generation", False) is not True:
-            return False
-        has_image = any(ref.kind == "image" for ref in attachment_references(attachments))
-        if not attachments and visual_followup(text):
-            has_image = bool(latest_generated_sources(self.store.visible_messages()))
-        return image_request(text, has_image=has_image)
+        return self.image_route_decision(text, attachments=attachments, skill_name=skill_name).route == "image_generation"
+
+    def image_route_decision(self, text, *, attachments=(), skill_name=None):
+        from app.conversation.image_followup import image_route
+        return image_route(str(text).strip(), attachments=attachments, messages=self.store.visible_messages(),
+            supported=getattr(self.inference, "supports_image_generation", False) is True,
+            skill_name=skill_name if skill_name is not None else self._active_skill_name)
 
     def run(self, user_message: str, activity=None, *, skill_name: str | None = None, text_observer=None,
             skill_observer=None, attachments=(), admission_observer=None) -> str:
         """Run one turn; an optional explicit skill applies only to this message."""
         text = str(user_message).strip()
-        references = attachment_references(attachments)
-        if not references and skill_name is None and getattr(self.inference, "supports_image_generation", False) is True:
-            from app.conversation.image_followup import latest_generated_sources, visual_followup
-            if visual_followup(text):
-                references = latest_generated_sources(self.store.visible_messages())
-        image_turn = self.will_generate_images(text, attachments=references, skill_name=skill_name)
-        if not text and not references:
+        submitted_references = attachment_references(attachments)
+        if not text and not submitted_references:
             raise ValueError("Enter a message first.")
         if not self._run_lock.acquire(blocking=False):
             raise RuntimeError("O.R.S.I is already replying.")
@@ -304,6 +298,9 @@ class ConversationService:
                 if self._closed:
                     raise RuntimeError("The conversation is closed.")
                 self._cancellation = source
+            decision = self.image_route_decision(text, attachments=submitted_references, skill_name=skill_name)
+            references = decision.references
+            image_turn = decision.route == "image_generation"
             report_activity(activity, "Preparing your request…")
             if callable(activity_setter):
                 activity_setter(activity)

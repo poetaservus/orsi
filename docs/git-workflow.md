@@ -1,5 +1,32 @@
 # Git layout and baseline hygiene
 
+## Routing intent repair, 9 October 2026
+
+The bounded `codex/routing-intent-fix` change starts from verified local main
+`7b73fe3` in an isolated checkout under `state/routing-intent-worktree/`, preserving
+the active settings-panel work. Phase 1 shares route/source decisions between
+preview and execution, keeps coding diagnostics and screenshots on the agent
+path, and limits implicit image reuse to the current visual task. Intentional
+image output and explicit skill scopes retain their supported behavior.
+See [the verification and delivery record](routing-intent-fix.md).
+
+Final focused native checks passed 272 tests, and all 120 installer/launcher
+checks passed with short repository-local fixtures. All four synthetic real-cloud
+fix/copy cases passed with and without the installed Python skill, and the
+existing live image generation/reopen/edit gate passed. Final full regression
+passed 2,564 tests and 15 subtests, with 58 optional skips and no failures/errors
+in 332.38 seconds. Execution of Python and GUI behavior remain outside ORSI's available
+verification tools. Other opt-in live gates are separate from passed checks.
+
+Pre-integration refs/worktree maps and a verified complete-history bundle
+containing 113 refs are preserved under ignored
+`state/backups/routing-intent-fix-20261009/` in the isolated checkout. Preserve
+prior main at `archive/2026-10-09/main-before-routing-intent-fix`, commit after
+verification and fast-forward local main. Fast-forward the requested active
+checkout without switching its settings branch or discarding its uncommitted
+changes. Remove only the merged local routing branch; other worktrees and
+remote refs remain unchanged. Phases 2–6 of the routing/editing plan remain separate.
+
 ## Compact notification settings, 8 October 2026
 
 The bounded `codex/compact-notification-settings` change starts from local main

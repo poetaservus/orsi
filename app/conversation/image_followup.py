@@ -1,19 +1,47 @@
-"""Resolve visual follow-ups to the latest retained result."""
-import re
-from app.inference.image_generation import creation_followup
+"""Resolve source identity within the current visual task, keeping history intact."""
+from dataclasses import dataclass
+from app.inference.attachments import AttachmentReference, attachment_references
+from app.inference.image_generation import image_intent
 
-_VISUAL = re.compile(r"\b(?:image|picture|photo|background|foreground|lighting|colou?r|darker|brighter|hat|shirt|style|cropped|portrait|landscape|version)\b", re.I)
-_REFERENCE = re.compile(r"\b(?:it|this|that|them|these|those)\b", re.I)
-_FOLLOWUP_ACTION = re.compile(r"\b(?:edit|change|replace|remove|add|make|darken|brighten|crop|resize|turn|adjust|give|put|transform|describe|analy[sz]e|show|what)\b", re.I)
+
+@dataclass(frozen=True)
+class ImageRouteDecision:
+    route: str
+    reason: str
+    references: tuple[AttachmentReference, ...]
+    source: str
+    skill_name: str | None
+
+
+def image_route(text, *, attachments=(), messages=(), supported=True, skill_name=None):
+    references = attachment_references(attachments)
+    if not supported:
+        return ImageRouteDecision("agent", "unsupported_backend", references, "submitted", skill_name)
+    # Resolve history only after the request itself establishes a visual follow-up.
+    intent = image_intent(text, has_image=True, skill_name=skill_name)
+    source = "submitted" if references else "none"
+    if not references and intent.followup:
+        references = latest_generated_sources(messages)
+        if references:
+            source = "current_visual_task"
+    if intent.reason == "visual_edit" and not any(ref.kind == "image" for ref in references):
+        return ImageRouteDecision("agent", "no_visual_source", references, source, skill_name)
+    return ImageRouteDecision(intent.route, intent.reason, references, source, skill_name)
 
 
 def visual_followup(text):
-    return bool(creation_followup(text) or
-                _FOLLOWUP_ACTION.search(text) and (_VISUAL.search(text) or _REFERENCE.search(text)))
+    return image_intent(text, has_image=True).followup
 
 
 def latest_generated_sources(messages):
     for message in reversed(messages):
         if message.role == "assistant" and message.generated_images:
             return message.generated_images
+        if message.role == "user":
+            intent = image_intent(message.content, has_image=True)
+            images = tuple(ref for ref in message.attachments if ref.kind == "image")
+            if images and intent.followup:
+                return images
+            if not intent.followup:
+                return ()
     return ()
