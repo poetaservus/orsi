@@ -1,5 +1,32 @@
 # Git layout and baseline hygiene
 
+## File-task reports prerequisite, 9 October 2026
+
+`codex/preserve-file-task-reports` starts independently from main `8462cdb` after
+Phase 3 cloud qualification exposed a pre-existing answer-rendering bug. Supporting
+source reads were replacing otherwise correct completion/verification reports with
+the last file's contents. The prompt-guidance work remains preserved separately on
+its unmerged branch and at `archive/2026-10-09/guidance-before-report-fix`.
+See [the contract and qualification](file-task-reports.md).
+
+Final focused native checks passed 89 tests and five subtests. The frozen pre-fix
+reproduction has 13 expected failures/four passes, including actual result persistence.
+Final full native regression passed 2,613 tests and 15 subtests, with 58 optional/host
+skips, no failures/errors, in 350.04 seconds. A prior existing Git-installer cleanup
+failure and related teardown error remain recorded separately; its complete 60-test
+group and final full suite passed unchanged on recheck.
+The unchanged cloud fix/copy gate passed all four cases using the original main prompts;
+all four published answers retained their model reports. Python/GUI execution remains
+outside ORSI's available tools. Prompt/routing/tool/model/context policies are unchanged.
+
+Pre-integration refs/worktrees, a verified complete-history bundle and content-free
+preservation hashes are saved in ignored `state/backups/file-task-reports-20261009/`.
+Preserve prior main at `archive/2026-10-09/main-before-file-task-reports`, commit after
+verification, fast-forward local main and the requested active checkout without changing
+its settings branch, and remove only the merged reporting branch. Other worktrees,
+remote refs, settings edits and the unmerged guidance tip remain intact. Resume Phase 3
+after this separate verification checkpoint.
+
 ## Sufficient source reads, 9 October 2026
 
 The bounded `codex/sufficient-source-reads` change starts from verified local main

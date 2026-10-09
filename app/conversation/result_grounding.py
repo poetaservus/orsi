@@ -16,6 +16,10 @@ _FILE_LANGUAGES = {
     ".c": "c", ".h": "c", ".cpp": "cpp", ".hpp": "cpp",
     ".cs": "csharp", ".rs": "rust", ".go": "go", ".sql": "sql",
 }
+_FILE_CHANGES = frozenset({
+    "filesystem.edit_text", "filesystem.write_text", "filesystem.copy",
+    "filesystem.move", "filesystem.mkdir", "filesystem.trash",
+})
 
 
 def grounded_text_read_answer(
@@ -24,6 +28,11 @@ def grounded_text_read_answer(
     observed_results: list[tuple],
 ) -> str | None:
     """Return exact read output when a direct-read answer is missing or misleading."""
+    changed_task = any(call.capability in _FILE_CHANGES for call, _ in observed_results)
+    if changed_task and not _explicit_content_display(user_text):
+        # Source reads supporting a mutation are evidence for its report, not
+        # an instruction to replace completion/failure details with the last file.
+        return None
     call_and_result = _latest_successful_text_read(observed_results)
     if call_and_result is None:
         return None
@@ -32,9 +41,22 @@ def grounded_text_read_answer(
     file_text = output.get("text")
     if not isinstance(file_text, str):
         return None
-    if not _should_ground_text_read_answer(user_text, assistant_text, file_text):
+    if changed_task and file_text and file_text in assistant_text:
         return None
-    return _render_text_result(call, result)
+    if not changed_task and not _should_ground_text_read_answer(user_text, assistant_text, file_text):
+        return None
+    rendered = _render_text_result(call, result)
+    return f"{assistant_text}\n\n{rendered}" if changed_task else rendered
+
+
+def _explicit_content_display(text: str) -> bool:
+    lowered = " ".join(str(text).casefold().split())
+    return re.search(
+        r"\b(?:show|display|print|paste)\s+(?:me\s+)?(?:the\s+)?"
+        r"(?:(?:its|this|that|full|complete|entire|current|updated|saved)\s+)*"
+        r"(?:contents?|source|text|file)\b",
+        lowered,
+    ) is not None
 
 
 def _latest_successful_text_read(observed_results: list[tuple]) -> tuple | None:
