@@ -335,6 +335,8 @@ class PersonalProfilePage(QWidget):
         form.addRow("Credential type", self.kind)
         form.addRow("New value", self.key)
         self.layout.addWidget(self.consent)
+        self.layout.addWidget(label("Save / replace also applies the selected policy. With Ask whenever cloud is selected, "
+            "cloud still asks even if a key is saved. Cloud chat uses an API key; login/access/refresh tokens are stored separately."))
         self._buttons((("Apply credential policy", self._policy), ("Save / replace credential", self._save_key),
                        ("Delete saved credential", self._delete_key)))
         if self.manager.encrypted:
@@ -352,7 +354,18 @@ class PersonalProfilePage(QWidget):
         consent = self.consent.isChecked()
         self.consent.setChecked(False)
         if self.provider:
-            self._perform(lambda: self.provider.save(self.connection, value, consent=consent, kind=self.kind.currentData()))
+            kind, policy = self.kind.currentData(), self.policy.currentData()
+            def save():
+                # Validate and save first: denied consent/invalid input must not
+                # enable use of a previously saved credential.
+                self.provider.save(self.connection, value, consent=consent, kind=kind)
+                self.provider.configure(self.connection, policy)
+                self.manager.configure(credential_policy=str(policy))
+            message = ("Credential saved encrypted. Cloud will still ask because the selected policy is Ask whenever cloud is selected."
+                if policy == CredentialPolicy.ASK else "Credential saved encrypted. Cloud will use the saved API key for this connection.")
+            if kind != "api_key":
+                message = "Token saved encrypted with the selected policy. Cloud chat requires a separately saved API key."
+            self._perform(save, message)
 
     def _delete_key(self):
         if self.provider and confirm(self, "Delete credential", "Delete this saved credential and end its connection session? Older backups may retain it."):
@@ -366,11 +379,16 @@ class PersonalProfilePage(QWidget):
         if not source:
             return
         from app.vault.migration import prepare_credential_import, apply_migration
-        kind, connection = self.kind.currentData(), self.connection
+        kind, connection, policy = self.kind.currentData(), self.connection, self.policy.currentData()
         self.consent.setChecked(False)
         def migrate():
             plan = prepare_credential_import(source, connection, kind, consent=True)
             apply_migration(self.manager.session, plan, replace=True)
+            # Reload revokes this page's old provider before importing. Configure
+            # the renewed session; the rebuilt app loads the same persisted policy.
+            from app.vault.credentials import CredentialProvider
+            CredentialProvider(self.manager.session).configure(connection, policy)
+            self.manager.configure(credential_policy=str(policy))
         self.reload_requested.emit(migrate)
 
     def _encrypted_controls(self):

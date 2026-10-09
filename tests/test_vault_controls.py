@@ -776,3 +776,192 @@ def test_restore_rejects_backup_overlap_before_lock_or_directory_creation(manage
             manager.restore(backup, target, mode="portable", password=PASSWORD)
         assert manager.active and manager.session is session and manager.locator == selected
     assert backup.exists() and not (backup / "nested").exists()
+
+
+def test_saved_cloud_key_after_cancelled_prompt_is_used_without_another_prompt(qt, manager, monkeypatch):
+    from PySide6.QtWidgets import QInputDialog
+    from app.ui.profile_application import ProfileApplication
+    controller = ProfileApplication(qt, manager.application_root, build_synthetic, manager=manager)
+    try:
+        controller.start()
+        window = controller.window
+        page = window.personal_profile_page
+        page.policy.setCurrentIndex(1)
+        page._policy()
+        monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("", False))
+        assert not window._ensure_cloud_ready()
+        page.key.setText(SECRET)
+        page.consent.setChecked(True)
+        page._save_key()
+        monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: pytest.fail("Saved key prompted again"))
+        window.model_selector.setCurrentIndex(window.model_selector.findData("cloud"))
+        assert window.inference.mode == "cloud"
+        assert window.inference.cloud._api_key == SECRET
+        page.key.setText("replacement synthetic key")
+        page.consent.setChecked(True)
+        page._save_key()
+        assert window._ensure_cloud_ready()
+        assert window.inference.cloud._api_key == "replacement synthetic key"
+    finally:
+        controller.shutdown()
+        controller.window.close()
+        qt.removeEventFilter(controller)
+
+
+def test_save_key_applies_selected_policy_and_survives_restart(qt, manager, monkeypatch):
+    from PySide6.QtWidgets import QInputDialog
+    from app.ui.profile_application import ProfileApplication
+    controller = ProfileApplication(qt, manager.application_root, build_synthetic, manager=manager)
+    try:
+        controller.start()
+        page = controller.window.personal_profile_page
+        assert page.provider.policy(page.connection) == CredentialPolicy.ASK
+        page.policy.setCurrentIndex(1)  # Save also applies this explicit choice.
+        page.key.setText(SECRET)
+        page.consent.setChecked(True)
+        page._save_key()
+        assert page.provider.policy(page.connection) == CredentialPolicy.SAVED
+        assert manager.settings().load()["credential_policy"] == str(CredentialPolicy.SAVED)
+        assert not page.key.text() and not page.consent.isChecked()
+        monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: pytest.fail("Saved key prompted again"))
+        assert controller.window._ensure_cloud_ready()
+        controller.transition(manager.lock)
+        controller.transition(lambda: manager.unlock(PASSWORD))
+        page = controller.window.personal_profile_page
+        assert page.policy.currentData() == CredentialPolicy.SAVED
+        assert controller.window._ensure_cloud_ready()
+        controller.window.inference.set_mode("cloud")
+        assert controller.window.inference.cloud._api_key == SECRET
+        controller.window.inference.set_mode("local")
+        assert not controller.window.inference.cloud_has_api_key
+        assert controller.window._ensure_cloud_ready()
+        assert SECRET not in page.status.text()
+        ciphertext(manager.locator.root)
+    finally:
+        controller.shutdown()
+        controller.window.close()
+        qt.removeEventFilter(controller)
+
+
+def test_save_key_with_ask_policy_keeps_prompt_and_explains_choice(qt, manager, monkeypatch):
+    from PySide6.QtWidgets import QInputDialog
+    from app.ui.profile_application import ProfileApplication
+    controller = ProfileApplication(qt, manager.application_root, build_synthetic, manager=manager)
+    try:
+        controller.start()
+        page = controller.window.personal_profile_page
+        page.key.setText(SECRET)
+        page.consent.setChecked(True)
+        page._save_key()
+        assert page.provider.policy(page.connection) == CredentialPolicy.ASK
+        assert manager.vault().read(page.connection + "/api_key", domain=Domain.CREDENTIAL) == SECRET.encode()
+        assert "ask" in page.status.text().casefold()
+        prompted = []
+        monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: (prompted.append(True) or "", False))
+        assert not controller.window._ensure_cloud_ready()
+        assert prompted and not controller.window.inference.cloud_has_api_key
+        assert SECRET not in page.status.text()
+    finally:
+        controller.shutdown()
+        controller.window.close()
+        qt.removeEventFilter(controller)
+
+
+def test_save_key_without_consent_leaves_policy_and_saved_credentials_unchanged(qt, manager):
+    from app.ui.profile_application import ProfileApplication
+    controller = ProfileApplication(qt, manager.application_root, build_synthetic, manager=manager)
+    try:
+        controller.start()
+        page = controller.window.personal_profile_page
+        page.policy.setCurrentIndex(1)
+        page.key.setText(SECRET)
+        page._save_key()
+        assert page.provider.policy(page.connection) == CredentialPolicy.ASK
+        assert manager.vault().list_paths(domain=Domain.CREDENTIAL) == ()
+        assert not page.key.text()
+    finally:
+        controller.shutdown()
+        controller.window.close()
+        qt.removeEventFilter(controller)
+
+
+@pytest.mark.parametrize("policy", [CredentialPolicy.ASK, CredentialPolicy.SAVED])
+def test_import_key_applies_selected_policy_to_renewed_session(qt, manager, tmp_path, monkeypatch, policy):
+    from PySide6.QtWidgets import QFileDialog, QInputDialog
+    from app.ui.profile_application import ProfileApplication
+    source = tmp_path / "credential.json"
+    source.write_text(json.dumps({"api_key": SECRET, "unrelated": "preserve"}))
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(source), ""))
+    controller = ProfileApplication(qt, manager.application_root, build_synthetic, manager=manager)
+    try:
+        controller.start()
+        page = controller.window.personal_profile_page
+        old_session = manager.session
+        page.policy.setCurrentIndex(0 if policy == CredentialPolicy.ASK else 1)
+        page.consent.setChecked(True)
+        page._import_key()
+        assert manager.session is not old_session and not old_session._active
+        page = controller.window.personal_profile_page
+        assert page.provider.policy(page.connection) == policy
+        assert manager.settings().load()["credential_policy"] == str(policy)
+        assert json.loads(source.read_text()) == {"api_key": SECRET, "unrelated": "preserve"}
+        if policy == CredentialPolicy.SAVED:
+            monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: pytest.fail("Imported saved key prompted again"))
+            assert controller.window._ensure_cloud_ready()
+            assert controller.window.inference.cloud._api_key == SECRET
+        else:
+            prompted = []
+            monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: (prompted.append(True) or "", False))
+            assert not controller.window._ensure_cloud_ready() and prompted
+    finally:
+        controller.shutdown()
+        controller.window.close()
+        qt.removeEventFilter(controller)
+
+
+def test_actual_startup_connection_reuses_ui_saved_key_after_unlock(qt, manager, monkeypatch):
+    import app.startup as startup
+    from app.ui.profile_application import ProfileApplication
+    from PySide6.QtWidgets import QInputDialog
+    from tests.test_openai_phase1 import config
+    configuration = config()
+    root = manager.application_root
+    monkeypatch.setattr(startup, "PATHS", SimpleNamespace(root=root, state=root / "state",
+        models=root / "models", config=root / "config"))
+    monkeypatch.setattr(startup, "load_model_config", lambda: (_ for _ in ()).throw(RuntimeError("no synthetic local model")))
+    monkeypatch.setattr(startup, "load_cloud_config", lambda: configuration)
+    backends = []
+    def backend(configuration, **kwargs):
+        assert kwargs["api_key"] == ""
+        cloud = Backend()
+        backends.append(cloud)
+        return cloud
+    monkeypatch.setattr(startup, "OpenAIResponsesInferenceEngine", backend)
+    def build(**kwargs):
+        return startup.build_application(agent_config_override=startup.AgentFeatureConfig(), **kwargs)
+    controller = ProfileApplication(qt, root, build, manager=manager)
+    try:
+        controller.start()
+        page = controller.window.personal_profile_page
+        connection = "cloud-" + sha256((configuration.base_url + "\0" + configuration.api_key_environment).encode()).hexdigest()
+        assert page.connection == connection
+        page.policy.setCurrentIndex(1)
+        page.key.setText(SECRET)
+        page.consent.setChecked(True)
+        page._save_key()
+        monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: pytest.fail("Actual startup lost saved key"))
+        assert controller.window._ensure_cloud_ready()
+        assert backends[-1]._api_key == SECRET
+        controller.transition(manager.lock)
+        assert not backends[-1].has_api_key
+        controller.transition(lambda: manager.unlock(PASSWORD))
+        assert controller.window.personal_profile_page.connection == connection
+        assert controller.window._ensure_cloud_ready()
+        assert backends[-1]._api_key == SECRET
+        assert controller.window.inference.respond([{"role": "user", "content": "synthetic test"}]) == "synthetic reply"
+        assert manager.vault().read(connection + "/api_key", domain=Domain.CREDENTIAL) == SECRET.encode()
+        ciphertext(manager.locator.root)
+    finally:
+        controller.shutdown()
+        controller.window.close()
+        qt.removeEventFilter(controller)

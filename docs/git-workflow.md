@@ -1,5 +1,22 @@
 # Git layout and baseline hygiene
 
+## Saved cloud credential correction, 9 October 2026
+
+`codex/vault-cloud-credentials` starts from local main `4b9defa`. The reported
+saved-key prompt reproduced in local/portable synthetic UI checks: Save ignored
+the selected policy without a separate Apply click, and a cancelled prompt could
+cache a missing key. Save/import now apply the explicit policy, saved API-key
+replacement invalidates the affected cached connection, and feedback explains
+intentional Ask mode. See [focused verification](vault-cloud-credentials-verification.md).
+
+Fourteen new and 40 affected existing checks passed; the full suite was not run.
+All eight recorded settings/profile-selection hashes/absence match. Preserve
+prior main at `archive/2026-10-09/main-before-vault-cloud-credentials`, commit the
+bounded fix, fast-forward local main and remove its merged feature branch.
+Content-free preservation evidence is under ignored
+`state/backups/vault-cloud-credentials-20261009/`. Other worktrees, personal
+profiles and remote branches remain untouched; no remote publication is authorized.
+
 ## Personal Vault phase 4 setup and controls, 9 October 2026
 
 `codex/vault-phase4` starts from verified local main `30053f6`. The user authorized

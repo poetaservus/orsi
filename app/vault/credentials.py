@@ -97,6 +97,11 @@ class CredentialProvider:
         raw = self._secret(secret)
         with self.session.operation() as vault, self._lock:
             vault.put(connection + "/" + kind, raw, domain=Domain.CREDENTIAL)
+            if (kind == "api_key" and connection in self._active
+                    and self._policies.get(connection) == CredentialPolicy.SAVED):
+                # A cancelled prompt may have cached None; an active connection
+                # may also hold the previous saved key. Reload on the next begin.
+                self.end(connection)
 
     def saved_token(self, connection, *, kind):
         connection = _connection(connection)

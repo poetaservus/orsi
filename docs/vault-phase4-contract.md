@@ -63,6 +63,16 @@ Use the masked value field and separate save-consent checkbox to save/replace an
 API key or supported login/access/refresh token. Deleting ends the connection
 session and removes the chosen value; provider-side revocation is separate.
 
+**Save / replace credential** and credential-file import also apply the policy
+currently selected in the dropdown. Choose **Use explicitly saved encrypted
+credentials** to reuse a saved API key without another key prompt. If a key is
+already saved, select that policy and press **Apply credential policy**; no
+re-entry is needed. **Ask whenever cloud is selected** deliberately continues
+asking even when a credential has been saved. Save feedback identifies this
+choice. Saving/replacing an API key clears a previously missing or stale cached
+key under the saved policy, so the next cloud attempt loads the saved value.
+Cloud chat requires an API key; the other token types remain separate.
+
 Credential-file import accepts a selected JSON file containing the chosen
 `api_key`, `login_token`, `access_token` or `refresh_token` field. It requires
 separate encrypted-save consent, does not display/log its value, and writes only
