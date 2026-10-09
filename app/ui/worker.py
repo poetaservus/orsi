@@ -67,7 +67,9 @@ class ConversationWorker(QObject):
         except Exception as exc:
             self._restore_unadmitted()
             log.exception("A conversation turn failed in the UI worker.")
-            self.failed.emit(str(exc))
+            from app.vault.types import VaultError
+            from app.vault.profiles import public_error
+            self.failed.emit(public_error(exc) if isinstance(exc, VaultError) else str(exc))
 
 
 class ModelSwitchWorker(QObject):

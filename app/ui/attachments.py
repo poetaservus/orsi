@@ -73,7 +73,9 @@ class AttachmentPreparationWorker(QObject):
                     pass
                 except Exception as exc:
                     from app.inference.attachments import AttachmentError
-                    self.failed.emit(job.key, str(exc) if isinstance(exc, AttachmentError) else
+                    from app.vault.types import VaultError
+                    from app.vault.profiles import public_error
+                    self.failed.emit(job.key, public_error(exc) if isinstance(exc, VaultError) else str(exc) if isinstance(exc, AttachmentError) else
                                      "The attachment could not be prepared. Try another file.")
                 finally:
                     if reference is not None and job.reference is None and not handed_off:

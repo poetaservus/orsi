@@ -118,6 +118,8 @@ class ImageViewer(QDialog):
         self.opening = OpeningFade(self)
         self._backdrop = _blurred_backdrop(parent)
         session = getattr(store, "session", None)
+        self._profile_manager = getattr(parent, "_profile_manager", None)
+        self._vault_enabled = session is not None and session.encrypted
         if session is not None:
             unregister = session.register(clear=self._clear_profile)
             self.destroyed.connect(unregister)
@@ -141,16 +143,29 @@ class ImageViewer(QDialog):
         self.save_button = QPushButton("Save image…")
         self.save_button.setObjectName("imageViewerSave")
         self.save_button.setAccessibleName("Save original image")
+        if self._vault_enabled:
+            self.save_button.setText("Export outside vault…")
+            self.save_button.setAccessibleName("Export original image outside vault")
+            self.save_button.setToolTip("Creates an outside copy that remains after the vault is locked or this image is deleted.")
         self.save_button.clicked.connect(self._save_image)
         self.close_button.setAccessibleName("Close image viewer")
         header.addWidget(self.name, 1)
         header.addWidget(self.counter)
+        if self._vault_enabled:
+            self.store_button = QPushButton("Store in vault")
+            self.store_button.setAccessibleName("Store image in vault")
+            self.store_button.clicked.connect(self._store_in_vault)
+            header.addWidget(self.store_button)
         header.addWidget(self.save_button)
         header.addWidget(self.previous)
         header.addWidget(self.next)
         header.addSpacing(8)
         header.addWidget(self.close_button)
         layout.addLayout(header)
+        if self._vault_enabled and (self._profile_manager is None or self._profile_manager.guidance()):
+            self.vault_hint = QLabel("Recommended: store in your vault. Your saved copy is encrypted while the vault is locked.")
+            self.vault_hint.setWordWrap(True)
+            layout.addWidget(self.vault_hint)
         self.canvas = _ImageCanvas(self.loader)
         layout.addWidget(self.canvas, 1)
 
@@ -262,7 +277,7 @@ class ImageViewer(QDialog):
 
     def _save_image(self):
         from pathlib import Path
-        path, _ = QFileDialog.getSaveFileName(self, "Save original image", self.reference.name,
+        path, _ = QFileDialog.getSaveFileName(self, "Export outside vault" if self._vault_enabled else "Save original image", self.reference.name,
                                              "Images (*.png *.jpg *.jpeg *.webp);;All files (*)")
         if not path:
             return
@@ -271,7 +286,19 @@ class ImageViewer(QDialog):
         except Exception:
             self.status.setText("Could not save the image. Choose another location and try again.")
             return
-        self.status.setText("Image saved.")
+        self.status.setText("Image exported outside vault; this copy remains after locking." if self._vault_enabled else "Image saved.")
+
+    def _store_in_vault(self):
+        try:
+            store = self.loader.store
+            with store.protect_drafts():
+                store.commit_document(store.session.path("imports/images/" + self.reference.id + ".json"),
+                    {"image": self.reference.model_dump(mode="json")}, (self.reference,))
+                store.retain_drafts((self.reference,))
+            self.status.setText("Image stored in vault. Your saved copy is encrypted while locked.")
+        except Exception as error:
+            from app.vault.profiles import public_error
+            self.status.setText(public_error(error))
 
     def _clear_profile(self):
         self.hide()
@@ -286,6 +313,13 @@ class ImageViewer(QDialog):
     def _export_original(self, path):
         # QSaveFile preserves the original encoded bytes and commits atomically.
         from PySide6.QtCore import QSaveFile, QIODevice
+        if self._vault_enabled:
+            from pathlib import Path
+            from app.vault.files import ordinary
+            target_path = Path(path).absolute()
+            ordinary(target_path)
+            if any(target_path.is_relative_to(root) for root in self.loader.store.session.protected_roots):
+                raise OSError("Choose an export destination outside profile storage.")
         target = QSaveFile(str(path))
         if not target.open(QIODevice.OpenModeFlag.WriteOnly):
             raise OSError("Image destination is unavailable.")

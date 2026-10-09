@@ -10,6 +10,55 @@ from app.state.atomic import replace_state_file
 from app.vault.types import RecoveryRequired, StorageUnavailable, VaultBusy
 
 
+def remove_verified_original(path, digest, limit):
+    """Delete the exact verified regular file, keeping Windows write/delete locks held."""
+    from hashlib import sha256
+    from app.vault.types import OriginalChanged
+    path = Path(path).absolute()
+    ordinary(path)
+    if os.name != "nt":
+        identity = path.stat()
+        if identity.st_nlink != 1 or sha256(read_bytes(path, limit)).hexdigest() != digest:
+            raise OriginalChanged("Original changed before cleanup.")
+        if path.stat() != identity:
+            raise OriginalChanged("Original changed before cleanup.")
+        path.unlink()
+        return
+    import ctypes
+    from ctypes import wintypes
+    import msvcrt
+    from app.execution.windows_filesystem import _kernel, _FileInformation, pinned_parent
+    kernel = _kernel()
+    kernel.SetFileInformationByHandle.argtypes = [wintypes.HANDLE, ctypes.c_int, ctypes.c_void_p, wintypes.DWORD]
+    kernel.SetFileInformationByHandle.restype = wintypes.BOOL
+    with pinned_parent(path, CancellationToken()):
+        handle = kernel.CreateFileW(str(path), 0x80000000 | 0x10000, 0x1, None, 3, 0x80 | 0x00200000, None)
+        if handle == ctypes.c_void_p(-1).value:
+            raise StorageUnavailable("Cannot safely acquire original cleanup access.")
+        transferred = False
+        try:
+            info = _FileInformation()
+            if not kernel.GetFileInformationByHandle(handle, ctypes.byref(info)):
+                raise StorageUnavailable("Cannot inspect original cleanup access.")
+            if info.attributes & (0x10 | 0x400 | 0x4) or info.links != 1 or (info.size_high << 32 | info.size_low) > limit:
+                raise OriginalChanged("Original is not an unshared bounded regular file.")
+            descriptor = msvcrt.open_osfhandle(handle, os.O_RDONLY | os.O_BINARY)
+            transferred = True
+            with os.fdopen(descriptor, "rb") as stream:
+                measured = sha256()
+                while chunk := stream.read(1024 * 1024):
+                    measured.update(chunk)
+                if measured.hexdigest() != digest:
+                    raise OriginalChanged("Original changed before cleanup.")
+                disposition = ctypes.c_ubyte(1)
+                # FileDispositionInfo marks this owned handle for deletion on close.
+                if not kernel.SetFileInformationByHandle(handle, 4, ctypes.byref(disposition), ctypes.sizeof(disposition)):
+                    raise StorageUnavailable("Cannot safely remove the verified original.")
+        finally:
+            if not transferred:
+                kernel.CloseHandle(handle)
+
+
 def ordinary(path):
     path = Path(path).absolute()
     for part in (*reversed(path.parents), path):
@@ -118,7 +167,7 @@ def remove_owned_snapshot(path, anchor):
 
 class Lease:
     """OS-owned lock: released on close/process death; stale files are harmless."""
-    def __init__(self, root):
+    def __init__(self, root, *, child_directories=("objects", "backups")):
         self._stack = ExitStack()
         self._fd = None
         try:
@@ -127,7 +176,7 @@ class Lease:
                 raise StorageUnavailable("Vault location is unavailable.")
             if os.name == "nt":
                 from app.execution.windows_filesystem import pinned_parent
-                for directory in (root, root / "objects", root / "backups"):
+                for directory in (root, *(root / name for name in child_directories)):
                     self._stack.enter_context(pinned_parent(directory / "guard", CancellationToken()))
             ordinary(root / ".lease")
             self._fd = os.open(root / ".lease", os.O_RDWR | os.O_CREAT, 0o600)

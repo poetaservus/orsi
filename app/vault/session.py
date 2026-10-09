@@ -44,6 +44,14 @@ class ProfileSession:
     def path(self, key):
         return PersonalPath(self, key)
 
+    @property
+    def encrypted(self):
+        return getattr(self._vault, "encrypted", True)
+
+    def storage_path(self, key):
+        self.require_active()
+        return self.path(key) if self.encrypted else self._vault.root / _key(key)
+
     def register(self, *, stop=lambda: None, drain=lambda: None, clear=lambda: None):
         """Workers must cancel, join and discard cached results at this boundary."""
         with self._gate:
@@ -56,7 +64,7 @@ class ProfileSession:
                     self._resources.remove(resource)
         return unregister
 
-    def lock(self):
+    def lock(self, *, _renew=False):
         # Revoke first. Previously constructed paths never bind to a later unlock.
         with self._gate:
             if self._closing:
@@ -85,7 +93,8 @@ class ProfileSession:
             with self._gate:
                 for stream in tuple(self._streams):
                     stream.close()
-                self._vault.lock()
+                if failed or not _renew:
+                    self._vault.lock()
                 if not failed:
                     self._resources.clear()
         finally:
@@ -93,6 +102,11 @@ class ProfileSession:
         if failed:
             # Keep callbacks for a retry; a manager cannot open the next profile.
             raise RuntimeError("Profile work could not be fully released; retry closing it.") from None
+
+    def renew(self):
+        """Drain/revoke all old consumers before rebuilding the same unlocked profile."""
+        self.lock(_renew=True)
+        return ProfileSession(self._vault, protected_roots=self._protected_roots)
 
     def open_bytes(self, data):
         with self._gate:

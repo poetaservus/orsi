@@ -78,20 +78,31 @@ def test_preference_failure_still_closes_inference(tmp_path):
 
 
 @pytest.mark.parametrize("failure", ["window", "loop", None])
-def test_entry_point_always_closes_model_even_when_service_cleanup_fails(monkeypatch, failure):
+def test_entry_point_always_closes_model_even_when_service_cleanup_fails(monkeypatch, tmp_path, failure):
     import app.main as entry
-    inference = SimpleNamespace(close=Mock())
-    service = SimpleNamespace(shutdown=Mock(side_effect=RuntimeError("cleanup failed")))
-    fake_app = SimpleNamespace(aboutToQuit=SimpleNamespace(connect=Mock()), exec=Mock(return_value=0))
-    window_factory = Mock(return_value=SimpleNamespace(show=Mock()))
+    import app.ui.profile_application as profiles
+    application = QApplication.instance() or QApplication([])
+    inference = HybridInferenceEngine(local=BlockingBackend(), cloud=None)
+    inference.close = Mock(wraps=inference.close)
+    service = ConversationService(inference, ConversationStore(tmp_path / "chat.json"))
+    service.shutdown = Mock(side_effect=RuntimeError("cleanup failed"))
+    loop = Mock(return_value=0)
+    window_factory = Mock(side_effect=MainWindow)
+    owner_type, owners = profiles.ProfileApplication, []
+    def owner_factory(*args, **kwargs):
+        owner = owner_type(*args, **kwargs)
+        owners.append(owner)
+        return owner
     if failure == "window":
         window_factory.side_effect = RuntimeError("window failed")
     if failure == "loop":
-        fake_app.exec.side_effect = RuntimeError("loop failed")
-    monkeypatch.setattr("PySide6.QtWidgets.QApplication", lambda *a: fake_app)
-    monkeypatch.setattr("app.ui.main_window.MainWindow", window_factory)
+        loop.side_effect = RuntimeError("loop failed")
+    monkeypatch.setattr(application, "exec", loop)
+    monkeypatch.setattr("PySide6.QtWidgets.QApplication", lambda *a: application)
+    monkeypatch.setattr(profiles, "MainWindow", window_factory)
+    monkeypatch.setattr(profiles, "ProfileApplication", owner_factory)
     monkeypatch.setattr(entry, "configure_logging", Mock())
-    monkeypatch.setattr(entry, "PATHS", SimpleNamespace(ensure_directories=Mock(), state=__import__("pathlib").Path("state")))
+    monkeypatch.setattr(entry, "PATHS", SimpleNamespace(ensure_directories=Mock(), root=tmp_path, state=tmp_path / "state"))
     monkeypatch.setattr(entry, "load_agent_feature_config", lambda: SimpleNamespace(full_local_read_enabled=False))
     monkeypatch.setattr(entry, "build_application", lambda **k: (service, {"hostname": "TEST"}, None, inference))
     if failure:
@@ -100,5 +111,9 @@ def test_entry_point_always_closes_model_even_when_service_cleanup_fails(monkeyp
     else:
         assert entry.main() == 0
     inference.close.assert_called_once()
-    fake_app.aboutToQuit.connect.call_args.args[0]()
+    owners[0].shutdown()
     assert inference.close.call_count == 2
+    application.removeEventFilter(owners[0])
+    if owners[0].window is not None:
+        owners[0].window.close()
+    owners[0].deleteLater()

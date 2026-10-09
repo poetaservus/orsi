@@ -32,6 +32,18 @@ class QuotaExceeded(VaultError):
     pass
 
 
+class MigrationConflict(VaultError):
+    pass
+
+
+class OriginalChanged(VaultError):
+    pass
+
+
+class UnverifiedMigration(VaultError):
+    pass
+
+
 class State(StrEnum):
     LOCKED = "locked"
     UNLOCKED = "unlocked"

@@ -948,6 +948,12 @@ class MainWindow(QMainWindow):
             return
         dialog = create_attachment_file_dialog(self, cloud=getattr(self.inference, "mode", "local") == "cloud",
                                                name_filter=SUPPORTED_FILE_FILTER)
+        manager = getattr(self, "_profile_manager", None)
+        if manager is not None and manager.guidance():
+            dialog.setWindowTitle("Import a copy into vault · Recommended")
+            dialog.setLabelText(QFileDialog.DialogLabel.Accept, "Import into vault")
+            dialog.setLabelText(QFileDialog.DialogLabel.FileName,
+                "Your saved copy is encrypted while locked. External originals remain unchanged.")
         self._attachment_picker = dialog
 
         def finished(result):
@@ -1566,7 +1572,7 @@ class MainWindow(QMainWindow):
             key, accepted = QInputDialog.getText(
                 self,
                 f"{self.inference.cloud_provider_name} API key",
-                "Enter the API key for this session. It will not be saved to the USB drive:",
+                "Enter the API key for this connection session. Saving it requires a separate choice in Personal profile settings:",
                 QLineEdit.EchoMode.Password,
             )
             if not accepted or not key.strip():

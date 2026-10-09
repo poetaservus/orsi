@@ -28,6 +28,7 @@ from app.settings.paths import PATHS
 from app.settings.openai_cloud import OpenAICloudConfig
 from app.infrastructure.baseline import BaselineRecorder
 from app.runtime.skills import SkillRegistry
+from app.state.storage import JsonStore
 
 
 log = logging.getLogger(__name__)
@@ -39,6 +40,7 @@ def build_application(
     full_local_read_acknowledged: bool = False,
     skill_registry_override: SkillRegistry | None = None,
     profile_session=None,
+    session_credentials=False,
 ):
     """Build inference, private conversation state, skills and the optional agent.
 
@@ -47,21 +49,25 @@ def build_application(
     """
     state = PATHS.state
     credentials = None
+    if session_credentials:
+        from app.vault.credentials import SessionCredentialProvider
+        credentials = SessionCredentialProvider()
     protected_roots = ()
     if profile_session is not None:
         from app.vault.session import ProfileSession
-        from app.vault.credentials import CredentialProvider
+        from app.vault.credentials import CredentialProvider, SessionCredentialProvider
         from app.vault.logging import configure_profile_logging
         if not isinstance(profile_session, ProfileSession):
             raise TypeError("Select an unlocked personal profile session.")
         profile_session.require_active()
         configure_profile_logging(profile_session)
-        state = profile_session.path("state")
-        credentials = CredentialProvider(profile_session)
+        state = profile_session.storage_path("state")
+        credentials = (CredentialProvider(profile_session) if profile_session.encrypted
+                       else SessionCredentialProvider(profile_session))
         protected_roots = (*profile_session.protected_roots, PATHS.state)
         if skill_registry_override is not None:
             from app.vault.skills import VaultSkillRegistry
-            if not isinstance(skill_registry_override, VaultSkillRegistry) or skill_registry_override.session is not profile_session:
+            if profile_session.encrypted and (not isinstance(skill_registry_override, VaultSkillRegistry) or skill_registry_override.session is not profile_session):
                 raise TypeError("Personal skills must belong to the selected profile.")
     if skill_registry_override is not None and not isinstance(skill_registry_override, SkillRegistry):
         raise TypeError("Application skills must use a SkillRegistry.")
@@ -94,13 +100,13 @@ def build_application(
         cloud_engine = (
             OpenAIResponsesInferenceEngine(
                 cloud_config,
-                **({"api_key": ""} if profile_session is not None else {}),
+                **({"api_key": ""} if credentials is not None else {}),
                 selection_path=state / "cloud_model_selection_v1.json",
                 rate_limits_path=state / "cloud_rate_limits_v1.json",
             )
             if isinstance(cloud_config, OpenAICloudConfig)
             else OpenAICompatibleInferenceEngine(cloud_config,
-                **({"api_key": ""} if profile_session is not None else {}))
+                **({"api_key": ""} if credentials is not None else {}))
         )
     except Exception as exc:
         log.exception("Cloud inference could not be configured.")
@@ -186,6 +192,10 @@ def build_application(
                     (cloud_config.base_url + "\0" + cloud_config.api_key_environment).encode()).hexdigest()}
                if credentials is not None and cloud_config is not None else {}),
         )
+        if credentials is not None and cloud_config is not None:
+            setup = JsonStore(profile_session.storage_path("setup/profile_v1.json")).load({}) if profile_session is not None else {}
+            if inference.connection_id not in credentials._policies:
+                credentials.configure(inference.connection_id, setup.get("credential_policy", "ask_each_session"))
     except InferenceUnavailable:
         startup_error = " ".join(
             error for error in (local_error, cloud_error) if error
@@ -194,7 +204,7 @@ def build_application(
     service = None
     if inference is not None:
         try:
-            if profile_session is not None:
+            if profile_session is not None and profile_session.encrypted:
                 from app.vault.attachments import VaultAttachmentStore
                 attachments = VaultAttachmentStore(state / "conversation_v1" / "attachments")
             else:
@@ -236,9 +246,11 @@ def build_application(
         try:
             if skill_registry_override is not None:
                 skill_registry = skill_registry_override
-            elif profile_session is not None:
+            elif profile_session is not None and profile_session.encrypted:
                 from app.vault.skills import VaultSkillRegistry
                 skill_registry = VaultSkillRegistry(profile_session)
+            elif profile_session is not None:
+                skill_registry = SkillRegistry(global_root=profile_session._vault.root / "skills")
             else:
                 skill_registry = SkillRegistry()
             skill_registry.discover()
@@ -275,6 +287,10 @@ def build_application(
             service.profile_session = profile_session
             profile_session.register(stop=service.stop_for_profile,
                 drain=service.drain_for_profile, clear=service.clear_for_profile)
+            if not profile_session.encrypted:
+                from app.runtime.skills.contracts import SkillDiscoveryReport
+                profile_session.register(clear=store.forget_protected_state)
+                profile_session.register(clear=lambda: setattr(skill_registry, "_report", SkillDiscoveryReport()))
 
     host = {"hostname": socket.gethostname() or "Windows PC"}
     return service, host, startup_error, inference

@@ -28,6 +28,17 @@ runtime\python\python.exe -m app.main
 
 ## Current capabilities
 
+Open **Settings → Personal profile** to create or select local/portable personal storage,
+choose encryption, quota and credential policy, or manage unlock/lock, idle lock, password,
+recovery, backups, restore, relocation and retention. Encrypted profiles reopen at the unlock
+screen before personal preferences/history are loaded. Existing unencrypted storage remains
+available explicitly. Desktop cloud connections use session-only credentials unless you
+explicitly save one in an encrypted profile; they do not fall back to environment keys.
+Migration imports only selected categories, verifies protected copies and leaves originals
+for a separate reviewed cleanup. See [the controls and migration guide](docs/vault-phase4-contract.md)
+and [focused verification](docs/vault-phase4-verification.md). Physical SSD/minimum-host
+and independent security qualification remain pending.
+
 - Ordinary local or cloud conversation with bounded context.
 - `filesystem.stat`, `filesystem.find`, `filesystem.list`,
   `filesystem.read_text`, and bounded literal `filesystem.search`.
@@ -126,7 +137,8 @@ extension/stem variant after an extensionless file read misses. See
 - `config/cloud.json`: OpenAI Responses configuration and explicit Luna/Sol profiles. The default
   is GPT-6 Luna, with 32,768 effective context tokens and a 4,096-token output reserve. Runtime
   selection stores only the model ID in ignored `state/cloud_model_selection_v1.json`.
-  Keys come from `OPENAI_API_KEY` or the in-memory session prompt. Requests use `store: false`;
+  Desktop keys come from the session prompt or an explicitly saved encrypted profile credential.
+  Direct legacy backend integrations can still opt into their environment-key API. Requests use `store: false`;
   the SDK is the sole retry owner and `max_retries` is initially zero. Local remains the default
   launch mode. Phase 1 supports text chat and skill selection. Neither profile is
   live-qualified yet. Existing

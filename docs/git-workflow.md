@@ -1,5 +1,25 @@
 # Git layout and baseline hygiene
 
+## Personal Vault phase 4 setup and controls, 9 October 2026
+
+`codex/vault-phase4` starts from verified local main `30053f6`. The user authorized
+all phase 4 items and 4.1 and requested necessary tests only; the 2000+ suite is
+excluded. Settings gains personal-profile setup/selection/unlock, credentials,
+migration/original cleanup, quota/recovery/backup/restore/relocation, retention
+and dismissible protected-storage guidance. See [the contract](vault-phase4-contract.md)
+and [focused verification](vault-phase4-verification.md).
+
+Focused checks passed 267 distinct cases with no final failures/errors/skips.
+Real SSD, minimum-host, live provider/model and independent security gates remain
+deferred; phase 5 is not started. All seven recorded user configuration/state
+hashes/absence and other worktree tips are preserved. Content-free preservation
+evidence is under ignored `state/backups/vault-phase4-20261009/`. The bundled
+runtime gains already available, hash-verified pinned crypto dependencies without
+replacing existing settings. Preserve prior main at
+`archive/2026-10-09/main-before-vault-phase4`, commit the bounded change,
+fast-forward local main and remove only the merged local feature branch.
+No remote publication is authorized.
+
 ## Personal Vault phase 3 application integration, 9 October 2026
 
 `codex/vault-phase3` starts from verified local main `d456cd3`. The user authorized

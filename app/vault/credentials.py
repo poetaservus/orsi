@@ -1,5 +1,6 @@
 """One explicit-consent credential provider for chat and independent services."""
 from enum import StrEnum
+from contextlib import contextmanager
 import re
 from threading import RLock
 
@@ -46,6 +47,10 @@ class CredentialProvider:
             if self._policies.get(connection) != policy:
                 self.end(connection)
             self._policies = proposed
+
+    def policy(self, connection):
+        with self.session.operation(), self._lock:
+            return self._policies.get(_connection(connection), CredentialPolicy.ASK)
 
     def bind(self, connection, consumer):
         """Consumer supplies cancel_current_request and set_api_key (which drains)."""
@@ -153,3 +158,60 @@ class CredentialProvider:
         self.end_all()
         self._bindings.clear()
         self._policies.clear()
+
+
+class _EphemeralSession:
+    ephemeral = True
+
+    def __init__(self):
+        self._active, self._resources = True, []
+
+    def require_active(self):
+        if not self._active:
+            from app.vault.types import VaultLocked
+            raise VaultLocked("The connection session is closed.")
+
+    @contextmanager
+    def operation(self):
+        self.require_active()
+        yield None
+
+    def register(self, *, stop=lambda: None, clear=lambda: None):
+        self._resources.append((stop, clear))
+
+    def lock(self):
+        self._active = False
+        for stop, clear in self._resources:
+            stop()
+            clear()
+        self._resources.clear()
+
+
+class SessionCredentialProvider(CredentialProvider):
+    """Explicit unencrypted profiles never read or persist connection secrets."""
+    def __init__(self, session=None):
+        self.session, self._lock = session or _EphemeralSession(), RLock()
+        self._policies, self._active, self._bindings = {}, {}, {}
+        self.session.register(stop=self.end_all, clear=self._clear)
+
+    def configure(self, connection, policy=CredentialPolicy.ASK):
+        if CredentialPolicy(policy) != CredentialPolicy.ASK:
+            raise ValueError("Saved credentials require an encrypted profile.")
+        self.end(_connection(connection))
+
+    def begin(self, connection):
+        connection = _connection(connection)
+        with self.session.operation(), self._lock:
+            if connection not in self._active:
+                self._active[connection] = None
+                self._publish(connection)
+            return self._active[connection] is not None
+
+    def save(self, *args, **kwargs):
+        raise ValueError("Saved credentials require an encrypted profile.")
+
+    def saved_token(self, *args, **kwargs):
+        raise CredentialsRequired()
+
+    def delete_saved(self, connection, **kwargs):
+        self.end(_connection(connection))

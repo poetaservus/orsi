@@ -62,6 +62,7 @@ class SettingsPanel(QFrame):
         body = QHBoxLayout()
         body.setSpacing(20)
         nav = QVBoxLayout()
+        self.navigation_layout = nav
         nav.setSpacing(4)
         self.pages = QStackedWidget()
         self.navigation = []
@@ -101,6 +102,25 @@ class SettingsPanel(QFrame):
 
     def show_section(self, name):
         self.pages.setCurrentIndex(self.section_names.index(name))
+
+    def add_personal_page(self, page):
+        """Installed by the application owner; isolated windows keep their existing tabs."""
+        index = self.pages.count()
+        self.section_names = (*self.section_names, "Personal profile")
+        button = QPushButton("Personal profile")
+        button.setObjectName("settingsNavigation")
+        button.setCheckable(True)
+        button.setAutoExclusive(True)
+        button.setFixedSize(190, 42)
+        button.clicked.connect(lambda: self.pages.setCurrentIndex(index))
+        self.navigation.append(button)
+        self.navigation_layout.insertWidget(self.navigation_layout.count() - 1, button)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setWidget(page)
+        self.pages.addWidget(scroll)
 
     def populate(self, window):
         general, models, skills, images, appearance = self.page_layouts

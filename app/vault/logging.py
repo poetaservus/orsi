@@ -10,7 +10,7 @@ class ProfileLogHandler(logging.Handler):
         super().__init__()
         self.session = session
         self._events = deque(maxlen=200)
-        self._store = JsonStore(session.path("diagnostics/events_v1.json"))
+        self._store = JsonStore(session.storage_path("diagnostics/events_v1.json"))
         session.register(stop=self.detach, clear=self._events.clear)
 
     def emit(self, record):
