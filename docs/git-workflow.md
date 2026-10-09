@@ -1,5 +1,24 @@
 # Git layout and baseline hygiene
 
+## Personal Vault phase 1 review branch, 9 October 2026
+
+The user requested phase 1 of the external Personal Vault v1 roadmap on a new
+branch, `codex/vault-phase1`, from local main `aeb350d`. This bounded change adds
+the storage inventory, proposed format/lifecycle contract and an isolated
+synthetic encryption experiment. No application storage migration or runtime
+integration is enabled. See [scope, verification and pending gates](vault-phase1-verification.md).
+
+The user explicitly requested necessary tests only. Final focused checks passed
+36 tests in 3.80 seconds; large synthetic-image experiments, compilation, startup
+import isolation, preservation hashes and whitespace checks passed. The full
+suite and live model/API gates were not run. Physical SSD, minimum-host and
+independent security qualification remain pending. Preservation hashes and
+ref/worktree maps are under ignored `state/backups/vault-phase1-20261009/`.
+
+Commit the bounded change and retain the requested branch for review. Immediate
+fast-forward integration/branch deletion are deferred; local main, remote refs,
+other active worktrees and user settings remain unchanged.
+
 ## Tool approval and UI integration, 9 October 2026
 
 The user authorized merging and publishing the eight commits from `585cfdb`

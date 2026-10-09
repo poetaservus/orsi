@@ -19,6 +19,7 @@ dependencies = [
 windows = ["PySide6>=6.7", "Pygments>=2.19,<3"]
 inference = ["llama-cpp-python>=0.2.80"]
 test = ["pytest>=8"]
+vault-prototype = ["PyNaCl==1.6.2"]
 
 [project.scripts]
 orsi = "app.main:main"
