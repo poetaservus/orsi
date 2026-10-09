@@ -362,6 +362,22 @@ QWidget#skillSettingsPage QPushButton, QWidget#imageSettingsPage QPushButton {
 }
 QWidget#skillSettingsPage QPushButton:hover, QWidget#imageSettingsPage QPushButton:hover { background: #51627a; }
 QWidget#skillSettingsPage QPushButton:disabled, QWidget#imageSettingsPage QPushButton:disabled { color: #9da8b8; }
+QFrame#settingsPanel QLineEdit#greetingInput,
+QWidget#skillSettingsPage QLineEdit#skillSource,
+QWidget#skillSettingsPage QPushButton#skillPreview,
+QWidget#skillSettingsPage QPushButton#skillInstall {
+    background: #303238; border-color: #4a4d54;
+}
+QFrame#settingsPanel QLineEdit#greetingInput:hover,
+QFrame#settingsPanel QLineEdit#greetingInput:focus,
+QWidget#skillSettingsPage QLineEdit#skillSource:hover,
+QWidget#skillSettingsPage QLineEdit#skillSource:focus { border-color: #70747b; }
+QWidget#skillSettingsPage QPushButton#skillPreview:hover,
+QWidget#skillSettingsPage QPushButton#skillInstall:hover { background: #3a3c42; }
+QWidget#skillSettingsPage QPushButton#skillPreview:pressed,
+QWidget#skillSettingsPage QPushButton#skillInstall:pressed { background: #24262c; }
+QWidget#skillSettingsPage QPushButton#skillPreview:disabled,
+QWidget#skillSettingsPage QPushButton#skillInstall:disabled { background: #303238; }
 QFrame#settingsPanel QComboBox:disabled { color: #9da8b8; }
 QFrame#settingsPanel QComboBox::drop-down { width: 20px; border: none; }
 QFrame#settingsPanel QComboBox QAbstractItemView { background: #343f50; color: #e4e5eb; selection-background-color: #51627a; }

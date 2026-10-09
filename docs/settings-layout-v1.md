@@ -42,3 +42,25 @@ Local integration retains the previous main tip at
 `archive/2026-10-08/main-before-settings-layout-v1`, fast-forwards main after
 verification, and removes only this merged feature branch. Other worktrees and
 remote refs are outside this change.
+
+## Flat control fills, 9 October 2026
+
+The follow-up on `codex/tool-approval-preferences` gives Preview, Install, the
+GitHub/source input and the greeting input explicit solid charcoal fills.
+Hover, pressed and disabled button states also use solid fills. The change is
+limited to widget identities and settings styling; actions and persistence
+retain their existing behavior.
+
+The existing settings/skill-management checks passed **30 tests** in 27.67
+seconds. Offscreen Qt renders at 1280 × 800 and 760 × 600 were inspected, with
+uniform interior pixel samples confirming base, hover, pressed and disabled
+fills. Synthetic renders and the verification script are under ignored
+`state/flat-controls-preview/` and `state/flat-controls-preview.py`.
+Compilation and whitespace checks passed. Live model/API gates are not run for
+this styling change.
+
+The full unrestricted Windows regression passed **2,753 tests and 15 subtests**,
+with **58 optional/host skips**, no failures or errors, in 466.15 seconds.
+Temporary state and caches are repository-local; the result is retained in
+ignored `state/flat-controls-full.xml`. The styling follow-up remains on the
+requested feature branch without advancing `main`.
