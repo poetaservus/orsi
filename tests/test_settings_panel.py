@@ -136,6 +136,35 @@ def test_navigation_close_and_compact_layout_keep_controls_reachable(app):
         window.close()
 
 
+@pytest.mark.parametrize("size", [(1280, 800), (760, 600)])
+def test_full_agent_status_keeps_general_controls_inside_viewport(app, size):
+    status = (
+        "Ready · Local · Agent · Full local read · Metadata + find + listing + text + search"
+        " · Folder approval · Text-write approval · Text-edit approval"
+        " · Copy approval · Move approval · Trash approval"
+    )
+    window = MainWindow(None, "TEST")
+    try:
+        window.activity.set_activity(status)
+        window.resize(*size)
+        window.show()
+        window.settings_button.click()
+        app.processEvents()
+        scroll = window.settings_panel.pages.currentWidget()
+        for activity in (status, "Working…", status):
+            window.activity.set_activity(activity)
+            app.processEvents()
+            assert scroll.widget().width() <= scroll.viewport().width()
+            for control in (window.response_language_selector, window.tool_approval_toggle,
+                            window.notification_toggle, window.notification_sound):
+                scroll.ensureWidgetVisible(control)
+                app.processEvents()
+                bounds = control.rect().translated(control.mapTo(scroll.viewport(), QPoint()))
+                assert scroll.viewport().rect().contains(bounds)
+    finally:
+        window.close()
+
+
 def test_larger_panel_drags_independently_and_keeps_position_during_chat_layout(app):
     window = MainWindow(None, "TEST")
     try:

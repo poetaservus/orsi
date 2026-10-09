@@ -163,6 +163,7 @@ class SettingsPanel(QFrame):
         self._row(general, "Notification sound", "Choose your alert sound",
                   window.notification_sound, control_size=(196, 32))
         general.addSpacing(20)
+        window.activity.setWordWrap(True)
         general.addWidget(window.activity)
         general.addStretch()
 

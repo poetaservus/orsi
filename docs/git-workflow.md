@@ -1,5 +1,40 @@
 # Git layout and baseline hygiene
 
+## Accepted baseline consolidation, 9 October 2026
+
+The six routing/editing phases are integrated on verified local main `15cdb3d`.
+The remaining bounded `codex/settings-status-overflow` change enables wrapping
+of the full agent status in General settings, preserving reachable controls at
+normal and compact window sizes. Its original settings work is retained exactly;
+no routing, prompts, tool behavior, model profiles, recovery rules or runtime
+preferences change during consolidation.
+
+Pre-change refs/worktree maps, a verified complete-history bundle, the uncommitted
+settings patch and content-free configuration/runtime-preference hashes are
+retained in ignored `state/backups/main-consolidation-20261009/`. Refreshed GitHub
+main is an ancestor of local main; 23 accepted commits await publication before
+this final settings commit. The authorized credential is excluded from all
+unpublished history blobs and the pending settings files. Focused native settings
+checks passed 23 tests. The first full run stalled in the existing attachment UI
+group and was stopped; its incomplete result is retained separately. All 33
+attachment UI checks then passed unchanged in isolation. The existing root test
+cache write warning is separate from product results; subsequent checks use fresh
+repository-local caches. Final full native regression passed 2,693 tests and 15
+subtests, with 58 optional/host skips, no failures/errors, in 507.304 seconds using
+an unrestricted Windows shell and fresh repository-local test/cache directories.
+No acceptance prompts or existing assertions change.
+The four Phase 6 live coding gates remain passed historical evidence; this
+settings-only consolidation does not rerun live model or image gates.
+
+Preserve the three merged 8 October archive branches as annotated archive tags
+before removing those redundant local branch names. Keep the separate
+`archive/conversational-main-20260921` checkout and the other worktrees unchanged.
+After verification, fast-forward local main, switch the clean active checkout to
+main, remove only its merged settings feature branch and push main without force.
+Verify GitHub main matches the accepted local commit. New reversal-check and
+stored-goal work then starts on `codex/reversal-check-goal-evidence` from that
+published baseline. The accepted baseline and future feature work remain separate.
+
 ## Content-free diagnostics, 9 October 2026
 
 `codex/content-free-diagnostics` starts from verified main `1186871`. Phase 6
