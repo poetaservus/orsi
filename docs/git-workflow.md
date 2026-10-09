@@ -1,5 +1,24 @@
 # Git layout and baseline hygiene
 
+## Tabbed personal profile settings, 9 October 2026
+
+`codex/vault-profile-tabs` starts from local main `b07dc62`. The user selected
+the focused-tabs mockup. The native page now has a persistent summary and compact
+profile management, with Storage, Cloud access, Backups, Security and Data tabs.
+Cloud policy uses radio choices with explicit Apply; credential save consent,
+existing vault actions and lock cleanup retain their behavior. Same-profile
+import rebuilds retain the current tab. See
+[focused verification](vault-profile-tabs-verification.md).
+
+Fifty-six distinct focused native Windows checks passed. Isolated local/portable
+probes checked all five tabs at three window sizes, including the supported
+minimum, without horizontal clipping. No full suite or live provider/model checks.
+Eight settings fingerprints and other worktree tips are preserved. Recovery
+evidence is under ignored `state/backups/vault-profile-tabs-20261009/`.
+Preserve prior main at `archive/2026-10-09/main-before-vault-profile-tabs`, commit,
+fast-forward local main and remove only the merged local branch. No remote
+publication.
+
 ## Vault controls, login blur and layout concepts, 9 October 2026
 
 `codex/vault-polish-concepts` starts from local main `dc2eb8d`. Backup retention

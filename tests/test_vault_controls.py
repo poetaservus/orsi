@@ -534,6 +534,7 @@ def test_migration_rebuild_loads_preferences_and_does_not_reuse_old_consumers(qt
     try:
         controller.start()
         old = controller.window
+        old.personal_profile_page.show_section("Data")
         root = tmp_path / "legacy"
         (root / "state").mkdir(parents=True)
         source = root / "state/ui_preferences_v1.json"
@@ -544,6 +545,8 @@ def test_migration_rebuild_loads_preferences_and_does_not_reuse_old_consumers(qt
         assert controller.window.service is not old.service
         assert source.exists() and source.read_text().find(MARKER) >= 0
         assert "verified" in controller.window.personal_profile_page.status.text()
+        page = controller.window.personal_profile_page
+        assert page.tabs.tabText(page.tabs.currentIndex()) == "Data"
     finally:
         controller.shutdown()
         controller.window.close()
@@ -854,6 +857,48 @@ def test_save_key_applies_selected_policy_and_survives_restart(qt, manager, monk
         assert controller.window._ensure_cloud_ready()
         assert SECRET not in page.status.text()
         ciphertext(manager.locator.root)
+    finally:
+        controller.shutdown()
+        controller.window.close()
+        qt.removeEventFilter(controller)
+
+
+def test_profile_tabs_keep_edits_uncommitted_and_clear_them_on_lock(qt, manager):
+    from app.ui.profile_application import ProfileApplication
+    controller = ProfileApplication(qt, manager.application_root, build_synthetic, manager=manager)
+    try:
+        controller.start()
+        window = controller.window
+        window.settings_panel.show_section("Personal profile")
+        window.settings_panel.show()
+        page = window.personal_profile_page
+        page.show_section("Cloud access")
+        qt.processEvents()
+        QTest.mouseClick(page.policy.group.button(1), Qt.MouseButton.LeftButton)
+        page.key.setText(SECRET)
+        page.consent.setChecked(True)
+        tabs = page.tabs.tabBar()
+        QTest.mouseClick(tabs, Qt.MouseButton.LeftButton, pos=tabs.tabRect(2).center())
+        assert page.tabs.currentIndex() == 2
+        assert page.provider.policy(page.connection) == CredentialPolicy.ASK
+        assert not page.provider.has_saved_api_key(page.connection)
+        assert page.key.text() == SECRET and page.consent.isChecked()
+        QTest.mouseClick(tabs, Qt.MouseButton.LeftButton, pos=tabs.tabRect(1).center())
+        page.sections["Cloud access"].ensureWidgetVisible(page.credential_save)
+        qt.processEvents()
+        QTest.mouseClick(page.credential_save, Qt.MouseButton.LeftButton)
+        assert page.provider.policy(page.connection) == CredentialPolicy.SAVED
+        assert manager.vault().read(page.connection + "/api_key", domain=Domain.CREDENTIAL) == SECRET.encode()
+        page.key.setText("unsaved replacement")
+        page.consent.setChecked(True)
+        QTest.mouseClick(tabs, Qt.MouseButton.LeftButton, pos=tabs.tabRect(4).center())
+        QTest.mouseClick(page.lock_profile, Qt.MouseButton.LeftButton)
+        assert not manager.active and controller.window.login_panel.isVisible()
+        assert not page.key.text() and not page.consent.isChecked() and page.records.count() == 0
+        controller.window.personal_profile_page.password.setText(PASSWORD.decode())
+        QTest.keyClick(controller.window.personal_profile_page.password, Qt.Key.Key_Return)
+        assert manager.vault().read(controller.window.personal_profile_page.connection + "/api_key", domain=Domain.CREDENTIAL) == SECRET.encode()
+        assert not controller.window.personal_profile_page.key.text()
     finally:
         controller.shutdown()
         controller.window.close()

@@ -152,6 +152,13 @@ class ProfileApplication(QObject):
 
     def _render(self, message="", *, show_profile=False):
         old = self.window
+        section = None
+        if old is not None and self.manager.active:
+            old_page = getattr(old, "personal_profile_page", None)
+            old_session = getattr(old, "_profile_session", None)
+            if (getattr(old_page, "tabbed", False) and old_session is not None
+                    and old_session._vault.root == self.manager.locator.root):
+                section = old_page.tabs.tabText(old_page.tabs.currentIndex())
         if old is not None:
             old._closing = True
             old.setEnabled(False)
@@ -201,6 +208,8 @@ class ProfileApplication(QObject):
             self.window.login_panel = ProfileLoginPanel(page, self.window)
         else:
             self.window.settings_panel.add_personal_page(page)
+            if page.tabbed and section in page.sections:
+                page.show_section(section)
         self.window.skill_settings_page.set_vault_guidance(self.manager.active and self.manager.encrypted,
             self.manager.guidance() if self.manager.active else False)
         if hasattr(page, "guidance"):

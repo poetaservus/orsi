@@ -6,7 +6,8 @@ No prompts, routing, model profiles, sampling or acceptance prompts change.
 
 ## Setup and startup
 
-Open **Settings → Personal profile → New profile**. Choose local computer or
+Open **Settings → Personal profile → Manage profile → New profile** when a profile
+is active; initial setup exposes New profile directly. Choose local computer or
 portable drive, a new directory, encrypted/unencrypted storage and, for encryption,
 a matching password, growing quota and credential policy. Local defaults use
 `%LOCALAPPDATA%/O.R.S.I/profiles/`; portable defaults use `profiles/` beside the
@@ -60,10 +61,25 @@ contains only runtime ownership metadata, separately from the profile locator.
 
 ## Everyday controls
 
-The profile page shows location/mode and separate application/runtime, model,
-personal usage/quota and disk-free figures. It exposes quota changes, manual
-lock, optional idle lock (off by default), password change, optional recovery key,
-managed/independent encrypted backup, restore and verified relocation.
+An unlocked profile uses the selected five-tab layout. Its persistent summary
+shows the actual mode, encryption/unlock state and copyable location. Compact
+**Manage profile** and **Lock** actions remain above every tab. Manage profile
+contains New profile, Select existing and Use current unencrypted storage.
+
+| Tab | Controls |
+| --- | --- |
+| Storage | Separate application/runtime, model, personal usage/quota and disk-free figures; refresh, quota, idle lock and guidance |
+| Cloud access | Saved API-key status, connection policy, credential type, masked replacement, explicit consent, save/delete |
+| Backups | Managed/independent encrypted backup, restore, count/day retention |
+| Security | Password, recovery generation/export/disable, copyable location and verified relocation |
+| Data | Imports, retained-original review, saved-record browsing/view/export/delete, draft/cache cleanup |
+
+Each section scrolls independently while the profile summary and tabs remain
+available. Actions reflow in narrow windows. Switching tabs preserves edits
+without applying them; explicit save/apply buttons keep their existing behavior.
+Same-profile import rebuilds retain the selected tab. Different profiles start
+on Storage. Unencrypted profiles explain unavailable encrypted-only operations.
+The separate locked-profile login and loading transition retain their behavior.
 
 Idle lock uses the same switch as tool approvals, a compact typed minutes field
 and a small inline **Save idle lock** button. The field has no arrow buttons and
@@ -113,18 +129,18 @@ from binding credentials to a retired view.
 ## Credentials
 
 Cloud chat and native image generation share the existing credential provider.
-**Ask whenever cloud is selected** is the default. **Use explicitly saved encrypted
+**Ask whenever Cloud is selected** is the default. **Use saved encrypted
 credentials** loads only the selected provider connection's previously saved value.
 Changing policy or accepting storage recommendations does not save a key.
 Use the masked value field and separate save-consent checkbox to save/replace an
 API key or supported login/access/refresh token. Deleting ends the connection
 session and removes the chosen value; provider-side revocation is separate.
 
-**Save / replace credential** also applies the policy
-currently selected in the dropdown. Choose **Use explicitly saved encrypted
+**Save credential** also applies the policy
+currently selected in the radio choices. Choose **Use saved encrypted
 credentials** to reuse a saved API key without another key prompt. If a key is
-already saved, select that policy and press **Apply credential policy**; no
-re-entry is needed. **Ask whenever cloud is selected** deliberately continues
+already saved, select that policy and press **Apply policy**; no
+re-entry is needed. **Ask whenever Cloud is selected** deliberately continues
 asking even when a credential has been saved. Settings explicitly shows whether
 an API key is saved for this connection and whether automatic use is enabled.
 In Ask mode with a saved key, the Cloud decision offers **Use saved key**, **Enter
@@ -214,7 +230,7 @@ or full; errors offer unlock, reconnect/retry or quota/data management. They nev
 silently write plaintext. Host/provider copies are outside vault protection.
 
 Unsent attachment drafts have a 24-hour lifetime. **Clean expired drafts and caches**
-applies expiry and managed backup retention; **Delete abandoned attachment drafts**
+applies expiry and managed backup retention; **Delete abandoned drafts**
 removes uncommitted copies from earlier sessions while preserving current composer
 drafts and retained/shared assets. The page exposes managed backup count/age policy
 (default three copies/30 days) and explicit saved-record deletion. Independent

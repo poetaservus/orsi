@@ -92,6 +92,7 @@ class SettingsPanel(QFrame):
             self.page_layouts.append(layout)
         self.navigation[0].setChecked(True)
         self.pages.currentChanged.connect(lambda i: self.navigation[i].setChecked(True))
+        self.pages.currentChanged.connect(lambda _: self.fit_to_parent())
         nav.addStretch()
         body.addLayout(nav)
         divider = QFrame()
@@ -116,6 +117,9 @@ class SettingsPanel(QFrame):
         button.clicked.connect(lambda: self.pages.setCurrentIndex(index))
         self.navigation.append(button)
         self.navigation_layout.insertWidget(self.navigation_layout.count() - 1, button)
+        if page.tabbed:
+            self.pages.addWidget(page)
+            return
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -296,8 +300,10 @@ class SettingsPanel(QFrame):
 
     def fit_to_parent(self):
         parent = self.parentWidget()
-        self.resize(min(self.preferred_size.width(), parent.width() - 32),
-                    min(self.preferred_size.height(), parent.height() - 64))
+        workspace = getattr(self.pages.currentWidget(), "tabbed", False)
+        width = max(self.preferred_size.width(), int(parent.width() * .875)) if workspace else self.preferred_size.width()
+        height = max(self.preferred_size.height(), parent.height() - 96) if workspace else self.preferred_size.height()
+        self.resize(min(width, parent.width() - 32), min(height, parent.height() - 64))
         position = self.pos() if self.user_positioned else QPoint(
             (parent.width() - self.width()) // 2, (parent.height() - self.height()) // 2)
         self.move(self.bounded_position(position))

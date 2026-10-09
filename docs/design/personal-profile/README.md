@@ -1,8 +1,9 @@
 # Personal profile layout concepts
 
-9 October 2026. These are design proposals, not an implemented tab redesign.
-The compact backup controls, login backdrop blur and slower image reveal are
-implemented separately in the same bounded change.
+9 October 2026. The user selected **B — focused tabs**, which is now implemented
+with native app controls. A remains an alternative design proposal. The compact
+backup controls, login backdrop blur and slower image reveal were implemented
+before this redesign. See [implementation verification](../../vault-profile-tabs-verification.md).
 
 ## Research and direction
 
@@ -42,15 +43,16 @@ and backup controls are visible in compact groups. Cloud access, security and da
 open on demand. Best for seeing everyday settings together; expanding everything
 can still make the page long. This concept stays closest to the current page.
 
-## B — focused tabs (recommended)
+## B — focused tabs (selected and implemented)
 
 ![Focused tabs, showing Cloud access](concept-b-tabs.png)
 
 A persistent profile summary sits above five short tabs. Each page contains one
 related task, removing the long mixed settings list. The mockup shows Cloud access
-to demonstrate a clearer policy/save-consent/key editor. My recommendation is B:
-the existing feature count warrants separate sections, and this arrangement gives
-credentials and saved records enough room without stretching every action.
+to demonstrate a clearer policy/save-consent/key editor. The implementation uses
+this organization across all five tabs, giving credentials and saved records
+enough room without stretching every action. Manage profile contains creation,
+selection and current unencrypted storage; Lock stays directly accessible.
 
 | Location | Existing controls |
 | --- | --- |
@@ -58,7 +60,7 @@ credentials and saved records enough room without stretching every action.
 | Storage | Personal usage/quota/free disk, app/model usage details, refresh, quota change, idle toggle/minutes/save, guidance preference |
 | Cloud access | Connection status, Ask/saved policy, credential type, masked replacement, explicit encrypted-save consent, save/delete |
 | Backups | Managed backup creation, independent backup destination, restore, count/day retention and explicit Apply |
-| Security | Password change, recovery generation/export/disable |
+| Security | Password change, recovery generation/export/disable, copyable location and verified relocation |
 | Data | Import copies, retained-original review, saved record browsing/view/export/delete, expired-cache/draft cleanup |
 
 At the existing 760 × 600 minimum size, keep the same section order, use shorter
@@ -71,5 +73,7 @@ feature is implied by either mockup.
 
 Both 1536 × 1024 PNGs were produced with the built-in imagegen tool, using an
 isolated synthetic app capture as the style reference. Exact prompts are in
-[prompts.md](prompts.md). The images are concepts; final implementation should
-use the app's existing components and exact control labels.
+[prompts.md](prompts.md). The images remain concepts. The implementation uses the
+app's existing typography and native controls, with actual selected-profile state
+instead of the mockup's fictional location. Each tab scrolls independently;
+narrow windows reflow actions.

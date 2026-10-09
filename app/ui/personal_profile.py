@@ -5,10 +5,11 @@ import json
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
     QFileDialog, QFormLayout, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
-    QMessageBox, QPushButton, QScrollArea, QTextEdit, QVBoxLayout, QWidget)
+    QMenu, QMessageBox, QPushButton, QScrollArea, QSizePolicy, QTabWidget, QTextEdit, QVBoxLayout, QWidget)
 
 from app.ui.notification_settings import NotificationSwitch
 from app.ui.inputs import CompactNumberInput, ScrollSafeComboBox
+from app.ui.profile_layout import AdaptiveRow, CredentialPolicyChoice, Disclosure, FeedbackLabel, ProfileCard, ProfileTabBar
 from app.vault.credentials import CredentialPolicy
 from app.vault.profiles import public_error
 from app.vault.types import BackupPolicy, VaultError
@@ -37,6 +38,34 @@ QDialog#personalProfileDialog QPushButton:focus, QDialog#personalProfileDialog Q
 QDialog#personalProfileDialog QComboBox:focus, QWidget#personalProfilePage QPushButton:focus,
 QWidget#personalProfilePage QLineEdit:focus, QWidget#personalProfilePage QComboBox:focus { border-color: #91bfe0; }
 QDialog#personalProfileDialog QListWidget::item:selected, QWidget#personalProfilePage QListWidget::item:selected { background: #51627a; }
+QWidget#personalProfilePage QWidget { font-family: Saira; color: #e4e5eb; }
+QWidget#personalProfilePage QLabel#profileHeading { font-size: 26px; font-weight: 600; }
+QWidget#personalProfilePage QLabel#profileName { font-size: 18px; font-weight: 500; }
+QWidget#personalProfilePage QLabel#profileState { font-size: 12px; color: #b8d2c9; }
+QWidget#personalProfilePage QLabel#profileFeedback { font-size: 14px; color: #c4e3f6; }
+QWidget#personalProfilePage QFrame#profileCard { background: rgba(25, 31, 42, 30); border: 1px solid #526171; border-radius: 7px; }
+QWidget#personalProfilePage QLabel#profileCardHeading { font-size: 20px; font-weight: 400; }
+QWidget#personalProfilePage QLabel#profileHint { font-size: 14px; color: #b9c2d0; }
+QWidget#personalProfilePage QRadioButton, QWidget#personalProfilePage QCheckBox { font-size: 14px; }
+QWidget#personalProfilePage QPushButton#profilePrimary { background: #2587c8; border-color: #579bd0; }
+QWidget#personalProfilePage QPushButton#profilePrimary:hover { background: #3297d6; }
+QWidget#personalProfilePage QPushButton#profileLink { border: none; background: transparent; color: #9acfe4; }
+QWidget#personalProfilePage QPushButton#profileLink:hover { color: #d0ebfb; }
+QWidget#personalProfilePage QMenu { background: #303946; color: #e4e5eb; border: 1px solid #626772; padding: 5px; }
+QWidget#personalProfilePage QMenu::item { padding: 8px 16px; }
+QWidget#personalProfilePage QMenu::item:selected { background: #51627a; }
+QWidget#personalProfilePage QTabWidget::pane { border: none; background: transparent; }
+QWidget#personalProfilePage QTabBar, QWidget#personalProfilePage QTabWidget, QWidget#personalProfilePage QStackedWidget { background: transparent; border: none; }
+QWidget#personalProfilePage QTabBar::tab { background: transparent; color: #ccd3de; border: none; border-bottom: 2px solid transparent; padding: 10px 12px; font-size: 14px; }
+QWidget#personalProfilePage QTabBar::tab:selected { color: #f4f6fb; border-bottom-color: #65bdea; }
+QWidget#personalProfilePage QTabBar::tab:hover { background: rgba(185,197,213,12); }
+QWidget#personalProfilePage QScrollArea, QWidget#personalProfilePage QScrollArea > QWidget > QWidget { background: transparent; border: none; }
+QWidget#personalProfilePage QToolButton#profileDisclosure { background: transparent; color: #e4e5eb; border: none; padding: 0; font-size: 14px; }
+QWidget#personalProfilePage QScrollBar:vertical { width: 5px; background: transparent; }
+QWidget#personalProfilePage QScrollBar::handle:vertical { background: #657385; border-radius: 2px; min-height: 28px; }
+QWidget#personalProfilePage QScrollBar::add-line:vertical, QWidget#personalProfilePage QScrollBar::sub-line:vertical { height: 0; }
+QWidget#personalProfilePage QScrollBar::add-page:vertical, QWidget#personalProfilePage QScrollBar::sub-page:vertical { background: transparent; }
+QWidget#personalProfilePage QLineEdit#profilePath { background: transparent; border: none; color: #bcc7d5; padding: 0; }
 """
 
 
@@ -180,17 +209,28 @@ class PersonalProfilePage(QWidget):
         self.setObjectName("personalProfilePage")
         self.setStyleSheet(_STYLE)
         self.manager, self.window = manager, window
+        self.login = login
+        self.tabbed = manager.active and not login
         if manager.active:
             unregister = manager.session.register(clear=self._clear_private_controls)
             self.destroyed.connect(unregister)
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(0, 0, 6, 0)
         self.layout.setSpacing(10 if login else 12)
+        if not login and not self.tabbed:
+            heading = label("Personal profile")
+            heading.setObjectName("profileHeading")
+            self.layout.addWidget(heading)
+            self.layout.addWidget(label("Set up a profile to keep your personal storage and preferences together."))
         self.summary = label("")
         self.summary.setAccessibleName("Selected personal profile")
         self.layout.addWidget(self.summary)
-        self.status = label(message)
+        self.status = FeedbackLabel(message)
         self.status.setAccessibleName("Personal profile status")
+        if self.tabbed:
+            self.layout.removeWidget(self.summary)
+            self._workspace(message)
+            return
         self.layout.addWidget(self.status)
         if login:
             self.status.setVisible(bool(message))
@@ -214,24 +254,166 @@ class PersonalProfilePage(QWidget):
                 button.clicked.connect(action)
                 choices.addWidget(button)
             self.layout.addLayout(choices)
-        if manager.active:
-            self._buttons((("Lock profile", lambda: self.transition_requested.emit(manager.lock)),
-                           ("Refresh storage usage", self._refresh_usage)))
-            self.usage = label("")
-            self.usage.setAccessibleName("Storage usage")
-            self.layout.addWidget(self.usage)
-            self._idle_controls()
-            self._credential_controls()
-            if manager.encrypted:
-                self._encrypted_controls()
-                self._migration_controls()
-                self._retention_controls()
-            self._refresh_usage()
         self._buttons((("Use current unencrypted storage", self._legacy),))
         self.layout.addStretch()
         self.refresh_summary()
         if message:
             self.status.setText(message)
+
+    def _workspace(self, message):
+        outer = self.layout
+        heading = label("Personal profile")
+        heading.setObjectName("profileHeading")
+        outer.addWidget(heading)
+        self.subtitle = label("Your vault, access and backups.")
+        outer.addWidget(self.subtitle)
+        identity = QWidget()
+        identity_box = QVBoxLayout(identity)
+        identity_box.setContentsMargins(0, 0, 0, 0)
+        identity_box.setSpacing(5)
+        name = label("Personal vault")
+        name.setObjectName("profileName")
+        name.setToolTip(str(self.manager.locator.root))
+        locator = self.manager.locator
+        badges = label(f"{'Portable' if locator.mode == 'portable' else 'Local'}   ·   "
+                       f"{'Encrypted' if self.manager.encrypted else 'Unencrypted'}   ·   ● Unlocked")
+        badges.setObjectName("profileState")
+        identity_box.addWidget(AdaptiveRow([name, badges]))
+        self.summary.deleteLater()
+        self.summary = self._location_field()
+        self.summary.setAccessibleName("Selected personal profile")
+        identity_box.addWidget(self.summary)
+        self.manage_profile = self._button("Manage profile", None)
+        menu = QMenu(self.manage_profile)
+        for title, action in (("New profile…", self._new), ("Select existing…", self._select),
+                              ("Use current unencrypted storage", self._legacy)):
+            menu.addAction(title, action)
+        self.manage_profile.setMenu(menu)
+        self.lock_profile = self._button("Lock", lambda: self.transition_requested.emit(self.manager.lock))
+        actions = QWidget()
+        action_box = QHBoxLayout(actions)
+        action_box.setContentsMargins(0, 0, 0, 0)
+        action_box.setSpacing(10)
+        action_box.addWidget(self.manage_profile)
+        action_box.addWidget(self.lock_profile)
+        actions.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        summary = ProfileCard()
+        self.summary_row = AdaptiveRow([identity, actions], threshold=650, trailing=True)
+        summary.body.addWidget(self.summary_row)
+        outer.addWidget(summary)
+        outer.addWidget(self.status)
+        self.tabs = QTabWidget()
+        self.tabs.setTabBar(ProfileTabBar())
+        self.tabs.tabBar().setDrawBase(False)
+        self.tabs.setObjectName("profileTabs")
+        self.tabs.setDocumentMode(True)
+        self.tabs.setMinimumSize(0, 0)
+        self.tabs.setAccessibleName("Personal profile sections")
+        self.sections, self.section_layouts = {}, {}
+        for title in ("Storage", "Cloud access", "Backups", "Security", "Data"):
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+            scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            content = QWidget()
+            box = QVBoxLayout(content)
+            box.setContentsMargins(0, 16, 6, 0)
+            box.setSpacing(14)
+            scroll.setWidget(content)
+            self.tabs.addTab(scroll, title)
+            self.sections[title], self.section_layouts[title] = scroll, box
+        outer.addWidget(self.tabs, 1)
+        self._section("Storage")
+        self._card("Vault storage", "Personal storage grows with usage, up to your quota.")
+        self.usage = label("")
+        self.usage.setAccessibleName("Storage usage")
+        self.layout.addWidget(self.usage)
+        self._buttons((("Refresh usage", self._refresh_usage),))
+        if self.manager.encrypted:
+            self._quota_controls()
+        self._card("Automatic lock")
+        self._idle_controls()
+        self._section("Cloud access")
+        self._credential_controls()
+        self._section("Backups")
+        if self.manager.encrypted:
+            self._card("Encrypted backups", "Keep an independent copy on another device to protect against disk loss.")
+            self._buttons((("Create managed backup", lambda: self._perform(lambda: self.manager.vault().backup(), "Encrypted backup verified.")),
+                           ("Backup elsewhere…", self._backup), ("Restore backup…", self._restore)))
+            self._card("Managed retention", "Applies only to backups managed by O.R.S.I.")
+            self._backup_retention_controls()
+        else:
+            self._card("Encrypted backups", "Encrypted backup creation and retention require an encrypted profile.")
+        self._section("Security")
+        if self.manager.encrypted:
+            self._card("Vault password", "Changing your password keeps existing vault data. Older backups retain their previous password.")
+            self._buttons((("Change password…", self._change_password),))
+            self._card("Recovery key", "Keep your recovery key somewhere accessible without this vault or its disk.")
+            self._buttons((("Generate recovery key…", self._recovery_key), ("Disable recovery key", self._disable_recovery)))
+        else:
+            self._card("Profile security", "This profile stores personal data without encryption. Password and recovery controls require an encrypted profile.")
+        self._card("Storage location", "Relocation creates and verifies a copy before selecting it. The source remains intact.")
+        self.layout.addWidget(self._location_field())
+        if self.manager.encrypted:
+            self._buttons((("Relocate verified copy…", self._relocate),))
+        self._section("Data")
+        if self.manager.encrypted:
+            self._card("Import copies", "Originals stay outside the vault until you separately choose cleanup.")
+            self._migration_controls()
+            self._retention_controls()
+        else:
+            self._card("Personal data", "This profile uses unencrypted personal storage. Protected import, saved-record and cleanup controls require an encrypted profile.")
+        for box in self.section_layouts.values():
+            box.addStretch()
+        self.layout = outer
+        self._refresh_usage()
+        self.status.setText(message)
+
+    def _section(self, name):
+        self._section_box = self.section_layouts[name]
+
+    def _location_field(self):
+        path = str(self.manager.locator.root)
+        field = QLineEdit(path)
+        field.setObjectName("profilePath")
+        field.setAccessibleName("Personal profile location")
+        field.setReadOnly(True)
+        field.setMinimumWidth(0)
+        field.setToolTip(path)
+        field.setCursorPosition(0)
+        return field
+
+    def _card(self, title, description=""):
+        card = ProfileCard(title, description)
+        self._section_box.addWidget(card)
+        self.layout = card.body
+        return card
+
+    def show_section(self, name):
+        self.tabs.setCurrentIndex(tuple(self.sections).index(name))
+
+    def resizeEvent(self, event):  # noqa: N802
+        if self.tabbed and hasattr(self, "summary_row"):
+            compact = self.width() < 620
+            self.subtitle.setVisible(not compact)
+            self.summary.setVisible(not compact)
+            self.manage_profile.setText("Profile" if compact else "Manage profile")
+            self.summary_row.threshold = None if compact else 650
+            self.summary_row.adapt()
+        super().resizeEvent(event)
+
+    def _button(self, title, action, *, primary=False, subtle=False):
+        button = QPushButton(title)
+        button.setAccessibleName(title.removesuffix("…"))
+        button.setFixedHeight(36)
+        button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        if primary:
+            button.setObjectName("profilePrimary")
+        elif subtle:
+            button.setObjectName("profileLink")
+        if action is not None:
+            button.clicked.connect(action)
+        return button
 
     def _clear_private_controls(self):
         for widget in self.findChildren(QLineEdit):
@@ -244,6 +426,10 @@ class PersonalProfilePage(QWidget):
             dialog.reject()
 
     def _buttons(self, actions):
+        if not self.login:
+            buttons = [self._button(title, action) for title, action in actions]
+            self.layout.addWidget(AdaptiveRow(buttons))
+            return buttons
         row = QVBoxLayout()
         buttons = []
         for title, action in actions:
@@ -356,43 +542,68 @@ class PersonalProfilePage(QWidget):
                       "Idle lock saved." if minutes else "Idle lock disabled.")
 
     def _credential_controls(self):
+        self._section_box.addWidget(label("Cloud chat and image generation"))
         if not self.manager.encrypted:
-            self.layout.addWidget(label("Connection credentials are session-only. Enter a key when selecting cloud; it is released "
-                "on leaving cloud, closing this profile or exiting. Saved credentials require an encrypted profile."))
+            self._card("Session credentials", "Enter a key when selecting Cloud. It is released on leaving Cloud, closing this profile or exiting. Saved credentials require an encrypted profile.")
             return
-        self.layout.addWidget(label("Connection credentials · Shared by cloud chat and image generation. "
-            "Keys and tokens are saved only with your separate consent. Older encrypted backups can retain previous values; "
-            "provider-side revocation is separate."))
         self.provider = getattr(self.window.inference, "credential_provider", None)
         self.connection = getattr(self.window.inference, "connection_id", "cloud-chat")
         if self.provider is None:
-            self.layout.addWidget(label("The cloud connection is unavailable. Credentials cannot be saved from this screen until it is configured."))
+            self._card("Cloud connection unavailable", "Configure a cloud connection in Models before saving credentials here.")
             return
-        self.policy = combo((("Ask whenever cloud is selected", CredentialPolicy.ASK),
-                             ("Use explicitly saved encrypted credentials", CredentialPolicy.SAVED)))
+        self.credential_status = label("")
+        self.credential_status.setAccessibleName("Saved cloud API key status")
+        self._section_box.addWidget(self.credential_status)
+        self._card("Connection policy", "Choose how O.R.S.I uses your saved key.")
+        self.policy = CredentialPolicyChoice()
         policy = self.provider.policy(self.connection) if self.provider else CredentialPolicy.ASK
         self.policy.setCurrentIndex(0 if policy == CredentialPolicy.ASK else 1)
         self.policy.setEnabled(self.manager.encrypted and self.provider is not None)
         self.policy.setAccessibleName("Cloud credential policy")
+        self.policy_save = self._button("Apply policy", self._policy)
+        self.layout.addWidget(AdaptiveRow([self.policy, self.policy_save], trailing=True))
+        self._card("Saved credential")
         self.kind = combo((("API key", "api_key"), ("Login token", "login_token"),
                            ("Access token", "access_token"), ("Refresh token", "refresh_token")))
+        self.kind.setAccessibleName("Credential type")
+        self.kind.setMaximumWidth(240)
+        self.kind.setFixedHeight(36)
         self.key = secret("New connection credential")
-        self.consent = QCheckBox("Save this credential encrypted in this profile")
+        self.key.setPlaceholderText("Paste a replacement key")
+        self.key.setFixedHeight(36)
+        self.consent = QCheckBox("Save this credential encrypted in this vault")
         self.consent.setEnabled(self.manager.encrypted)
         form = self._form()
-        form.addRow("Cloud credentials", self.policy)
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
+        form.setVerticalSpacing(12)
         form.addRow("Credential type", self.kind)
-        form.addRow("New value", self.key)
-        self.credential_status = label("")
-        self.credential_status.setAccessibleName("Saved cloud API key status")
-        self.layout.addWidget(self.credential_status)
+        self.key_caption = label("Replace API key")
+        self.key_caption.setBuddy(self.key)
+        form.addRow(self.key_caption, self.key)
         self._refresh_credential_status()
-        self.layout.addWidget(self.consent)
-        self.layout.addWidget(label("Save / replace also applies the selected policy. With Ask whenever cloud is selected, "
-            "cloud still asks even if a key is saved. Cloud chat uses an API key; login/access/refresh tokens are stored separately."))
-        self._buttons((("Apply credential policy", self._policy), ("Save / replace credential", self._save_key),
-                       ("Delete saved credential", self._delete_key)))
+        self.credential_save = self._button("Save credential", self._save_key, primary=True)
+        self.credential_delete = self._button("Delete saved key", self._delete_key, subtle=True)
+        self.credential_save.setToolTip("Save this value encrypted and apply the selected connection policy.")
+        credential_actions = QWidget()
+        buttons = QHBoxLayout(credential_actions)
+        buttons.setContentsMargins(0, 0, 0, 0)
+        buttons.setSpacing(12)
+        buttons.addWidget(self.credential_save)
+        buttons.addWidget(self.credential_delete)
+        credential_actions.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        self.layout.addWidget(AdaptiveRow([self.consent, credential_actions], trailing=True))
+        self.kind.currentIndexChanged.connect(self._credential_kind_changed)
+        self._section_box.addWidget(Disclosure("Other credential types",
+            "Login, access and refresh tokens can be selected above and are stored separately. Cloud chat requires an API key. "
+            "Save also applies the selected policy and requires separate consent. Older backups may retain previous credentials."))
+        self._section_box.addWidget(label("Deleting a saved key does not revoke it with your provider."))
         self.manager.session.register(clear=lambda: (self.key.clear(), self.consent.setChecked(False)))
+
+    def _credential_kind_changed(self):
+        api_key = self.kind.currentData() == "api_key"
+        self.key_caption.setText("Replace API key" if api_key else "New token value")
+        self.key.setPlaceholderText("Paste a replacement key" if api_key else "Paste a token")
+        self.credential_delete.setText("Delete saved key" if api_key else "Delete saved token")
 
     def _refresh_credential_status(self):
         saved = self.provider.has_saved_api_key(self.connection)
@@ -452,9 +663,7 @@ class PersonalProfilePage(QWidget):
             self.manager.configure(credential_policy=str(policy))
         self.reload_requested.emit(migrate)
 
-    def _encrypted_controls(self):
-        self.layout.addWidget(label("Vault controls · Recovery keys should be accessible independently of this vault. "
-            "Backups on a separate device also protect against loss of this disk."))
+    def _quota_controls(self):
         self.quota_controls = QWidget(self)
         row = QHBoxLayout(self.quota_controls)
         row.setContentsMargins(0, 0, 0, 0)
@@ -474,11 +683,6 @@ class PersonalProfilePage(QWidget):
             row.addWidget(widget)
         row.addStretch()
         self.layout.addWidget(self.quota_controls)
-        self._buttons((("Change password…", self._change_password),))
-        self._buttons((("Generate recovery key…", self._recovery_key), ("Disable recovery key", self._disable_recovery)))
-        self._buttons((("Create managed backup", lambda: self._perform(lambda: self.manager.vault().backup(), "Encrypted backup verified.")),
-                       ("Backup to another location…", self._backup)))
-        self._buttons((("Restore encrypted backup…", self._restore), ("Relocate verified copy…", self._relocate)))
 
     def _save_quota(self):
         self.quota.interpretText()
@@ -575,8 +779,6 @@ class PersonalProfilePage(QWidget):
             self.transition_requested.emit(lambda: self.manager.relocate(path, mode=mode))
 
     def _migration_controls(self):
-        self.layout.addWidget(label("Import existing personal data · Originals remain outside the vault until you separately "
-            "choose cleanup. Import does not encrypt external originals or provider copies."))
         self._buttons((("Migrate selected personal data…", self._migrate), ("Import a copy into vault…", self._import_copy),
                        ("Review retained originals…", self._originals)))
 
@@ -675,10 +877,7 @@ class PersonalProfilePage(QWidget):
         remove.clicked.connect(cleanup)
         dialog.exec()
 
-    def _retention_controls(self):
-        self.layout.addWidget(label("Retention and deletion · Unsent attachment drafts expire after 24 hours. "
-            "Deleting saved records also removes unshared associated originals, previews and extracted text. "
-            "Shared assets remain. Outside originals, exports and independent backups remain unless separately removed."))
+    def _backup_retention_controls(self):
         self.retention_controls = QWidget(self)
         row = QGridLayout(self.retention_controls)
         row.setContentsMargins(0, 0, 0, 0)
@@ -709,8 +908,9 @@ class PersonalProfilePage(QWidget):
         row.setColumnStretch(4, 1)
         self.layout.addWidget(self.retention_controls)
         self.layout.addWidget(label("0 backups disables managed backups. 0 days means no age limit."))
-        self._buttons((("Clean expired drafts and caches", lambda: self._perform(self.manager.maintenance, "Expired data cleaned; retained records and independent copies remain.")),))
-        self._buttons((("Delete abandoned attachment drafts…", self._delete_abandoned_drafts),))
+
+    def _retention_controls(self):
+        self._card("Saved records", "Browse archived conversations and imported material. View a record to export a copy.")
         self.records = QListWidget()
         self.records.setAccessibleName("Saved personal records")
         self.records.setMinimumHeight(160)
@@ -720,6 +920,10 @@ class PersonalProfilePage(QWidget):
                        ("Delete selected records…", self._delete_records)))
         self.records.itemDoubleClicked.connect(lambda _: self._view_record())
         self._refresh_records()
+        self._card("Cleanup", "Unsent attachment drafts expire after 24 hours. Independent copies and current composer drafts remain.")
+        self._buttons((("Clean expired drafts and caches", lambda: self._perform(self.manager.maintenance, "Expired data cleaned; retained records and independent copies remain.")),
+                       ("Delete abandoned drafts…", self._delete_abandoned_drafts)))
+        self.layout.addWidget(label("Deleting saved records removes their unshared assets. Shared assets, outside originals, exports and independent backups remain."))
 
     def _backup_retention(self):
         self.backup_count.interpretText()
