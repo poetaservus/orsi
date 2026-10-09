@@ -1,7 +1,7 @@
 """A dedicated locked-profile surface, separate from the settings navigation."""
 from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPen
-from PySide6.QtWidgets import QFrame, QLabel, QScrollArea, QVBoxLayout
+from PySide6.QtWidgets import QFrame, QGraphicsBlurEffect, QLabel, QScrollArea, QVBoxLayout
 
 
 class ProfileLoginPanel(QFrame):
@@ -10,6 +10,11 @@ class ProfileLoginPanel(QFrame):
         self.setObjectName("profileLoginPanel")
         self.setAccessibleName("Vault login")
         self.page = page
+        # Login is a sibling of the application root, so only its backdrop blurs.
+        self.backdrop_blur = QGraphicsBlurEffect(parent._root)
+        self.backdrop_blur.setBlurRadius(12)
+        self.backdrop_blur.setBlurHints(QGraphicsBlurEffect.BlurHint.QualityHint)
+        parent._root.setGraphicsEffect(self.backdrop_blur)
         self.setStyleSheet("""
             QFrame#profileLoginPanel { background: transparent; border: none; }
             QFrame#profileLoginPanel QWidget { font-family: Saira; color: #e4e5eb; }

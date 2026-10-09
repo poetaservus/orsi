@@ -27,7 +27,9 @@ An encrypted selection starts with a separate **Unlock your vault** login panel
 before composing personal consumers. It uses the Settings panel's rounded
 gradient and app typography, with password/recovery entry, profile selection and
 backup restore. Settings stays hidden while locked; its top-bar button returns
-focus to login. Composer and private Settings pages are disabled.
+focus to login. The application root behind the panel has a 12-pixel blur; the
+login panel and its fields remain sharp. The unlocked replacement has no backdrop
+blur. Composer and private Settings pages are disabled.
 Ordinary unconfigured startup remains quiet. An unencrypted selection opens
 without a password and takes an exclusive ownership lease; its data is plaintext.
 
@@ -42,9 +44,11 @@ After successful password/recovery unlock, the bundled `orsi_start.png` covers
 the previous window's position and size while personal services and the full UI
 are composed. The artwork fills the area with its proportions preserved and
 centered cropping when needed. It is painted before blocking initialization,
-has no private content, stays above other application windows, and fades in and
-out over 240 ms each with smooth easing. Fade-in finishes before blocking load;
-fade-out reveals the ready replacement (including the locked error view if
+has no private content, stays above other application windows, and fades in over
+240 ms and out over 560 ms with smooth easing. Fade-in finishes before blocking
+load. Before fade-out, the replacement is raised, activated and painted directly
+under the cover using input-excluding event processing. Fade-out reveals the
+ready replacement (including the locked error view if
 initialization fails). Only the loading picture stays on top. The image lives with the UI
 assets and follows portable copies; no Desktop path is used at runtime.
 
@@ -75,6 +79,12 @@ changes and has no spinner arrows. Saving refreshes the displayed usage/quota.
 New-profile quota entry uses the same compact control. All app dropdowns ignore
 wheel changes, including focused controls, so gestures scroll the settings page.
 Explicit menu clicks and keyboard selection remain available.
+
+Managed backup count and backup days also use the same 72 × 36 wheel-safe fields
+without spinner arrows, in aligned compact rows with a 128 × 36 inline
+**Apply retention** button. Zero backups disables managed backups; zero days means
+no age limit. Apply still confirms before changing policy or pruning managed
+backups. Independent copies retain their existing policy.
 
 Password changes rewrap keys. Recovery generation explicitly displays the new
 key and offers an outside-vault export; keep that copy accessible independently

@@ -1,5 +1,22 @@
 # Git layout and baseline hygiene
 
+## Vault controls, login blur and layout concepts, 9 October 2026
+
+`codex/vault-polish-concepts` starts from local main `dc2eb8d`. Backup retention
+fields now match compact quota controls and ignore scrolling. Login blurs its
+backdrop, and the loading picture fades out over 560 ms after the replacement is
+raised and painted. The user-requested research and two saved mockups propose
+the broader settings redesign without implementing it. See
+[focused verification](vault-polish-concepts-verification.md).
+
+Twenty-one focused native Windows checks passed, plus local/portable controls
+and native fade/stacking/failure checks. No full suite or live provider/model
+checks. All eight settings fingerprints and other worktree tips are preserved.
+Recovery evidence is under ignored `state/backups/vault-polish-concepts-20261009/`.
+Preserve prior main at `archive/2026-10-09/main-before-vault-polish-concepts`,
+commit, fast-forward local main and remove only the merged local branch.
+No remote publication.
+
 ## Vault login and settings controls, 9 October 2026
 
 `codex/vault-login-settings` starts from local main `f7eb507`. All app dropdowns

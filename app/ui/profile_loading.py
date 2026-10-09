@@ -6,7 +6,8 @@ from PySide6.QtGui import QColor, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication, QWidget
 
 
-_FADE_MS = 240
+_FADE_IN_MS = 240
+_FADE_OUT_MS = 560
 _PAINT_EVENTS = (QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents
                  | QEventLoop.ProcessEventsFlag.ExcludeSocketNotifiers)
 
@@ -32,9 +33,17 @@ class ProfileLoadingWindow(QWidget):
         self.repaint()
         self._fade_to(1.)
 
-    def dismiss(self):
+    def dismiss(self, reveal=None):
         try:
             if self.isVisible():
+                if reveal is not None and reveal.isVisible():
+                    # Native show/exposure is asynchronous. Paint the replacement
+                    # before reducing the cover's opacity, revealing chat directly.
+                    reveal.raise_()
+                    reveal.activateWindow()
+                    QApplication.processEvents(_PAINT_EVENTS)
+                    reveal.repaint()
+                    QApplication.processEvents(_PAINT_EVENTS)
                 self._fade_to(0.)
         finally:
             self.close()
@@ -44,7 +53,7 @@ class ProfileLoadingWindow(QWidget):
         # starts, then fade out over the replacement view after it is ready.
         loop = QEventLoop()
         animation = QPropertyAnimation(self, b"windowOpacity")
-        animation.setDuration(_FADE_MS)
+        animation.setDuration(_FADE_IN_MS if opacity else _FADE_OUT_MS)
         animation.setStartValue(self.windowOpacity())
         animation.setEndValue(opacity)
         animation.setEasingCurve(QEasingCurve.Type.InOutCubic)

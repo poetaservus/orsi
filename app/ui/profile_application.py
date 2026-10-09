@@ -143,7 +143,7 @@ class ProfileApplication(QObject):
             try:
                 if loading is not None:
                     try:
-                        loading.dismiss()
+                        loading.dismiss(reveal=self.window)
                     finally:
                         loading.deleteLater()
             finally:

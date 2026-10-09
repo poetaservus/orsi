@@ -4,8 +4,8 @@ import json
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
-    QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
-    QMessageBox, QPushButton, QScrollArea, QSpinBox, QTextEdit, QVBoxLayout, QWidget)
+    QFileDialog, QFormLayout, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
+    QMessageBox, QPushButton, QScrollArea, QTextEdit, QVBoxLayout, QWidget)
 
 from app.ui.notification_settings import NotificationSwitch
 from app.ui.inputs import CompactNumberInput, ScrollSafeComboBox
@@ -679,19 +679,37 @@ class PersonalProfilePage(QWidget):
         self.layout.addWidget(label("Retention and deletion · Unsent attachment drafts expire after 24 hours. "
             "Deleting saved records also removes unshared associated originals, previews and extracted text. "
             "Shared assets remain. Outside originals, exports and independent backups remain unless separately removed."))
-        self.backup_count, self.backup_days = QSpinBox(), QSpinBox()
+        self.retention_controls = QWidget(self)
+        row = QGridLayout(self.retention_controls)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(10)
+        self.backup_count = CompactNumberInput(self.retention_controls)
+        self.backup_days = CompactNumberInput(self.retention_controls)
         policy = self.manager.vault()._catalog["backup_policy"]
         self.backup_count.setRange(0, 100)
         self.backup_count.setValue(policy["max_count"])
         self.backup_count.setAccessibleName("Managed backup count")
+        self.backup_count.setToolTip("Maximum managed backups (0 disables managed backups)")
         self.backup_days.setRange(0, 3650)
         self.backup_days.setValue(policy["max_age_seconds"] // 86400)
         self.backup_days.setAccessibleName("Managed backup age in days")
-        form = self._form()
-        form.addRow("Managed backups (0 = disable)", self.backup_count)
-        form.addRow("Backup days (0 = no age limit)", self.backup_days)
-        self._buttons((("Apply backup retention…", self._backup_retention),
-                       ("Clean expired drafts and caches", lambda: self._perform(self.manager.maintenance, "Expired data cleaned; retained records and independent copies remain."))))
+        self.backup_days.setToolTip("Maximum backup age in days (0 means no age limit)")
+        for index, (title, field, unit) in enumerate((("Managed backups", self.backup_count, "copies"),
+                                                     ("Backup days", self.backup_days, "days"))):
+            field.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            caption = label(title)
+            caption.setBuddy(field)
+            row.addWidget(caption, index, 0)
+            row.addWidget(field, index, 1)
+            row.addWidget(label(unit), index, 2)
+        self.backup_save = QPushButton("Apply retention", self.retention_controls)
+        self.backup_save.setFixedSize(128, 36)
+        self.backup_save.clicked.connect(self._backup_retention)
+        row.addWidget(self.backup_save, 1, 3)
+        row.setColumnStretch(4, 1)
+        self.layout.addWidget(self.retention_controls)
+        self.layout.addWidget(label("0 backups disables managed backups. 0 days means no age limit."))
+        self._buttons((("Clean expired drafts and caches", lambda: self._perform(self.manager.maintenance, "Expired data cleaned; retained records and independent copies remain.")),))
         self._buttons((("Delete abandoned attachment drafts…", self._delete_abandoned_drafts),))
         self.records = QListWidget()
         self.records.setAccessibleName("Saved personal records")
@@ -704,6 +722,8 @@ class PersonalProfilePage(QWidget):
         self._refresh_records()
 
     def _backup_retention(self):
+        self.backup_count.interpretText()
+        self.backup_days.interpretText()
         if confirm(self, "Apply backup retention", "Apply this policy and remove excess application-managed backups? Independent backups remain unchanged and may retain deleted data or old credentials."):
             self._perform(lambda: self.manager.vault().set_backup_policy(BackupPolicy(
                 self.backup_count.value(), self.backup_days.value() * 86400)))
