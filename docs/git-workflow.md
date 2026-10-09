@@ -1,5 +1,38 @@
 # Git layout and baseline hygiene
 
+## Bounded edit recovery, 9 October 2026
+
+`codex/bounded-edit-recovery` starts separately from verified main `3650e22`.
+Its runtime-only recovery groups rejected edits by target, requires newly returned
+source before a retry, detects verified revision cycles, and supplies detailed
+stopped-work reports through the existing UI path. The core prompts, native tool
+contracts, permissions, model/context policies and 128-step/four-correction budgets
+are unchanged. Existing identical-read guards and valid read-after-edit work remain.
+See [the recovery contract and qualification](bounded-edit-recovery.md).
+
+Pre-fix native reproduction recorded 16 expected failures/three passes. Initial
+focused checks passed 160 tests with one host symbolic-link skip; the first full
+suite passed 2,663 tests and 15 subtests with 58 optional/host skips. A reproduced
+same-batch recovery gap and missing failed-target label were subsequently fixed.
+Final focused delivery checks passed 101 tests with one host symbolic-link skip.
+All six cloud recovery cases passed on the final code; missing/stale patches recovered
+through a complete read and one approved edit, while no-op cases inspected existing
+text without a mutation. All four unchanged two-file fix/copy cloud cases passed;
+every final report was preserved. Final full native regression passed **2,666 tests
+and 15 subtests**, with **58 optional/host skips**, no failures/errors, in **382.18
+seconds**. An earlier existing installer cleanup failure and related teardown error
+remain recorded separately; its complete 60-test group and final full suite passed
+unchanged on recheck. Skipped live gates remain separate. ORSI did not execute
+Python or a GUI.
+
+Refs/worktree maps, a verified complete-history bundle and content-free preservation
+hashes are saved under ignored `state/backups/bounded-edit-recovery-20261009/`.
+Preserve prior main at `archive/2026-10-09/main-before-bounded-edit-recovery`, commit
+after verification, fast-forward local main and the requested active checkout
+without changing its settings branch, and remove only the merged feature branch.
+Settings edits, other worktrees, historical tips and remote refs stay intact.
+Phases 5–6 remain separate.
+
 ## Scoped coding guidance, 9 October 2026
 
 The separately bounded `codex/scoped-coding-guidance` change resumes on verified

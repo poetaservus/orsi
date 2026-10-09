@@ -127,6 +127,20 @@ def required_calls_feedback() -> dict[str, str]:
     }
 
 
+def edit_recovery_feedback(*, already_present: bool = False) -> str:
+    present = ("The proposed new text is already present in the returned source. Check whether the "
+        "requested change is satisfied before proposing any further mutation. " if already_present else "")
+    return ("A source edit was rejected; its failed result remains authoritative. " + present +
+        "Before another edit to that target, use an advertised filesystem.read_text to obtain fresh source "
+        "containing the target. Receive that result before constructing the retry; do not batch it with its read. "
+        "Follow truncation hints within supported read bounds; repeating a truncated "
+        "prefix is not recovery. Construct a corrected exact patch from that read and its actual digest. "
+        "For a no-change rejection, inspect whether the requested text is already present and report that "
+        "source check honestly instead of repeating a mutation. If sufficient source cannot be obtained, "
+        "stop with the concrete failure and settled-work summary. This recovery grants no authority for "
+        "full replacement, unsolicited copies or execution, and reads do not reset failure allowances.")
+
+
 def canonical_json(value: Any) -> str:
     return json.dumps(
         value,

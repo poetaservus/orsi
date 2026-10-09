@@ -25,7 +25,8 @@ from app.agent.contracts import (
     model_unavailable_message,
 )
 from app.settings.agent import AgentRuntimeLimits
-from app.agent.progress import WORK_BUDGET_STATUSES, WORK_BUDGET_MESSAGE, work_budget_progress
+from app.agent.progress import (WORK_BUDGET_STATUSES, WORK_BUDGET_MESSAGE, work_budget_progress,
+    RECOVERY_STOP_STATUSES, recovery_stop_progress)
 from app.agent.feedback import (
     call_fingerprint,
     constrained_fallback_messages,
@@ -37,6 +38,7 @@ from app.agent.feedback import (
 )
 from app.agent.file_resolution import filename_disambiguation_feedback
 from app.agent.read_progress import ReadProgressTracker
+from app.agent.edit_progress import EditProgressTracker
 from app.capabilities.contracts import (
     CapabilityArgumentError,
     CapabilityContext,
@@ -333,6 +335,10 @@ class AgentRuntime:
                 "partial_text": work_budget_progress(result),
                 "completion": result.completion.model_copy(update={
                     "finish_reason": "agent_budget_limit", "interrupted": True})})
+        if result.status in RECOVERY_STOP_STATUSES:
+            result = result.model_copy(update={"partial_text": recovery_stop_progress(result),
+                "completion": result.completion.model_copy(update={
+                    "finish_reason": "agent_recovery_stop", "interrupted": True})})
         return result
 
     def _run(
@@ -443,6 +449,7 @@ class AgentRuntime:
         protocol_failures = 0
         repeated: dict[str, int] = {}
         read_progress = ReadProgressTracker()
+        edit_progress = EditProgressTracker()
         used_call_ids: set[str] = set()
         advertised_names = {item.name for item in definitions}
         required_fingerprints = tuple(call_fingerprint(call) for call in required_calls)
@@ -767,22 +774,30 @@ class AgentRuntime:
             capability_calls += len(calls)
             repeated = staged_repeated
             results: list[CapabilityResult] = []
+            recovery_feedback: list[str] = []
             for call, internal_call_id in zip(calls, internal_call_ids, strict=True):
-                outcome = self._process_call(
-                    call,
-                    internal_call_id=internal_call_id,
-                    advertised_names=advertised_names,
-                    session_id=session_id,
-                    turn_id=turn_id,
-                    portable_root=portable_root,
-                    allowed_read_roots=roots,
-                    host_access_policy=host_access_policy,
-                    cancellation=linked,
-                    started=started,
-                    user_cancellation=user_cancellation,
-                    deadline_cancellation=deadline_cancellation,
-                    activity_observer=activity_observer,
-                )
+                rejection = edit_progress.before(call, step=steps) if not linked.is_cancelled else None
+                if rejection is not None:
+                    blocked = failure_result(internal_call_id, call.capability,
+                        CapabilityFailure(code=CapabilityErrorCode.INVALID_ARGUMENTS, message=rejection.message))
+                    outcome = _CallOutcome(result=blocked.model_copy(update={"metadata": {
+                        **blocked.metadata, "edit_recovery": rejection.reason}}))
+                else:
+                    outcome = self._process_call(
+                        call,
+                        internal_call_id=internal_call_id,
+                        advertised_names=advertised_names,
+                        session_id=session_id,
+                        turn_id=turn_id,
+                        portable_root=portable_root,
+                        allowed_read_roots=roots,
+                        host_access_policy=host_access_policy,
+                        cancellation=linked,
+                        started=started,
+                        user_cancellation=user_cancellation,
+                        deadline_cancellation=deadline_cancellation,
+                        activity_observer=activity_observer,
+                    )
                 if outcome.stop_status is not None and outcome.result is None:
                     code = (CapabilityErrorCode.OUTCOME_UNKNOWN if self.executor.review_required else
                             CapabilityErrorCode.CANCELLED if outcome.stop_status == AgentRunStatus.CANCELLED else
@@ -825,6 +840,9 @@ class AgentRuntime:
                     )
                 results.append(outcome.result)
                 read_progress.observe(call, outcome.result, repeated)
+                edit_observation = edit_progress.observe(call, outcome.result, step=steps)
+                if edit_observation.feedback is not None:
+                    recovery_feedback.append(edit_observation.feedback)
                 if outcome.result.error is not None and outcome.result.error.code in {
                     CapabilityErrorCode.INVALID_ARGUMENTS, CapabilityErrorCode.UNKNOWN_CAPABILITY,
                 }:
@@ -833,6 +851,9 @@ class AgentRuntime:
                         return self._stopped(AgentRunStatus.SEMANTIC_CORRECTION_LIMIT,
                             "The agent stopped after reaching its semantic-correction limit.",
                             steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
+                if edit_observation.stop_message is not None:
+                    return self._stopped(AgentRunStatus.REPEATED_CALL, edit_observation.stop_message,
+                        steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
             completed_required.update(
                 fingerprint
                 for fingerprint in fingerprints
@@ -852,6 +873,10 @@ class AgentRuntime:
                 completed_required = set()
 
             try:
+                # Keep the native call/result pairing adjacent and the final message
+                # a capability result, including for older structured adapters.
+                for feedback in dict.fromkeys(recovery_feedback):
+                    transcript.append({"role": "system", "content": feedback})
                 transcript.append(model_capability_calls_message(calls, provider_message_id=provider_message_id, assistant_text=response.assistant_text))
                 if response.openai_response is not None:
                     transcript[-1]["openai_response"] = response.openai_response.model_dump(mode="python")
