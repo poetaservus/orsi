@@ -863,6 +863,47 @@ def test_save_key_applies_selected_policy_and_survives_restart(qt, manager, monk
         qt.removeEventFilter(controller)
 
 
+def test_settings_geometry_stays_stable_across_sections_and_window_modes(qt, manager):
+    from app.ui.profile_application import ProfileApplication
+    controller = ProfileApplication(qt, manager.application_root, build_synthetic, manager=manager)
+    try:
+        controller.start()
+        window = controller.window
+        window.resize(1600, 1000)
+        panel = window.settings_panel
+        page = window.personal_profile_page
+        for show in (window.showNormal, window.showMaximized, window.showFullScreen):
+            show()
+            qt.processEvents()
+            panel.show_section("General")
+            if panel.isHidden():
+                window.settings_button.click()
+            qt.processEvents()
+            geometry = panel.geometry()
+            assert window._root.rect().contains(geometry)
+            for section in ("Personal profile", *panel.section_names[:5], "Personal profile"):
+                panel.navigation[panel.section_names.index(section)].click()
+                qt.processEvents()
+                assert panel.geometry() == geometry, section
+            for section in page.sections:
+                page.show_section(section)
+                qt.processEvents()
+                assert panel.geometry() == geometry, section
+        window.showNormal()
+        window.resize(760, 600)
+        qt.processEvents()
+        geometry = panel.geometry()
+        for section in panel.section_names:
+            panel.show_section(section)
+            qt.processEvents()
+            assert panel.geometry() == geometry
+            assert window._root.rect().contains(panel.geometry())
+    finally:
+        controller.shutdown()
+        controller.window.close()
+        qt.removeEventFilter(controller)
+
+
 def test_profile_tabs_keep_edits_uncommitted_and_clear_them_on_lock(qt, manager):
     from app.ui.profile_application import ProfileApplication
     controller = ProfileApplication(qt, manager.application_root, build_synthetic, manager=manager)

@@ -1,5 +1,24 @@
 # Git layout and baseline hygiene
 
+## Stable Settings panel size, 10 October 2026
+
+`codex/settings-panel-size` starts from local main `ad75989`. Personal profile
+had a larger sizing rule than other Settings sections, causing the outer panel
+to grow/shrink during navigation. All sections now use the normal 1120 × 740
+preferred size, clamped to the available window. Navigation no longer refits
+or recenters the panel. The five profile tabs retain their internal scrolling.
+
+The native regression reproduced the bug before the fix. Six focused native
+Windows cases now pass, covering local/portable profiles, normal/maximized/full
+screen and minimum-size navigation, dragging and profile edit/save/lock behavior.
+The full suite was not run. See the
+[verification follow-up](vault-profile-tabs-verification.md#stable-panel-size-follow-up-10-october-2026).
+Eight settings fingerprints and other worktree tips are preserved. Recovery
+evidence is under ignored `state/backups/settings-panel-size-20261010/`.
+Preserve prior main at `archive/2026-10-10/main-before-settings-panel-size`, commit,
+fast-forward local main and remove only the merged local branch. No remote
+publication.
+
 ## Tabbed personal profile settings, 9 October 2026
 
 `codex/vault-profile-tabs` starts from local main `b07dc62`. The user selected

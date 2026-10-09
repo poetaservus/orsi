@@ -80,3 +80,26 @@ minimum machine, live provider/model gates and independent security review remai
 separate deferred gates. Minimum-size layout checks do not claim minimum-machine
 performance qualification. This UI change does not rerun those gates or the full
 regression suite.
+
+## Stable panel size follow-up, 10 October 2026
+
+The user reported that Personal profile enlarged Settings in full screen and
+other sections shrank it again. The new native regression reproduced this before
+the fix: navigation changed an ordinary large-window panel from 1120 × 740 to
+1400 × 904. Evidence is in ignored `state/panel-size-repro.xml`.
+
+All Settings sections now use the normal 1120 × 740 preferred size, clamped to
+the available window. Section changes no longer refit/recenter the outer panel.
+Profile sections keep their independent scrolling and compact controls.
+
+**Six focused native Windows cases passed**, with no failures, errors or skips,
+in `state/panel-size-focused.xml`: the new geometry regression for local and
+portable profiles, existing minimum-size navigation and drag-position checks,
+and existing profile tab/edit/save/lock cases for both modes. The regression
+switches every Settings section and all profile tabs in normal, maximized and
+full-screen views, then checks section switching at 760 × 600. The full suite and
+live provider/model gates were not run for this sizing correction.
+
+All eight settings fingerprints and other worktree tips are preserved. Recovery
+evidence is under ignored `state/backups/settings-panel-size-20261010/`; prior
+main `ad75989` is retained at `archive/2026-10-10/main-before-settings-panel-size`.
