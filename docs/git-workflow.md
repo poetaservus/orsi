@@ -1,5 +1,32 @@
 # Git layout and baseline hygiene
 
+## Personal Vault phase 2 engine, 9 October 2026
+
+The user authorized roadmap phase 2, requested necessary checks only and deferred
+real SSD, minimum-host and independent security qualification. Verified phase 1
+`abcd943` was fast-forwarded into local main and preserved at
+`archive/2026-10-09/vault-phase1`; its merged feature branch was removed. Phase 2
+starts on `codex/vault-phase2` from that local main. No remote branch is published.
+
+The bounded engine adds authenticated catalogs/large objects, password/recovery
+controls, atomic multi-record visibility, quota/free-space admission, verified
+encrypted backup/restore, OS process ownership and reference-aware retention.
+Application/UI/credential wiring remains for phase 3. See
+[the format contract](vault-phase2-contract.md) and
+[focused evidence and deferred gates](vault-phase2-verification.md).
+
+Final focused native verification passed **71 cases in 18.56 seconds**, with no
+failures/errors/skips. Compilation, import isolation, preservation hashes and
+whitespace checks passed. The full suite and the explicitly deferred external
+qualification gates were not run.
+
+Preservation hashes and ref/worktree maps are under ignored
+`state/backups/vault-phase2-20261009/`. After focused verification, preserve prior
+main at `archive/2026-10-09/main-before-vault-phase2`, commit the bounded engine,
+fast-forward local main and remove only its merged local feature branch. Preserve
+other worktrees/historical tips and remote refs; do not run the full suite or infer
+remote-push authorization from historical workflow records.
+
 ## Personal Vault phase 1 review branch, 9 October 2026
 
 The user requested phase 1 of the external Personal Vault v1 roadmap on a new

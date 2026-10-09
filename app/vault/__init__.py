@@ -1,5 +1,5 @@
-"""Experimental personal-vault work; deliberately disconnected from startup.
+"""Personal vault engine and frozen experiment; disconnected from startup.
 
-Phase 1 is a synthetic-data experiment, not an enabled storage backend.
+Phase 2 exposes app.vault.engine.Vault; no application consumers are wired yet.
 Importing this package does not load optional cryptography dependencies.
 """
