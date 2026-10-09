@@ -56,6 +56,14 @@ personal usage/quota and disk-free figures. It exposes quota changes, manual
 lock, optional idle lock (off by default), password change, optional recovery key,
 managed/independent encrypted backup, restore and verified relocation.
 
+Idle lock uses the same switch as tool approvals, a compact typed minutes field
+and a small inline **Save idle lock** button. The field has no arrow buttons and
+ignores wheel changes even while focused, allowing the settings page to scroll.
+The switch enables/disables the field; Save applies both the switch and interval.
+Enabled intervals are 1–1440 minutes. An off profile offers an unsaved five-minute
+starting value; disabling saves the existing zero/off representation. No stored
+profile setting changes until Save is pressed.
+
 Password changes rewrap keys. Recovery generation explicitly displays the new
 key and offers an outside-vault export; keep that copy accessible independently
 of the vault and its disk. Generation replaces the current recovery key. Recovery

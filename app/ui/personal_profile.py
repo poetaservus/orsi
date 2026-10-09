@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog,
     QFileDialog, QFormLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
     QMessageBox, QPushButton, QScrollArea, QSpinBox, QTextEdit, QVBoxLayout, QWidget)
 
+from app.ui.notification_settings import NotificationSwitch
 from app.vault.credentials import CredentialPolicy
 from app.vault.profiles import public_error
 from app.vault.types import BackupPolicy, VaultError
@@ -163,6 +164,12 @@ class ProfileChoice(QDialog):
         self.accept()
 
 
+class IdleMinutesInput(QSpinBox):
+    def wheelEvent(self, event):  # noqa: N802
+        # Let the settings page scroll without changing the lock interval.
+        event.ignore()
+
+
 class PersonalProfilePage(QWidget):
     transition_requested = Signal(object)
     reload_requested = Signal(object)
@@ -294,20 +301,46 @@ class PersonalProfilePage(QWidget):
 
     def _idle_controls(self):
         settings = self.manager.settings().load({})
-        self.idle = QSpinBox()
-        self.idle.setRange(0, 1440)
-        self.idle.setSuffix(" minutes (0 = off)")
-        self.idle.setValue(settings.get("idle_lock_minutes", 0))
-        self.idle.setAccessibleName("Idle lock")
-        form = self._form()
-        form.addRow("Idle lock", self.idle)
-        self._buttons((("Save idle lock", lambda: self._perform(lambda: self.manager.configure(idle_lock_minutes=self.idle.value()))),))
+        minutes = settings.get("idle_lock_minutes", 0)
+        self.idle_controls = QWidget(self)
+        row = QHBoxLayout(self.idle_controls)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(10)
+        self.idle_toggle = NotificationSwitch(self.idle_controls)
+        self.idle_toggle.setAccessibleName("Idle lock")
+        self.idle_toggle.setAccessibleDescription("Turn automatic idle locking on or off, then save idle lock.")
+        self.idle_toggle.setChecked(minutes > 0)
+        self.idle = IdleMinutesInput(self.idle_controls)
+        self.idle.setRange(1, 1440)
+        self.idle.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
+        self.idle.setValue(minutes or 5)
+        self.idle.setFixedSize(72, 36)
+        self.idle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.idle.setAccessibleName("Idle lock minutes")
+        self.idle.setToolTip("Minutes of inactivity before locking (1–1440)")
+        self.idle.setEnabled(self.idle_toggle.isChecked())
+        self.idle_toggle.toggled.connect(self.idle.setEnabled)
+        self.idle_save = QPushButton("Save idle lock", self.idle_controls)
+        self.idle_save.setFixedSize(128, 36)
+        self.idle_save.clicked.connect(self._save_idle_lock)
+        title = label("Idle lock")
+        title.setBuddy(self.idle_toggle)
+        for widget in (title, self.idle_toggle, self.idle, label("minutes"), self.idle_save):
+            row.addWidget(widget)
+        row.addStretch()
+        self.layout.addWidget(self.idle_controls)
         if self.manager.encrypted:
             self.guidance = QCheckBox("Show vault storage recommendations")
             self.guidance.setChecked(not settings.get("storage_guidance_dismissed", False))
             self.guidance.toggled.connect(lambda enabled: self._perform(
                 lambda: self.manager.configure(storage_guidance_dismissed=not enabled)))
             self.layout.addWidget(self.guidance)
+
+    def _save_idle_lock(self):
+        self.idle.interpretText()
+        minutes = self.idle.value() if self.idle_toggle.isChecked() else 0
+        self._perform(lambda: self.manager.configure(idle_lock_minutes=minutes),
+                      "Idle lock saved." if minutes else "Idle lock disabled.")
 
     def _credential_controls(self):
         if not self.manager.encrypted:

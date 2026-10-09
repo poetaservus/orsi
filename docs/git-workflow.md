@@ -1,5 +1,22 @@
 # Git layout and baseline hygiene
 
+## Compact idle-lock controls, 9 October 2026
+
+`codex/vault-idle-controls` starts from local main `8a6b7b2`. The idle-lock row
+now reuses the tool-approval switch with a 72-pixel typed minutes field and
+128-pixel inline save button. Wheel changes and spinner buttons are removed;
+Save preserves the existing zero/off or positive-minutes setting. See
+[focused verification](vault-idle-controls-verification.md).
+
+Seven existing focused Windows checks passed. Native local/portable checks
+verified toggle/save/restart behavior, 16 wheel cases and minimum-width layout;
+panel captures were visually inspected. No full suite or live provider/model
+checks. All eight settings/selection preservation entries match; actual user
+profiles and running processes were left alone. Recovery evidence is under
+ignored `state/backups/vault-idle-controls-20261009/`. Preserve prior main at
+`archive/2026-10-09/main-before-vault-idle-controls`, commit, fast-forward main
+and remove only the merged local branch. No remote publication.
+
 ## Vault picture stacking and fades, 9 October 2026
 
 `codex/vault-picture-fade` starts from local main `e21cd84`. The loading picture
