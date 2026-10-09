@@ -1,5 +1,23 @@
 # Git layout and baseline hygiene
 
+## Vault unlock picture, 9 October 2026
+
+`codex/vault-unlock-picture` starts from local main `c7f8916`. Successful unlock
+now shows the user's supplied picture over the previous window while the unlocked
+profile is composed. The original image is bundled unchanged in UI assets and
+included in package data; the existing compiled build already includes that
+asset directory. See [focused verification](vault-unlock-picture-verification.md).
+
+Twenty-three existing focused Windows checks passed, plus native visual checks
+for normal/maximized windows, failed initialization and a relocated portable
+asset, and an actual desktop-entrypoint/repeated-launch probe. No full suite or
+live provider/model tests were run. All eight configuration/selection preservation
+entries match; the actual user vault and running instance were left alone.
+Content-free recovery evidence is under ignored
+`state/backups/vault-unlock-picture-20261009/`. Preserve prior main at
+`archive/2026-10-09/main-before-vault-unlock-picture`, commit, fast-forward main
+and remove only the merged local branch. Remote branches remain untouched.
+
 ## Desktop unlock/window and saved-key follow-up, 9 October 2026
 
 `codex/vault-unlock-lifecycle` starts from local main `39da460`. The user reported

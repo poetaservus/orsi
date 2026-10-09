@@ -7,6 +7,7 @@ from PySide6.QtCore import QEvent, QObject, QTimer
 from app.state.storage import JsonStore
 from app.ui.main_window import MainWindow
 from app.ui.personal_profile import PersonalProfilePage, restore_dialog
+from app.ui.profile_loading import ProfileLoadingWindow
 from app.vault.profiles import ProfileManager, public_error
 
 
@@ -125,6 +126,19 @@ class ProfileApplication(QObject):
             page.password.setFocus()
 
     def render(self, message="", *, show_profile=False):
+        loading = None
+        try:
+            if (self.window is not None and getattr(self.window, "_profile_locked", False)
+                    and self.manager.active):
+                loading = ProfileLoadingWindow(self.window)
+                loading.present()
+            self._render(message, show_profile=show_profile)
+        finally:
+            if loading is not None:
+                loading.close()
+                loading.deleteLater()
+
+    def _render(self, message="", *, show_profile=False):
         old = self.window
         if old is not None:
             old._closing = True
