@@ -37,7 +37,10 @@ runtime\python\python.exe -m app.main
   implementation recognizes Blender and resolves only verified local executables.
 - Portable-root read scope by default, or configured full-local read on supported Windows drives.
   Startup and cloud selection do not show warning dialogs. Tool approvals appear in the input
-  area: **Enter** approves the displayed operation; **Esc** aborts it.
+  area: **Enter** approves the displayed operation; **Esc** aborts it. In General settings,
+  **Tool execution approval** defaults to ON. OFF runs eligible calls automatically, keeping
+  the composer unchanged and showing file operations in the working-status area. The choice
+  persists across launches; see [tool approval preferences](docs/tool-approval-preferences.md).
 - Crash-journaled tool lifecycle, cancellation, bounded retries/steps, strict schemas, and
   single-use expiring approvals.
 - Instruction-only skills: validated local/public HTTPS Git installation, explicit or automatic
@@ -134,7 +137,8 @@ extension/stem variant after an extensionless file read misses. See
 
 Feature flags can be overridden with explicit `ORSI_ENABLE_...` environment variables. Full-local
 read authority follows the configured flag. Writes and application launches still require
-approval for each exact operation.
+authorization for each exact operation. The tool approval preference selects human review
+or automatic approval within the same permission and resource checks.
 
 The content-free `state/diagnostics/effective_baseline_v1.json` snapshot records the source revision,
 effective flags, model hash, targets, actual limits and GPU memory. See

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from threading import Event
 from types import SimpleNamespace
 
 import pytest
@@ -165,6 +166,57 @@ def test_cancellation_and_stale_approval_restore_the_composer(ui):
     assert window._approval_panel is None and not service.decisions
     window._show_approval(record())
     assert window._approval_panel is None
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows host-write adapter.")
+def test_saved_off_runs_native_write_with_status_and_no_composer_review(tmp_path, monkeypatch):
+    from app.conversation.orchestrator import ConversationService
+    from app.conversation.store import ConversationStore
+    from app.state.storage import JsonStore
+    from tests.test_tool_approval_preferences import native_runtime
+
+    app = QApplication.instance() or QApplication([])
+    target = tmp_path / "xyz.py"
+    runtime = native_runtime(tmp_path, "filesystem.write_text", {"path": str(target), "text": "saved\n"})
+    runtime.set_tool_approval_required(True)
+    portable = tmp_path / "portable"
+    service = ConversationService(runtime.model, ConversationStore(portable / "conversation.json"),
+                                  agent_runtime=runtime, portable_root=portable)
+    preferences = JsonStore(tmp_path / "ui.json")
+    preferences.save({"tool_approval_required": False})
+    entered, release = Event(), Event()
+    original = runtime.executor.execute
+    def hold(prepared, authorization):
+        result = original(prepared, authorization)
+        entered.set()
+        release.wait(3)
+        return result
+    monkeypatch.setattr(runtime.executor, "execute", hold)
+    window = MainWindow(service, "fixture", preferences_store=preferences)
+    reviews, notifications = [], []
+    window.approval_requested.connect(reviews.append)
+    monkeypatch.setattr(window.notifications, "notify", notifications.append)
+    try:
+        window.show()
+        window.input.setPlainText(f'Write text to "{target}":\nsaved')
+        window.submit()
+        assert entered.wait(2)
+        QTest.qWait(60)
+        assert target.read_bytes() == b"saved\n"
+        assert not runtime.tool_approval_required
+        assert not reviews and "approval" not in notifications
+        assert window._approval_panel is None
+        assert window._composer_stack.currentWidget() is window._message_composer
+        assert window.chat.activity_label.text() == "Writing xyz.py…"
+    finally:
+        release.set()
+        for _ in range(200):
+            QTest.qWait(10)
+            if window.thread is None:
+                break
+        assert window.thread is None
+        window.close()
+        service.shutdown()
 
 
 @pytest.mark.parametrize("full_local", [False, True])

@@ -190,6 +190,9 @@ class AgentRuntime:
         self._call_id_factory = call_id_factory
         self._fallback_call_id_factory = fallback_call_id_factory
         self._approval_requester = approval_requester
+        # Scoped skill runtimes share this flag through their shallow runtime copy.
+        self._approval_review = Event()
+        self._approval_review.set()
         if type(context_recovery_enabled) is not bool:
             raise TypeError("Context recovery requires an explicit boolean.")
         self.context_recovery_enabled = context_recovery_enabled
@@ -215,6 +218,19 @@ class AgentRuntime:
         if not callable(requester):
             raise TypeError("The approval requester must be callable.")
         self._approval_requester = requester
+
+    @property
+    def tool_approval_required(self) -> bool:
+        return self._approval_review.is_set()
+
+    def set_tool_approval_required(self, required: bool) -> None:
+        """Select human review for future requests; leave pending reviews intact."""
+        if type(required) is not bool:
+            raise TypeError("Tool approval preferences require an explicit boolean.")
+        if required:
+            self._approval_review.set()
+        else:
+            self._approval_review.clear()
 
     def resolve_approval(self, approval_id: str, approved: bool) -> None:
         if not isinstance(approved, bool):
@@ -1086,7 +1102,8 @@ class AgentRuntime:
             )
 
         try:
-            report_activity(activity_observer, capability_activity(call.capability))
+            report_activity(activity_observer, capability_activity(
+                call.capability, prepared.validated_arguments().model_dump(mode="json")))
             result = self.executor.execute(prepared, authorization)
         except Exception:
             log.exception("Capability result persistence failed unexpectedly.")
@@ -1137,11 +1154,21 @@ class AgentRuntime:
                 record_final_authorization=True,
             )
 
-        report_activity(activity_observer, "Waiting for your approval…")
+        review_required = self.tool_approval_required
+        if review_required:
+            report_activity(activity_observer, "Waiting for your approval…")
         record = self.approval_manager.request(
             evaluation,
             cancellation=cancellation,
         )
+        if not review_required:
+            # OFF changes the review surface, not the policy or exact-call binding.
+            self.approval_manager.resolve(record.approval_id, ApprovalStatus.APPROVED)
+            return _AuthorizationOutcome(
+                authorization=self.approval_manager.authorize(
+                    evaluation, approval_id=record.approval_id, cancellation=cancellation),
+                record_final_authorization=True,
+            )
         initial = self.approval_manager.authorize(
             evaluation,
             approval_id=record.approval_id,

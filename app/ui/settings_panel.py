@@ -4,34 +4,13 @@ from pathlib import Path
 from PySide6.QtCore import QPoint, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QFont, QKeySequence, QLinearGradient, QPainter, QPen, QShortcut
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QFrame, QHBoxLayout, QLabel, QPushButton,
+    QComboBox, QFrame, QHBoxLayout, QLabel, QPushButton,
     QScrollArea, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget,
 )
 from app.ui.settings_motion import SettingsDragStrip, SettingsIconButton
 from app.ui.skill_settings import SkillSettingsPage
 from app.ui.image_settings import ImageSettingsPage
 from app.ui.notification_settings import NotificationSoundControl, NotificationSwitch
-
-
-class ApprovalPlaceholder(QCheckBox):
-    """Unavailable setting, painted as the switch in the reference layout."""
-
-    def __init__(self):
-        super().__init__()
-        self.setFixedSize(44, 24)
-        self.setAccessibleName("Tool execution approval")
-        self.setAccessibleDescription("Placeholder. Approval preferences are not implemented.")
-        self.setToolTip("Coming soon. Existing tool approval rules still apply.")
-        self.setEnabled(False)
-
-    def paintEvent(self, event):  # noqa: N802
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor("#343b48"))
-        painter.drawRoundedRect(0, 3, 44, 18, 9, 9)
-        painter.setBrush(QColor("#a7adb7"))
-        painter.drawRoundedRect(3, 5, 14, 14, 5, 5)
 
 
 class SettingsPanel(QFrame):
@@ -149,9 +128,16 @@ class SettingsPanel(QFrame):
         window.response_language_selector = self._placeholder("Response Language")
         self._row(general, "Response Language", "Preferred reply language · Coming soon",
                   window.response_language_selector)
-        window.tool_approval_toggle = ApprovalPlaceholder()
-        self._row(general, "Tool execution approval", "Tool approval preferences · Coming soon",
-                  window.tool_approval_toggle)
+        window.tool_approval_toggle = NotificationSwitch(self)
+        window.tool_approval_toggle.setAccessibleName("Tool execution approval")
+        window.tool_approval_toggle.setAccessibleDescription(
+            "On: review tool changes before they run. Off: run them automatically. "
+            "Applies to the next tool request; a pending review still needs a decision.")
+        window.tool_approval_toggle.setToolTip(window.tool_approval_toggle.accessibleDescription())
+        window.tool_approval_toggle.setChecked(window._tool_approval_required)
+        window.tool_approval_toggle.toggled.connect(window._set_tool_approval_required)
+        self._row(general, "Tool execution approval", "Review tool changes before they run",
+                  window.tool_approval_toggle, control_size=(44, 24))
         window.notification_toggle = NotificationSwitch(self)
         window.notification_toggle.setAccessibleName("Notifications")
         window.notification_toggle.setChecked(window.notifications.enabled)
@@ -264,10 +250,9 @@ class SettingsPanel(QFrame):
             control.setFixedSize(*control_size)
             control.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
             control.setMinimumContentsLength(1)
-        elif not isinstance(control, ApprovalPlaceholder):
+        else:
             control.setFixedSize(*control_size)
-        if not isinstance(control, ApprovalPlaceholder):
-            control.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        control.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         horizontal.addWidget(control, 0, Qt.AlignmentFlag.AlignVCenter)
         label.setBuddy(control)
         layout.addWidget(row)

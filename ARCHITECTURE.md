@@ -95,7 +95,9 @@ and are not alternate implementations.
 5. The registry validates the capability name and Pydantic argument schema.
 6. The permission gate evaluates canonical resources. Read rules may allow directly; writes and
    application launch require a pending, exact, expiring approval record.
-7. The GUI presents only trusted approval data and resolves the approval. It does not decide policy.
+7. With Tool execution approval ON (the default), the GUI presents trusted approval data and
+   resolves the review. OFF lets the runtime approve each eligible exact call automatically,
+   without presenting a review. The persisted UI preference never overrides a DENY rule.
 8. The journaled executor records intent and authorization, executes once, records the result, and
    returns structured output to the model.
    Settled text edits/writes that prove a content change renew only that file's text-read repetition
@@ -146,6 +148,11 @@ Write and execute permissions use exact single-use approvals. Approval records b
 canonical resource, safe preview, and when required an identity fingerprint. Expired, denied,
 cancelled, changed, replayed, or unjournaled operations fail closed. Read acknowledgement never
 grants write or execute authority.
+
+The General settings tool approval switch selects human review or automatic resolution of
+ASK records. Both paths consume the same exact-call approval before execution. The flag is
+shared by scoped skill runtimes; changing it leaves an existing pending review intact. See
+[tool approval preferences](docs/tool-approval-preferences.md).
 
 ## 7. Configuration
 

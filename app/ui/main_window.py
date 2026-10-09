@@ -344,6 +344,10 @@ class MainWindow(QMainWindow):
         self.startup_error = startup_error
         self._preferences_store = preferences_store
         self._greeting_message = self._load_greeting_message()
+        self._tool_approval_required = self._load_tool_approval_required()
+        configure_approval = getattr(service, "set_tool_approval_required", None)
+        if callable(configure_approval):
+            configure_approval(self._tool_approval_required)
         self.notifications = NotificationManager(self, preferences_store)
         self.thread = None
         self._settings_busy = False
@@ -647,6 +651,33 @@ class MainWindow(QMainWindow):
         } and event.type() == QEvent.Type.Resize:
             self._position_overlays()
         return super().eventFilter(watched, event)
+
+    def _load_tool_approval_required(self) -> bool:
+        try:
+            payload = self._preferences_store.load({}) if self._preferences_store is not None else {}
+            value = payload.get("tool_approval_required", True) if isinstance(payload, dict) else True
+            return value if type(value) is bool else True
+        except Exception:
+            log.warning("Tool approval preferences could not be loaded.")
+            return True
+
+    def _set_tool_approval_required(self, required: bool) -> None:
+        configure = getattr(self.service, "set_tool_approval_required", None)
+        if callable(configure):
+            configure(required)
+        self._tool_approval_required = required
+        if self.thread is None:
+            self.activity.set_activity(self._ready_status())
+        if self._preferences_store is not None:
+            try:
+                payload = self._preferences_store.load({})
+                if not isinstance(payload, dict):
+                    raise ValueError("Invalid UI preferences")
+                payload["tool_approval_required"] = required
+                self._preferences_store.save(payload)
+            except Exception:
+                # Preserve unreadable preferences instead of replacing user settings.
+                log.warning("Tool approval preferences could not be saved.")
 
     def _load_greeting_message(self) -> str:
         store = self._preferences_store
@@ -1300,18 +1331,19 @@ class MainWindow(QMainWindow):
                 if self._host_read_scope() == HostReadScope.FULL_LOCAL
                 else f"Portable-root read · {read_capabilities}"
             )
+            approval_mode = "approval" if self._tool_approval_required else "automatic"
             if "filesystem.mkdir" in getattr(self.service, "agent_capabilities", ()):
-                read_status += " · Folder approval"
+                read_status += f" · Folder {approval_mode}"
             if "filesystem.write_text" in getattr(self.service, "agent_capabilities", ()):
-                read_status += " · Text-write approval"
+                read_status += f" · Text-write {approval_mode}"
             if "filesystem.edit_text" in getattr(self.service, "agent_capabilities", ()):
-                read_status += " · Text-edit approval"
+                read_status += f" · Text-edit {approval_mode}"
             if "filesystem.copy" in getattr(self.service, "agent_capabilities", ()):
-                read_status += " · Copy approval"
+                read_status += f" · Copy {approval_mode}"
             if "filesystem.move" in getattr(self.service, "agent_capabilities", ()):
-                read_status += " · Move approval"
+                read_status += f" · Move {approval_mode}"
             if "filesystem.trash" in getattr(self.service, "agent_capabilities", ()):
-                read_status += " · Trash approval"
+                read_status += f" · Trash {approval_mode}"
             if self.inference.mode == "cloud":
                 return (
                     f"Cloud key needed · Agent · {read_status}"

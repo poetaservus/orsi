@@ -1,5 +1,6 @@
 """Settings navigation, placeholder boundaries and existing action routing."""
 import os
+from types import SimpleNamespace
 from time import monotonic
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -43,10 +44,72 @@ def test_placeholder_controls_do_not_change_preferences_or_draft(app, tmp_path):
             assert not selector.isEnabled()
             assert selector.currentText() == "Coming soon"
             assert "Placeholder" in selector.accessibleDescription()
-        assert not window.tool_approval_toggle.isEnabled()
-        assert "Existing tool approval rules" in window.tool_approval_toggle.toolTip()
+        assert window.tool_approval_toggle.isEnabled()
+        assert window.tool_approval_toggle.isChecked()
         assert preferences.path.read_bytes() == before
         assert window.input.toPlainText() == "Keep this draft"
+    finally:
+        window.close()
+
+
+def test_tool_approval_switch_persists_and_preserves_other_preferences_and_draft(app, tmp_path):
+    preferences = JsonStore(tmp_path / "ui.json")
+    original = {"greeting_message": "Hello", "unrelated": "keep", "notifications": {"enabled": False}}
+    preferences.save(original)
+    selections = []
+    service = SimpleNamespace(set_tool_approval_required=selections.append)
+    window = MainWindow(service, "TEST", preferences_store=preferences)
+    try:
+        window.show()
+        window.settings_button.click()
+        window.input.setPlainText("Keep this draft")
+        app.processEvents()
+        toggle = window.tool_approval_toggle
+        assert toggle.isChecked() and selections == [True]
+        QTest.mouseClick(toggle, Qt.MouseButton.LeftButton)
+        assert not toggle.isChecked() and selections == [True, False]
+        assert preferences.load() == original | {"tool_approval_required": False}
+        assert window.input.toPlainText() == "Keep this draft"
+    finally:
+        window.close()
+    restored = MainWindow(service, "TEST", preferences_store=preferences)
+    try:
+        assert not restored.tool_approval_toggle.isChecked() and selections[-1] is False
+        restored.show()
+        restored.settings_button.click()
+        app.processEvents()
+        restored.tool_approval_toggle.setFocus()
+        QTest.keyClick(restored.tool_approval_toggle, Qt.Key.Key_Space)
+        assert restored.tool_approval_toggle.isChecked() and selections[-1] is True
+        assert preferences.load() == original | {"tool_approval_required": True}
+    finally:
+        restored.close()
+
+
+@pytest.mark.parametrize("value", [None, 0, 1, "false", [], {}])
+def test_invalid_tool_approval_preference_defaults_to_review(app, tmp_path, value):
+    preferences = JsonStore(tmp_path / "ui.json")
+    preferences.save({"tool_approval_required": value})
+    original = preferences.path.read_bytes()
+    selections = []
+    window = MainWindow(SimpleNamespace(set_tool_approval_required=selections.append), "TEST",
+                        preferences_store=preferences)
+    try:
+        assert window.tool_approval_toggle.isChecked() and selections == [True]
+        assert preferences.path.read_bytes() == original
+    finally:
+        window.close()
+
+
+def test_unreadable_tool_approval_preferences_are_preserved(app, tmp_path):
+    preferences = JsonStore(tmp_path / "ui.json")
+    preferences.path.write_text("{unreadable", encoding="utf-8")
+    original = preferences.path.read_bytes()
+    window = MainWindow(None, "TEST", preferences_store=preferences)
+    try:
+        assert window.tool_approval_toggle.isChecked()
+        window.tool_approval_toggle.setChecked(False)
+        assert preferences.path.read_bytes() == original
     finally:
         window.close()
 

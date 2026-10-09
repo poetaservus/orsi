@@ -625,6 +625,12 @@ class ConversationService:
         if self.agent_runtime is not None:
             self.agent_runtime.set_approval_requester(requester)
 
+    def set_tool_approval_required(self, required: bool) -> None:
+        if type(required) is not bool:
+            raise TypeError("Tool approval preferences require an explicit boolean.")
+        if self.agent_runtime is not None:
+            self.agent_runtime.set_tool_approval_required(required)
+
     def resolve_approval(self, approval_id: str, approved: bool) -> None:
         if self.agent_runtime is not None:
             self.agent_runtime.resolve_approval(approval_id, approved)
