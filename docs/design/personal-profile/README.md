@@ -56,7 +56,7 @@ selection and current unencrypted storage; Lock stays directly accessible.
 
 | Location | Existing controls |
 | --- | --- |
-| Profile summary / Manage profile | Local/portable and encryption status, location, new/select profile, legacy storage, manual lock |
+| Profile summary / Manage profile | Profile title/location, new/select profile, legacy storage, manual lock |
 | Storage | Personal usage/quota/free disk, app/model usage details, refresh, quota change, idle toggle/minutes/save, guidance preference |
 | Cloud access | Connection status, Ask/saved policy, credential type, masked replacement, explicit encrypted-save consent, save/delete |
 | Backups | Managed backup creation, independent backup destination, restore, count/day retention and explicit Apply |
@@ -77,3 +77,10 @@ isolated synthetic app capture as the style reference. Exact prompts are in
 app's existing typography and native controls, with actual selected-profile state
 instead of the mockup's fictional location. Each tab scrolls independently;
 narrow windows reflow actions.
+
+10 October follow-up: at the user's request, the redundant mode/encryption/unlock
+badges, Other credential types explanation and revocation footer are removed.
+Settings action buttons now share one neutral treatment, replacing the mockup's
+blue save/text-delete distinction. Dropdowns share a palette, height and chevron;
+record selection and both levels of tab transitions are refined. See
+[focused verification](../../settings-finish-verification.md).

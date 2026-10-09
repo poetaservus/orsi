@@ -33,4 +33,4 @@ addopts = "-q"
 include = ["app*"]
 
 [tool.setuptools.package-data]
-"app.ui" = ["assets/sounds/*.ogg", "assets/notification_play.svg", "assets/orsi_start.png"]
+"app.ui" = ["assets/sounds/*.ogg", "assets/*.svg", "assets/*.png", "assets/fonts/*"]

@@ -936,6 +936,8 @@ def test_profile_tabs_keep_edits_uncommitted_and_clear_them_on_lock(qt, manager)
         QTest.mouseClick(page.lock_profile, Qt.MouseButton.LeftButton)
         assert not manager.active and controller.window.login_panel.isVisible()
         assert not page.key.text() and not page.consent.isChecked() and page.records.count() == 0
+        assert page.tab_transition.cover.picture.isNull()
+        assert window.settings_panel.page_transition.cover.picture.isNull()
         controller.window.personal_profile_page.password.setText(PASSWORD.decode())
         QTest.keyClick(controller.window.personal_profile_page.password, Qt.Key.Key_Return)
         assert manager.vault().read(controller.window.personal_profile_page.connection + "/api_key", domain=Domain.CREDENTIAL) == SECRET.encode()

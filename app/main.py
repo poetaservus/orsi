@@ -21,6 +21,9 @@ def build_application(*args, **kwargs):
 
 def main(*, profile_session=None) -> int:
     """Initialize runtime directories, compose the backend, and start the Qt UI."""
+    if len(sys.argv) > 1 and sys.argv[1] == "--profile-loading":
+        from app.ui.profile_loading import run_loading_helper
+        return run_loading_helper(sys.argv[2:])
     if len(sys.argv) > 1 and sys.argv[1].casefold() == "skill":
         from app.runtime.skills.cli import main as skill_main
         return skill_main(sys.argv[2:])

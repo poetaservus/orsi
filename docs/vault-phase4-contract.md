@@ -53,6 +53,15 @@ ready replacement (including the locked error view if
 initialization fails). Only the loading picture stays on top. The image lives with the UI
 assets and follows portable copies; no Desktop path is used at runtime.
 
+The user's replacement background is preserved. Bundled `bsw_o.png` is centered
+over it, with a 3.2-second smooth scale/opacity pulse. A presentation-only helper
+keeps that pulse running during synchronous profile composition. Its private
+entrypoint receives only window geometry and loads bundled public assets; it
+does not claim desktop ownership, open a vault or compose services. Fade-out
+reveals the painted replacement, then the helper exits. Closing the parent pipe
+also exits the helper, including before first paint. A failed helper falls back
+to the in-process cover without preventing profile access.
+
 Desktop startup admits one owner per application directory. Repeated launches
 activate its current window and exit before composing another profile/backend.
 Separate application directories remain independent; the engine's profile lease
@@ -62,7 +71,8 @@ contains only runtime ownership metadata, separately from the profile locator.
 ## Everyday controls
 
 An unlocked profile uses the selected five-tab layout. Its persistent summary
-shows the actual mode, encryption/unlock state and copyable location. Compact
+shows the profile title and copyable location. The user-requested mode/encryption/
+unlock badges and extra credential explanation/footer were removed. Compact
 **Manage profile** and **Lock** actions remain above every tab. Manage profile
 contains New profile, Select existing and Use current unencrypted storage.
 
@@ -80,6 +90,15 @@ without applying them; explicit save/apply buttons keep their existing behavior.
 Same-profile import rebuilds retain the selected tab. Different profiles start
 on Storage. Unencrypted profiles explain unavailable encrypted-only operations.
 The separate locked-profile login and loading transition retain their behavior.
+
+All outer Settings sections and inner profile tabs use a 200 ms eased reveal,
+without resizing or moving the panel. Navigation and actions remain immediate.
+Transition snapshots are discarded on completion, hiding, resizing and profile
+lock. Dropdowns and ordinary action buttons share one control palette, including
+app-owned Settings dialogs; navigation and icon controls retain their roles.
+Dropdowns use a consistent 36-pixel height and chevron. Saved-record selection
+uses a rounded blue highlight without the native focus outline; long record
+paths elide in the middle with the full path available as a tooltip.
 
 Idle lock uses the same switch as tool approvals, a compact typed minutes field
 and a small inline **Save idle lock** button. The field has no arrow buttons and

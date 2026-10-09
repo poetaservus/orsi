@@ -1,5 +1,26 @@
 # Git layout and baseline hygiene
 
+## Settings consistency, transitions and loading logo, 10 October 2026
+
+`codex/settings-finish` starts from local main `73304f5`, preserving the user's
+uncommitted replacement loading background. The requested redundant profile
+badges and credential explanation/footer are removed. A shared palette unifies
+dropdowns and action buttons, saved-record selection is refined, and both levels
+of Settings tabs reveal smoothly without changing panel geometry. The supplied
+logo is bundled and pulses over the preserved background throughout loading.
+
+Twenty-nine distinct focused native Windows cases passed, including the console
+and windowless portable Python runtimes, blocked-parent pulse, topmost display,
+early helper exit, fallback, navigation, save/lock clearing, desktop ownership
+and shutdown. Synthetic local/portable visual probes also passed. No full suite,
+live API/model calls or actual user-vault access. See
+[focused verification](settings-finish-verification.md).
+Nine configuration/artwork fingerprints and other worktree tips are preserved.
+Recovery evidence and the user's original replacement asset are under ignored
+`state/backups/settings-finish-20261010/`. Preserve prior main at
+`archive/2026-10-10/main-before-settings-finish`, commit, fast-forward local main
+and remove only the merged local feature branch. No remote publication.
+
 ## Stable Settings panel size, 10 October 2026
 
 `codex/settings-panel-size` starts from local main `ad75989`. Personal profile

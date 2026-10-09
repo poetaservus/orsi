@@ -1,10 +1,68 @@
 """Vector button feedback and dragging for the settings UI."""
 from math import sin, pi
 
-from PySide6.QtCore import QEasingCurve, QLineF, QRectF, Qt, QVariantAnimation, Signal
-from PySide6.QtGui import QColor, QIcon, QPen
+from PySide6.QtCore import QEasingCurve, QEvent, QLineF, QObject, QRectF, Qt, QVariantAnimation, Signal
+from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QPushButton, QStyle, QStyleOptionButton, QStylePainter, QWidget
+
+
+class _PageCover(QWidget):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self.picture = QPixmap()
+        self.opacity = 1.0
+
+    def paintEvent(self, event):  # noqa: N802
+        painter = QPainter(self)
+        painter.setOpacity(self.opacity)
+        painter.drawPixmap(self.rect(), self.picture)
+
+
+class SettingsPageTransition(QObject):
+    """Reveal the new page through the old one without delaying navigation."""
+    def __init__(self, stack):
+        super().__init__(stack)
+        self.stack = stack
+        self.previous = stack.currentWidget()
+        self.cover = _PageCover(stack)
+        self.cover.hide()
+        self.animation = QVariantAnimation(self)
+        self.animation.setDuration(200)
+        self.animation.setStartValue(1.0)
+        self.animation.setEndValue(0.0)
+        self.animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
+        self.animation.valueChanged.connect(self._frame)
+        self.animation.finished.connect(self.cancel)
+        stack.currentChanged.connect(self._change)
+        stack.installEventFilter(self)
+
+    def _change(self, index):
+        old, self.previous = self.previous, self.stack.currentWidget()
+        self.cancel()
+        if old is None or old is self.previous or not self.stack.isVisible():
+            return
+        self.cover.picture = old.grab()
+        self.cover.opacity = 1.0
+        self.cover.setGeometry(self.stack.rect())
+        self.cover.show()
+        self.cover.raise_()
+        self.animation.start()
+
+    def _frame(self, opacity):
+        self.cover.opacity = opacity
+        self.cover.update()
+
+    def cancel(self):
+        self.animation.stop()
+        self.cover.hide()
+        self.cover.picture = QPixmap()
+
+    def eventFilter(self, watched, event):  # noqa: N802
+        if event.type() in (QEvent.Type.Hide, QEvent.Type.Resize):
+            self.cancel()
+        return super().eventFilter(watched, event)
 
 
 class SettingsIconButton(QPushButton):

@@ -1,13 +1,12 @@
 """Presentation-only settings shell; actions remain owned by MainWindow."""
-from pathlib import Path
-
 from PySide6.QtCore import QPoint, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QFont, QKeySequence, QLinearGradient, QPainter, QPen, QShortcut
 from PySide6.QtWidgets import (
     QComboBox, QFrame, QHBoxLayout, QLabel, QPushButton,
     QScrollArea, QSizePolicy, QStackedWidget, QVBoxLayout, QWidget,
 )
-from app.ui.settings_motion import SettingsDragStrip, SettingsIconButton
+from app.ui.settings_motion import SettingsDragStrip, SettingsIconButton, SettingsPageTransition
+from app.ui.settings_style import settings_control_style
 from app.ui.skill_settings import SkillSettingsPage
 from app.ui.image_settings import ImageSettingsPage
 from app.ui.notification_settings import NotificationSoundControl, NotificationSwitch
@@ -91,6 +90,7 @@ class SettingsPanel(QFrame):
             self.pages.addWidget(scroll)
             self.page_layouts.append(layout)
         self.navigation[0].setChecked(True)
+        self.page_transition = SettingsPageTransition(self.pages)
         self.pages.currentChanged.connect(lambda i: self.navigation[i].setChecked(True))
         nav.addStretch()
         body.addLayout(nav)
@@ -171,7 +171,7 @@ class SettingsPanel(QFrame):
                   window.notification_toggle, control_size=(44, 24))
         window.notification_sound = NotificationSoundControl(window.notifications, self)
         self._row(general, "Notification sound", "Choose your alert sound",
-                  window.notification_sound, control_size=(196, 32))
+                  window.notification_sound, control_size=(196, 36))
         general.addSpacing(20)
         window.activity.setWordWrap(True)
         general.addWidget(window.activity)
@@ -254,7 +254,7 @@ class SettingsPanel(QFrame):
 
     @staticmethod
     def _row(layout, title, hint, control, *, indent=0, separator=True,
-             control_size=(240, 40)):
+             control_size=(240, 36)):
         row = QFrame()
         row.setObjectName("settingRow" if separator else "settingRowPlain")
         horizontal = QHBoxLayout(row)
@@ -271,7 +271,7 @@ class SettingsPanel(QFrame):
         labels.addWidget(description)
         horizontal.addLayout(labels, 1)
         if isinstance(control, QComboBox):
-            control.setFixedSize(*control_size)
+            control.setFixedSize(control_size[0], 36)
             control.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
             control.setMinimumContentsLength(1)
         else:
@@ -335,7 +335,7 @@ class SettingsPanel(QFrame):
             super().keyPressEvent(event)
 
 
-_STYLE = """
+_STYLE = settings_control_style("QFrame#settingsPanel") + """
 QFrame#settingsPanel {
     background: transparent; border: none; border-radius: 16px;
 }
@@ -352,73 +352,19 @@ QFrame#settingsPanel QLabel#settingsLabel, QLabel#settingsDescription { font-siz
 QFrame#settingsDivider { background: rgba(207, 214, 227, 42); border: none; }
 QFrame#settingRow { background: transparent; border: none; border-bottom: 1px solid rgba(207, 214, 227, 42); }
 QFrame#settingRowPlain { background: transparent; border: none; }
-QPushButton#settingsNavigation { text-align: left; padding-left: 9px; font-size: 20px;
+QFrame#settingsPanel QPushButton#settingsNavigation { text-align: left; padding-left: 9px; font-size: 20px;
     border: none; border-radius: 5px; background: transparent; }
-QPushButton#settingsNavigation:checked, QPushButton#settingsNavigation:hover { background: rgba(185, 197, 213, 17); }
-QPushButton#settingsClose { background: transparent; border: none; border-radius: 5px; }
-QPushButton#settingsClose:hover { background: rgba(255,255,255,18); }
-QPushButton#settingsClose:pressed { background: rgba(255,255,255,30); }
-QPushButton#settingsMore { background: transparent; border: none; font-size: 14px; color: #c9ced8; padding: 9px 0; }
-QPushButton#settingsMore:hover { color: white; }
-QFrame#settingsPanel QComboBox, QFrame#settingsPanel QLineEdit {
-    background: #343f50; border: 1px solid #4a5667; border-radius: 4px;
-    color: #e4e5eb; font-size: 14px; padding: 1px 6px;
-}
-QFrame#settingsPanel QPushButton#notificationPreview {
-    background: #343f50; border: 1px solid #4a5667; border-radius: 4px;
-}
-QFrame#settingsPanel QPushButton#notificationPreview:hover { background: #51627a; }
-QFrame#settingsPanel QPushButton#notificationPreview:disabled { background: #343f50; }
+QFrame#settingsPanel QPushButton#settingsNavigation:checked, QFrame#settingsPanel QPushButton#settingsNavigation:hover { background: rgba(185, 197, 213, 17); }
+QFrame#settingsPanel QPushButton#settingsClose { background: transparent; border: none; border-radius: 5px; padding: 0; }
+QFrame#settingsPanel QPushButton#settingsClose:hover { background: rgba(255,255,255,18); }
+QFrame#settingsPanel QPushButton#settingsClose:pressed { background: rgba(255,255,255,30); }
+QFrame#settingsPanel QPushButton#notificationPreview { padding: 0; }
 QWidget#skillSettingsPage, QWidget#imageSettingsPage { background: transparent; }
 QWidget#skillSettingsPage QLabel, QWidget#imageSettingsPage QLabel { font-size: 14px; }
 QFrame#settingsPanel QLineEdit#greetingInput,
-QWidget#skillSettingsPage QLineEdit, QWidget#skillSettingsPage QListWidget {
-    background: #343f50; color: #e4e5eb; border: 1px solid #4a5667;
-    border-radius: 6px; padding: 8px; font-size: 14px;
-}
-QFrame#settingsPanel QLineEdit#greetingInput,
 QWidget#skillSettingsPage QLineEdit { min-height: 24px; }
-QWidget#skillSettingsPage QListWidget::item { padding: 6px; }
-QWidget#skillSettingsPage QListWidget::item:selected { background: #51627a; }
-QWidget#skillSettingsPage QPushButton, QWidget#imageSettingsPage QPushButton {
-    color: #e4e5eb; background: #343f50; border: 1px solid #4a5667;
-    border-radius: 6px; padding: 8px 12px; font-size: 14px;
-}
-QWidget#skillSettingsPage QPushButton:hover, QWidget#imageSettingsPage QPushButton:hover { background: #51627a; }
-QWidget#skillSettingsPage QPushButton:disabled, QWidget#imageSettingsPage QPushButton:disabled { color: #9da8b8; }
-QFrame#settingsPanel QLineEdit#greetingInput,
-QWidget#skillSettingsPage QLineEdit#skillSource,
-QWidget#skillSettingsPage QListWidget#installedSkills,
-QWidget#skillSettingsPage QPushButton#skillPreview,
-QWidget#skillSettingsPage QPushButton#skillInstall,
-QWidget#imageSettingsPage QComboBox,
-QWidget#imageSettingsPage QPushButton {
-    background: #303238; border-color: #4a4d54;
-}
-QFrame#settingsPanel QLineEdit#greetingInput:hover,
-QFrame#settingsPanel QLineEdit#greetingInput:focus,
-QWidget#skillSettingsPage QLineEdit#skillSource:hover,
-QWidget#skillSettingsPage QLineEdit#skillSource:focus,
-QWidget#imageSettingsPage QComboBox:hover,
-QWidget#imageSettingsPage QComboBox:focus { border-color: #70747b; }
-QWidget#skillSettingsPage QPushButton#skillPreview:hover,
-QWidget#skillSettingsPage QPushButton#skillInstall:hover,
-QWidget#imageSettingsPage QPushButton:hover { background: #3a3c42; }
-QWidget#skillSettingsPage QPushButton#skillPreview:pressed,
-QWidget#skillSettingsPage QPushButton#skillInstall:pressed,
-QWidget#imageSettingsPage QPushButton:pressed { background: #24262c; }
-QWidget#skillSettingsPage QPushButton#skillPreview:disabled,
-QWidget#skillSettingsPage QPushButton#skillInstall:disabled,
-QWidget#imageSettingsPage QPushButton:disabled { background: #303238; }
-QFrame#settingsPanel QComboBox:disabled { color: #9da8b8; }
-QFrame#settingsPanel QComboBox::drop-down { width: 20px; border: none; }
-QFrame#settingsPanel QComboBox QAbstractItemView { background: #343f50; color: #e4e5eb; selection-background-color: #51627a; }
-QWidget#imageSettingsPage QComboBox QAbstractItemView { background: #303238; }
 QFrame#settingsPanel QScrollBar:vertical { width: 5px; background: transparent; }
 QFrame#settingsPanel QScrollBar::handle:vertical { background: #657385; border-radius: 2px; min-height: 24px; }
 QFrame#settingsPanel QScrollBar::add-line:vertical, QFrame#settingsPanel QScrollBar::sub-line:vertical { height: 0; }
 QFrame#settingsPanel QScrollBar::add-page:vertical, QFrame#settingsPanel QScrollBar::sub-page:vertical { background: transparent; }
 """
-
-_CHEVRON = (Path(__file__).with_name("assets") / "settings_chevron.svg").as_posix()
-_STYLE += f'QFrame#settingsPanel QComboBox::down-arrow {{ image: url("{_CHEVRON}"); width: 9px; height: 6px; }}'

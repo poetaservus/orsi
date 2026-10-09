@@ -3,6 +3,7 @@ from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 from app.settings.images import ImageGenerationSettings
 from app.ui.inputs import ScrollSafeComboBox
+from app.ui.settings_style import settings_control_style
 
 
 class ImageSettingsPage(QWidget):
@@ -30,7 +31,7 @@ class ImageSettingsPage(QWidget):
             selector = ScrollSafeComboBox()
             selector.setAccessibleName(label)
             selector.addItems(values)
-            selector.setMinimumHeight(40)
+            selector.setFixedHeight(36)
             selector.setMinimumWidth(240)
             form.addRow(label, selector)
             self.choices[name] = selector
@@ -83,6 +84,10 @@ class ImageSettingsDialog(QDialog):
 
     def __init__(self, settings_store, apply_settings, parent=None):
         super().__init__(parent)
+        self.setObjectName("imageSettingsDialog")
+        self.setStyleSheet("QDialog#imageSettingsDialog { background: #343f50; color: #e4e5eb; } "
+            "QDialog#imageSettingsDialog QWidget { color: #e4e5eb; font-family: Saira; font-size: 14px; } "
+            + settings_control_style("QDialog#imageSettingsDialog"))
         self.setWindowTitle("Image generation")
         self.setMinimumWidth(370)
         self.store, self.apply_settings = settings_store, apply_settings

@@ -5,52 +5,31 @@ import json
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
     QFileDialog, QFormLayout, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
-    QMenu, QMessageBox, QPushButton, QScrollArea, QSizePolicy, QTabWidget, QTextEdit, QVBoxLayout, QWidget)
+    QMenu, QMessageBox, QPushButton, QScrollArea, QSizePolicy, QStackedWidget, QTabWidget, QTextEdit, QVBoxLayout, QWidget)
 
 from app.ui.notification_settings import NotificationSwitch
 from app.ui.inputs import CompactNumberInput, ScrollSafeComboBox
-from app.ui.profile_layout import AdaptiveRow, CredentialPolicyChoice, Disclosure, FeedbackLabel, ProfileCard, ProfileTabBar
+from app.ui.profile_layout import AdaptiveRow, CredentialPolicyChoice, FeedbackLabel, ProfileCard, ProfileTabBar
+from app.ui.settings_motion import SettingsPageTransition
+from app.ui.settings_style import settings_control_style
 from app.vault.credentials import CredentialPolicy
 from app.vault.profiles import public_error
 from app.vault.types import BackupPolicy, VaultError
 
 
-_STYLE = """
+_STYLE = settings_control_style("QWidget#personalProfilePage", "QDialog#personalProfileDialog") + """
 QWidget#personalProfilePage { background: transparent; }
 QDialog#personalProfileDialog { background: #343f50; color: #e4e5eb; }
 QDialog#personalProfileDialog QWidget { color: #e4e5eb; font-family: Saira; font-size: 14px; }
 QDialog#personalProfileDialog QLabel, QWidget#personalProfilePage QLabel { background: transparent; }
-QDialog#personalProfileDialog QPushButton, QWidget#personalProfilePage QPushButton {
- background: #303238; color: #e4e5eb; border: 1px solid #626772; border-radius: 6px; padding: 7px 10px; font-size: 14px;
-}
-QDialog#personalProfileDialog QPushButton:hover, QWidget#personalProfilePage QPushButton:hover { background: #454b58; }
-QDialog#personalProfileDialog QPushButton:disabled, QWidget#personalProfilePage QPushButton:disabled { color: #9da5b4; }
-QDialog#personalProfileDialog QLineEdit, QDialog#personalProfileDialog QComboBox,
-QDialog#personalProfileDialog QSpinBox, QDialog#personalProfileDialog QTextEdit, QDialog#personalProfileDialog QListWidget,
-QWidget#personalProfilePage QLineEdit, QWidget#personalProfilePage QComboBox,
-QWidget#personalProfilePage QSpinBox, QWidget#personalProfilePage QListWidget {
- background: #303238; color: #e4e5eb; border: 1px solid #626772; border-radius: 4px; padding: 5px; font-size: 14px;
-}
-QDialog#personalProfileDialog QComboBox QAbstractItemView, QWidget#personalProfilePage QComboBox QAbstractItemView {
- background: #303238; color: #e4e5eb; selection-background-color: #51627a;
-}
-QDialog#personalProfileDialog QPushButton:focus, QDialog#personalProfileDialog QLineEdit:focus,
-QDialog#personalProfileDialog QComboBox:focus, QWidget#personalProfilePage QPushButton:focus,
-QWidget#personalProfilePage QLineEdit:focus, QWidget#personalProfilePage QComboBox:focus { border-color: #91bfe0; }
-QDialog#personalProfileDialog QListWidget::item:selected, QWidget#personalProfilePage QListWidget::item:selected { background: #51627a; }
 QWidget#personalProfilePage QWidget { font-family: Saira; color: #e4e5eb; }
 QWidget#personalProfilePage QLabel#profileHeading { font-size: 26px; font-weight: 600; }
 QWidget#personalProfilePage QLabel#profileName { font-size: 18px; font-weight: 500; }
-QWidget#personalProfilePage QLabel#profileState { font-size: 12px; color: #b8d2c9; }
 QWidget#personalProfilePage QLabel#profileFeedback { font-size: 14px; color: #c4e3f6; }
 QWidget#personalProfilePage QFrame#profileCard { background: rgba(25, 31, 42, 30); border: 1px solid #526171; border-radius: 7px; }
 QWidget#personalProfilePage QLabel#profileCardHeading { font-size: 20px; font-weight: 400; }
 QWidget#personalProfilePage QLabel#profileHint { font-size: 14px; color: #b9c2d0; }
 QWidget#personalProfilePage QRadioButton, QWidget#personalProfilePage QCheckBox { font-size: 14px; }
-QWidget#personalProfilePage QPushButton#profilePrimary { background: #2587c8; border-color: #579bd0; }
-QWidget#personalProfilePage QPushButton#profilePrimary:hover { background: #3297d6; }
-QWidget#personalProfilePage QPushButton#profileLink { border: none; background: transparent; color: #9acfe4; }
-QWidget#personalProfilePage QPushButton#profileLink:hover { color: #d0ebfb; }
 QWidget#personalProfilePage QMenu { background: #303946; color: #e4e5eb; border: 1px solid #626772; padding: 5px; }
 QWidget#personalProfilePage QMenu::item { padding: 8px 16px; }
 QWidget#personalProfilePage QMenu::item:selected { background: #51627a; }
@@ -60,7 +39,6 @@ QWidget#personalProfilePage QTabBar::tab { background: transparent; color: #ccd3
 QWidget#personalProfilePage QTabBar::tab:selected { color: #f4f6fb; border-bottom-color: #65bdea; }
 QWidget#personalProfilePage QTabBar::tab:hover { background: rgba(185,197,213,12); }
 QWidget#personalProfilePage QScrollArea, QWidget#personalProfilePage QScrollArea > QWidget > QWidget { background: transparent; border: none; }
-QWidget#personalProfilePage QToolButton#profileDisclosure { background: transparent; color: #e4e5eb; border: none; padding: 0; font-size: 14px; }
 QWidget#personalProfilePage QScrollBar:vertical { width: 5px; background: transparent; }
 QWidget#personalProfilePage QScrollBar::handle:vertical { background: #657385; border-radius: 2px; min-height: 28px; }
 QWidget#personalProfilePage QScrollBar::add-line:vertical, QWidget#personalProfilePage QScrollBar::sub-line:vertical { height: 0; }
@@ -274,11 +252,7 @@ class PersonalProfilePage(QWidget):
         name = label("Personal vault")
         name.setObjectName("profileName")
         name.setToolTip(str(self.manager.locator.root))
-        locator = self.manager.locator
-        badges = label(f"{'Portable' if locator.mode == 'portable' else 'Local'}   ·   "
-                       f"{'Encrypted' if self.manager.encrypted else 'Unencrypted'}   ·   ● Unlocked")
-        badges.setObjectName("profileState")
-        identity_box.addWidget(AdaptiveRow([name, badges]))
+        identity_box.addWidget(name)
         self.summary.deleteLater()
         self.summary = self._location_field()
         self.summary.setAccessibleName("Selected personal profile")
@@ -322,6 +296,7 @@ class PersonalProfilePage(QWidget):
             scroll.setWidget(content)
             self.tabs.addTab(scroll, title)
             self.sections[title], self.section_layouts[title] = scroll, box
+        self.tab_transition = SettingsPageTransition(self.tabs.findChild(QStackedWidget))
         outer.addWidget(self.tabs, 1)
         self._section("Storage")
         self._card("Vault storage", "Personal storage grows with usage, up to your quota.")
@@ -402,20 +377,19 @@ class PersonalProfilePage(QWidget):
             self.summary_row.adapt()
         super().resizeEvent(event)
 
-    def _button(self, title, action, *, primary=False, subtle=False):
+    def _button(self, title, action):
         button = QPushButton(title)
         button.setAccessibleName(title.removesuffix("…"))
         button.setFixedHeight(36)
         button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        if primary:
-            button.setObjectName("profilePrimary")
-        elif subtle:
-            button.setObjectName("profileLink")
         if action is not None:
             button.clicked.connect(action)
         return button
 
     def _clear_private_controls(self):
+        if self.tabbed:
+            self.tab_transition.cancel()
+            self.window.settings_panel.page_transition.cancel()
         for widget in self.findChildren(QLineEdit):
             widget.clear()
         for widget in self.findChildren(QTextEdit):
@@ -581,8 +555,8 @@ class PersonalProfilePage(QWidget):
         self.key_caption.setBuddy(self.key)
         form.addRow(self.key_caption, self.key)
         self._refresh_credential_status()
-        self.credential_save = self._button("Save credential", self._save_key, primary=True)
-        self.credential_delete = self._button("Delete saved key", self._delete_key, subtle=True)
+        self.credential_save = self._button("Save credential", self._save_key)
+        self.credential_delete = self._button("Delete saved key", self._delete_key)
         self.credential_save.setToolTip("Save this value encrypted and apply the selected connection policy.")
         credential_actions = QWidget()
         buttons = QHBoxLayout(credential_actions)
@@ -593,10 +567,6 @@ class PersonalProfilePage(QWidget):
         credential_actions.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         self.layout.addWidget(AdaptiveRow([self.consent, credential_actions], trailing=True))
         self.kind.currentIndexChanged.connect(self._credential_kind_changed)
-        self._section_box.addWidget(Disclosure("Other credential types",
-            "Login, access and refresh tokens can be selected above and are stored separately. Cloud chat requires an API key. "
-            "Save also applies the selected policy and requires separate consent. Older backups may retain previous credentials."))
-        self._section_box.addWidget(label("Deleting a saved key does not revoke it with your provider."))
         self.manager.session.register(clear=lambda: (self.key.clear(), self.consent.setChecked(False)))
 
     def _credential_kind_changed(self):
@@ -913,6 +883,9 @@ class PersonalProfilePage(QWidget):
         self._card("Saved records", "Browse archived conversations and imported material. View a record to export a copy.")
         self.records = QListWidget()
         self.records.setAccessibleName("Saved personal records")
+        self.records.setTextElideMode(Qt.TextElideMode.ElideMiddle)
+        self.records.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.records.setSpacing(3)
         self.records.setMinimumHeight(160)
         self.records.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.layout.addWidget(self.records)
@@ -947,7 +920,9 @@ class PersonalProfilePage(QWidget):
         for path in self.manager.vault().list_paths():
             if path.startswith(("state/conversation_v1/archives/", "imports/", "documents/", "templates/", "instructions/",
                                 "personality/", "memory/", "context/", "indexes/", "drafts/")):
-                self.records.addItem(path)
+                item = QListWidgetItem(path)
+                item.setToolTip(path)
+                self.records.addItem(item)
 
     def _delete_records(self):
         paths = [item.text() for item in self.records.selectedItems()]

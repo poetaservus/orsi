@@ -1,7 +1,7 @@
 """Small native widgets for the personal-profile settings workspace."""
 from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtWidgets import (QBoxLayout, QButtonGroup, QFrame, QLabel, QRadioButton, QTabBar,
-                              QLayout, QSizePolicy, QToolButton, QVBoxLayout, QWidget)
+                              QLayout, QSizePolicy, QVBoxLayout, QWidget)
 
 from app.vault.credentials import CredentialPolicy
 
@@ -87,29 +87,6 @@ class ProfileCard(QFrame):
             text.setWordWrap(True)
             text.setObjectName("profileHint")
             self.body.addWidget(text)
-
-
-class Disclosure(ProfileCard):
-    def __init__(self, title, text):
-        super().__init__()
-        self.toggle = QToolButton(self)
-        self.toggle.setText(title)
-        self.toggle.setCheckable(True)
-        self.toggle.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
-        self.toggle.setArrowType(Qt.ArrowType.RightArrow)
-        self.toggle.setObjectName("profileDisclosure")
-        self.body.addWidget(self.toggle)
-        self.detail = QLabel(text)
-        self.detail.setTextFormat(Qt.TextFormat.PlainText)
-        self.detail.setWordWrap(True)
-        self.detail.setObjectName("profileHint")
-        self.body.addWidget(self.detail)
-        self.detail.hide()
-        self.toggle.toggled.connect(self._expand)
-
-    def _expand(self, expanded):
-        self.detail.setVisible(expanded)
-        self.toggle.setArrowType(Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow)
 
 
 class CredentialPolicyChoice(QWidget):

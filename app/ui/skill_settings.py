@@ -10,6 +10,7 @@ from app.runtime.skills.contracts import SkillLoadError, SkillParseError
 from app.runtime.skills.import_source import SkillImportError, prepare_import
 from app.runtime.skills.installer import SkillInstallError
 from app.ui.motion import install_smooth_scroll
+from app.ui.settings_style import settings_control_style
 
 
 class SkillSourceInput(QLineEdit):
@@ -373,21 +374,9 @@ class SkillSettingsDialog(QDialog):
 
 
 _STYLE = """
-QDialog#skillSettings { background: #20242d; color: #d9dce3; }
-QDialog#skillSettings QLabel { color: #d9dce3; background: transparent; font-family: Saira; font-size: 14px; }
+QDialog#skillSettings { background: #343f50; color: #e4e5eb; }
+QDialog#skillSettings QWidget { font-family: Saira; }
+QDialog#skillSettings QLabel { color: #e4e5eb; background: transparent; font-family: Saira; font-size: 14px; }
 QDialog#skillSettings QLabel#skillsTitle { font-size: 19px; }
 QDialog#skillSettings QLabel#skillsHint { color: #b9bfcc; font-size: 12px; }
-QDialog#skillSettings QLineEdit, QDialog#skillSettings QListWidget {
-    background: #171a21; color: #d9dce3; border: 1px solid rgba(153, 165, 184, 55);
-    border-radius: 6px; padding: 7px; font-family: Saira; font-size: 14px;
-    selection-background-color: #3e4551;
-}
-QDialog#skillSettings QPushButton {
-    background: #303640; color: #d9dce3; border: 1px solid rgba(153, 165, 184, 36);
-    border-radius: 6px; padding: 7px 12px; font-family: Saira; font-size: 14px;
-}
-QDialog#skillSettings QPushButton:hover { background: #3e4551; }
-QDialog#skillSettings QPushButton:disabled { color: #767d89; background: #252a32; }
-QDialog#skillSettings QListWidget::item { padding: 4px 6px; border: none; }
-QDialog#skillSettings QListWidget::item:selected { background: #3e4551; }
-"""
+""" + settings_control_style("QDialog#skillSettings")
