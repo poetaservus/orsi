@@ -179,6 +179,7 @@ class ImageViewer(QDialog):
         self.add_placeholder.setToolTip("Choose images to include")
         self.prompt = MessageInput()
         configure_input(self.prompt)
+        self.prompt.insertPlainText("Edit this image: ")
         self.prompt.setAccessibleName("New prompt with this image")
         self.action_slot = QWidget()
         self.action_slot.setFixedSize(34, 37)

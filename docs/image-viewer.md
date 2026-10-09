@@ -90,3 +90,18 @@ skill-registry directory-rename check (`test_reload_obeys_limits_and_releases_di
 The combined final registry/reader recheck passed **all 112 tests** in **1.95 seconds**.
 Both full-run denials remain unresolved Windows verification evidence; they are
 not labeled passing full regressions or fixed by this display change.
+
+## Edit prefix follow-up, 9 October 2026
+
+New enlarged-image viewers prefill their composer with `Edit this image: `,
+placing the cursor after the space. The prefix is editable and navigation keeps
+the current draft. This is a UI workaround for unrecognized image-edit wording;
+the router itself is unchanged.
+
+All ten existing viewer tests passed in 2.28 seconds. A synthetic local UI check
+verified typing, navigation, selected-image submission, editable text and routing
+of `Edit this image: make the foliage lighter` to image generation. The render
+and test report are under ignored `state/viewer-edit-prefix-preview/` and
+`state/viewer-edit-prefix-focused.xml`. Whitespace checks passed. Only focused
+checks were run as requested, with no live API calls or user-image access.
+The change remains on `codex/tool-approval-preferences`.
