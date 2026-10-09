@@ -623,6 +623,48 @@ class MainWindow(QMainWindow):
         elif self._agent_error():
             self.chat.add_message("Agent", self._agent_error(), True)
 
+    def bind_profile(self, session):
+        self._profile_session = session
+        unregister = session.register(stop=self._stop_profile_view, drain=self._drain_profile_view,
+                                      clear=self._clear_profile_view)
+        self.destroyed.connect(unregister)
+
+    def _stop_profile_view(self):
+        if QThread.currentThread() != QWidget.thread(self):
+            raise RuntimeError("Close the personal profile on the interface thread.")
+        self._closing = True
+        self.hide()
+        self.setEnabled(False)
+        self.skill_settings_page.revoke_profile()
+        self._greeting_save_timer.stop()
+        self.attachment_tray.shutdown()
+        for dialog in (self._attachment_picker, self._image_viewer, self._approval_panel):
+            if dialog is not None:
+                dialog.reject()
+
+    def _drain_profile_view(self):
+        for thread in (self.thread, self.attachment_tray.thread, self.skill_settings_page.thread):
+            if thread is not None and thread.isRunning():
+                thread.quit()
+                if not thread.wait(30000):
+                    raise RuntimeError("Profile work is still stopping.")
+
+    def _clear_profile_view(self):
+        self._preferences_store = None
+        self.chat.clear_messages()
+        self.input.clear()
+        self.greeting_input.clear()
+        self.startup_greeting.clear()
+        self._greeting_message = ""
+        self._image_request_draft = None
+        self._greeting_save_timer.stop()
+        self.skill_settings_page.prepared = None
+        self.skill_settings_page.source.clear()
+        self.skill_settings_page.installed.clear()
+        self.settings_panel.hide()
+        self.notifications.shutdown()
+        self.notification_sound.shutdown()
+
     def resizeEvent(self, event) -> None:  # noqa: N802 - Qt API name
         super().resizeEvent(event)
         self._position_overlays()
@@ -1517,6 +1559,9 @@ class MainWindow(QMainWindow):
     def _ensure_cloud_ready(self) -> bool:
         if self.inference is None:
             return False
+        prepare = getattr(self.inference, "prepare_cloud_credentials", None)
+        if callable(prepare):
+            prepare()
         if not self.inference.cloud_has_api_key:
             key, accepted = QInputDialog.getText(
                 self,

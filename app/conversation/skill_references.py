@@ -10,11 +10,11 @@ from app.security.permissions import PermissionGate, PermissionRule, PermissionD
 
 
 class ConversationSkillReferences:
-    def __init__(self, *, enabled=True):
+    def __init__(self, *, enabled=True, storage=None):
         if type(enabled) is not bool:
             raise TypeError("Skill reference access requires an explicit boolean.")
         self.enabled = enabled
-        self.reader = SkillReferenceReader(FilesystemReferenceStorage())
+        self.reader = SkillReferenceReader(storage if storage is not None else FilesystemReferenceStorage())
         self.binding = None
         self.status = None
         self._expected = None

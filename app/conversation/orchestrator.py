@@ -102,7 +102,8 @@ class ConversationService:
             attachment_setter(store.attachment_store)
         self.skill_registry = skill_registry if skill_registry is not None else SkillRegistry()
         self.automatic_skills_enabled = automatic_skills_enabled
-        self._references = ConversationSkillReferences(enabled=skill_references_enabled)
+        self._references = ConversationSkillReferences(enabled=skill_references_enabled,
+            storage=getattr(self.skill_registry, "reference_storage", None))
         self._reference_runtime = None
         self.agent_runtime = agent_runtime
         self.portable_root = portable_root
@@ -223,8 +224,7 @@ class ConversationService:
                 if self._closed:
                     raise RuntimeError("The conversation is closed.")
             from app.runtime.skills.import_source import install_import
-            from app.runtime.skills.installer import SkillInstaller
-            return install_import(SkillInstaller(self.skill_registry), imported)
+            return install_import(self.skill_registry.installer(), imported)
         finally:
             self._run_lock.release()
 
@@ -236,11 +236,10 @@ class ConversationService:
             with self._cancellation_lock:
                 if self._closed:
                     raise RuntimeError("The conversation is closed.")
-            from app.runtime.skills.installer import SkillInstaller
             effective = self.skill_registry.get(name)
             if effective is not None and not effective.source_path.is_relative_to(self.skill_registry.global_root):
                 raise RuntimeError("Project skills must be managed in their project folder.")
-            SkillInstaller(self.skill_registry).remove(name)
+            self.skill_registry.installer().remove(name)
             removed_active = (self._active_skill_name == name or
                               self._automatic_skill is not None and self._automatic_skill.name == name)
             if self._active_skill_name == name:
@@ -736,6 +735,36 @@ class ConversationService:
                 close = getattr(self.agent_runtime, "shutdown", None)
                 if callable(close):
                     close()
+
+    def stop_for_profile(self):
+        with self._cancellation_lock:
+            self._closed = True
+        self.cancel_current_task()
+        if self.agent_runtime is not None:
+            self.agent_runtime.shutdown()
+
+    def drain_for_profile(self):
+        # The cancelling worker owns this lock through its final persistence
+        # attempt. Revoked storage rejects that attempt rather than rebinding it.
+        if not self._run_lock.acquire(timeout=30):
+            raise RuntimeError("Profile work is still stopping.")
+        self._run_lock.release()
+
+    def clear_for_profile(self):
+        with self._run_lock:
+            self._documents.clear()
+            self._references.reset()
+            self._reference_runtime = None
+            self._agent_history = []
+            self._active_skill_name = None
+            self._automatic_skill = None
+            self._active_turn_id = None
+            self._turn_result = None
+            self._context_measurement = None
+            self.skill_selection = SkillSelection()
+            close = getattr(self.inference, "close", None)
+            if callable(close):
+                close()
 
     def estimated_context_tokens(self) -> int:
         return self.context_budget().total_estimated_request_tokens

@@ -213,12 +213,27 @@ class CapabilityCrashJournal:
         *,
         clock_ms: Callable[[], int] = lambda: time_ns() // 1_000_000,
     ):
-        self.path = Path(path)
+        from app.vault.session import preserve_storage_path, PersonalPath
+        self.path = preserve_storage_path(path)
         self._clock_ms = clock_ms
         self._lock = RLock()
         self._records = self._load()
+        if isinstance(self.path, PersonalPath):
+            self.path.session.register(clear=self._forget)
         with self._lock:
             self._recover_incomplete_locked()
+
+    def _forget(self):
+        with self._lock:
+            object.__getattribute__(self, "_records").clear()
+
+    def __getattribute__(self, name):
+        if name == "_records":
+            from app.vault.session import PersonalPath
+            path = object.__getattribute__(self, "path")
+            if isinstance(path, PersonalPath):
+                path.session.require_active()
+        return object.__getattribute__(self, name)
 
     @property
     def records(self) -> tuple[CallLifecycleRecord, ...]:
@@ -623,6 +638,10 @@ def _sha256_text(value: str) -> str:
 
 
 def _atomic_replace(path: Path, encoded: bytes) -> None:
+    from app.vault.session import PersonalPath
+    if isinstance(path, PersonalPath):
+        path.write_bytes(encoded)
+        return
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(path.name + ".tmp")
     try:

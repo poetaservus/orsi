@@ -13,10 +13,18 @@ class JsonStore:
     def __init__(self, path: Path): self.path = path; self._lock = RLock()
     def load(self, default: Any = None):
         with self._lock:
+            from app.vault.session import PersonalPath
+            if isinstance(self.path, PersonalPath):
+                with self.path.session.operation():
+                    return json.loads(self.path.read_text()) if self.path.exists() else default
             try: return json.loads(self.path.read_text(encoding="utf-8"))
             except FileNotFoundError: return default
     def save(self, value: Any):
         with self._lock:
+            from app.vault.session import PersonalPath
+            if isinstance(self.path, PersonalPath):
+                self.path.write_bytes((json.dumps(value, ensure_ascii=False, allow_nan=False) + "\n").encode("utf-8"))
+                return
             self.path.parent.mkdir(parents=True, exist_ok=True)
             temporary = self.path.with_suffix(self.path.suffix + ".tmp")
             with temporary.open("w", encoding="utf-8", newline="\n") as handle:

@@ -4,7 +4,7 @@ from __future__ import annotations
 from collections import OrderedDict
 from html import escape
 
-from PySide6.QtCore import QFile, QIODevice, QObject, QRectF, QRunnable, QSize, QThreadPool, Qt, Signal, Slot
+from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QObject, QRectF, QRunnable, QSize, QThreadPool, Qt, Signal, Slot
 from PySide6.QtGui import QColor, QImage, QImageReader, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QScrollArea, QWidget
 from app.ui.motion import install_smooth_scroll
@@ -32,9 +32,9 @@ class _PreviewJob(QRunnable):
             with self.store.open(self.reference, cancellation=token) as stream:
                 # Decode the verified, pinned handle, never a filename supplied
                 # by the user or a second path lookup after verification.
-                source = QFile()
-                if source.open(stream.fileno(), QIODevice.OpenModeFlag.ReadOnly,
-                               QFile.FileHandleFlag.DontCloseHandle):
+                source = QBuffer()
+                source.setData(QByteArray(stream.read()))
+                if source.open(QIODevice.OpenModeFlag.ReadOnly):
                     try:
                         source.seek(0)
                         reader = QImageReader(source)
@@ -70,8 +70,15 @@ class MessageImageLoader(QObject):
         self.pool.setMaxThreadCount(2)
         self._jobs = {}
         self._images = OrderedDict()
+        session = getattr(store, "session", None)
+        if session is not None:
+            unregister = session.register(stop=self.clear, drain=self.pool.waitForDone, clear=self.clear)
+            self.destroyed.connect(unregister)
 
     def image(self, reference):
+        session = getattr(self.store, "session", None)
+        if session is not None:
+            session.require_active()
         key = reference.id
         if key in self._images:
             self._images.move_to_end(key)

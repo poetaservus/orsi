@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from contextlib import nullcontext
 import json
 from pathlib import Path
 from threading import RLock
@@ -51,6 +52,9 @@ class LocalDocuments:
         self._cache = {}
         self._lock = RLock()
         self.allow_images = allow_images
+        self._profile_session = getattr(store, "session", None)
+        if self._profile_session is not None:
+            self._profile_session.register(clear=self.clear)
 
     def clear(self):
         with self._lock:
@@ -61,7 +65,7 @@ class LocalDocuments:
         token.raise_if_cancelled()
         if reference.kind == "image" and not self.allow_images:
             raise AttachmentError("Choose the qualified Qwen vision model to read images. The current model does not support image input.")
-        with self._lock:
+        with (self._profile_session.operation() if self._profile_session is not None else nullcontext()), self._lock:
             cached = self._cache.get(reference.id)
             if cached is not None and cached[0] == reference:
                 return cached[1]
@@ -94,10 +98,9 @@ class LocalDocuments:
                 url = "data:image/png;base64," + base64.b64encode(bytes(output.data())).decode("ascii")
                 self._cache[reference.id] = (reference, url)
                 return url
-            path = self.processor.store.root / reference.id / "prepared_v1.json"
             # Foundation-era snapshots have no prepared cache. Read only the
             # app-owned verified copy, never reopen the originally selected path.
-            processed = (self.processor.load(reference, cancellation=token) if path.exists()
+            processed = (self.processor.load(reference, cancellation=token) if self.processor.store.has_prepared(reference)
                          else self.processor.prepare(reference, cancellation=token).processed)
             if Path(reference.name).suffix.lower() == ".pdf" and processed.readable_units is None:
                 processed = self.processor.prepare(reference, cancellation=token).processed

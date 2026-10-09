@@ -153,11 +153,17 @@ class ConversationStore:
     """
 
     def __init__(self, path: Path, *, start_fresh: bool = False, attachment_store: AttachmentStore | None = None):
-        self.path = Path(path)
+        from app.vault.session import preserve_storage_path, PersonalPath
+        self.path = preserve_storage_path(path)
         storage_parent = self.path.parent.parent if self.path.parent.name == "archives" else self.path.parent
+        if attachment_store is None and isinstance(self.path, PersonalPath):
+            from app.vault.attachments import VaultAttachmentStore
+            attachment_store = VaultAttachmentStore(storage_parent / "attachments")
         self.attachment_store = attachment_store or AttachmentStore(storage_parent / "attachments")
         self._store = JsonStore(self.path)
         self._lock = RLock()
+        if isinstance(self.path, PersonalPath):
+            self.path.session.register(clear=self.forget_protected_state)
         with self._lock:
             if self.path.exists() and self.path.stat().st_size > 64 * 1024 * 1024:
                 raise TurnHistoryError("Conversation outcomes exceed the safe storage limit. History was preserved.")
@@ -188,6 +194,18 @@ class ConversationStore:
                         content=self._stopped_text(turn.outcome), stopped=True))
             self._conversation.session_status = "active"
             self._save()
+
+    def __getattribute__(self, name):
+        if name == "_conversation":
+            from app.vault.session import PersonalPath
+            path = object.__getattribute__(self, "path")
+            if isinstance(path, PersonalPath):
+                path.session.require_active()
+        return object.__getattribute__(self, name)
+
+    def forget_protected_state(self):
+        with self._lock:
+            self._conversation = None
 
     @property
     def session_id(self) -> str:
@@ -444,10 +462,19 @@ class ConversationStore:
         # Validate and save before adopting the new state.
         validated = Conversation.model_validate_json(encoded)
         try:
-            self._store.save(validated.model_dump(mode="json", exclude_none=True))
+            self._save_document(self.path, validated)
         except OSError as exc:
             raise TurnHistoryError("Conversation outcomes could not be persisted safely. Review settled calls before retrying.") from exc
         self._conversation = validated
+
+    def _save_document(self, path, document):
+        value = document.model_dump(mode="json", exclude_none=True)
+        if hasattr(self.attachment_store, "commit_document"):
+            references = tuple(ref for message in document.messages
+                for ref in (*message.attachments, *message.generated_images))
+            self.attachment_store.commit_document(path, value, references)
+        else:
+            JsonStore(path).save(value)
 
     def append(self, role: Literal["user", "assistant"], content: str) -> None:
         completion = getattr(content, "completion", None) if role == "assistant" else None
@@ -479,7 +506,7 @@ class ConversationStore:
                 archived.session_status = "closed"
                 archive_path = self.path.parent / "archives" / f"{uuid.uuid4().hex}.json"
                 try:
-                    JsonStore(archive_path).save(archived.model_dump(mode="json", exclude_none=True))
+                    self._save_document(archive_path, archived)
                 except OSError as exc:
                     raise TurnHistoryError(
                         "The previous conversation could not be archived safely. History was preserved."

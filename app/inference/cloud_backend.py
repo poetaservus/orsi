@@ -65,7 +65,7 @@ class OpenAICompatibleInferenceEngine(InferenceEngine):
         self.config = config
         self.context_length = config.context_length
         self.max_response_tokens = config.max_tokens
-        self._api_key = (api_key or os.environ.get(config.api_key_environment, "")).strip()
+        self._api_key = (api_key if api_key is not None else os.environ.get(config.api_key_environment, "")).strip()
         self._model_lock = Lock()
         self._active_model_index = 0
 

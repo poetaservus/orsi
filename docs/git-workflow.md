@@ -1,5 +1,26 @@
 # Git layout and baseline hygiene
 
+## Personal Vault phase 3 application integration, 9 October 2026
+
+`codex/vault-phase3` starts from verified local main `d456cd3`. The user authorized
+the next roadmap phase and necessary tests only, keeping physical SSD,
+minimum-machine and independent security qualification deferred. This phase
+connects an explicitly selected profile to private application state, attachments,
+generated images, skills/references, diagnostics and shared credential policy;
+it adds lock/switch cancellation, revocation and tool-path exclusions.
+See [the contract](vault-phase3-contract.md) and
+[focused verification](vault-phase3-verification.md). Setup/migration UI remains
+phase 4; existing unencrypted startup remains the default until explicit selection.
+
+Focused verification covers 271 distinct passed checks and two existing Windows
+symlink skips. The full suite and live provider/model/hardware gates were not run.
+Pre-change refs/worktree maps and content-free settings hashes are under ignored
+`state/backups/vault-phase3-20261009/`. After verification, preserve previous main
+at `archive/2026-10-09/main-before-vault-phase3`, commit the bounded change,
+fast-forward local main and remove only the merged local feature branch. Preserve
+other worktrees, user settings, historical/unmerged refs and remote branches.
+No remote publication is authorized for this phase.
+
 ## Personal Vault phase 2 engine, 9 October 2026
 
 The user authorized roadmap phase 2, requested necessary checks only and deferred

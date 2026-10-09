@@ -249,6 +249,8 @@ class SkillSettingsPage(QWidget):
 
     @Slot(object)
     def _succeeded(self, result):
+        if getattr(self, "_profile_closed", False):
+            return
         if self._action == "preview":
             self.prepared = result
             skill = result.definition
@@ -282,6 +284,18 @@ class SkillSettingsPage(QWidget):
                 self.status.setText("Skill removed.")
             self._refresh_installed()
             self.catalog_changed.emit()
+
+    def revoke_profile(self):
+        self._profile_closed = True
+        self._available = False
+        self.prepared = None
+        self.source.clear()
+        self.installed.clear()
+        self.preview_packages.clear()
+        for label in (self.preview_name, self.preview_description, self.preview_source, self.preview_summary, self.status):
+            label.clear()
+            label.setToolTip("")
+        self.setEnabled(False)
 
     def _refresh_preview_source(self):
         if self.prepared is not None:

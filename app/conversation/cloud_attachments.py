@@ -120,8 +120,7 @@ class CloudAttachments:
                 source_type(reference)
                 if reference.kind == 'image':
                     processor = AttachmentProcessor(self.store)
-                    path = self.store.root / reference.id / 'prepared_v1.json'
-                    metadata = (processor.load(reference) if path.exists() else processor.prepare(reference).processed)
+                    metadata = (processor.load(reference) if self.store.has_prepared(reference) else processor.prepare(reference).processed)
                     extra += ceil(metadata.width / 32) * ceil(metadata.height / 32) * 2 + 256
                 else:
                     # Compressed documents have no accurate offline byte/token

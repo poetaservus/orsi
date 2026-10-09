@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from hashlib import sha256
 import socket
 from pathlib import Path
 
@@ -37,12 +38,31 @@ def build_application(
     agent_config_override: AgentFeatureConfig | None = None,
     full_local_read_acknowledged: bool = False,
     skill_registry_override: SkillRegistry | None = None,
+    profile_session=None,
 ):
     """Build inference, private conversation state, skills and the optional agent.
 
     Default skill discovery is global-only. An explicit registry override can
     supply a chosen project scope; the application's checkout is not inferred.
     """
+    state = PATHS.state
+    credentials = None
+    protected_roots = ()
+    if profile_session is not None:
+        from app.vault.session import ProfileSession
+        from app.vault.credentials import CredentialProvider
+        from app.vault.logging import configure_profile_logging
+        if not isinstance(profile_session, ProfileSession):
+            raise TypeError("Select an unlocked personal profile session.")
+        profile_session.require_active()
+        configure_profile_logging(profile_session)
+        state = profile_session.path("state")
+        credentials = CredentialProvider(profile_session)
+        protected_roots = (*profile_session.protected_roots, PATHS.state)
+        if skill_registry_override is not None:
+            from app.vault.skills import VaultSkillRegistry
+            if not isinstance(skill_registry_override, VaultSkillRegistry) or skill_registry_override.session is not profile_session:
+                raise TypeError("Personal skills must belong to the selected profile.")
     if skill_registry_override is not None and not isinstance(skill_registry_override, SkillRegistry):
         raise TypeError("Application skills must use a SkillRegistry.")
     if not isinstance(full_local_read_acknowledged, bool):
@@ -74,11 +94,13 @@ def build_application(
         cloud_engine = (
             OpenAIResponsesInferenceEngine(
                 cloud_config,
-                selection_path=PATHS.state / "cloud_model_selection_v1.json",
-                rate_limits_path=PATHS.state / "cloud_rate_limits_v1.json",
+                **({"api_key": ""} if profile_session is not None else {}),
+                selection_path=state / "cloud_model_selection_v1.json",
+                rate_limits_path=state / "cloud_rate_limits_v1.json",
             )
             if isinstance(cloud_config, OpenAICloudConfig)
-            else OpenAICompatibleInferenceEngine(cloud_config)
+            else OpenAICompatibleInferenceEngine(cloud_config,
+                **({"api_key": ""} if profile_session is not None else {}))
         )
     except Exception as exc:
         log.exception("Cloud inference could not be configured.")
@@ -95,7 +117,8 @@ def build_application(
     model_catalog = None
     try:
         model_config = load_model_config()
-        model_catalog = LocalModelCatalog(PATHS.models, PATHS.config / "model.json", model_config)
+        model_catalog = LocalModelCatalog(PATHS.models, PATHS.config / "model.json", model_config,
+            **({"selection_path": state / "local_model_selection_v1.json"} if profile_session is not None else {}))
         if model_catalog.profiles is not None or any(
             item.id == model_catalog.current_id for item in model_catalog.models
         ):
@@ -158,6 +181,10 @@ def build_application(
             local_factory=LlamaServerInferenceEngine
                 if model_catalog is not None and agent_config is not None
                 and agent_config.filesystem_stat_enabled else None,
+            **({"credential_provider": credentials,
+                "connection_id": "cloud-" + sha256(
+                    (cloud_config.base_url + "\0" + cloud_config.api_key_environment).encode()).hexdigest()}
+               if credentials is not None and cloud_config is not None else {}),
         )
     except InferenceUnavailable:
         startup_error = " ".join(
@@ -167,7 +194,12 @@ def build_application(
     service = None
     if inference is not None:
         try:
-            store = ConversationStore(PATHS.state / "conversation_v1" / "conversation.json")
+            if profile_session is not None:
+                from app.vault.attachments import VaultAttachmentStore
+                attachments = VaultAttachmentStore(state / "conversation_v1" / "attachments")
+            else:
+                attachments = None
+            store = ConversationStore(state / "conversation_v1" / "conversation.json", attachment_store=attachments)
         except (TurnHistoryError, OSError):
             log.exception("Durable conversation history could not be opened safely.")
             return None, {"hostname": socket.gethostname() or "Windows PC"}, \
@@ -186,19 +218,29 @@ def build_application(
                     if agent_config.full_local_read_enabled
                     else HostAccessPolicy.portable_root(PATHS.root)
                 )
+                if protected_roots:
+                    from dataclasses import replace
+                    host_access_policy = replace(host_access_policy, protected_roots=protected_roots)
                 agent_runtime = build_agent_runtime(
                     inference,
                     config=agent_config,
                     portable_root=PATHS.root,
                     state_directory=PATHS.state,
                     host_access_policy=host_access_policy,
+                    **({"journal_path": state / "capability_journal_v1.json"} if profile_session is not None else {}),
                 )
         except Exception:
             log.exception("The capability agent could not start safely.")
             host_access_policy = None
             agent_error = _AGENT_STARTUP_ERROR
         try:
-            skill_registry = skill_registry_override if skill_registry_override is not None else SkillRegistry()
+            if skill_registry_override is not None:
+                skill_registry = skill_registry_override
+            elif profile_session is not None:
+                from app.vault.skills import VaultSkillRegistry
+                skill_registry = VaultSkillRegistry(profile_session)
+            else:
+                skill_registry = SkillRegistry()
             skill_registry.discover()
             service = ConversationService(
                 inference,
@@ -226,9 +268,13 @@ def build_application(
         if callable(getattr(inference, "record_baseline", None)):
             effective_flags = agent_config if agent_runtime is not None else AgentFeatureConfig()
             inference.baseline_observer = BaselineRecorder(
-                PATHS.root, PATHS.state / "diagnostics" / "effective_baseline_v1.json",
+                PATHS.root, state / "diagnostics" / "effective_baseline_v1.json",
                 effective_flags, agent_available=agent_runtime is not None, local_catalog=model_catalog)
             inference.record_baseline()
+        if profile_session is not None:
+            service.profile_session = profile_session
+            profile_session.register(stop=service.stop_for_profile,
+                drain=service.drain_for_profile, clear=service.clear_for_profile)
 
     host = {"hostname": socket.gethostname() or "Windows PC"}
     return service, host, startup_error, inference

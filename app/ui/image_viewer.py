@@ -117,6 +117,10 @@ class ImageViewer(QDialog):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.opening = OpeningFade(self)
         self._backdrop = _blurred_backdrop(parent)
+        session = getattr(store, "session", None)
+        if session is not None:
+            unregister = session.register(clear=self._clear_profile)
+            self.destroyed.connect(unregister)
         self.loader = MessageImageLoader(store, self, size=QSize(4096, 4096), max_cached=2)
         self.loader.loaded.connect(self._refresh_send)
         layout = QVBoxLayout(self)
@@ -268,6 +272,16 @@ class ImageViewer(QDialog):
             self.status.setText("Could not save the image. Choose another location and try again.")
             return
         self.status.setText("Image saved.")
+
+    def _clear_profile(self):
+        self.hide()
+        self._backdrop = QPixmap()
+        self.loader.clear()
+        self.canvas.reference = None
+        self.references = ()
+        self.prompt.clear()
+        self.name.clear()
+        self.status.clear()
 
     def _export_original(self, path):
         # QSaveFile preserves the original encoded bytes and commits atomically.

@@ -442,6 +442,26 @@ class Vault:
                 raise VaultError("Select an explicit vault data domain.")
             return tuple(sorted(self._prune(self._catalog[domain.value], now=int(time.time()))))
 
+    def retention(self, path, *, domain=Domain.PERSONAL):
+        """Return ownership/expiry policy without exposing internal catalog data."""
+        with self._operation():
+            if not isinstance(domain, Domain):
+                raise VaultError("Select an explicit vault data domain.")
+            entry = self._prune(self._catalog[domain.value], now=int(time.time())).get(_path(path))
+            if entry is None:
+                raise VaultError("Vault record is unavailable or expired.")
+            return entry["retained"], entry["expires_at"]
+
+    def size_bytes(self, path, *, domain=Domain.PERSONAL):
+        """Inspect authenticated size before admitting a consumer's memory read."""
+        with self._operation():
+            if not isinstance(domain, Domain):
+                raise VaultError("Select an explicit vault data domain.")
+            entry = self._prune(self._catalog[domain.value], now=int(time.time())).get(_path(path))
+            if entry is None:
+                raise VaultError("Vault record is unavailable or expired.")
+            return entry["size"]
+
     def delete(self, paths, *, domain=Domain.PERSONAL):
         self.write_batch((), delete=paths, domain=domain)
 

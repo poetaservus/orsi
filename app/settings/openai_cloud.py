@@ -112,6 +112,14 @@ class OpenAIModelSelection(BaseModel):
 
 
 class OpenAIModelCatalog:
+    def __getattribute__(self, name):
+        if name == "current_id":
+            from app.vault.session import PersonalPath
+            store = object.__getattribute__(self, "_store")
+            if store is not None and isinstance(store.path, PersonalPath):
+                store.path.session.require_active()
+        return object.__getattribute__(self, name)
+
     def __init__(self, config: OpenAICloudConfig, selection_path: Path | None = None):
         self.config = config
         self._store = JsonStore(selection_path) if selection_path is not None else None

@@ -152,9 +152,14 @@ class HybridInferenceEngine(InferenceEngine):
     def __init__(self, *, local: InferenceEngine | None,
                  cloud: InferenceEngine | None,
                  default_mode: str = "local", local_error: str | None = None,
-                 fallback_to_local: bool = True, model_catalog=None, local_factory=None):
+                 fallback_to_local: bool = True, model_catalog=None, local_factory=None,
+                 credential_provider=None, connection_id="cloud-chat"):
         self.local = local
         self.cloud = cloud
+        self.credential_provider = credential_provider
+        self.connection_id = connection_id
+        if credential_provider is not None and cloud is not None:
+            credential_provider.bind(connection_id, cloud)
         self.local_error = local_error
         self.fallback_to_local = fallback_to_local
         self._lock = RLock()
@@ -213,7 +218,7 @@ class HybridInferenceEngine(InferenceEngine):
     def generate_images(self, messages):
         if not self.supports_image_generation:
             raise InferenceUnavailable("Switch to Cloud to generate images.")
-        return self.cloud.generate_images(messages)
+        return self._engine_for("cloud").generate_images(messages)
 
     def admit_attachment_inputs(self, references, *, cancellation=None):
         admit = getattr(self._engine_for(self.mode), "admit_attachment_inputs", None)
@@ -312,10 +317,20 @@ class HybridInferenceEngine(InferenceEngine):
                 raise InferenceUnavailable(self.local_error)
             raise InferenceUnavailable(f"The {normalized or 'selected'} inference mode is unavailable.")
         self._engine_for(normalized)
+        if self.credential_provider is not None:
+            if normalized == "cloud":
+                self.prepare_cloud_credentials()
+            else:
+                self.credential_provider.end(self.connection_id)
         if normalized == "cloud":
             unload = getattr(self.local, "unload", None)
             if callable(unload):
-                unload()
+                try:
+                    unload()
+                except Exception:
+                    if self.credential_provider is not None and self.mode != "cloud":
+                        self.credential_provider.end(self.connection_id)
+                    raise
         with self._lock:
             if normalized != self._mode:
                 self.context_revision += 1
@@ -344,7 +359,16 @@ class HybridInferenceEngine(InferenceEngine):
     def set_cloud_api_key(self, api_key: str) -> None:
         if self.cloud is None:
             raise InferenceUnavailable("Cloud inference is unavailable.")
-        self.cloud.set_api_key(api_key)
+        if self.credential_provider is not None:
+            self.credential_provider.begin(self.connection_id)
+            self.credential_provider.supply(self.connection_id, api_key)
+        else:
+            self.cloud.set_api_key(api_key)
+
+    def prepare_cloud_credentials(self):
+        if self.credential_provider is not None:
+            return self.credential_provider.begin(self.connection_id)
+        return self.cloud_has_api_key
 
     @property
     def cloud_model_catalog(self):
@@ -375,15 +399,21 @@ class HybridInferenceEngine(InferenceEngine):
         with self._lock:
             if self._closed:
                 return
-            engine = self._engine_for(self._mode)
+            engine = self.local if self._mode == "local" else self.cloud
         cancel = getattr(engine, "cancel_current_request", None)
         if callable(cancel):
             cancel()
 
     def close(self) -> None:
+        credential_failure = False
         with self._lock:
             if self._closed:
                 return
+            if self.credential_provider is not None:
+                try:
+                    self.credential_provider.end(self.connection_id)
+                except Exception:
+                    credential_failure = True
             self._closed = True
             engines = (self.local, self._pending_local, self.cloud)
         for engine in engines:
@@ -393,6 +423,8 @@ class HybridInferenceEngine(InferenceEngine):
                     close()
                 except Exception:
                     log.warning("Could not fully release an inference backend.")
+        if credential_failure:
+            raise RuntimeError("Connection credentials could not be fully released.") from None
 
     def select_local_model(self, model_id: str) -> None:
         if self.model_catalog is None or self._local_factory is None:
@@ -543,6 +575,8 @@ class HybridInferenceEngine(InferenceEngine):
     def _activate_local_fallback(self) -> None:
         if self.local is None:
             raise InferenceUnavailable("Local fallback is unavailable.")
+        if self.credential_provider is not None:
+            self.credential_provider.end(self.connection_id)
         with self._lock:
             self.context_revision += 1
             self._mode = "local"
@@ -559,6 +593,8 @@ class HybridInferenceEngine(InferenceEngine):
         with self._lock:
             if self._closed:
                 raise InferenceUnavailable("Inference is closed.")
+            if self.credential_provider is not None:
+                self.credential_provider.session.require_active()
             engine = self.local if mode == "local" else self.cloud
             if engine is None:
                 raise InferenceUnavailable(f"The {mode} inference mode is unavailable.")

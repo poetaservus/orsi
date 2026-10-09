@@ -173,6 +173,9 @@ def _scan_directory(
         with os.scandir(directory) as iterator:
             for item in iterator:
                 context.cancellation.raise_if_cancelled()
+                policy = context.host_access_policy
+                if policy is not None and getattr(policy, "is_protected", lambda p: False)(Path(item.path)):
+                    continue
                 scanned_entries += 1
                 if scanned_entries > MAX_DIRECTORY_ENTRIES:
                     raise CapabilityExecutionError(

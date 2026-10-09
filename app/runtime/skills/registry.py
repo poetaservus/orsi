@@ -80,6 +80,10 @@ class SkillRegistry:
         """Rescan the same scopes; removed/rejected definitions are not retained."""
         return self.discover()
 
+    def installer(self):
+        from app.runtime.skills.installer import SkillInstaller
+        return SkillInstaller(self)
+
     @property
     def global_root(self) -> Path:
         """The anchored global storage directory; no filesystem access."""

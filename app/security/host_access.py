@@ -114,6 +114,7 @@ class HostAccessPolicy:
     user_home: Path
     full_local_read_acknowledged: bool = False
     local_read_roots: tuple[Path, ...] = ()
+    protected_roots: tuple[Path, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.read_scope, HostReadScope):
@@ -174,6 +175,7 @@ class HostAccessPolicy:
             raise ValueError("Portable-root access cannot contain local-drive permission roots.")
         object.__setattr__(self, "application_root", application_root)
         object.__setattr__(self, "user_home", user_home)
+        object.__setattr__(self, "protected_roots", tuple(Path(p).resolve(strict=False) for p in self.protected_roots))
 
     @classmethod
     def portable_root(cls, application_root: Path) -> HostAccessPolicy:
@@ -200,12 +202,30 @@ class HostAccessPolicy:
 
     def resolve_read(self, raw_path: str) -> ResolvedPath:
         if self.read_scope == HostReadScope.PORTABLE_ROOT:
-            return resolve_read_path(
+            result = resolve_read_path(
                 raw_path,
                 portable_root=self.application_root,
                 allowed_roots=(self.application_root,),
             )
-        return _resolve_full_local_read_path(raw_path, user_home=self.user_home)
+        else:
+            result = _resolve_full_local_read_path(raw_path, user_home=self.user_home)
+        if self.is_protected(result.requested) or self.is_protected(result.resolved):
+            raise CapabilityExecutionError(CapabilityErrorCode.PERMISSION_DENIED,
+                "Personal profile storage is excluded from file tools.")
+        return result
+
+    def is_protected(self, path):
+        if not self.protected_roots:
+            return False
+        try:
+            candidate = Path(path).resolve(strict=False)
+            if any(candidate.is_relative_to(root) for root in self.protected_roots):
+                return True
+            # File hard links cannot be disambiguated by lexical resolution.
+            # In protected mode reject shared file identities conservatively.
+            return candidate.is_file() and candidate.stat().st_nlink > 1
+        except (OSError, RuntimeError, ValueError):
+            return True
 
     def permission_roots(self) -> tuple[Path, ...]:
         """Return the immutable startup roots used by the permission gate."""

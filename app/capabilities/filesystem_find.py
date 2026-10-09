@@ -165,6 +165,9 @@ def _find_exact_entries(
     entries.sort(key=lambda item: (item.name.casefold(), item.name))
     for item in entries:
         context.cancellation.raise_if_cancelled()
+        policy = context.host_access_policy
+        if policy is not None and getattr(policy, "is_protected", lambda p: False)(Path(item.path)):
+            continue
         scanned += 1
         if scanned > MAX_FIND_DIRECTORY_ENTRIES:
             raise CapabilityExecutionError(

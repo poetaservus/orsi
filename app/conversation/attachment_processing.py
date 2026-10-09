@@ -251,9 +251,12 @@ class AttachmentProcessor:
         try:
             with self.store.open(reference, cancellation=token) as stream:
                 if reference.kind == "image":
-                    from PySide6.QtCore import QSize, Qt
+                    from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QSize, Qt
                     from PySide6.QtGui import QImageReader
-                    reader = QImageReader(str(self.store.root / reference.id / "content"))
+                    source = QBuffer()
+                    source.setData(QByteArray(stream.read()))
+                    source.open(QIODevice.OpenModeFlag.ReadOnly)
+                    reader = QImageReader(source)
                     reader.setAutoTransform(True)
                     reader.setDecideFormatFromContent(True)
                     image_format = bytes(reader.format()).decode("ascii", errors="ignore")
@@ -286,7 +289,7 @@ class AttachmentProcessor:
                     raise AttachmentError("Unsupported file type. Choose an image, text/code file, PDF, DOCX, PPTX, CSV or XLSX.")
                 token.raise_if_cancelled()
                 processed = ProcessedAttachment(attachment_id=reference.id, sha256=reference.sha256, **fields)
-                JsonStore(self.store.root / reference.id / "prepared_v1.json").save(processed.model_dump(mode="json"))
+                self.store.save_prepared(reference, processed.model_dump(mode="json"))
                 return PreparedAttachment(reference, processed, thumbnail)
         except (AttachmentError, TaskCancelled):
             raise
@@ -302,10 +305,7 @@ class AttachmentProcessor:
         token = cancellation or CancellationToken()
         try:
             with self.store.open(reference, cancellation=token):
-                path = self.store.root / reference.id / "prepared_v1.json"
-                from app.conversation.attachments import _snapshot_stream
-                with _snapshot_stream(path, 32 * 1024 * 1024, token) as stream:
-                    processed = ProcessedAttachment.model_validate_json(stream.read(32 * 1024 * 1024 + 1))
+                processed = ProcessedAttachment.model_validate_json(self.store.read_prepared(reference, token))
                 token.raise_if_cancelled()
                 if processed.attachment_id != reference.id or processed.sha256 != reference.sha256:
                     raise AttachmentError("The prepared document does not match its attachment.")

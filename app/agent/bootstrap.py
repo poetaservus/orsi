@@ -27,6 +27,7 @@ def build_agent_runtime(
     portable_root: Path,
     state_directory: Path,
     host_access_policy: HostAccessPolicy | None = None,
+    journal_path=None,
 ) -> AgentRuntime | None:
     """Compose the enabled tool catalog, deterministic policy, and agent loop."""
     if not isinstance(config, AgentFeatureConfig):
@@ -70,10 +71,11 @@ def build_agent_runtime(
         config,
         application_root=root,
         state_directory=state_directory,
+        **({"protected_roots": policy.protected_roots} if policy.protected_roots else {}),
     )
     permission_gate = build_default_permission_gate(config, policy, permission_roots)
     journal = CapabilityCrashJournal(
-        state_directory / "capability_journal_v1.json"
+        journal_path if journal_path is not None else state_directory / "capability_journal_v1.json"
     )
     # Restore outcome evidence before applying any explicit retention/reset policy.
     # AgentRuntime blocks turns before inference when the journal requires review.

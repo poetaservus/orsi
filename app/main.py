@@ -21,13 +21,17 @@ def build_application(*args, **kwargs):
     return build(*args, **kwargs)
 
 
-def main() -> int:
+def main(*, profile_session=None) -> int:
     """Initialize runtime directories, compose the backend, and start the Qt UI."""
     if len(sys.argv) > 1 and sys.argv[1].casefold() == "skill":
         from app.runtime.skills.cli import main as skill_main
         return skill_main(sys.argv[2:])
     PATHS.ensure_directories()
-    configure_logging(PATHS.state / "orsi.log")
+    if profile_session is None:
+        configure_logging(PATHS.state / "orsi.log")
+    else:
+        from app.vault.logging import configure_profile_logging
+        configure_profile_logging(profile_session)
 
     from PySide6.QtWidgets import QApplication
 
@@ -45,6 +49,7 @@ def main() -> int:
     service, host, error, inference = build_application(
         agent_config_override=startup_agent_config,
         full_local_read_acknowledged=full_local_read_acknowledged,
+        **({"profile_session": profile_session} if profile_session is not None else {}),
     )
     def shutdown():
         try:
@@ -54,13 +59,20 @@ def main() -> int:
             logging.getLogger(__name__).warning("Application service cleanup failed.")
         finally:
             close = getattr(inference, "close", None)
-            if callable(close):
-                close()
+            try:
+                if callable(close):
+                    close()
+            finally:
+                if profile_session is not None:
+                    profile_session.lock()
 
     app.aboutToQuit.connect(shutdown)
     try:
-        preferences = JsonStore(PATHS.state / "ui_preferences_v1.json")
+        preferences = JsonStore(profile_session.path("state/ui_preferences_v1.json")
+            if profile_session is not None else PATHS.state / "ui_preferences_v1.json")
         window = MainWindow(service, host["hostname"], error, inference, preferences)
+        if profile_session is not None:
+            window.bind_profile(profile_session)
         window.show()
         return app.exec()
     finally:

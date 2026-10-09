@@ -254,6 +254,9 @@ def _iter_regular_files(
         entries.sort(key=lambda item: (item.name.casefold(), item.name))
         for item in entries:
             context.cancellation.raise_if_cancelled()
+            policy = context.host_access_policy
+            if policy is not None and getattr(policy, "is_protected", lambda p: False)(Path(item.path)):
+                continue
             counters.entries_scanned += 1
             if counters.entries_scanned > MAX_SEARCH_ENTRIES:
                 raise CapabilityExecutionError(

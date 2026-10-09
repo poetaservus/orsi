@@ -29,6 +29,7 @@ def build_builtin_registry(
     *,
     application_root: Path,
     state_directory: Path,
+    protected_roots: tuple[Path, ...] = (),
 ) -> CapabilityRegistry:
     """Construct the one production catalog of enabled built-in capabilities."""
     if not isinstance(config, AgentFeatureConfig):
@@ -51,7 +52,7 @@ def build_builtin_registry(
         config.filesystem_trash_enabled,
     )
     if any(write_flags):
-        write_policy = HostWritePolicy(application_root, (state_directory,))
+        write_policy = HostWritePolicy(application_root, (state_directory, *protected_roots))
         factories.extend(
             (
                 (config.filesystem_mkdir_enabled, lambda: FilesystemMkdirCapability(write_policy)),

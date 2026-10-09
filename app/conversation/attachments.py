@@ -63,6 +63,20 @@ def _snapshot_stream(path, limit, cancellation):
 
 
 class AttachmentStore:
+    def save_prepared(self, reference, value):
+        JsonStore(self.root / reference.id / "prepared_v1.json").save(value)
+
+    def has_prepared(self, reference):
+        return (self.root / reference.id / "prepared_v1.json").exists()
+
+    def read_prepared(self, reference, token):
+        from app.vault.session import PersonalPath
+        path = self.root / reference.id / "prepared_v1.json"
+        if isinstance(path, PersonalPath):
+            return path.read_bytes(limit=32 * 1024 * 1024)
+        with _snapshot_stream(path, 32 * 1024 * 1024, token) as stream:
+            return stream.read(32 * 1024 * 1024 + 1)
+
     def __init__(self, root: Path, *, max_bytes: int = DEFAULT_SNAPSHOT_LIMIT):
         if type(max_bytes) is not int or max_bytes < 1:
             raise ValueError("The attachment storage limit must be a positive integer.")

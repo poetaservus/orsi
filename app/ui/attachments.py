@@ -224,7 +224,11 @@ class AttachmentTray(QWidget):
     def _prepared(self, key, prepared):
         entry = self._entries.get(key)
         if entry is None or self._closing:
-            self.store.discard_draft(prepared.reference)
+            from app.vault.types import VaultLocked
+            try:
+                self.store.discard_draft(prepared.reference)
+            except VaultLocked:
+                pass
             return
         entry["prepared"] = prepared
         detail = prepared.processed.summary
@@ -281,7 +285,11 @@ class AttachmentTray(QWidget):
             return
         entry["job"].cancellation.cancel()
         if entry['prepared'] is not None:
-            self.store.discard_draft(entry['prepared'].reference)
+            from app.vault.types import VaultLocked
+            try:
+                self.store.discard_draft(entry['prepared'].reference)
+            except VaultLocked:
+                pass
         self.cards.removeWidget(entry["card"])
         entry["card"].deleteLater()
         self.setVisible(bool(self._entries))

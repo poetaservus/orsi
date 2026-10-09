@@ -23,6 +23,14 @@ class ImageGenerationSettings(BaseModel):
 
 
 class ImageSettingsStore:
+    def __getattribute__(self, name):
+        if name == "current":
+            from app.vault.session import PersonalPath
+            store = object.__getattribute__(self, "store")
+            if store is not None and isinstance(store.path, PersonalPath):
+                store.path.session.require_active()
+        return object.__getattribute__(self, name)
+
     def __init__(self, defaults, path: Path | None = None):
         self.store = JsonStore(path) if path is not None else None
         self.current = defaults
