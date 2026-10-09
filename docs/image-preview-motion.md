@@ -80,3 +80,12 @@ are under ignored `state/image-preview-without-label/` and
 `state/image-preview-label-native.xml`. Whitespace checks passed. The full suite
 was intentionally skipped at the user's request; no live model/API calls were
 made. The feature branch is retained.
+
+## Burgundy palette follow-up, 9 October 2026
+
+The two warm cloud textures now use darker burgundy `#541c2b` and `#702438`.
+The navy layers, grain and motion are unchanged. Both existing placeholder tests
+passed in 0.75 seconds, and six motion phases were visually inspected. Artifacts
+are under ignored `state/burgundy-preview/` and `state/burgundy-preview-focused.xml`.
+Whitespace checks passed. Only focused tests were run as requested; no live
+model/API calls were made. The change remains on `codex/tool-approval-preferences`.

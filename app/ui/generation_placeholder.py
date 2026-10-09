@@ -27,7 +27,7 @@ class GenerationPlaceholder(QWidget):
         self.timer.timeout.connect(self._tick)
         if GenerationPlaceholder._cached_visuals is None:
             layers = tuple(self._layer(color) for color in
-                           ("#142942", "#78372d", "#9a4032", "#091a30"))
+                           ("#142942", "#541c2b", "#702438", "#091a30"))
             grain = QImage(256, 256, QImage.Format.Format_ARGB32_Premultiplied)
             random = Random(71)
             for y in range(256):
