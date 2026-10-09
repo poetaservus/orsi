@@ -121,6 +121,18 @@ def _project_result(message: dict, *, text_limit: int, item_limit: int, anchors:
                 if key in {"path", "source", "destination", "name", "sha256", "call_id", "content_is_untrusted"}
                 or key.endswith("_path")})
         encoded_projection = _encoded(projected)
+    if (result.get("capability") == "filesystem.read_text"
+            and isinstance(output, dict) and isinstance(output.get("text"), str)
+            and projected.get("text") != output["text"]):
+        # Keep source completeness truthful for the text actually sent to the
+        # model, without changing projection policy or the durable read result.
+        projected["source_complete"] = False
+        projected["read_hint"] = (
+            "Source was excerpted for model context. Use only exact returned text. "
+            "If the target is missing, report the context limitation; repeating the "
+            "same read cannot establish complete source in this request."
+        )
+        encoded_projection = _encoded(projected)
     if len(encoded_projection) >= len(raw):
         return False
     result["output"] = projected

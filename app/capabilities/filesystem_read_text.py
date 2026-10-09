@@ -64,7 +64,13 @@ class FilesystemReadTextArguments(BaseModel):
 
 class FilesystemReadTextCapability(Capability[FilesystemReadTextArguments]):
     name = "filesystem.read_text"
-    description = "Return a bounded excerpt from one allowed UTF text file with binary rejection."
+    description = (
+        "Return a bounded excerpt from one allowed UTF text file with binary rejection and "
+        "explicit source completeness. Before editing text missing from a truncated result, "
+        "read the same path and encoding with max_bytes=65536 and max_lines=1000. "
+        "Use only exact source actually returned; if the target is still missing, report the "
+        "read limitation instead of guessing a patch."
+    )
     arguments_model = FilesystemReadTextArguments
     permission = PermissionClass.READ
     timeout_seconds = 3.0
@@ -113,6 +119,30 @@ class FilesystemReadTextCapability(Capability[FilesystemReadTextArguments]):
             text,
             arguments.max_lines,
         )
+        source_complete = not (truncated_by_bytes or truncated_by_lines)
+        read_hint = None
+        if not source_complete:
+            can_expand = (
+                truncated_by_bytes and arguments.max_bytes < MAX_TEXT_BYTES
+            ) or (
+                truncated_by_lines and arguments.max_lines < MAX_TEXT_LINES
+            )
+            if can_expand:
+                read_hint = (
+                    "Source is truncated. Read the same path and encoding with "
+                    "max_bytes=65536 and max_lines=1000 before editing text missing here. "
+                    "Repeating this truncated prefix cannot reveal the missing target."
+                )
+            else:
+                read_hint = (
+                    "Source is truncated at the supported 65,536-byte / 1,000-line limit. "
+                    "If the requested target is missing, stop and request a smaller source "
+                    "file containing it; this tool does not support range reads."
+                )
+            read_hint += (
+                " Use only exact text present in returned source. Do not invent unseen "
+                "source or an unavailable whole-file digest."
+            )
         context.cancellation.raise_if_cancelled()
         return {
             "path": str(resolved.resolved),
@@ -123,7 +153,11 @@ class FilesystemReadTextCapability(Capability[FilesystemReadTextArguments]):
             "lines_returned": lines_returned,
             "truncated_by_bytes": truncated_by_bytes,
             "truncated_by_lines": truncated_by_lines,
+            "source_complete": source_complete,
+            "read_hint": read_hint,
             "content_is_untrusted": True,
+            # This hashes actual complete bytes, never an excerpt. A line-limited
+            # read may have a revision digest without returning the complete text.
             "sha256": hashlib.sha256(raw).hexdigest() if not truncated_by_bytes else None,
         }
 

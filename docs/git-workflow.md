@@ -1,5 +1,32 @@
 # Git layout and baseline hygiene
 
+## Sufficient source reads, 9 October 2026
+
+The bounded `codex/sufficient-source-reads` change starts from verified local main
+`60735e1` in the clean isolated checkout under `state/routing-intent-worktree/`,
+preserving the active settings-panel edits. Phase 2 adds explicit source completeness,
+larger-read recovery instructions within existing bounds, and actionable source/context
+limitations. UTF handling, digests, path/approval/identity checks, prompts, profiles,
+sampling and loop budgets retain their existing behavior. See
+[the contract and verification record](sufficient-source-reads.md).
+
+Focused native checks passed 178 tests with two host symbolic-link skips. All four
+real-cloud below-line-200 fixes passed with/without the installed Python skill;
+the separately corrected oversized-file verifier passed with no mutation. Python/GUI
+execution and real local-model qualification remain separate from these checks.
+The unchanged Phase 1 cloud fix/copy gate passed all four cases. Final full native
+regression passed **2,591 tests and 15 subtests**, with **58 optional/host skips**,
+no failures/errors, in **351.16 seconds**. Compilation, dependencies and whitespace
+checks passed; skipped live gates remain separately recorded.
+
+Pre-integration refs/worktree maps, a verified complete-history bundle and content-free
+settings/configuration hashes are preserved in ignored
+`state/backups/sufficient-source-reads-20261009/` in the isolated checkout. Preserve prior
+main at `archive/2026-10-09/main-before-sufficient-source-reads`, commit after verification,
+fast-forward local main and the requested active checkout without switching its settings
+branch, and remove only the merged feature branch. Other worktrees and remote refs remain
+unchanged. Phases 3–6 remain separate.
+
 ## Routing intent repair, 9 October 2026
 
 The bounded `codex/routing-intent-fix` change starts from verified local main

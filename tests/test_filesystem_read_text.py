@@ -56,6 +56,8 @@ def test_read_text_returns_bounded_untrusted_text(tmp_path: Path):
         "lines_returned": 2,
         "truncated_by_bytes": False,
         "truncated_by_lines": False,
+        "source_complete": True,
+        "read_hint": None,
         "content_is_untrusted": True,
         "sha256": hashlib.sha256(target.read_bytes()).hexdigest(),
     }
