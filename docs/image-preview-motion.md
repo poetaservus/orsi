@@ -63,3 +63,20 @@ After verification the bounded change is committed, fast-forwarded into local
 main and its merged local feature branch removed. Other active worktrees,
 remote refs and runtime settings remain untouched. Restart O.R.S.I. to load
 the revised preview.
+
+## Active status overlay removed, 9 October 2026
+
+The follow-up on `codex/tool-approval-preferences` removes the pulsing dot and
+visible Generating image label from the active preview. Cached cloud/grain
+animation, lower-edge shading and accessibility status remain. Stopped, failed
+and unavailable messages still render as static text.
+
+Six focused placeholder, result-transfer and failure/cancellation tests passed
+in 4.95 seconds. The initial sandbox run passed four tests; two result-transfer
+tests hit Windows file-handle access restrictions before exercising the preview.
+All six passed when rerun unrestricted. Synthetic active/stopped previews were
+visually inspected at 280 px and 160 px; artifacts and the passing test report
+are under ignored `state/image-preview-without-label/` and
+`state/image-preview-label-native.xml`. Whitespace checks passed. The full suite
+was intentionally skipped at the user's request; no live model/API calls were
+made. The feature branch is retained.

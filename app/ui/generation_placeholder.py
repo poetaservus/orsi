@@ -132,36 +132,21 @@ class GenerationPlaceholder(QWidget):
             shade.setColorAt(0, QColor(8, 13, 20, 0))
             shade.setColorAt(1, QColor(8, 13, 20, 145))
             painter.fillRect(bounds, shade)
-            self._draw_status(painter, bounds, elapsed, phase)
+            if not self.active:
+                self._draw_status(painter, bounds)
 
-    def _draw_status(self, painter, bounds, elapsed, phase):
+    def _draw_status(self, painter, bounds):
         font = painter.font()
         font.setPixelSize(13)
         font.setWeight(QFont.Weight.Medium)
         metrics = QFontMetricsF(font)
         baseline = bounds.bottom() - 24 - metrics.descent()
-        left = bounds.left() + (40 if self.active else 24)
-        key = (self.status, bounds.width(), bounds.height(), font.key(), self.active)
+        left = bounds.left() + 24
+        key = (self.status, bounds.width(), bounds.height(), font.key())
         if key != self._status_key:
             label = metrics.elidedText(self.status, Qt.TextElideMode.ElideRight,
                                       max(0, bounds.right() - 24 - left))
             self._status_path = QPainterPath()
             self._status_path.addText(QPointF(left, baseline), font, label)
             self._status_key = key
-        ink = QColor("#b6b9c0")
-        if self.active:
-            # A soft reflection crosses only the glyphs, with a quiet gap between sweeps.
-            text_width = self._status_path.boundingRect().width()
-            center = left - 48 + (text_width + 96) * min(1., (elapsed % 3600) / 2800)
-            reflection = QLinearGradient(center - 36, 0, center + 36, 0)
-            reflection.setColorAt(0, ink)
-            reflection.setColorAt(.5, QColor("#fff1e7"))
-            reflection.setColorAt(1, ink)
-            painter.fillPath(self._status_path, reflection)
-            painter.setPen(Qt.PenStyle.NoPen)
-            dot = QColor("#d08870")
-            dot.setAlphaF(.65 + .25 * sin(phase * 2))
-            painter.setBrush(dot)
-            painter.drawEllipse(QPointF(bounds.left() + 27, baseline - metrics.ascent() * .36), 3, 3)
-        else:
-            painter.fillPath(self._status_path, ink)
+        painter.fillPath(self._status_path, QColor("#b6b9c0"))
