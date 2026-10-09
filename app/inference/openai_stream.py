@@ -10,6 +10,7 @@ import logging
 from time import monotonic
 
 from app.inference.completion import CompletionMetadata, IncompleteResponseError, ResponseFailureReason
+from app.inference.openai_diagnostics import event_labels, record_stream_failure
 
 log = logging.getLogger(__name__)
 # Allow a 128,000-token response with multiple deltas per token and control
@@ -52,6 +53,7 @@ class ResponsesStreamState:
         self.items, self.parts = {}, {}
         self._last_publish = 0.0
         self.last_event = "none"
+        self.last_event_supported = False
 
     @property
     def partial_text(self):
@@ -73,12 +75,14 @@ class ResponsesStreamState:
             failure_reason="cancelled" if reason == "cancelled" else failure_reason)
         log.warning("OpenAI stream interruption: reason=%s event=%s events=%s sequence=%s bytes=%s text_chars=%s",
             completion.failure_reason, self.last_event, self.events, self.sequence, self.bytes, self.chars)
+        record_stream_failure(log, self, reason=completion.failure_reason)
         return IncompleteResponseError(completion.failure_message, completion, self.partial_text)
 
     def accept(self, event):
         value = event.model_dump(mode="json", exclude_none=True)
         kind = value.get("type")
-        self.last_event = kind if isinstance(kind, str) and kind in (_KNOWN_EVENTS | _IMAGE_EVENTS) else "unrecognized"
+        self.last_event, _ = event_labels(kind)
+        self.last_event_supported = isinstance(kind, str) and kind in (_KNOWN_EVENTS | (_IMAGE_EVENTS if self.allow_images else set()))
         self.events += 1
         self.bytes += len(json.dumps(value, ensure_ascii=False, allow_nan=False).encode("utf-8"))
         if self.events > _MAX_EVENTS or self.bytes > _MAX_EVENT_BYTES:

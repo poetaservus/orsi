@@ -5,6 +5,13 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 
+class ProviderContentFilter(logging.Filter):
+    """Keep raw SDK/HTTP debug bodies, headers and URLs out of ORSI's log file."""
+    def filter(self, record):
+        return not any(record.name == name or record.name.startswith(name + ".")
+            for name in ("openai", "httpx", "httpcore"))
+
+
 def configure_logging(log_path: Path) -> None:
     """Configure bounded UTF-8 application logs without recording conversation content."""
     if not isinstance(log_path, Path):
@@ -19,6 +26,7 @@ def configure_logging(log_path: Path) -> None:
     handler.setFormatter(
         logging.Formatter("%(asctime)s %(levelname)s %(name)s %(message)s")
     )
+    handler.addFilter(ProviderContentFilter())
     root = logging.getLogger()
     root.setLevel(logging.INFO)
     for existing in tuple(root.handlers):

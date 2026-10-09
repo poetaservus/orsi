@@ -24,6 +24,7 @@ from app.inference.protocol import ModelCapabilityDefinition, ModelResponse, Mod
 from app.inference.openai_tools import responses_function_tools, responses_input, normalize_responses_calls
 from app.inference.openai_replay import OpenAIReplay, REPLAY_KEY, neutral_messages
 from app.inference.openai_stream import ResponsesStreamState, StreamProtocolError
+from app.inference.openai_diagnostics import record_stream_failure
 from app.inference.openai_transport import OpenAIRequestRunner
 from app.inference.openai_context import context_input_items, estimate_input_tokens, estimate_schema_tokens
 from app.inference.openai_metrics import RequestMeasurement, record_request_metrics
@@ -625,6 +626,7 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
                                     failure_reason, safe_code = _stream_error_diagnostic(
                                         _error_code(payload), default="provider_failed")
                                     log.warning("OpenAI failed response: category=%s code=%s", failure_reason, safe_code)
+                                    record_stream_failure(log, state, origin="provider_terminal", reason=failure_reason, code=safe_code)
                                     if state.partial_text:
                                         raise state.interrupted(failure_reason=failure_reason)
                                     raise _provider_error(None, _error_code(payload))
@@ -661,6 +663,7 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
                     # before state.accept(). Preserve known codes, not its text.
                     failure_reason, safe_code = _stream_error_diagnostic(_error_code(exc.body))
                     log.warning("OpenAI SDK stream error: category=%s code=%s", failure_reason, safe_code)
+                    record_stream_failure(log, state, origin="sdk_envelope", reason=failure_reason, code=safe_code)
                     raise state.interrupted(failure_reason=failure_reason) from None
                 raise _malformed() from None
             except (ValueError, TypeError, AttributeError):

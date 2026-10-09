@@ -27,6 +27,7 @@ from app.conversation.prompt import (
     compact_agent_system_prompt,
 )
 from app.conversation.result_grounding import grounded_text_read_answer
+from app.conversation.diagnostics import record_route, record_turn
 from app.conversation.store import ConversationStore, TurnHistoryError
 from app.conversation.skill_references import ConversationSkillReferences
 from app.conversation.local_documents import LocalDocuments, LocalDocumentCounter, with_local_document_guidance, with_local_image_guidance
@@ -300,6 +301,8 @@ class ConversationService:
                     raise RuntimeError("The conversation is closed.")
                 self._cancellation = source
             decision = self.image_route_decision(text, attachments=submitted_references, skill_name=skill_name)
+            record_route(log, decision, submitted_count=len(submitted_references),
+                skill_scope="message" if skill_name is not None else "session" if self._active_skill_name is not None else "none")
             references = decision.references
             image_turn = decision.route == "image_generation"
             report_activity(activity, "Preparing your request…")
@@ -473,6 +476,7 @@ class ConversationService:
             if preview_attached:
                 preview_setter(None)
             if turn_id is not None and self._turn_result is not None:
+                record_turn(log, self._turn_result)
                 usage = self._turn_result.completion.usage
                 used = usage.total_tokens
                 if used is None and usage.input_tokens is not None and usage.output_tokens is not None:

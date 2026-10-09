@@ -1,5 +1,33 @@
 # Git layout and baseline hygiene
 
+## Content-free diagnostics, 9 October 2026
+
+`codex/content-free-diagnostics` starts from verified main `1186871`. Phase 6
+adds fixed-category route decisions, settled terminal counts and public
+stream/event/code/SDK-version diagnostics. ORSI's owned log file excludes raw
+OpenAI/HTTP library records. Parser acceptance, retry ownership, durable settled
+work and unknown-outcome safeguards are unchanged. Prompts, routing, tool
+contracts/permissions, model/context policies and Python Coder 1.0.1 remain
+unchanged. See [the diagnostic contract and qualification](content-free-diagnostics.md).
+
+Pre-change refs/worktree maps, a verified complete-history bundle and content-free
+settings/configuration hashes are retained under ignored
+`state/backups/content-free-diagnostics-20261009/`. Final focused native checks
+passed 223 tests without skips, failures or errors. Final full native checks passed
+2,691 tests and 15 subtests, with 58 optional/host skips, no failures/errors, in
+484.479 seconds. All four unchanged cloud coding cases passed, with exact bytes,
+finite approved mutations, originals preserved for copies, zero failed calls,
+corrections or coding images, honest unrun checks and released transports. Four
+route and four terminal records contain only approved metadata and match durable
+outcomes. The fourteen installed Python skill package files and twelve other
+installed skill files are unchanged. Python/GUI execution through ORSI, live image
+and local-model gates remain unrun in this phase. Preserve prior main at
+`archive/2026-10-09/main-before-content-free-diagnostics`, commit after verification,
+fast-forward local main and the active checkout without changing its settings
+branch, and remove only the merged feature branch. User settings, installed
+skills, other worktrees, historical tips and remote refs remain preserved. The
+original unknown stream event cannot be reconstructed from the old logs.
+
 ## Python Coder host guidance, 9 October 2026
 
 `codex/python-coder-host-guidance` starts from verified main `9c5a061`. Phase 5 changes
