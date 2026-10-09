@@ -1,5 +1,25 @@
 # Git layout and baseline hygiene
 
+## Tool approval and UI integration, 9 October 2026
+
+The user authorized merging and publishing the eight commits from `585cfdb`
+through `26085ff` on `codex/tool-approval-preferences`. They add persistent tool
+approval preferences, flat settings controls, the native Windows attachment
+picker, a burgundy image-generation animation without the active status overlay,
+and the enlarged image viewer's editable `Edit this image: ` composer prefix.
+
+The final focused integration check passed **107 tests** without failures or
+skips in 39.68 seconds. Its repository-local temporary state, cache and result
+are under ignored `state/integrate-approval-ui-focus`,
+`state/integrate-approval-ui-cache` and `state/integrate-approval-ui-focused.xml`.
+Whitespace checks passed. The full suite was deliberately not run at the user's
+request, and no live model/API calls were made for this integration.
+
+Previous main `d850fd7` is preserved at the local annotated tag
+`archive/2026-10-09/main-before-tool-approval-ui`. Integration fast-forwards local
+main, removes only the merged feature branch and pushes main without force.
+Other worktrees, historical/unmerged refs and user runtime settings are preserved.
+
 ## Reversal checks and stored goal evidence, 9 October 2026
 
 `codex/reversal-check-goal-evidence` starts from published, verified main `dd87567`. It adds pre-execution checks for known revision returns and stores each agent turn's literal request with receipt-bound save/source evidence. Successful reports and provider partial text retain their existing content. Requested runtime/GUI behaviour remains unverified; no new execution capability, model profile, routing or sampling policy is introduced. See [the contract and qualification](reversal-goals.md).
