@@ -8,6 +8,7 @@ from app.inference.engine import InferenceUnavailable
 from app.inference.completion import CompletionMetadata
 from app.inference.protocol import ModelCapabilityCall, model_capability_calls_message, model_capability_result_message
 from app.capabilities.contracts import CapabilityResult
+from app.agent.goals import TaskGoal
 from app.settings.agent_limits import (
     MAX_AGENT_STEPS, MAX_AGENT_MODEL_REQUESTS, MAX_AGENT_CAPABILITY_CALLS, MAX_AGENT_COMPLETIONS,
 )
@@ -77,6 +78,7 @@ class AgentRunResult(BaseModel):
     completion_history: tuple[CompletionMetadata, ...] = Field(default=(), max_length=MAX_AGENT_COMPLETIONS)
     partial_text: str | None = Field(default=None, min_length=1, max_length=1_000_000)
     settled_calls: tuple[SettledCall, ...] = Field(default=(), max_length=MAX_AGENT_CAPABILITY_CALLS)
+    goal: TaskGoal | None = None
 
     @model_validator(mode="after")
     def validate_terminal_outcome(self):

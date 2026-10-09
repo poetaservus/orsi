@@ -15,6 +15,7 @@ from app.conversation.attachments import AttachmentStore
 from app.inference.attachments import AttachmentReference, attachment_references
 from app.inference.completion import CompletionMetadata, CompletionText
 from app.agent.contracts import AgentRunResult, AgentRunStatus, SettledCall
+from app.agent.goals import TaskGoal, observe_goal, finish_goal
 from app.settings.agent_limits import MAX_AGENT_CAPABILITY_CALLS, MAX_AGENT_MODEL_REQUESTS
 from app.inference.openai_replay import OpenAIReplay, StoredOpenAIResponse, REPLAY_KEY
 from app.inference.protocol import model_capability_calls_message, model_capability_result_message
@@ -90,6 +91,7 @@ class TurnRecord(BaseModel):
     recovered_calls: list[RecoveredCall] = Field(default_factory=list, max_length=MAX_AGENT_CAPABILITY_CALLS)
     provider_responses: list[StoredOpenAIResponse] = Field(default_factory=list, max_length=MAX_AGENT_MODEL_REQUESTS, repr=False)
     reference_scope: SkillReferenceScope | None = None
+    goal: TaskGoal | None = None
 
 
 class Conversation(BaseModel):
@@ -112,6 +114,16 @@ class Conversation(BaseModel):
             turn_ids.add(turn.turn_id)
             if self.messages[turn.user_index].role != "user":
                 raise ValueError("Turns must start with a user message.")
+            if turn.goal is None and turn.outcome is not None and turn.outcome.goal is not None:
+                raise ValueError("An outcome goal requires its durable turn goal.")
+            if turn.goal is not None:
+                expected = TaskGoal(goal_id=turn.turn_id, objective=self.messages[turn.user_index].content)
+                for item in turn.settled_calls:
+                    expected = observe_goal(expected, item)
+                if turn.outcome is not None:
+                    expected = finish_goal(expected, completed=turn.outcome.status == AgentRunStatus.COMPLETED)
+                if turn.goal != expected or turn.outcome is not None and turn.outcome.goal != expected:
+                    raise ValueError("Task goals must match the request and durable settled evidence.")
             if (turn.outcome is None) != (turn.ended_at is None):
                 raise ValueError("Terminal turns require a durable outcome and end time.")
             if turn.assistant_index is not None and (turn.assistant_index >= len(self.messages)
@@ -165,9 +177,11 @@ class ConversationStore:
             # A prior process never resumes or replays an unfinished turn.
             for turn in self._conversation.turns:
                 if turn.outcome is None:
+                    if turn.goal is not None:
+                        turn.goal = finish_goal(turn.goal, completed=False)
                     turn.outcome = AgentRunResult(status=AgentRunStatus.INTERNAL_FAILURE,
                         message="This turn was interrupted. Retained call outcomes remain valid; unknown mutations require review.",
-                        steps=0, capability_calls=len(turn.settled_calls), protocol_failures=0)
+                        steps=0, capability_calls=len(turn.settled_calls), protocol_failures=0, goal=turn.goal)
                     turn.ended_at = _now()
                     turn.assistant_index = len(self._conversation.messages)
                     self._conversation.messages.append(ChatMessage(role="assistant", turn_id=turn.turn_id,
@@ -225,6 +239,15 @@ class ConversationStore:
             turn.reference_scope = value
             self._commit(proposed)
 
+    def start_goal(self, turn_id: str) -> None:
+        with self._lock:
+            proposed = self._conversation.model_copy(deep=True)
+            turn = self._turn(proposed, turn_id)
+            if turn.outcome is not None or turn.goal is not None or turn.settled_calls:
+                raise TurnHistoryError("A task goal must start before settled work.")
+            turn.goal = TaskGoal(goal_id=turn_id, objective=proposed.messages[turn.user_index].content)
+            self._commit(proposed)
+
     def record_settled(self, turn_id: str, settled: SettledCall) -> None:
         with self._lock:
             proposed = self._conversation.model_copy(deep=True)
@@ -232,6 +255,8 @@ class ConversationStore:
             if turn.outcome is not None:
                 raise TurnHistoryError("A stopped turn cannot execute or retain another call.")
             turn.settled_calls.append(settled)
+            if turn.goal is not None:
+                turn.goal = observe_goal(turn.goal, settled)
             self._commit(proposed)
 
     def record_response(self, turn_id: str, provider_message_id: str, replay: OpenAIReplay) -> None:
@@ -256,6 +281,13 @@ class ConversationStore:
             # The result also contains calls on an observer failure. Never lose that evidence.
             retained = {item.result.call_id for item in turn.settled_calls}
             turn.settled_calls.extend(item for item in outcome.settled_calls if item.result.call_id not in retained)
+            if turn.goal is not None or outcome.goal is not None:
+                goal = TaskGoal(goal_id=turn_id, objective=proposed.messages[turn.user_index].content)
+                for item in turn.settled_calls:
+                    goal = observe_goal(goal, item)
+                goal = finish_goal(goal, completed=outcome.status == AgentRunStatus.COMPLETED)
+                turn.goal = goal
+                outcome = outcome.model_copy(update={"goal": goal})
             turn.outcome = outcome.model_copy(update={"settled_calls": ()})
             turn.ended_at = _now()
             turn.assistant_index = len(proposed.messages)

@@ -549,6 +549,7 @@ class ConversationService:
         report_activity(activity, "Preparing the next step…")
         source.token.raise_if_cancelled()
         turn_results: list[tuple] = []
+        self.store.start_goal(self._active_turn_id)
 
         def retain_settled(settled: SettledCall) -> None:
             self._agent_history.extend(deepcopy(settled.messages()))
@@ -585,6 +586,7 @@ class ConversationService:
                 if self._reference_runtime is not None else None,
             capability_names=capabilities,
             activity_observer=activity,
+            goal_request=text,
         )
         if result.status == AgentRunStatus.COMPLETED:
             reference_error = self._references.continuation_error(source.token)

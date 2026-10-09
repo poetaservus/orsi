@@ -39,6 +39,7 @@ from app.agent.feedback import (
 from app.agent.file_resolution import filename_disambiguation_feedback
 from app.agent.read_progress import ReadProgressTracker
 from app.agent.edit_progress import EditProgressTracker
+from app.agent.goals import TaskGoal, observe_goal, finish_goal, goal_feedback, evidence_report
 from app.capabilities.contracts import (
     CapabilityArgumentError,
     CapabilityContext,
@@ -318,8 +319,10 @@ class AgentRuntime:
         history = []
         settled = []
         recovery = _RecoveryUsage()
+        objective = kwargs.pop("goal_request", None)
+        goal = [TaskGoal(goal_id=kwargs["turn_id"], objective=objective)] if objective is not None else []
         result = self._run(messages, _completion_history=history, _settled_calls=settled,
-                           _recovery=recovery, **kwargs)
+                           _recovery=recovery, _goal=goal, **kwargs)
         result = result.model_copy(update={"completion_history": tuple(history),
             "settled_calls": tuple(settled),
             "model_requests": recovery.model_requests,
@@ -339,6 +342,12 @@ class AgentRuntime:
             result = result.model_copy(update={"partial_text": recovery_stop_progress(result),
                 "completion": result.completion.model_copy(update={
                     "finish_reason": "agent_recovery_stop", "interrupted": True})})
+        if goal:
+            final_goal = finish_goal(goal[0], completed=result.status == AgentRunStatus.COMPLETED)
+            result = result.model_copy(update={"goal": final_goal})
+            report = evidence_report(final_goal)
+            if report and result.partial_text is not None and result.status in RECOVERY_STOP_STATUSES | WORK_BUDGET_STATUSES:
+                result = result.model_copy(update={"partial_text": (result.partial_text + "\n\n" + report)[:1_000_000]})
         return result
 
     def _run(
@@ -365,6 +374,7 @@ class AgentRuntime:
         continuation_guard: Callable[[], str | None] | None = None,
         activity_observer: Callable[[str], None] | None = None,
         _recovery: _RecoveryUsage | None = None,
+        _goal: list[TaskGoal] | None = None,
     ) -> AgentRunResult:
         if not safe_identifier(session_id) or not safe_identifier(turn_id):
             raise ValueError("Agent session and turn IDs must use bounded stable syntax.")
@@ -776,7 +786,7 @@ class AgentRuntime:
             results: list[CapabilityResult] = []
             recovery_feedback: list[str] = []
             for call, internal_call_id in zip(calls, internal_call_ids, strict=True):
-                rejection = edit_progress.before(call, step=steps) if not linked.is_cancelled else None
+                rejection = edit_progress.before(call, step=steps, assistant_text=response.assistant_text) if not linked.is_cancelled else None
                 if rejection is not None:
                     blocked = failure_result(internal_call_id, call.capability,
                         CapabilityFailure(code=CapabilityErrorCode.INVALID_ARGUMENTS, message=rejection.message))
@@ -812,6 +822,11 @@ class AgentRuntime:
                                           assistant_text=response.assistant_text if not results else None)
                     if _settled_calls is not None:
                         _settled_calls.append(settled)
+                    if _goal:
+                        prior_goal = _goal[0]
+                        _goal[0] = observe_goal(prior_goal, settled)
+                        if _goal[0] != prior_goal:
+                            recovery_feedback.append(goal_feedback(_goal[0]))
                     try:
                         if settled_observer is not None:
                             settled_observer(settled)

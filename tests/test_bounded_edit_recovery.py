@@ -181,12 +181,12 @@ def test_verified_revision_cycle_stops_without_an_arbitrary_all_edit_cap(tmp_pat
     path = tmp_path / "main.py"
     path.write_bytes(b"old\r\nkeep\r\n")
     service, model, approvals = make_service([read(1, path), edit(2, path, "old", "new"), read(3, path),
-        edit(4, path, "new", "old"), read(5, path), edit(6, path, "old", "new"),
+        edit(4, path, "new", "old"), read(5, path), edit(6, path, "new", "old"),
         ModelResponse.text("Must not be consumed")])
     answer = stopped_report(service, "Fix main.py.")
     outcome = service._turn_result
-    assert outcome.status == AgentRunStatus.REPEATED_CALL and outcome.semantic_corrections == 0
-    assert len(approvals) == 3 and len(model.requests) == 6
+    assert outcome.status == AgentRunStatus.REPEATED_CALL and outcome.semantic_corrections == 2
+    assert len(approvals) == 1 and len(model.requests) == 6
     assert "earlier file revisions" in answer and "main.py" in answer
     assert path.read_bytes() == b"new\r\nkeep\r\n"
 

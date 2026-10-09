@@ -1,5 +1,11 @@
 # Git layout and baseline hygiene
 
+## Reversal checks and stored goal evidence, 9 October 2026
+
+`codex/reversal-check-goal-evidence` starts from published, verified main `dd87567`. It adds pre-execution checks for known revision returns and stores each agent turn's literal request with receipt-bound save/source evidence. Successful reports and provider partial text retain their existing content. Requested runtime/GUI behaviour remains unverified; no new execution capability, model profile, routing or sampling policy is introduced. See [the contract and qualification](reversal-goals.md).
+
+Final focused native checks passed 74 tests. Final full native checks passed 2734 checks including 15 subtests, with 58 optional/host skips, zero failures or errors, in 412.573 seconds. Four unchanged live coding gates and two controlled live reassessment gates passed. Runtime/GUI execution through ORSI and live local-model checks remain unrun. Pre-change refs/worktrees, a verified history bundle, preservation hashes and separate qualification reports are retained in ignored `state/backups/reversal-goals-20261009/`. Settings, runtime preferences, all fourteen installed Python skill files, twelve other installed skill files, historical refs and four other worktrees remain preserved. Preserve prior main at `archive/2026-10-09/main-before-reversal-goal-evidence`, commit the verified bounded change, fast-forward local main, remove only its merged feature branch, push main without force, and verify GitHub matches the clean checkout.
+
 ## Accepted baseline consolidation, 9 October 2026
 
 The six routing/editing phases are integrated on verified local main `15cdb3d`.
