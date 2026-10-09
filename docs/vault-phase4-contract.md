@@ -23,15 +23,20 @@ recovery keys, credentials, full preferences and personal contents never belong
 in bootstrap. An unreadable selection fails closed rather than opening legacy
 history. A different profile at the same locator needs explicit selection.
 
-An encrypted selection starts with unlock/recovery and restore controls before
-composing personal consumers. Composer and private Settings pages are disabled.
+An encrypted selection starts with a separate **Unlock your vault** login panel
+before composing personal consumers. It uses the Settings panel's rounded
+gradient and app typography, with password/recovery entry, profile selection and
+backup restore. Settings stays hidden while locked; its top-bar button returns
+focus to login. Composer and private Settings pages are disabled.
 Ordinary unconfigured startup remains quiet. An unencrypted selection opens
 without a password and takes an exclusive ownership lease; its data is plaintext.
 
 The locked shell identifies itself as **Locked** and shows **Unlock your personal
 profile** instead of a default welcome that could resemble old settings. Personal
 greeting/preferences load only after unlock. Creating a new profile does not
-implicitly migrate legacy preferences.
+implicitly migrate legacy preferences. Successful login opens the main app;
+profile management remains available under Settings after unlock. Failed unlock
+keeps the login panel visible with a fixed error and cleared password fields.
 
 After successful password/recovery unlock, the bundled `orsi_start.png` covers
 the previous window's position and size while personal services and the full UI
@@ -63,6 +68,13 @@ The switch enables/disables the field; Save applies both the switch and interval
 Enabled intervals are 1–1440 minutes. An off profile offers an unsaved five-minute
 starting value; disabling saves the existing zero/off representation. No stored
 profile setting changes until Save is pressed.
+
+Vault quota uses the same 72 × 36 typed field, with its GiB unit outside the
+input and a 128 × 36 **Change quota** button beside it. The field ignores wheel
+changes and has no spinner arrows. Saving refreshes the displayed usage/quota.
+New-profile quota entry uses the same compact control. All app dropdowns ignore
+wheel changes, including focused controls, so gestures scroll the settings page.
+Explicit menu clicks and keyboard selection remain available.
 
 Password changes rewrap keys. Recovery generation explicitly displays the new
 key and offers an outside-vault export; keep that copy accessible independently
@@ -98,7 +110,7 @@ Use the masked value field and separate save-consent checkbox to save/replace an
 API key or supported login/access/refresh token. Deleting ends the connection
 session and removes the chosen value; provider-side revocation is separate.
 
-**Save / replace credential** and credential-file import also apply the policy
+**Save / replace credential** also applies the policy
 currently selected in the dropdown. Choose **Use explicitly saved encrypted
 credentials** to reuse a saved API key without another key prompt. If a key is
 already saved, select that policy and press **Apply credential policy**; no
@@ -113,7 +125,8 @@ an API key clears a previously missing or stale cached
 key under the saved policy, so the next cloud attempt loads the saved value.
 Cloud chat requires an API key; the other token types remain separate.
 
-Credential-file import accepts a selected JSON file containing the chosen
+The unused **Import saved credential file** UI button has been removed. The
+underlying migration helper still accepts a selected JSON file containing the chosen
 `api_key`, `login_token`, `access_token` or `refresh_token` field. It requires
 separate encrypted-save consent, does not display/log its value, and writes only
 to the separately keyed credential domain. Unknown configuration shapes are not

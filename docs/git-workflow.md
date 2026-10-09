@@ -1,5 +1,23 @@
 # Git layout and baseline hygiene
 
+## Vault login and settings controls, 9 October 2026
+
+`codex/vault-login-settings` starts from local main `f7eb507`. All app dropdowns
+ignore wheel changes, the unused credential-file import button is removed, and
+quota uses the compact minutes-sized field with a small inline Change quota
+button. Locked startup now uses a separate login panel in the existing style;
+successful login opens the main app. See
+[focused verification](vault-login-settings-verification.md).
+
+Twenty-six focused native Windows checks passed, plus synthetic local/portable
+interaction/layout checks and an actual desktop-entrypoint/repeated-launch probe.
+No full suite or live provider/model checks. All eight settings/selection
+fingerprints match; other worktrees and actual user vault/processes are untouched.
+Recovery evidence is under ignored `state/backups/vault-login-settings-20261009/`.
+Preserve prior main at `archive/2026-10-09/main-before-vault-login-settings`,
+commit, fast-forward local main and remove only the merged local branch.
+No remote publication.
+
 ## Compact idle-lock controls, 9 October 2026
 
 `codex/vault-idle-controls` starts from local main `8a6b7b2`. The idle-lock row

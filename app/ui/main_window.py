@@ -63,6 +63,7 @@ from app.ui.status import ConversationStatus
 from app.ui.worker import ConversationWorker, ModelSwitchWorker
 from app.ui.skill_picker import SkillPicker
 from app.ui.settings_panel import SettingsPanel
+from app.ui.inputs import ScrollSafeComboBox
 from app.ui.notifications import NotificationManager
 from app.ui.settings_motion import SettingsIconButton
 from app.ui.window_frame import CAPTION_HEIGHT, DragStrip, WindowControls, WindowsFrame
@@ -440,7 +441,7 @@ class MainWindow(QMainWindow):
 
         self.settings_panel = SettingsPanel(root)
 
-        self.model_selector = QComboBox()
+        self.model_selector = ScrollSafeComboBox()
         self.model_selector.setObjectName("modelSelector")
         self.model_selector.setFixedHeight(38)
         if inference is None:
@@ -457,7 +458,7 @@ class MainWindow(QMainWindow):
 
         self.local_model_label = QLabel("Local Model")
         self.local_model_label.setObjectName("settingsLabel")
-        self.local_model_selector = QComboBox()
+        self.local_model_selector = ScrollSafeComboBox()
         self.local_model_selector.setObjectName("modelSelector")
         self.local_model_selector.setAccessibleName("Local model")
         self.local_model_selector.setFixedHeight(38)
@@ -482,7 +483,7 @@ class MainWindow(QMainWindow):
 
         self.cloud_model_label = QLabel("Cloud Model")
         self.cloud_model_label.setObjectName("settingsLabel")
-        self.cloud_model_selector = QComboBox()
+        self.cloud_model_selector = ScrollSafeComboBox()
         self.cloud_model_selector.setObjectName("modelSelector")
         self.cloud_model_selector.setAccessibleName("Cloud model")
         self.cloud_model_selector.setFixedHeight(38)
@@ -802,6 +803,10 @@ class MainWindow(QMainWindow):
         self.settings_panel.fit_to_parent()
         if self.settings_panel.isVisible():
             self.settings_panel.raise_()
+        login = getattr(self, "login_panel", None)
+        if login is not None:
+            login.fit_to_parent()
+            login.raise_()
 
     def _composer_target_geometry(self) -> QRect:
         content = self.composer.parentWidget()
@@ -918,6 +923,12 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def _toggle_settings(self) -> None:
+        login = getattr(self, "login_panel", None)
+        if login is not None:
+            login.show()
+            login.raise_()
+            login.focus_password()
+            return
         visible = not self.settings_panel.isVisible()
         self.settings_panel.setVisible(visible)
         if visible:

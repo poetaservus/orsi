@@ -342,6 +342,19 @@ def test_locked_startup_never_composes_private_consumers_and_keyboard_unlock(qt,
     try:
         controller.start()
         assert calls == [] and controller.window._preferences_store is None
+        login = controller.window.login_panel
+        assert login.isVisible() and not controller.window.settings_panel.isVisible()
+        assert "Personal profile" not in controller.window.settings_panel.section_names
+        controller.window.settings_button.click()
+        assert login.isVisible() and not controller.window.settings_panel.isVisible()
+        # Failed authentication stays on login without composing private consumers.
+        controller.window.personal_profile_page.password.setText("wrong password")
+        QTest.keyClick(controller.window.personal_profile_page.password, Qt.Key.Key_Return)
+        qt.processEvents()
+        assert calls == [] and not restarted.active
+        assert controller.window.login_panel.isVisible()
+        assert controller.window.personal_profile_page.status.isVisible()
+        assert not controller.window.settings_panel.isVisible()
         page = controller.window.personal_profile_page
         assert controller.window.service is None and not controller.window.send.isEnabled()
         page.password.setText(PASSWORD.decode())
@@ -349,12 +362,16 @@ def test_locked_startup_never_composes_private_consumers_and_keyboard_unlock(qt,
         qt.processEvents()
         assert restarted.active and len(calls) == 1 and calls[0]["profile_session"] is restarted.session
         assert controller.window.service is not None
+        assert not hasattr(controller.window, "login_panel")
+        assert not controller.window.settings_panel.isVisible()
+        assert "Personal profile" in controller.window.settings_panel.section_names
         controller.window.input.setPlainText(MARKER)
         old = controller.window
         controller.transition(restarted.lock)
         assert not restarted.active and old.input.toPlainText() == ""
         assert controller.window._preferences_store is None
         assert not controller.window.send.isEnabled()
+        assert controller.window.login_panel.isVisible() and not controller.window.settings_panel.isVisible()
     finally:
         controller.shutdown()
         controller.window.close()

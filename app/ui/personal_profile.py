@@ -1,4 +1,4 @@
-"""Personal profile controls inside the existing Settings surface."""
+"""Personal profile controls shared by settings and the locked-profile login."""
 from pathlib import Path
 import json
 
@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog,
     QMessageBox, QPushButton, QScrollArea, QSpinBox, QTextEdit, QVBoxLayout, QWidget)
 
 from app.ui.notification_settings import NotificationSwitch
+from app.ui.inputs import CompactNumberInput, ScrollSafeComboBox
 from app.vault.credentials import CredentialPolicy
 from app.vault.profiles import public_error
 from app.vault.types import BackupPolicy, VaultError
@@ -63,7 +64,7 @@ def secret(name):
 
 
 def combo(options):
-    widget = QComboBox()
+    widget = ScrollSafeComboBox()
     for title, value in options:
         widget.addItem(title, value)
     widget.setMinimumContentsLength(12)
@@ -107,10 +108,10 @@ class ProfileChoice(QDialog):
         location_layout.addWidget(browse)
         self.mode.currentIndexChanged.connect(lambda: self.location.setText(str(manager.default_location(self.mode.currentData()))))
         self.password, self.repeat = secret("Vault password"), secret("Repeat vault password")
-        self.quota = QSpinBox()
+        self.quota = CompactNumberInput()
         self.quota.setRange(1, 1_000_000)
         self.quota.setValue(1)
-        self.quota.setSuffix(" GiB")
+        self.quota.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.quota.setAccessibleName("Vault quota")
         self.policy = combo((("Ask whenever cloud is selected", CredentialPolicy.ASK),
                              ("Allow explicitly saved encrypted credentials", CredentialPolicy.SAVED)))
@@ -127,7 +128,13 @@ class ProfileChoice(QDialog):
             password_layout.addWidget(self.password)
             password_layout.addWidget(self.repeat)
             form.addRow("Password", password_row)
-            form.addRow("Quota (grows with usage)", self.quota)
+            quota_row = QWidget()
+            quota_layout = QHBoxLayout(quota_row)
+            quota_layout.setContentsMargins(0, 0, 0, 0)
+            quota_layout.addWidget(self.quota)
+            quota_layout.addWidget(label("GiB"))
+            quota_layout.addStretch()
+            form.addRow("Quota (grows with usage)", quota_row)
             form.addRow("Credentials", self.policy)
         layout.addLayout(form)
         self.storage_info = label("Recommended: encrypted copies are protected while locked. Unencrypted profiles use "
@@ -164,17 +171,11 @@ class ProfileChoice(QDialog):
         self.accept()
 
 
-class IdleMinutesInput(QSpinBox):
-    def wheelEvent(self, event):  # noqa: N802
-        # Let the settings page scroll without changing the lock interval.
-        event.ignore()
-
-
 class PersonalProfilePage(QWidget):
     transition_requested = Signal(object)
     reload_requested = Signal(object)
 
-    def __init__(self, manager, window, *, message=""):
+    def __init__(self, manager, window, *, message="", login=False):
         super().__init__()
         self.setObjectName("personalProfilePage")
         self.setStyleSheet(_STYLE)
@@ -184,21 +185,35 @@ class PersonalProfilePage(QWidget):
             self.destroyed.connect(unregister)
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(0, 0, 6, 0)
-        self.layout.setSpacing(12)
+        self.layout.setSpacing(10 if login else 12)
         self.summary = label("")
         self.summary.setAccessibleName("Selected personal profile")
         self.layout.addWidget(self.summary)
         self.status = label(message)
         self.status.setAccessibleName("Personal profile status")
         self.layout.addWidget(self.status)
-        self._buttons((("New profile…", self._new), ("Select existing…", self._select)))
+        if login:
+            self.status.setVisible(bool(message))
+        else:
+            self._buttons((("New profile…", self._new), ("Select existing…", self._select)))
         if manager.locator is not None and not manager.active:
             self.password, self.recovery = secret("Vault password"), secret("Recovery key (optional)")
+            if login:
+                self.password.setFixedHeight(42)
+                self.recovery.setFixedHeight(42)
             self.layout.addWidget(self.password)
             self.layout.addWidget(self.recovery)
-            self._buttons((("Unlock profile" if manager.encrypted else "Open profile", self._unlock),))
+            self._buttons((("Unlock vault" if login and manager.encrypted else
+                            "Unlock profile" if manager.encrypted else "Open profile", self._unlock),))
             self.password.returnPressed.connect(self._unlock)
             self.recovery.returnPressed.connect(self._unlock)
+        if login:
+            choices = QHBoxLayout()
+            for title, action in (("New profile…", self._new), ("Select existing…", self._select)):
+                button = QPushButton(title)
+                button.clicked.connect(action)
+                choices.addWidget(button)
+            self.layout.addLayout(choices)
         if manager.active:
             self._buttons((("Lock profile", lambda: self.transition_requested.emit(manager.lock)),
                            ("Refresh storage usage", self._refresh_usage)))
@@ -310,11 +325,9 @@ class PersonalProfilePage(QWidget):
         self.idle_toggle.setAccessibleName("Idle lock")
         self.idle_toggle.setAccessibleDescription("Turn automatic idle locking on or off, then save idle lock.")
         self.idle_toggle.setChecked(minutes > 0)
-        self.idle = IdleMinutesInput(self.idle_controls)
+        self.idle = CompactNumberInput(self.idle_controls)
         self.idle.setRange(1, 1440)
-        self.idle.setButtonSymbols(QSpinBox.ButtonSymbols.NoButtons)
         self.idle.setValue(minutes or 5)
-        self.idle.setFixedSize(72, 36)
         self.idle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.idle.setAccessibleName("Idle lock minutes")
         self.idle.setToolTip("Minutes of inactivity before locking (1–1440)")
@@ -379,8 +392,6 @@ class PersonalProfilePage(QWidget):
             "cloud still asks even if a key is saved. Cloud chat uses an API key; login/access/refresh tokens are stored separately."))
         self._buttons((("Apply credential policy", self._policy), ("Save / replace credential", self._save_key),
                        ("Delete saved credential", self._delete_key)))
-        if self.manager.encrypted:
-            self._buttons((("Import saved credential file…", self._import_key),))
         self.manager.session.register(clear=lambda: (self.key.clear(), self.consent.setChecked(False)))
 
     def _refresh_credential_status(self):
@@ -444,18 +455,36 @@ class PersonalProfilePage(QWidget):
     def _encrypted_controls(self):
         self.layout.addWidget(label("Vault controls · Recovery keys should be accessible independently of this vault. "
             "Backups on a separate device also protect against loss of this disk."))
-        self.quota = QSpinBox()
+        self.quota_controls = QWidget(self)
+        row = QHBoxLayout(self.quota_controls)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(10)
+        self.quota = CompactNumberInput(self.quota_controls)
         self.quota.setRange(1, 1_000_000)
         self.quota.setValue(max(1, (self.manager.vault().quota_bytes + 1024**3 - 1) // 1024**3))
-        self.quota.setSuffix(" GiB")
+        self.quota.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.quota.setAccessibleName("Vault quota")
-        self._form().addRow("Vault quota", self.quota)
-        self._buttons((("Change quota", lambda: self._perform(lambda: self.manager.vault().set_quota(self.quota.value() * 1024**3))),
-                       ("Change password…", self._change_password)))
+        self.quota.setToolTip("Personal storage quota in GiB (1–1,000,000)")
+        self.quota_save = QPushButton("Change quota", self.quota_controls)
+        self.quota_save.setFixedSize(128, 36)
+        self.quota_save.clicked.connect(self._save_quota)
+        title = label("Vault quota")
+        title.setBuddy(self.quota)
+        for widget in (title, self.quota, label("GiB"), self.quota_save):
+            row.addWidget(widget)
+        row.addStretch()
+        self.layout.addWidget(self.quota_controls)
+        self._buttons((("Change password…", self._change_password),))
         self._buttons((("Generate recovery key…", self._recovery_key), ("Disable recovery key", self._disable_recovery)))
         self._buttons((("Create managed backup", lambda: self._perform(lambda: self.manager.vault().backup(), "Encrypted backup verified.")),
                        ("Backup to another location…", self._backup)))
         self._buttons((("Restore encrypted backup…", self._restore), ("Relocate verified copy…", self._relocate)))
+
+    def _save_quota(self):
+        self.quota.interpretText()
+        if self._perform(lambda: self.manager.vault().set_quota(self.quota.value() * 1024**3), "Vault quota saved."):
+            self._refresh_usage()
+            self.status.setText("Vault quota saved.")
 
     def _change_password(self):
         dialog = profile_dialog(self)

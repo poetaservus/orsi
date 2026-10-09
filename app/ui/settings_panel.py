@@ -11,6 +11,7 @@ from app.ui.settings_motion import SettingsDragStrip, SettingsIconButton
 from app.ui.skill_settings import SkillSettingsPage
 from app.ui.image_settings import ImageSettingsPage
 from app.ui.notification_settings import NotificationSoundControl, NotificationSwitch
+from app.ui.inputs import ScrollSafeComboBox
 
 
 class SettingsPanel(QFrame):
@@ -229,7 +230,7 @@ class SettingsPanel(QFrame):
 
     @staticmethod
     def _placeholder(name):
-        selector = QComboBox()
+        selector = ScrollSafeComboBox()
         selector.addItem("Coming soon")
         selector.setEnabled(False)
         selector.setAccessibleName(name)

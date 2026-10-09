@@ -8,6 +8,7 @@ from app.state.storage import JsonStore
 from app.ui.main_window import MainWindow
 from app.ui.personal_profile import PersonalProfilePage, restore_dialog
 from app.ui.profile_loading import ProfileLoadingWindow
+from app.ui.profile_login import ProfileLoginPanel
 from app.vault.profiles import ProfileManager, public_error
 
 
@@ -82,6 +83,7 @@ class ProfileApplication(QObject):
         self.idle_timer.stop()
         message = ""
         rebuild = True
+        from_login = self.window is not None and getattr(self.window, "login_panel", None) is not None
         try:
             self._flush_preferences()
             self._release_legacy()
@@ -102,7 +104,7 @@ class ProfileApplication(QObject):
         finally:
             try:
                 if rebuild:
-                    self.render(message, show_profile=True)
+                    self.render(message, show_profile=not from_login)
                 else:
                     self.idle_timer.start()
             finally:
@@ -122,6 +124,10 @@ class ProfileApplication(QObject):
         window.raise_()
         window.activateWindow()
         page = window.personal_profile_page
+        login = getattr(window, "login_panel", None)
+        if login is not None:
+            login.show()
+            login.raise_()
         if not self.manager.active and hasattr(page, "password"):
             page.password.setFocus()
 
@@ -186,11 +192,15 @@ class ProfileApplication(QObject):
         if self.manager.active:
             self.window.bind_profile(self.manager.session)
         self.window._profile_manager = self.manager
-        page = PersonalProfilePage(self.manager, self.window, message=message)
+        locked = bool(selected and not self.manager.active)
+        page = PersonalProfilePage(self.manager, self.window, message=message, login=locked)
         self.window.personal_profile_page = page
         page.transition_requested.connect(lambda action, window=self.window: self._transition_from(window, action))
         page.reload_requested.connect(lambda action, window=self.window: self._transition_from(window, action, renew=True))
-        self.window.settings_panel.add_personal_page(page)
+        if locked:
+            self.window.login_panel = ProfileLoginPanel(page, self.window)
+        else:
+            self.window.settings_panel.add_personal_page(page)
         self.window.skill_settings_page.set_vault_guidance(self.manager.active and self.manager.encrypted,
             self.manager.guidance() if self.manager.active else False)
         if hasattr(page, "guidance"):
@@ -203,7 +213,7 @@ class ProfileApplication(QObject):
             self.window.activity.set_activity("Profile locked · Unlock to continue")
             self.window._update_context_window()
             self.window.composer.setEnabled(False)
-            for index, button in enumerate(self.window.settings_panel.navigation[:-1]):
+            for index, button in enumerate(self.window.settings_panel.navigation):
                 button.setEnabled(False)
                 self.window.settings_panel.pages.widget(index).setEnabled(False)
         # Restore must remain available when password/recovery unlock fails.
@@ -213,7 +223,12 @@ class ProfileApplication(QObject):
             self.window.showMaximized()
         else:
             self.window.show()
-        if selected and not self.manager.active or show_profile:
+        if locked:
+            self.window.settings_panel.hide()
+            self.window.login_panel.show()
+            self.window.login_panel.raise_()
+            self.window.login_panel.focus_password()
+        elif show_profile:
             self.window.settings_panel.show_section("Personal profile")
             self.window.settings_panel.show()
             self.window.settings_panel.raise_()

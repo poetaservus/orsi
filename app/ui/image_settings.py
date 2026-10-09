@@ -1,7 +1,8 @@
 """Reusable image preferences, independent of chat model profiles."""
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QComboBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 from app.settings.images import ImageGenerationSettings
+from app.ui.inputs import ScrollSafeComboBox
 
 
 class ImageSettingsPage(QWidget):
@@ -26,7 +27,7 @@ class ImageSettingsPage(QWidget):
             ("quality", "Quality", ("auto", "low", "medium", "high")),
             ("output_format", "File format", ("png", "jpeg", "webp")),
         ):
-            selector = QComboBox()
+            selector = ScrollSafeComboBox()
             selector.setAccessibleName(label)
             selector.addItems(values)
             selector.setMinimumHeight(40)

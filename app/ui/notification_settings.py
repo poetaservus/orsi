@@ -4,6 +4,7 @@ from pathlib import Path
 from PySide6.QtCore import QEasingCurve, QRectF, QSize, Qt, QVariantAnimation
 from PySide6.QtGui import QColor, QIcon, QPainter, QPen
 from PySide6.QtWidgets import QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QPushButton, QWidget
+from app.ui.inputs import ScrollSafeComboBox
 
 
 class NotificationSwitch(QCheckBox):
@@ -61,7 +62,7 @@ class NotificationSoundControl(QWidget):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
-        self.selector = QComboBox()
+        self.selector = ScrollSafeComboBox()
         self.selector.setAccessibleName("Notification sound")
         self.selector.addItem("noti_1 (Default)", "noti_1.ogg")
         self.selector.addItem("noti_2", "noti_2.ogg")
