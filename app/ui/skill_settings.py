@@ -128,6 +128,7 @@ class SkillSettingsPage(QWidget):
         installed_row.addWidget(self.remove_button)
         layout.addLayout(installed_row)
         self.installed = QListWidget()
+        self.installed.setObjectName("installedSkills")
         install_smooth_scroll(self.installed)
         self.installed.setMinimumHeight(150)
         self.installed.setAccessibleName("Installed skills")

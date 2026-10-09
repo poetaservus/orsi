@@ -64,3 +64,28 @@ with **58 optional/host skips**, no failures or errors, in 466.15 seconds.
 Temporary state and caches are repository-local; the result is retained in
 ignored `state/flat-controls-full.xml`. The styling follow-up remains on the
 requested feature branch without advancing `main`.
+
+### Installed skills list follow-up
+
+The Installed skills list now shares the solid charcoal fill and neutral border
+of the updated fields and actions. This adds only a widget identity and one
+style selector. Existing focused settings/skill checks passed **30 tests** in
+29.51 seconds. Empty, populated and disabled list renders at 1280 × 800 and
+760 × 600 were inspected and their viewport fills verified as uniform. The
+synthetic artifacts are under ignored `state/flat-installed-skills-preview/`.
+Compilation and whitespace checks passed; live model/API gates are not run.
+
+The first full run recorded 2,752 passed, 58 skips, 15 passed subtests, and one
+unchanged Git-installer temporary-folder cleanup failure with a related teardown
+error (501.56 seconds). All **60 installer tests passed unchanged** on a fresh
+fixture recheck (19.38 seconds). Both results are retained separately in ignored
+`state/flat-installed-skills-full.xml` and
+`state/flat-installed-skills-git-recheck.xml`; no installer code or assertion
+was changed for this styling task.
+
+The final unrestricted full rerun passed **2,753 tests and 15 subtests**, with
+**58 optional/host skips** and no failures or errors (528.04 seconds). Its
+repository-local state/cache and separate result are retained under
+`state/list-final`, `state/list-final-cache` and
+`state/flat-installed-skills-full-final.xml`. This follow-up remains on the
+feature branch; `main` is unchanged.

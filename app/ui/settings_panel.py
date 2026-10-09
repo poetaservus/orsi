@@ -364,6 +364,7 @@ QWidget#skillSettingsPage QPushButton:hover, QWidget#imageSettingsPage QPushButt
 QWidget#skillSettingsPage QPushButton:disabled, QWidget#imageSettingsPage QPushButton:disabled { color: #9da8b8; }
 QFrame#settingsPanel QLineEdit#greetingInput,
 QWidget#skillSettingsPage QLineEdit#skillSource,
+QWidget#skillSettingsPage QListWidget#installedSkills,
 QWidget#skillSettingsPage QPushButton#skillPreview,
 QWidget#skillSettingsPage QPushButton#skillInstall {
     background: #303238; border-color: #4a4d54;
