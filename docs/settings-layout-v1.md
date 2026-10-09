@@ -89,3 +89,18 @@ repository-local state/cache and separate result are retained under
 `state/list-final`, `state/list-final-cache` and
 `state/flat-installed-skills-full-final.xml`. This follow-up remains on the
 feature branch; `main` is unchanged.
+
+### Image Generation controls follow-up
+
+The image model, size, quality and file format dropdowns, their popup lists,
+and the Save image settings and Reset changes buttons now use solid charcoal
+fills matching the other updated controls. Hover, pressed and disabled button
+states also retain solid fills.
+
+Three existing focused settings tests passed in 2.09 seconds. Offscreen renders
+at 1280 × 800 and 760 × 600 were inspected; uniform interior pixel samples
+verified 32 control states across both sizes. Artifacts are under ignored
+`state/flat-image-controls-preview/` and `state/image-flat-focused.xml`.
+The full suite was intentionally skipped at the user's request for this color
+change. Live model/API gates were not run. The change stays on the requested
+feature branch.

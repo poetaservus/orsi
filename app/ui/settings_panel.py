@@ -366,22 +366,30 @@ QFrame#settingsPanel QLineEdit#greetingInput,
 QWidget#skillSettingsPage QLineEdit#skillSource,
 QWidget#skillSettingsPage QListWidget#installedSkills,
 QWidget#skillSettingsPage QPushButton#skillPreview,
-QWidget#skillSettingsPage QPushButton#skillInstall {
+QWidget#skillSettingsPage QPushButton#skillInstall,
+QWidget#imageSettingsPage QComboBox,
+QWidget#imageSettingsPage QPushButton {
     background: #303238; border-color: #4a4d54;
 }
 QFrame#settingsPanel QLineEdit#greetingInput:hover,
 QFrame#settingsPanel QLineEdit#greetingInput:focus,
 QWidget#skillSettingsPage QLineEdit#skillSource:hover,
-QWidget#skillSettingsPage QLineEdit#skillSource:focus { border-color: #70747b; }
+QWidget#skillSettingsPage QLineEdit#skillSource:focus,
+QWidget#imageSettingsPage QComboBox:hover,
+QWidget#imageSettingsPage QComboBox:focus { border-color: #70747b; }
 QWidget#skillSettingsPage QPushButton#skillPreview:hover,
-QWidget#skillSettingsPage QPushButton#skillInstall:hover { background: #3a3c42; }
+QWidget#skillSettingsPage QPushButton#skillInstall:hover,
+QWidget#imageSettingsPage QPushButton:hover { background: #3a3c42; }
 QWidget#skillSettingsPage QPushButton#skillPreview:pressed,
-QWidget#skillSettingsPage QPushButton#skillInstall:pressed { background: #24262c; }
+QWidget#skillSettingsPage QPushButton#skillInstall:pressed,
+QWidget#imageSettingsPage QPushButton:pressed { background: #24262c; }
 QWidget#skillSettingsPage QPushButton#skillPreview:disabled,
-QWidget#skillSettingsPage QPushButton#skillInstall:disabled { background: #303238; }
+QWidget#skillSettingsPage QPushButton#skillInstall:disabled,
+QWidget#imageSettingsPage QPushButton:disabled { background: #303238; }
 QFrame#settingsPanel QComboBox:disabled { color: #9da8b8; }
 QFrame#settingsPanel QComboBox::drop-down { width: 20px; border: none; }
 QFrame#settingsPanel QComboBox QAbstractItemView { background: #343f50; color: #e4e5eb; selection-background-color: #51627a; }
+QWidget#imageSettingsPage QComboBox QAbstractItemView { background: #303238; }
 QFrame#settingsPanel QScrollBar:vertical { width: 5px; background: transparent; }
 QFrame#settingsPanel QScrollBar::handle:vertical { background: #657385; border-radius: 2px; min-height: 24px; }
 QFrame#settingsPanel QScrollBar::add-line:vertical, QFrame#settingsPanel QScrollBar::sub-line:vertical { height: 0; }
