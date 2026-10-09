@@ -52,6 +52,10 @@ class CredentialProvider:
         with self.session.operation(), self._lock:
             return self._policies.get(_connection(connection), CredentialPolicy.ASK)
 
+    def has_saved_api_key(self, connection):
+        with self.session.operation() as vault, self._lock:
+            return _connection(connection) + "/api_key" in vault.list_paths(domain=Domain.CREDENTIAL)
+
     def bind(self, connection, consumer):
         """Consumer supplies cancel_current_request and set_api_key (which drains)."""
         connection = _connection(connection)
@@ -203,6 +207,11 @@ class SessionCredentialProvider(CredentialProvider):
         if CredentialPolicy(policy) != CredentialPolicy.ASK:
             raise ValueError("Saved credentials require an encrypted profile.")
         self.end(_connection(connection))
+
+    def has_saved_api_key(self, connection):
+        _connection(connection)
+        self.session.require_active()
+        return False
 
     def begin(self, connection):
         connection = _connection(connection)

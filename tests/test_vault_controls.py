@@ -856,6 +856,7 @@ def test_save_key_with_ask_policy_keeps_prompt_and_explains_choice(qt, manager, 
         assert page.provider.policy(page.connection) == CredentialPolicy.ASK
         assert manager.vault().read(page.connection + "/api_key", domain=Domain.CREDENTIAL) == SECRET.encode()
         assert "ask" in page.status.text().casefold()
+        monkeypatch.setattr(controller.window, "_saved_cloud_key_choice", lambda: "manual")
         prompted = []
         monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: (prompted.append(True) or "", False))
         assert not controller.window._ensure_cloud_ready()
@@ -911,6 +912,7 @@ def test_import_key_applies_selected_policy_to_renewed_session(qt, manager, tmp_
             assert controller.window.inference.cloud._api_key == SECRET
         else:
             prompted = []
+            monkeypatch.setattr(controller.window, "_saved_cloud_key_choice", lambda: "manual")
             monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: (prompted.append(True) or "", False))
             assert not controller.window._ensure_cloud_ready() and prompted
     finally:
@@ -961,6 +963,154 @@ def test_actual_startup_connection_reuses_ui_saved_key_after_unlock(qt, manager,
         assert controller.window.inference.respond([{"role": "user", "content": "synthetic test"}]) == "synthetic reply"
         assert manager.vault().read(connection + "/api_key", domain=Domain.CREDENTIAL) == SECRET.encode()
         ciphertext(manager.locator.root)
+    finally:
+        controller.shutdown()
+        controller.window.close()
+        qt.removeEventFilter(controller)
+
+
+def test_retired_unlock_window_cannot_reopen_from_activation(qt, manager):
+    from app.ui.main_window import MainWindow
+    from app.ui.profile_application import ProfileApplication
+    manager.lock()
+    controller = ProfileApplication(qt, manager.application_root, build_synthetic, manager=manager)
+    try:
+        controller.start()
+        old = controller.window
+        old.personal_profile_page.password.setText(PASSWORD.decode())
+        old.personal_profile_page._unlock()
+        old.notifications.open_window()  # A delayed activation must not revive it.
+        assert old.notifications.closed and old._closing and not old.isVisible()
+        assert [w for w in qt.topLevelWidgets() if isinstance(w, MainWindow) and w.isVisible()] == [controller.window]
+    finally:
+        controller.shutdown()
+        controller.window.close()
+        qt.removeEventFilter(controller)
+
+
+def test_second_unlock_signal_from_retired_page_cannot_replace_active_profile(qt, manager):
+    from app.ui.profile_application import ProfileApplication
+    manager.lock()
+    controller = ProfileApplication(qt, manager.application_root, build_synthetic, manager=manager)
+    try:
+        controller.start()
+        page = controller.window.personal_profile_page
+        page.password.setText(PASSWORD.decode())
+        QTest.keyClick(page.password, Qt.Key.Key_Return)
+        selected, session = controller.window, manager.session
+        page._unlock()  # An already queued click/Return comes from the old page.
+        assert manager.active and manager.session is session and controller.window is selected
+    finally:
+        controller.shutdown()
+        controller.window.close()
+        qt.removeEventFilter(controller)
+
+
+def test_failed_transition_preserving_session_does_not_build_second_consumer(qt, manager):
+    from app.ui.profile_application import ProfileApplication
+    calls = []
+    def build(**kwargs):
+        calls.append(kwargs)
+        return build_synthetic(**kwargs)
+    controller = ProfileApplication(qt, manager.application_root, build, manager=manager)
+    try:
+        controller.start()
+        old, session = controller.window, manager.session
+        def rejected():
+            raise VaultError("synthetic rejected action before session changes")
+        controller.transition(rejected)
+        assert manager.active and manager.session is session
+        assert controller.window is old and len(calls) == 1
+        assert controller.window.isVisible() and not getattr(controller.window, "_closing", False)
+        assert controller.window.personal_profile_page.status.text()
+    finally:
+        controller.shutdown()
+        controller.window.close()
+        qt.removeEventFilter(controller)
+
+
+@pytest.mark.parametrize("choice", ["saved", "manual", "cancel"])
+def test_real_cloud_unlock_identifies_saved_key_and_requires_explicit_choice(qt, manager, monkeypatch, choice):
+    import app.startup as startup
+    from PySide6.QtWidgets import QInputDialog, QMessageBox
+    from app.ui.main_window import MainWindow
+    from app.ui.profile_application import ProfileApplication
+    from tests.test_openai_phase1 import config
+    root, configuration = manager.application_root, config()
+    connection = "cloud-" + sha256((configuration.base_url + "\0" + configuration.api_key_environment).encode()).hexdigest()
+    provider = CredentialProvider(manager.session)
+    provider.save(connection, SECRET, consent=True)
+    provider.configure(connection, CredentialPolicy.ASK)
+    JsonStore(manager.session.path("state/ui_preferences_v1.json")).save({"greeting_message": MARKER})
+    manager.lock()
+    restarted = ProfileManager(root)
+    monkeypatch.setattr(startup, "PATHS", SimpleNamespace(root=root, state=root / "state", models=root / "models", config=root / "config"))
+    monkeypatch.setattr(startup, "load_model_config", lambda: (_ for _ in ()).throw(RuntimeError("no synthetic local model")))
+    monkeypatch.setattr(startup, "load_cloud_config", lambda: configuration)
+    # Keep the actual Responses backend and its PersonalPath-backed catalogs.
+    # Readiness binds a key only; no chat/image/provider request is made.
+    controller = ProfileApplication(qt, root, lambda **kwargs:
+        startup.build_application(agent_config_override=startup.AgentFeatureConfig(), **kwargs), manager=restarted)
+    manual_prompts = []
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: (manual_prompts.append(True) or "", False))
+    try:
+        controller.start()
+        assert controller.window.startup_greeting.text() == "Unlock your personal profile"
+        assert controller.window._runtime_mode_label() == "Locked"
+        page = controller.window.personal_profile_page
+        page.password.setText(PASSWORD.decode())
+        QTest.keyClick(page.password, Qt.Key.Key_Return)
+        qt.processEvents()
+        page = controller.window.personal_profile_page
+        assert restarted.active and controller.window.greeting_input.text() == MARKER
+        assert "saved encrypted" in page.credential_status.text()
+        assert "Ask mode" in page.credential_status.text()
+        assert page.provider.has_saved_api_key(connection)
+        def choose():
+            dialog = qt.activeModalWidget()
+            assert isinstance(dialog, QMessageBox)
+            assert SECRET not in dialog.text() + dialog.informativeText()
+            if choice == "cancel":
+                dialog.reject()
+            else:
+                text = "Use saved key" if choice == "saved" else "Enter a different key"
+                next(b for b in dialog.buttons() if b.text() == text).click()
+        QTimer.singleShot(20, choose)
+        assert controller.window._ensure_cloud_ready() is (choice == "saved")
+        assert bool(manual_prompts) is (choice == "manual")
+        assert page.provider.policy(connection) == (CredentialPolicy.SAVED if choice == "saved" else CredentialPolicy.ASK)
+        if choice == "saved":
+            assert controller.window.inference.cloud._api_key == SECRET
+            assert "Automatic use enabled" in page.credential_status.text()
+            controller.transition(restarted.lock)
+            controller.transition(lambda: restarted.unlock(PASSWORD))
+            assert controller.window._ensure_cloud_ready()
+            assert not manual_prompts
+        else:
+            assert not controller.window.inference.cloud_has_api_key
+        assert [w for w in qt.topLevelWidgets() if isinstance(w, MainWindow) and w.isVisible()] == [controller.window]
+        ciphertext(restarted.locator.root)
+    finally:
+        controller.shutdown()
+        controller.window.close()
+        qt.removeEventFilter(controller)
+
+
+def test_lock_during_saved_key_decision_cancels_old_dialog_and_key_binding(qt, manager):
+    from app.ui.main_window import MainWindow
+    from app.ui.profile_application import ProfileApplication
+    controller = ProfileApplication(qt, manager.application_root, build_synthetic, manager=manager)
+    try:
+        controller.start()
+        old = controller.window
+        page = old.personal_profile_page
+        page.provider.save(page.connection, SECRET, consent=True)
+        QTimer.singleShot(20, lambda: controller.transition(manager.lock))
+        assert not old._ensure_cloud_ready()
+        assert not manager.active and controller.window is not old
+        assert old._closing and not old.inference.cloud_has_api_key
+        assert controller.window.service is None
+        assert [w for w in qt.topLevelWidgets() if isinstance(w, MainWindow) and w.isVisible()] == [controller.window]
     finally:
         controller.shutdown()
         controller.window.close()

@@ -27,27 +27,35 @@ def main(*, profile_session=None) -> int:
     PATHS.ensure_directories()
     from PySide6.QtWidgets import QApplication
 
-    from app.ui.profile_application import ProfileApplication
+    from app.ui.instance import DesktopInstance
 
     app = QApplication(sys.argv)
+    instance = DesktopInstance(PATHS.root, app)
     try:
-        startup_agent_config = load_agent_feature_config()
-    except (OSError, TypeError, ValueError):
-        startup_agent_config = None
-    # Host access follows the configured setting, without a per-launch popup.
-    full_local_read_acknowledged = bool(
-        startup_agent_config is not None and startup_agent_config.full_local_read_enabled
-    )
-    def compose(**kwargs):
-        return build_application(agent_config_override=startup_agent_config,
-            full_local_read_acknowledged=full_local_read_acknowledged, **kwargs)
-    owner = ProfileApplication(app, PATHS.root, compose, initial_session=profile_session,
-        legacy_logging=lambda: configure_logging(PATHS.state / "orsi.log"))
-    try:
-        owner.start()
-        return app.exec()
+        if not instance.claim():
+            return 0
+        from app.ui.profile_application import ProfileApplication
+        try:
+            startup_agent_config = load_agent_feature_config()
+        except (OSError, TypeError, ValueError):
+            startup_agent_config = None
+        # Host access follows the configured setting, without a per-launch popup.
+        full_local_read_acknowledged = bool(
+            startup_agent_config is not None and startup_agent_config.full_local_read_enabled
+        )
+        def compose(**kwargs):
+            return build_application(agent_config_override=startup_agent_config,
+                full_local_read_acknowledged=full_local_read_acknowledged, **kwargs)
+        owner = ProfileApplication(app, PATHS.root, compose, initial_session=profile_session,
+            legacy_logging=lambda: configure_logging(PATHS.state / "orsi.log"))
+        instance.activation_requested.connect(owner.activate)
+        try:
+            owner.start()
+            return app.exec()
+        finally:
+            owner.shutdown()
     finally:
-        owner.shutdown()
+        instance.close()
 
 
 if __name__ == "__main__":

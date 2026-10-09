@@ -319,6 +319,9 @@ class PersonalProfilePage(QWidget):
             "provider-side revocation is separate."))
         self.provider = getattr(self.window.inference, "credential_provider", None)
         self.connection = getattr(self.window.inference, "connection_id", "cloud-chat")
+        if self.provider is None:
+            self.layout.addWidget(label("The cloud connection is unavailable. Credentials cannot be saved from this screen until it is configured."))
+            return
         self.policy = combo((("Ask whenever cloud is selected", CredentialPolicy.ASK),
                              ("Use explicitly saved encrypted credentials", CredentialPolicy.SAVED)))
         policy = self.provider.policy(self.connection) if self.provider else CredentialPolicy.ASK
@@ -334,6 +337,10 @@ class PersonalProfilePage(QWidget):
         form.addRow("Cloud credentials", self.policy)
         form.addRow("Credential type", self.kind)
         form.addRow("New value", self.key)
+        self.credential_status = label("")
+        self.credential_status.setAccessibleName("Saved cloud API key status")
+        self.layout.addWidget(self.credential_status)
+        self._refresh_credential_status()
         self.layout.addWidget(self.consent)
         self.layout.addWidget(label("Save / replace also applies the selected policy. With Ask whenever cloud is selected, "
             "cloud still asks even if a key is saved. Cloud chat uses an API key; login/access/refresh tokens are stored separately."))
@@ -343,10 +350,18 @@ class PersonalProfilePage(QWidget):
             self._buttons((("Import saved credential file…", self._import_key),))
         self.manager.session.register(clear=lambda: (self.key.clear(), self.consent.setChecked(False)))
 
+    def _refresh_credential_status(self):
+        saved = self.provider.has_saved_api_key(self.connection)
+        policy = self.provider.policy(self.connection)
+        self.credential_status.setText("No API key is saved for this cloud connection in this profile." if not saved else
+            "API key saved encrypted · Automatic use enabled." if policy == CredentialPolicy.SAVED else
+            "API key saved encrypted · Ask mode: choose whether to use it when selecting Cloud.")
+
     def _policy(self):
         if self.provider:
             self._perform(lambda: (self.provider.configure(self.connection, self.policy.currentData()),
-                self.manager.configure(credential_policy=str(self.policy.currentData()))), "Credential policy saved. No new credential was saved.")
+                self.manager.configure(credential_policy=str(self.policy.currentData())),
+                self._refresh_credential_status()), "Credential policy saved. No new credential was saved.")
 
     def _save_key(self):
         value = self.key.text()
@@ -361,6 +376,7 @@ class PersonalProfilePage(QWidget):
                 self.provider.save(self.connection, value, consent=consent, kind=kind)
                 self.provider.configure(self.connection, policy)
                 self.manager.configure(credential_policy=str(policy))
+                self._refresh_credential_status()
             message = ("Credential saved encrypted. Cloud will still ask because the selected policy is Ask whenever cloud is selected."
                 if policy == CredentialPolicy.ASK else "Credential saved encrypted. Cloud will use the saved API key for this connection.")
             if kind != "api_key":
@@ -369,7 +385,8 @@ class PersonalProfilePage(QWidget):
 
     def _delete_key(self):
         if self.provider and confirm(self, "Delete credential", "Delete this saved credential and end its connection session? Older backups may retain it."):
-            self._perform(lambda: self.provider.delete_saved(self.connection, kind=self.kind.currentData()))
+            self._perform(lambda: (self.provider.delete_saved(self.connection, kind=self.kind.currentData()),
+                self._refresh_credential_status()))
 
     def _import_key(self):
         if not self.consent.isChecked() or self.provider is None:

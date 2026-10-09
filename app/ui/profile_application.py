@@ -80,6 +80,7 @@ class ProfileApplication(QObject):
         self._transitioning = True
         self.idle_timer.stop()
         message = ""
+        rebuild = True
         try:
             self._flush_preferences()
             self._release_legacy()
@@ -90,13 +91,48 @@ class ProfileApplication(QObject):
                 message = "Import completed and verified. Originals remain outside the vault; review them before choosing cleanup."
         except Exception as error:
             message = public_error(error)
+            if (self.manager.active and self.window is not None
+                    and getattr(self.window, "_profile_session", None) is self.manager.session
+                    and not getattr(self.window, "_closing", False)):
+                # Admission failed before changing authority. Keep the one
+                # existing consumer instead of binding a second set to it.
+                self.window.personal_profile_page.status.setText(message)
+                rebuild = False
         finally:
-            self._transitioning = False
-        self.render(message, show_profile=True)
+            try:
+                if rebuild:
+                    self.render(message, show_profile=True)
+                else:
+                    self.idle_timer.start()
+            finally:
+                self._transitioning = False
+
+    def _transition_from(self, window, action, *, renew=False):
+        if window is self.window and not getattr(window, "_closing", False):
+            self.transition(action, renew=renew)
+
+    def activate(self):
+        window = self.window
+        if window is None or self._transitioning or getattr(window, "_closing", False):
+            return
+        if window.isMinimized():
+            window.showNormal()
+        window.show()
+        window.raise_()
+        window.activateWindow()
+        page = window.personal_profile_page
+        if not self.manager.active and hasattr(page, "password"):
+            page.password.setFocus()
 
     def render(self, message="", *, show_profile=False):
         old = self.window
         if old is not None:
+            old._closing = True
+            old.setEnabled(False)
+            old._greeting_save_timer.stop()
+            old.notifications.shutdown()
+            old.notification_sound.shutdown()
+            old.settings_panel.hide()
             old.hide()
             self._retired.append(old)
         selected = self.manager.locator is not None or self.manager.bootstrap_error or self._legacy_pending is not None
@@ -124,20 +160,28 @@ class ProfileApplication(QObject):
             preferences = JsonStore(self.manager.application_root / "state/ui_preferences_v1.json")
         self._composition = (service, inference)
         self.window = self.window_factory(service, host["hostname"], error, inference, preferences)
+        if old is not None:
+            self.window.setGeometry(old.geometry())
         self.window._owns_legacy = not selected
         if self.manager.active:
             self.window.bind_profile(self.manager.session)
         self.window._profile_manager = self.manager
         page = PersonalProfilePage(self.manager, self.window, message=message)
         self.window.personal_profile_page = page
-        page.transition_requested.connect(self.transition)
-        page.reload_requested.connect(lambda action: self.transition(action, renew=True))
+        page.transition_requested.connect(lambda action, window=self.window: self._transition_from(window, action))
+        page.reload_requested.connect(lambda action, window=self.window: self._transition_from(window, action, renew=True))
         self.window.settings_panel.add_personal_page(page)
         self.window.skill_settings_page.set_vault_guidance(self.manager.active and self.manager.encrypted,
             self.manager.guidance() if self.manager.active else False)
         if hasattr(page, "guidance"):
-            page.guidance.toggled.connect(lambda enabled: self.window.skill_settings_page.set_vault_guidance(True, enabled))
+            page.guidance.toggled.connect(lambda enabled, window=self.window:
+                window.skill_settings_page.set_vault_guidance(True, enabled) if window is self.window else None)
         if selected and not self.manager.active:
+            self.window._profile_locked = True
+            self.window.startup_greeting.setText("Unlock your personal profile")
+            self.window.input.setPlaceholderText("Unlock your personal profile to chat")
+            self.window.activity.set_activity("Profile locked · Unlock to continue")
+            self.window._update_context_window()
             self.window.composer.setEnabled(False)
             for index, button in enumerate(self.window.settings_panel.navigation[:-1]):
                 button.setEnabled(False)
@@ -145,7 +189,10 @@ class ProfileApplication(QObject):
         # Restore must remain available when password/recovery unlock fails.
         if not self.manager.active:
             page._buttons((("Restore encrypted backup…", lambda: restore_dialog(page, self.manager, page.transition_requested.emit)),))
-        self.window.show()
+        if old is not None and old.isMaximized():
+            self.window.showMaximized()
+        else:
+            self.window.show()
         if selected and not self.manager.active or show_profile:
             self.window.settings_panel.show_section("Personal profile")
             self.window.settings_panel.show()

@@ -1,5 +1,23 @@
 # Git layout and baseline hygiene
 
+## Desktop unlock/window and saved-key follow-up, 9 October 2026
+
+`codex/vault-unlock-lifecycle` starts from local main `39da460`. The user reported
+two windows and another cloud-key prompt after unlock. Six synthetic reproductions
+exposed stale window activation, obsolete unlock actions and duplicate consumer
+composition after rejected actions. The fix retires/guards old views, keeps a
+valid current session after rejection, coordinates repeated desktop launches and
+shows explicit saved-key availability/use choices. See
+[focused verification](vault-unlock-lifecycle-verification.md).
+
+Ninety-five distinct focused checks passed, including 23 on Qt's native Windows
+platform, plus an isolated native desktop entrypoint/two-process probe. The full
+suite was not run. All eight settings/profile-selection hashes/absence and other
+worktree tips are preserved; no actual vault was opened. Recovery evidence is under
+ignored `state/backups/vault-unlock-lifecycle-20261009/`. Preserve prior main at
+`archive/2026-10-09/main-before-vault-unlock-lifecycle`, commit, fast-forward local
+main and remove only the merged feature branch. No remote publication is authorized.
+
 ## Saved cloud credential correction, 9 October 2026
 
 `codex/vault-cloud-credentials` starts from local main `4b9defa`. The reported

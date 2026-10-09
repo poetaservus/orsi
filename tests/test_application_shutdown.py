@@ -117,3 +117,9 @@ def test_entry_point_always_closes_model_even_when_service_cleanup_fails(monkeyp
     if owners[0].window is not None:
         owners[0].window.close()
     owners[0].deleteLater()
+    from app.ui.instance import DesktopInstance
+    retry = DesktopInstance(tmp_path, application)
+    try:
+        assert retry.claim()  # Window/loop/service failures release startup ownership.
+    finally:
+        retry.close()

@@ -28,6 +28,17 @@ composing personal consumers. Composer and private Settings pages are disabled.
 Ordinary unconfigured startup remains quiet. An unencrypted selection opens
 without a password and takes an exclusive ownership lease; its data is plaintext.
 
+The locked shell identifies itself as **Locked** and shows **Unlock your personal
+profile** instead of a default welcome that could resemble old settings. Personal
+greeting/preferences load only after unlock. Creating a new profile does not
+implicitly migrate legacy preferences.
+
+Desktop startup admits one owner per application directory. Repeated launches
+activate its current window and exit before composing another profile/backend.
+Separate application directories remain independent; the engine's profile lease
+still prevents concurrent unlock of one profile. The ignored public desktop lock
+contains only runtime ownership metadata, separately from the profile locator.
+
 ## Everyday controls
 
 The profile page shows location/mode and separate application/runtime, model,
@@ -52,6 +63,12 @@ composer, previews, credential inputs and private dialogs. Failed drains keep
 their hidden owner alive for an explicit retry while vault keys are released.
 Migration reload drains and revokes consumers before rebuilding the same unlocked
 profile, so imported preferences are used without asking for its password again.
+Retiring a window disables it and shuts down its activation/sound callbacks before
+replacement. Its stale actions cannot unlock or replace the new active session.
+A failed action that leaves the current session intact keeps that existing view
+and consumers, displaying the error without composing duplicates.
+Locking rejects pending credential dialogs and prevents their obsolete callbacks
+from binding credentials to a retired view.
 
 ## Credentials
 
@@ -68,8 +85,13 @@ currently selected in the dropdown. Choose **Use explicitly saved encrypted
 credentials** to reuse a saved API key without another key prompt. If a key is
 already saved, select that policy and press **Apply credential policy**; no
 re-entry is needed. **Ask whenever cloud is selected** deliberately continues
-asking even when a credential has been saved. Save feedback identifies this
-choice. Saving/replacing an API key clears a previously missing or stale cached
+asking even when a credential has been saved. Settings explicitly shows whether
+an API key is saved for this connection and whether automatic use is enabled.
+In Ask mode with a saved key, the Cloud decision offers **Use saved key**, **Enter
+a different key**, or Cancel. Choosing Use saved key explicitly enables the saved
+policy for that connection; other choices leave the policy unchanged. No key
+value is displayed. Save feedback also identifies this choice. Saving/replacing
+an API key clears a previously missing or stale cached
 key under the saved policy, so the next cloud attempt loads the saved value.
 Cloud chat requires an API key; the other token types remain separate.
 

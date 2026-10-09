@@ -32,6 +32,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
+    QDialog,
     QFrame,
     QFileDialog,
     QGraphicsBlurEffect,
@@ -43,6 +44,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QMainWindow,
+    QMessageBox,
     QPushButton,
     QStackedLayout,
     QTextEdit,
@@ -641,6 +643,8 @@ class MainWindow(QMainWindow):
         for dialog in (self._attachment_picker, self._image_viewer, self._approval_panel):
             if dialog is not None:
                 dialog.reject()
+        for dialog in self.findChildren(QDialog):
+            dialog.reject()
 
     def _drain_profile_view(self):
         for thread in (self.thread, self.attachment_tray.thread, self.skill_settings_page.thread):
@@ -1414,7 +1418,8 @@ class MainWindow(QMainWindow):
         requested = self.model_selector.itemData(index)
         previous = self.inference.mode
         if requested == "cloud" and not self._ensure_cloud_ready():
-            self._sync_inference_selector()
+            if not getattr(self, "_closing", False):
+                self._sync_inference_selector()
             return
         try:
             self.inference.set_mode(requested)
@@ -1563,11 +1568,34 @@ class MainWindow(QMainWindow):
         self.chat.add_message("Agent", f"Could not switch models: {reason}\nThe previous selection was kept.", True)
 
     def _ensure_cloud_ready(self) -> bool:
-        if self.inference is None:
+        if self.inference is None or getattr(self, "_closing", False):
             return False
-        prepare = getattr(self.inference, "prepare_cloud_credentials", None)
-        if callable(prepare):
-            prepare()
+        try:
+            prepare = getattr(self.inference, "prepare_cloud_credentials", None)
+            if callable(prepare):
+                prepare()
+            provider = getattr(self.inference, "credential_provider", None)
+            if not self.inference.cloud_has_api_key and provider is not None:
+                from app.vault.credentials import CredentialPolicy
+                connection = self.inference.connection_id
+                if provider.policy(connection) == CredentialPolicy.ASK and provider.has_saved_api_key(connection):
+                    choice = self._saved_cloud_key_choice()
+                    if choice == "cancel":
+                        return False
+                    if choice == "saved":
+                        provider.configure(connection, CredentialPolicy.SAVED)
+                        manager = getattr(self, "_profile_manager", None)
+                        if manager is not None:
+                            manager.configure(credential_policy=str(CredentialPolicy.SAVED))
+                        page = getattr(self, "personal_profile_page", None)
+                        if page is not None:
+                            page.policy.setCurrentIndex(1)
+                            page._refresh_credential_status()
+                        prepare()
+        except Exception as error:
+            from app.vault.profiles import public_error
+            self.chat.add_message("Agent", public_error(error), True)
+            return False
         if not self.inference.cloud_has_api_key:
             key, accepted = QInputDialog.getText(
                 self,
@@ -1575,10 +1603,30 @@ class MainWindow(QMainWindow):
                 "Enter the API key for this connection session. Saving it requires a separate choice in Personal profile settings:",
                 QLineEdit.EchoMode.Password,
             )
-            if not accepted or not key.strip():
+            if not accepted or not key.strip() or getattr(self, "_closing", False):
                 return False
-            self.inference.set_cloud_api_key(key)
+            try:
+                self.inference.set_cloud_api_key(key)
+            except Exception as error:
+                if not getattr(self, "_closing", False):
+                    from app.vault.profiles import public_error
+                    self.chat.add_message("Agent", public_error(error), True)
+                return False
         return True
+
+    def _saved_cloud_key_choice(self):
+        dialog = QMessageBox(self)
+        dialog.setWindowTitle("Saved cloud API key")
+        dialog.setText("An API key is saved encrypted in this profile. Ask mode is currently selected.")
+        dialog.setInformativeText("Use the saved key automatically for this cloud connection, or enter a different key for this session.")
+        saved = dialog.addButton("Use saved key", QMessageBox.ButtonRole.AcceptRole)
+        manual = dialog.addButton("Enter a different key", QMessageBox.ButtonRole.ActionRole)
+        dialog.addButton(QMessageBox.StandardButton.Cancel)
+        dialog.setDefaultButton(saved)
+        dialog.exec()
+        if getattr(self, "_closing", False):
+            return "cancel"
+        return "saved" if dialog.clickedButton() is saved else "manual" if dialog.clickedButton() is manual else "cancel"
 
     def _agent_enabled(self) -> bool:
         return bool(getattr(self.service, "agent_enabled", False))
@@ -1671,6 +1719,8 @@ class MainWindow(QMainWindow):
             self.model_selector.blockSignals(False)
 
     def _runtime_mode_label(self) -> str:
+        if getattr(self, "_profile_locked", False):
+            return "Locked"
         if self.inference is None:
             return "Local"
         return "Cloud" if self.inference.mode == "cloud" else "Local"
