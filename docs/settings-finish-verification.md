@@ -76,3 +76,20 @@ maps, content-free checks and a copy of the user's modified background are under
 No live provider/model call, actual user-vault access or running-user-process
 termination was needed. Physical SSD, minimum-machine performance and independent
 security qualification remain separate deferred gates.
+
+## Smaller splash and faster tabs, 10 October 2026
+
+Branch `codex/splash-motion-tuning`, from main `e1e7da0`: the splash logo is capped
+at 64 pixels wide instead of 280. The centered layout and slow breathing cycle
+remain. Both outer Settings and inner profile transitions now take 100 ms rather
+than 200 ms. Existing intermediate-frame test waits were shortened accordingly.
+
+Three existing focused native checks passed in `state/splash-motion-focused.xml`:
+tab interruption/hide/resize cleanup and continuous splash animation/exit using
+both console and windowless launcher runtimes. No full suite or live gates.
+A native 1280 × 800 capture was visually inspected; its peak logo measured
+64 × 56 pixels, centered within two pixels. Preview is ignored at
+`state/splash-motion-preview.png`. Syntax and whitespace checks passed. All ten
+settings/artwork fingerprints and other worktree tips are unchanged. Recovery
+evidence is under `state/backups/splash-motion-tuning-20261010/`; prior main is
+retained at `archive/2026-10-10/main-before-splash-motion-tuning`.

@@ -54,7 +54,8 @@ initialization fails). Only the loading picture stays on top. The image lives wi
 assets and follows portable copies; no Desktop path is used at runtime.
 
 The user's replacement background is preserved. Bundled `bsw_o.png` is centered
-over it, with a 3.2-second smooth scale/opacity pulse. A presentation-only helper
+over it at up to 64 pixels wide, with a 3.2-second smooth scale/opacity pulse.
+A presentation-only helper
 keeps that pulse running during synchronous profile composition. Its private
 entrypoint receives only window geometry and loads bundled public assets; it
 does not claim desktop ownership, open a vault or compose services. Fade-out
@@ -91,7 +92,7 @@ Same-profile import rebuilds retain the selected tab. Different profiles start
 on Storage. Unencrypted profiles explain unavailable encrypted-only operations.
 The separate locked-profile login and loading transition retain their behavior.
 
-All outer Settings sections and inner profile tabs use a 200 ms eased reveal,
+All outer Settings sections and inner profile tabs use a 100 ms eased reveal,
 without resizing or moving the panel. Navigation and actions remain immediate.
 Transition snapshots are discarded on completion, hiding, resizing and profile
 lock. Dropdowns and ordinary action buttons share one control palette, including

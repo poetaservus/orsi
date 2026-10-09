@@ -1,5 +1,17 @@
 # Git layout and baseline hygiene
 
+## Smaller splash and faster tabs, 10 October 2026
+
+`codex/splash-motion-tuning` starts from local main `e1e7da0`. The splash logo now
+has a 64-pixel cap, retaining its center and slow pulse. Both levels of Settings
+tabs transition in 100 ms. Three focused native cases and a measured/visually
+inspected splash capture passed; no full suite or live gates. See the
+[verification follow-up](settings-finish-verification.md#smaller-splash-and-faster-tabs-10-october-2026).
+Ten settings/artwork fingerprints and other worktree tips are preserved under
+ignored `state/backups/splash-motion-tuning-20261010/`. Preserve prior main at
+`archive/2026-10-10/main-before-splash-motion-tuning`, commit, fast-forward local
+main and remove only the merged local branch. No remote publication.
+
 ## Settings consistency, transitions and loading logo, 10 October 2026
 
 `codex/settings-finish` starts from local main `73304f5`, preserving the user's

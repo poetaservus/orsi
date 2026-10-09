@@ -29,7 +29,7 @@ class SettingsPageTransition(QObject):
         self.cover = _PageCover(stack)
         self.cover.hide()
         self.animation = QVariantAnimation(self)
-        self.animation.setDuration(200)
+        self.animation.setDuration(100)
         self.animation.setStartValue(1.0)
         self.animation.setEndValue(0.0)
         self.animation.setEasingCurve(QEasingCurve.Type.InOutCubic)

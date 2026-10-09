@@ -99,7 +99,7 @@ class ProfileLoadingWindow(QWidget):
             painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
             painter.drawPixmap(target, self._picture, QRectF(self._picture.rect()))
         if not self._logo.isNull():
-            side = min(280.0, self.width() * .24, self.height() * .36)
+            side = min(64.0, self.width() * .24, self.height() * .36)
             scale = side / max(self._logo.width(), self._logo.height()) * (.94 + .06 * self._breath)
             width, height = self._logo.width() * scale, self._logo.height() * scale
             painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
