@@ -5,6 +5,9 @@ The bounded `codex/composer-motion-polish` change starts from local main
 local-image lag and composer collapse in request 2 are investigated only;
 admission, inference, the composer-height path and model settings are unchanged.
 
+The attachment picker described below was replaced by the native Windows picker
+on 9 October 2026; see the follow-up at the end of this document.
+
 ## Presentation
 
 Attached/pasted images have 56 px preview cards with 48 px thumbnails and a
@@ -98,3 +101,42 @@ After verification, the bounded change is committed and fast-forwarded into
 local main, and only its merged local feature branch is removed. Other active
 worktrees, remote refs and user runtime settings are preserved. Restart O.R.S.I.
 to load the presentation changes.
+
+## Native attachment picker follow-up, 9 October 2026
+
+The composer + control now opens the standard Windows file picker. A plain
+`QFileDialog` replaces the styled subclass, forced widget-dialog option, picker
+fade and picker-specific scrolling. Qt's native eligibility checks the dialog's
+meta-object class, so removing only `DontUseNativeDialog` from the subclass would
+not be sufficient. See the [native-dialog contract](https://doc.qt.io/qt-6/qfiledialog.html#Option-enum)
+and [Qt 6.11 implementation](https://github.com/qt/qtbase/blob/6.11/src/widgets/dialogs/qfiledialog.cpp).
+
+Supported file filters, local single-file/cloud multiple-file modes, asynchronous
+completion, repeated-open ownership, cancellation, parent shutdown and attachment
+preparation retain their existing paths. The image viewer keeps its opening fade;
+other file dialogs and user settings are unchanged.
+
+This bounded follow-up remains on `codex/tool-approval-preferences`, continuing
+from `725a814`; main and remote refs are unchanged under the user's request to
+keep the work on a feature branch. Existing picker checks now require a plain
+dialog with native mode eligible, while retaining their file-selection and draft
+assertions. Focused attachment, motion and shutdown checks passed 43 tests in
+16.01 seconds using native filesystem access and repository-local test storage.
+
+An isolated Windows-platform smoke exercised the real composer and production
+picker factory without application startup or model requests. Both local and
+cloud modes displayed a Windows `#32770` dialog with the modern `DirectUIHWND`
+shell browser. A preselected local file accepted through Qt produced an exact
+owned attachment copy; cloud cancellation preserved the draft, repeated opens
+reused the picker, and parent closure dismissed it. Screenshots were visually
+inspected after native painting settled. Script and images remain ignored under
+`state/native-picker-smoke.py` and `state/native-picker-smoke/`. This is native UI
+and attachment-lifecycle verification, not live model qualification.
+
+Full native regression passed 2,753 tests and 15 subtests, with 58 existing
+optional/host skips and no failures/errors, in 532.80 seconds. It used
+`--basetemp=state/native-picker-full` and a repository-local cache; JUnit reports
+are `state/native-picker-focused.xml` and `state/native-picker-full.xml`.
+Changed Python sources parsed successfully and Git whitespace checks passed.
+Live model/API gates were not rerun for this picker-only change. Restart ORSI
+to load the native picker.

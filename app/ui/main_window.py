@@ -66,7 +66,7 @@ from app.ui.settings_motion import SettingsIconButton
 from app.ui.window_frame import CAPTION_HEIGHT, DragStrip, WindowControls, WindowsFrame
 from app.ui.attachments import AttachmentTray
 from app.ui.image_viewer import ImageViewer
-from app.ui.motion import AttachmentFileDialog
+from app.ui.motion import create_attachment_file_dialog
 from app.ui.composer import (
     ComposerFrame, MessageInput, COMPOSER_STYLE, composer_tools, configure_input, configure_send,
     COMPOSER_WIDTH as _COMPOSER_WIDTH, COMPOSER_HEIGHT as _COMPOSER_HEIGHT,
@@ -904,8 +904,8 @@ class MainWindow(QMainWindow):
         if self._attachment_picker is not None:
             self._attachment_picker.raise_()
             return
-        dialog = AttachmentFileDialog(self, cloud=getattr(self.inference, "mode", "local") == "cloud",
-                                      name_filter=SUPPORTED_FILE_FILTER)
+        dialog = create_attachment_file_dialog(self, cloud=getattr(self.inference, "mode", "local") == "cloud",
+                                               name_filter=SUPPORTED_FILE_FILTER)
         self._attachment_picker = dialog
 
         def finished(result):

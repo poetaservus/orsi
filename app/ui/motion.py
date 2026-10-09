@@ -28,40 +28,16 @@ class OpeningFade(QObject):
         return False
 
 
-class AttachmentFileDialog(QFileDialog):
-    def __init__(self, parent, *, cloud, name_filter):
-        super().__init__(parent)
-        # Native OS dialogs do not expose Qt's window animation properties.
-        self.setOption(QFileDialog.Option.DontUseNativeDialog, True)
-        self.setWindowTitle("Attach images or files" if cloud else "Attach an image or file")
-        self.setNameFilter(name_filter)
-        self.setAcceptMode(QFileDialog.AcceptMode.AcceptOpen)
-        self.setFileMode(QFileDialog.FileMode.ExistingFiles if cloud else QFileDialog.FileMode.ExistingFile)
-        self.setWindowModality(Qt.WindowModality.WindowModal)
-        self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
-        self.setStyleSheet("""
-            QFileDialog { background: #242832; color: #dedee0; }
-            QLabel { color: #dedee0; }
-            QTreeView, QListView, QLineEdit, QComboBox {
-                background: #191d25; color: #dedee0; border: 1px solid #444b59;
-                selection-background-color: #48566d; selection-color: white;
-            }
-            QHeaderView { background: #303642; }
-            QHeaderView::section { background: #303642; color: #dedee0; border: none; padding: 5px; }
-            QPushButton { background: #363d4b; color: #dedee0; border: 1px solid #505867;
-                          border-radius: 6px; padding: 5px 14px; }
-            QPushButton:hover { background: #454e60; }
-            QPushButton:disabled { color: #818795; }
-            QToolButton { background: transparent; color: #dedee0; border: none; padding: 4px; }
-            QScrollBar:vertical { background: #242832; width: 12px; }
-            QScrollBar:horizontal { background: #242832; height: 12px; }
-            QScrollBar::handle { background: #626c7e; border-radius: 4px; min-width: 24px; min-height: 24px; }
-            QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
-            QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
-        """)
-        self.opening = OpeningFade(self)
-        for view in self.findChildren(QAbstractItemView):
-            install_smooth_scroll(view)
+def create_attachment_file_dialog(parent, *, cloud, name_filter):
+    # Keep a plain QFileDialog: Qt subclasses can disable the native OS picker.
+    dialog = QFileDialog(parent)
+    dialog.setWindowTitle("Attach images or files" if cloud else "Attach an image or file")
+    dialog.setNameFilter(name_filter)
+    dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptOpen)
+    dialog.setFileMode(QFileDialog.FileMode.ExistingFiles if cloud else QFileDialog.FileMode.ExistingFile)
+    dialog.setWindowModality(Qt.WindowModality.WindowModal)
+    dialog.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
+    return dialog
 
 
 class SmoothScroll(QObject):

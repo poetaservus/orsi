@@ -80,13 +80,12 @@ def test_picker_cancel_and_repeated_open_leave_existing_draft_untouched(windows,
     assert window.input.toPlainText() == "Keep this draft" and window.thread is None
 
 
-def test_closing_main_window_dismisses_picker_and_stops_opening_animation(windows):
+def test_closing_main_window_dismisses_attachment_picker(windows):
     window = windows()
     window._pick_attachments()
     dialog = window._attachment_picker
     window.close()
     assert window._attachment_picker is None and not dialog.isVisible()
-    assert dialog.opening.animation.state() == dialog.opening.animation.State.Stopped
 
 
 def test_attached_and_pasted_images_hide_labels_but_keep_documents_and_removal(windows, tmp_path):

@@ -89,7 +89,8 @@ def test_plus_opens_single_file_picker_in_local_and_prepares_draft(windows, tmp_
     window.add_placeholder.click()
     dialog = window._attachment_picker
     assert dialog.fileMode() == QFileDialog.FileMode.ExistingFile
-    assert dialog.testOption(QFileDialog.Option.DontUseNativeDialog)
+    assert type(dialog) is QFileDialog
+    assert not dialog.testOption(QFileDialog.Option.DontUseNativeDialog)
     dialog.selectFile(str(path))
     dialog.accept()
     wait_for(lambda: not window.attachment_tray.is_processing)
@@ -106,6 +107,8 @@ def test_cloud_picker_accepts_multiple_in_order_without_small_cap(windows, tmp_p
     window.add_placeholder.click()
     dialog = window._attachment_picker
     assert dialog.fileMode() == QFileDialog.FileMode.ExistingFiles
+    assert type(dialog) is QFileDialog
+    assert not dialog.testOption(QFileDialog.Option.DontUseNativeDialog)
     monkeypatch.setattr(dialog, "selectedFiles", lambda: [str(p) for p in paths])
     dialog.done(QFileDialog.DialogCode.Accepted)
     wait_for(lambda: not window.attachment_tray.is_processing)
