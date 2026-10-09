@@ -1,5 +1,31 @@
 # Git layout and baseline hygiene
 
+## Scoped coding guidance, 9 October 2026
+
+The separately bounded `codex/scoped-coding-guidance` change resumes on verified
+main `32dc9a9` after the independent file-task reporting prerequisite. Its original
+guidance tip `9e0b902` is retained at `archive/2026-10-09/guidance-before-report-fix`;
+rebasing preserved its implementation and acceptance prompts. The only product
+change is prompt guidance for finite requested changes, grounded edits, explicit
+copies and honest verification. See [its contract and qualification](scoped-coding-guidance.md).
+
+Final focused native checks passed 158 tests, with one host symbolic-link skip.
+All four frozen default-cloud two-file fix/copy cases passed with and without the
+unchanged Python skill: two approved edits per existing-file task, four mutations
+per copy task, exact saved bytes, originals preserved for copies, and honest reports
+retained. No coding images, failed tool calls or semantic corrections occurred;
+all transports were released. ORSI did not execute Python or a GUI. Final full
+native regression passed 2,638 tests and 15 subtests, with 58 optional/host skips,
+no failures/errors, in 341.98 seconds. Opt-in live gates remain separate.
+
+Pre-integration refs/worktree maps, a verified complete-history bundle and content-free
+preservation hashes are saved in ignored `state/backups/scoped-coding-guidance-final-20261009/`.
+Preserve prior main at `archive/2026-10-09/main-before-scoped-coding-guidance`, commit
+after verification, fast-forward main and the requested active checkout without
+switching its settings branch, and remove only the merged guidance branch. User
+settings edits, other worktrees, remote refs and the archived earlier tip remain
+intact. Phases 4–6 remain separate.
+
 ## File-task reports prerequisite, 9 October 2026
 
 `codex/preserve-file-task-reports` starts independently from main `8462cdb` after
