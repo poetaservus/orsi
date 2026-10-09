@@ -9,7 +9,7 @@ description: >
   unrelated frontend design.
 license: CC-BY-SA-4.0
 metadata:
-  version: "1.0.0"
+  version: "1.0.1"
   author: O.R.S.I.
 ---
 
@@ -30,6 +30,25 @@ requested work; code that merely resembles a solution is not enough.
 
 Runtime permissions and core instructions remain binding. This package supplies
 guidance, not executable tools or permission to install, publish, or mutate data.
+
+## Verification on this host
+
+Use the capabilities actually advertised for the turn. O.R.S.I. currently provides
+file tools and an allowlisted Blender launcher; it has no Python interpreter or
+arbitrary shell execution tool. A Python installation on the computer does not
+make it available to this agent. Do not use the Blender launcher as a workaround
+for Python execution, imports, tests, or GUI checks.
+
+With file tools, inspect the relevant current source and verify the saved text.
+These checks establish source/byte results, not execution or runtime correctness.
+Complete the finite requested changes within those limits; report Python, imports,
+tests and GUI checks as unrun when they were unavailable. Do not make speculative
+follow-up edits to imitate test results. An unavailable check alone is not evidence
+of a defect. If an actual check fails, use its returned evidence for a bounded fix.
+
+On a host with an advertised execution capability, run the relevant checks within
+its permissions and report the observed results. Reference examples and test
+commands describe verification to perform when supported; they do not add tools.
 
 ## Establish the working contract
 
@@ -100,10 +119,11 @@ For a bug, establish the failing behavior and verify the cause before changing
 code. Add the smallest meaningful regression test when warranted. For new
 behavior, check the acceptance criteria and important failure boundaries.
 
-Run the relevant checks, then the repository's required broader checks. Batch
-related fixes and confirm them; do not churn tools, tests or code after success
-without a new reason. Never weaken acceptance criteria to obtain a pass.
-Distinguish verified results from static inspection and skipped live gates.
+Perform the relevant checks available on the host, then any supported required
+broader checks. Batch related fixes and confirm them; do not churn tools, tests
+or code after success without a new reason. Never weaken acceptance criteria to
+obtain a pass. Report source inspection and saved-byte verification separately
+from executed checks, unavailable checks and skipped live gates.
 
 Deliver complete code/artifacts and the necessary run instructions. Report the
 outcome, material design decisions, checks actually performed and remaining

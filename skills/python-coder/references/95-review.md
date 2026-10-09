@@ -46,11 +46,15 @@ uncertain APIs. Do not ship examples that assume packages or methods exist.
 
 ## 5. Evidence
 
-Use the repository's required tests, lint, typing, build and native gates as
-applicable. Behavioral tests should cover the relevant defect, not restate the
-implementation. Confirm that replacing the work with a no-op would fail the
-acceptance check. Distinguish deterministic unit/integration results from live
-provider calls, external services, native UI, media and untested platforms.
+Use the repository's required tests, lint, typing, build and native gates when
+supported by the host's actual tools. In O.R.S.I., source inspection and saved-byte
+checks cannot establish Python, import, test or GUI execution; explicitly report
+those unavailable gates as unrun. Do not infer a defect or make another speculative
+edit merely because execution is unavailable. Behavioral tests should cover the
+relevant defect, not restate the implementation. Confirm that replacing the work
+with a no-op would fail the acceptance check. Distinguish deterministic unit/
+integration results from live provider calls, external services, native UI, media
+and untested platforms.
 
 For performance requests, compare representative before/after measurements with
 the same result contract. Do not claim speed from clever-looking code.

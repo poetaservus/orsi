@@ -69,9 +69,12 @@ required configuration. Avoid a script that depends on imaginary sibling files,
 undocumented assets or a developer-only absolute path. If the user requests one
 file, honor it when feasible; otherwise choose structure based on the work.
 
-Run a startup/smoke check in the target environment, then the critical operation
-and relevant failure/shutdown path. Distinguish synthetic/offscreen UI checks
-from native interaction, media decoding and packaged application verification.
+When supported execution tools are available, run a startup/smoke check in the
+target environment, then the critical operation and relevant failure/shutdown path.
+O.R.S.I.'s file tools cannot perform Python startup or GUI interaction; inspect the
+source and saved files, disclose those unrun checks, and provide useful run
+instructions without claiming they were executed. Distinguish synthetic/offscreen
+UI checks from native interaction, media decoding and packaged application verification.
 
 Official reference: [Qt worker-object/thread behavior](https://doc.qt.io/qtforpython-6/PySide6/QtCore/QThread.html).
 For worker ownership read [50](50-concurrency.md); for distribution read

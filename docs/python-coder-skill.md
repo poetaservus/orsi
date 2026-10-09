@@ -3,6 +3,17 @@
 Created 7 October 2026 on `codex/python-coder-skill`, from verified local main
 `5c1e613`. Authored package: [`skills/python-coder`](../skills/python-coder/SKILL.md).
 
+## Host guidance update, 9 October 2026
+
+Version 1.0.1 adapts verification guidance to ORSI's actual file tools and allowlisted
+Blender launcher. Python, shell, import, test and GUI execution remain unavailable;
+source/byte checks and unrun checks must be reported distinctly. Other hosts can run
+permitted checks when they advertise an execution capability. The original installed
+1.0.0 package and identity were preserved before replacement. Reference routes,
+licenses, core priority and message/session selection behavior are unchanged.
+See [the Phase 5 qualification and preservation record](python-coder-host-guidance.md).
+The original creation record below describes version 1.0.0.
+
 ## Result and source selection
 
 `python-coder` is a portable instruction-only Python development skill with one

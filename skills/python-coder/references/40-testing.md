@@ -79,10 +79,13 @@ def test_failed_replace_preserves_data(tmp_path, monkeypatch):
 
 ## Verification rhythm
 
-Run focused checks after the change, then the repository's required suite/lint/
-typing/build gates. Diagnose failures: environment restrictions, unchanged flaky
-tests and genuine regressions are different facts. Do not adjust timeouts or
-weaken assertions to obtain green output without establishing the cause.
+Run focused checks after the change, then required suite/lint/typing/build gates
+when the host exposes suitable execution tools. In O.R.S.I.'s file-tool environment,
+inspect the relevant source and saved bytes; report execution gates as unrun. Test
+code written or read is not a test executed. Do not keep editing to compensate for
+unavailable execution. Diagnose observed failures: environment restrictions,
+unchanged flaky tests and genuine regressions are different facts. Do not adjust
+timeouts or weaken assertions to obtain green output without establishing the cause.
 
 Record the commands or gates actually used and their outcomes. A skipped live
 test, untested platform or unbuilt artifact cannot be reported as verified.

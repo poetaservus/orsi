@@ -1,5 +1,30 @@
 # Git layout and baseline hygiene
 
+## Python Coder host guidance, 9 October 2026
+
+`codex/python-coder-host-guidance` starts from verified main `9c5a061`. Phase 5 changes
+only the Python skill's verification guidance and version (1.0.0 to 1.0.1). It states
+ORSI's actual file-tool boundary, truthful unrun checks and bounded follow-up work.
+Core prompts, routing, native capabilities/permissions, model/context policies,
+progressive references and skill persistence are unchanged. See
+[the qualification and preservation record](python-coder-host-guidance.md).
+
+The entire installed prior package and identity, settings/configuration hashes,
+refs/worktree maps and verified Git bundle are retained under ignored
+`state/backups/python-coder-host-guidance-20261009/`. Focused native checks passed
+262 tests with no skips/failures/errors. All four unchanged cloud cases passed before
+and after the update with exact saved bytes, finite approved mutations, honest unrun
+checks and released transports. Picker/message/session scopes were tested separately.
+Final full native checks passed 2,672 tests and 15 subtests, with 58 optional/host
+skips, no failures/errors, in 378.60 seconds. The installed updated package matches
+the qualified source byte-for-byte; all twelve references round-trip and all twelve
+other installed skill files are unchanged. Python/GUI execution through ORSI and real
+local-model gates remain unrun. Preserve prior main at
+`archive/2026-10-09/main-before-python-coder-host-guidance`, commit after verification,
+fast-forward local main and the active checkout without changing its settings branch,
+and remove only the merged feature branch. Preserve other installed skills,
+worktrees, historical tips, remote refs and user settings edits. Phase 6 remains separate.
+
 ## Bounded edit recovery, 9 October 2026
 
 `codex/bounded-edit-recovery` starts separately from verified main `3650e22`.
