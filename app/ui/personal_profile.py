@@ -12,6 +12,7 @@ from app.ui.inputs import CompactNumberInput, ScrollSafeComboBox
 from app.ui.profile_layout import AdaptiveRow, CredentialPolicyChoice, FeedbackLabel, ProfileCard, ProfileTabBar
 from app.ui.settings_motion import SettingsPageTransition
 from app.ui.settings_style import settings_control_style
+from app.portable.identity import DEPLOYMENT_DISABLED, is_deployed_node
 from app.vault.credentials import CredentialPolicy
 from app.vault.profiles import public_error
 from app.vault.types import BackupPolicy, VaultError
@@ -291,7 +292,8 @@ class PersonalProfilePage(QWidget):
             self.layout.addLayout(choices)
         self._buttons((("Use current unencrypted storage", self._legacy),))
         if not login:
-            self._buttons((("Deploy portable node…", self._deploy_node),))
+            if not is_deployed_node(self.manager.application_root):
+                self._buttons((("Deploy portable node…", self._deploy_node),))
             self.layout.addStretch()
         self.refresh_summary()
         if message:
@@ -369,8 +371,9 @@ class PersonalProfilePage(QWidget):
             self._quota_controls()
         self._card("Automatic lock")
         self._idle_controls()
-        self._card("Portable nodes", "Create a fresh node or include a complete copy of this profile on another drive.")
-        self._buttons((("Deploy portable node…", self._deploy_node),))
+        if not is_deployed_node(self.manager.application_root):
+            self._card("Portable nodes", "Create a fresh node or include a complete copy of this profile on another drive.")
+            self._buttons((("Deploy portable node…", self._deploy_node),))
         self._section("Cloud access")
         self._credential_controls()
         self._section("Backups")
@@ -536,6 +539,9 @@ class PersonalProfilePage(QWidget):
             self.transition_requested.emit(self.manager.use_legacy)
 
     def _deploy_node(self):
+        if is_deployed_node(self.manager.application_root):
+            self.status.setText(DEPLOYMENT_DISABLED)
+            return
         from app.ui.portable_deployment import PortableDeploymentDialog
         dialog = PortableDeploymentDialog(self.manager, self.window, self)
         dialog.exec()

@@ -75,7 +75,11 @@ def test_open_dialog_and_deploy_current_profile_flushes_pending_preferences(qt, 
         copied.lock()
 
 
-def test_fresh_choice_does_not_export_profile(qt, controller):
+def test_fresh_choice_does_not_export_profile(qt, controller, monkeypatch):
+    import app.portable.deployment as deployment
+    from app.portable.volumes import DriveLabelResult
+    monkeypatch.setattr(deployment, "finish_drive_label", lambda *args:
+        DriveLabelResult("ORSI 001", "Drive named “ORSI 001”. This file system requires a shorter name."))
     dialog = ui.PortableDeploymentDialog(controller.manager, controller.window)
     target = controller.manager.application_root.parent / "fresh from controls"
     try:
@@ -87,8 +91,33 @@ def test_fresh_choice_does_not_export_profile(qt, controller):
         wait_until(qt, lambda: dialog.worker is None)
         assert dialog.result is not None and not dialog.result.includes_profile
         assert not (target / "profiles").exists() and controller.manager.active
+        assert "O.R.S.I Portable Node Nr. 001" in dialog.status.text() and "ORSI 001" in dialog.status.text()
     finally:
         dialog.reject()
+
+
+@pytest.mark.parametrize("profile_state", ["open", "legacy", "locked"])
+def test_portable_settings_hide_deployment_and_direct_dialog_cannot_start(qt, controller, profile_state):
+    from app.ui.personal_profile import PersonalProfilePage
+    (controller.manager.application_root / "NODE_MANIFEST.json").write_text("{}")
+    if profile_state == "legacy":
+        controller.manager.use_legacy()
+    elif profile_state == "locked":
+        controller.manager.lock()
+    page = PersonalProfilePage(controller.manager, controller.window)
+    dialog = ui.PortableDeploymentDialog(controller.manager, controller.window)
+    target = controller.manager.application_root.parent / "forbidden through controls"
+    try:
+        assert not any(control.text() == "Deploy portable node…" for control in page.findChildren(QPushButton))
+        page._deploy_node()
+        assert "cannot deploy" in page.status.text()
+        assert not dialog.start_button.isEnabled() and "cannot deploy" in dialog.status.text()
+        dialog.location.setText(str(target))
+        dialog._start()
+        assert dialog.worker is None and not target.exists()
+    finally:
+        dialog.reject()
+        page.deleteLater()
 
 
 def test_busy_operation_defers_deployment(qt, controller):

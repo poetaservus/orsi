@@ -5,8 +5,11 @@ import json
 import os
 from pathlib import Path
 import shutil
+from threading import Lock
 from uuid import uuid4
 
+from app.portable.identity import DEPLOYMENT_DISABLED, NODE_MANIFEST, is_deployed_node, node_name
+from app.portable.volumes import finish_drive_label, prepare_drive_label
 from app.runtime.cancellation import CancellationToken
 from app.state.storage import JsonStore
 from app.vault import files
@@ -19,7 +22,8 @@ PUBLIC_FILES = ("ORSI.cmd", "THIRD_PARTY_NOTICES.md", "pyproject.toml", "require
 APP_SUFFIXES = {".py", ".png", ".svg", ".ogg", ".ttf", ".txt"}
 PYTHON_PATHS = ["python312.zip", ".", "Lib\\site-packages", "..\\..", "import site"]
 PROFILE_FOLDER = "profiles/current"
-MANIFEST = "NODE_MANIFEST.json"
+MANIFEST = NODE_MANIFEST
+_NUMBER_LOCK = Lock()
 
 
 class DeploymentError(VaultError):
@@ -34,6 +38,27 @@ class DeploymentResult:
     files_verified: int
     bytes_copied: int
     copy_registered: bool = True
+    node_number: int = 1
+    drive_label: str | None = None
+    drive_message: str = ""
+
+
+def _reserve_number(root):
+    # Reservations may leave gaps on cancellation, but never reuse a node name.
+    with _NUMBER_LOCK:
+        store = JsonStore(root / "state/portable_deployment_v1.json")
+        try:
+            files.ordinary(store.path)
+            data = store.load({"version": 1, "next_number": 1})
+            if (not isinstance(data, dict) or set(data) != {"version", "next_number"}
+                    or data["version"] != 1 or type(data["next_number"]) is not int
+                    or not 1 <= data["next_number"] <= 999999):
+                raise ValueError()
+            number = data["next_number"]
+            store.save({"version": 1, "next_number": number + 1})
+            return number
+        except (OSError, ValueError, TypeError):
+            raise DeploymentError("The next portable node number could not be saved. Check this installation's state folder.") from None
 
 
 def _digest(path, token):
@@ -151,6 +176,8 @@ def verify_node(root, *, token=None, progress=lambda value, label: None):
 def deploy_node(manager, destination, *, include_profile=True, include_models=False,
                 token=None, progress=lambda value, label: None):
     """Publish a complete new folder, preserving source selection and contents."""
+    if is_deployed_node(manager.application_root):
+        raise DeploymentError(DEPLOYMENT_DISABLED)
     token = token or CancellationToken()
     token.raise_if_cancelled()
     manager._check_deletion()
@@ -167,6 +194,8 @@ def deploy_node(manager, destination, *, include_profile=True, include_models=Fa
     if shutil.disk_usage(destination.parent).free < total + max(64 * 1024**2, total // 20):
         raise DeploymentError("There is not enough free space on the destination drive for this node.")
     token.raise_if_cancelled()
+    number = _reserve_number(manager.application_root)
+    drive_plan = prepare_drive_label(destination.parent, manager.application_root, number)
     staging = destination.parent / (".orsi-node-" + uuid4().hex + ".partial")
     staging.mkdir()
     copied, inventory = 0, []
@@ -222,17 +251,19 @@ def deploy_node(manager, destination, *, include_profile=True, include_models=Fa
                 "relative": True, "mode": "portable", "encrypted": session.encrypted, "profile_id": locator.profile_id})
             write_json("state/profile_registry_v1.json", {"version": 1, "copies": [{"location": PROFILE_FOLDER,
                 "relative": True, "encrypted": session.encrypted, "profile_id": locator.profile_id}]})
-        guide = ("O.R.S.I portable node\n\nRun ORSI.cmd from this folder.\n" +
+        guide = (node_name(number) + "\n\nRun ORSI.cmd from this folder.\n" +
                  ("Unlock the included profile with its existing password or recovery key.\n" if include_profile and session.encrypted else
                   "This node includes your current unencrypted profile.\n" if include_profile else "Create your own profile when O.R.S.I opens.\n") +
                  ("Installed local models are included.\n" if include_models else "This cloud-only node needs internet access and a cloud connection.\n") +
-                 "Close O.R.S.I before moving the complete folder, including profiles.\n")
+                 "Close O.R.S.I before moving the complete folder, including profiles.\n"
+                 "Deploy new nodes from the local O.R.S.I app; this portable node cannot deploy others.\n")
         for name, text in (("START_HERE.txt", guide), ("runtime/READY.txt", "Inference backend: " + ("local + cloud" if include_models else "cloud") + "\n")):
             path = staging / name
             path.write_text(text, encoding="utf-8")
             inventory.append({"path": name, "size_bytes": path.stat().st_size, "sha256": _digest(path, token)})
         JsonStore(staging / MANIFEST).save({"schema_version": 1, "variant": "portable-windows-x64-node",
             "includes_profile": include_profile, "includes_local_models": include_models,
+            "node_number": number, "node_name": node_name(number), "can_deploy_nodes": False,
             "files": sorted(inventory, key=lambda entry: entry["path"])})
         count = verify_node(staging, token=token, progress=progress)
         token.raise_if_cancelled()
@@ -251,5 +282,7 @@ def deploy_node(manager, destination, *, include_profile=True, include_models=Fa
             manager.known_roots.add(destination / PROFILE_FOLDER)
         except Exception:
             registered = False
+    drive = finish_drive_label(drive_plan, destination)
     progress(100, "Node ready")
-    return DeploymentResult(destination, include_profile, include_models, count, copied, registered)
+    return DeploymentResult(destination, include_profile, include_models, count, copied, registered,
+                            number, drive.label, drive.message)

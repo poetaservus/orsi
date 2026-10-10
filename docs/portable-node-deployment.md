@@ -1,7 +1,8 @@
 # Deploy portable nodes from Settings
 
 Open **Settings > Personal profile > Storage > Deploy portable node…**. This
-feature is available in the local app and in newly deployed nodes. It does not
+feature is available only in the local app. Deployed portable nodes cannot
+deploy other nodes. It does not
 need Git, a developer installation or a download during deployment.
 
 Choose **Include my current profile** to copy the open profile, or **Fresh node**
@@ -27,11 +28,40 @@ available, including safe cancellation when the profile locks or the app quits.
 Run **ORSI.cmd** in the new folder. Close the node before moving its complete
 folder to another drive or computer.
 
+Each deployment reserves a number from the local installation, starting at
+**001**, and stores its full name, **O.R.S.I Portable Node Nr. 001**, in its
+manifest and start guide. The next deployment uses 002, and so on. Cancelled or
+failed copies can leave gaps; numbers are not reused. The counter is local
+instance state, outside profiles, and is not copied to a node.
+
+After a successful deployment to recognized external Windows storage, O.R.S.I
+also sets the **volume label** that File Explorer shows when the drive is
+connected. NTFS uses the full name; FAT and exFAT use **ORSI 001**, because their
+volume labels permit only eleven characters. See Microsoft's
+[SetVolumeLabelW documentation](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-setvolumelabelw)
+and [exFAT volume-label specification](https://learn.microsoft.com/en-us/windows/win32/fileio/exfat-specification#732-charactercount-field).
+The label applies to the selected volume, not just the node folder. The dialog
+explains this naming before deployment and reports its outcome afterward.
+
+The drive containing Windows or this application, internal drives and network
+shares retain their names. Removable media and fixed USB/1394/SD/MMC devices are
+eligible. If device metadata is unavailable, the file system is unsupported,
+the device changes during copying or Windows denies the rename, the completed
+node remains usable and the dialog explains why the name stayed unchanged.
+
 The source profile stays selected and active. This is an independent snapshot,
 with no synchronization of later edits. The source records the exported profile
 in its copy registry, so normal profile-copy/deletion management can account for
 it. The new node contains only a relative locator and registry entry for its
 own profile; it does not inherit the source computer's paths or copy inventory.
+
+The installation's root `NODE_MANIFEST.json` identifies deployed nodes even
+after relocation or a profile change. The earlier `PACKAGE_MANIFEST.json`
+pilot marker is also recognized. With this application version, Settings hides
+deployment on those installations, the dialog refuses to start, and the
+underlying exporter rejects the request before writing anything. Previously
+deployed copies need updated application code or a new deployment to gain this
+behavior; this change does not modify the older distributed ZIP.
 
 ## Implementation boundary
 
@@ -59,6 +89,40 @@ export in the source copy registry fails, the dialog reports the ready node and
 the copy-tracking limitation separately.
 
 ## Focused verification, 10 October 2026
+
+### Portable-node restrictions and drive names
+
+`codex/portable-node-identity` starts from local main `5c5123c`. **50 focused
+cases passed** on native Qt 6.12.0: the complete existing deployment checks plus
+portable/pilot recognition, relocated fresh-node refusal, all profile states
+in Settings, dialog/backend enforcement, reserved numbering, invalid counter
+preservation, cancellation without renaming, NTFS and FAT/exFAT naming, internal
+and system volume protection, unsupported/network volumes, changed volume
+identities and rename-denied outcomes. Tests use repository-local `--basetemp`;
+results are `state/portable-node-identity-check.xml`.
+
+The native Windows metadata functions were exercised against owned temporary
+folders on the current volume. Label writes use a controlled API substitute;
+**no real drive was renamed**. Physical removable-device/Explorer persistence
+qualification remains unrun. No full suite or live model/provider calls ran.
+
+The updated code was applied to the previously owned, relocated cloud-node
+fixture. Its actual desktop entry hid deployment and rejected a direct export,
+retained its synthetic profile data and released helpers, keys and leases. The
+source stayed independently open, and network attempts stayed at zero. This
+checks backward compatibility with an existing node manifest; it is not a new
+whole-package integrity check. The revised local deployment dialog was visually
+inspected. Content-free results and capture:
+`state/portable-node-identity-native-result.json` and
+`state/portable-node-identity-dialog.png`.
+
+Seventeen original settings/runtime/artwork/locator/registry/counter
+fingerprints and four other worktree attachments remain unchanged. Recovery
+evidence: `state/backups/portable-node-identity-20261010/`; prior main:
+`archive/2026-10-10/main-before-portable-node-identity`. Integrate by local
+fast-forward and remove only the merged feature branch; no remote publication.
+
+### Initial deployment implementation
 
 Branch `codex/deploy-portable-nodes` starts from local main `1627bfb`. Only
 necessary checks ran, as requested: **41 distinct focused cases passed** on

@@ -1,5 +1,20 @@
 # Git layout and baseline hygiene
 
+## Portable-node identity and drive naming, 10 October 2026
+
+`codex/portable-node-identity` starts from local main `5c5123c`. Portable/pilot
+installations hide deployment and reject it in the exporter. Local deployment
+reserves numbered node names and labels recognized external Windows volumes
+after publication, with shorter names for FAT/exFAT and explicit rename-failure
+feedback. Fifty focused native cases and an updated relocated-node launch
+passed; see [usage and verification](portable-node-deployment.md#portable-node-restrictions-and-drive-names).
+No real drive labels changed. No full suite, live provider/model or physical-media
+qualification ran. Seventeen preservation fingerprints and four other
+worktree attachments are unchanged. Evidence is under
+`state/backups/portable-node-identity-20261010/`; prior main is preserved at
+`archive/2026-10-10/main-before-portable-node-identity`. Commit, fast-forward
+local main and remove only the merged feature branch. No remote publication.
+
 ## Portable-node deployment, 10 October 2026
 
 `codex/deploy-portable-nodes` starts from local main `1627bfb`. Settings can

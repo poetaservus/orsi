@@ -102,13 +102,24 @@ def run(root, report_path):
                               skills_files_preferences_history_retained=True)
                 report["stage"] = "packaged_deployment_controls"
                 page = self.window.personal_profile_page
-                assert any(button.text() == "Deploy portable node…" for button in page.findChildren(QPushButton))
+                assert not any(button.text() == "Deploy portable node…" for button in page.findChildren(QPushButton))
+                from app.portable.deployment import DeploymentError, deploy_node
+                forbidden = root.parent / "forbidden offspring"
+                try:
+                    deploy_node(self.manager, forbidden, include_profile=False)
+                except DeploymentError as error:
+                    assert "Portable nodes cannot deploy" in str(error)
+                else:
+                    raise AssertionError("Portable deployment guard was bypassed")
+                assert not forbidden.exists()
                 dialog = PortableDeploymentDialog(self.manager, self.window, page)
                 dialog.show()
                 QTest.qWait(100)
-                assert dialog.current.isChecked() and not dialog.models.isChecked()
+                assert not dialog.start_button.isEnabled()
+                assert "cannot deploy" in dialog.status.text()
                 assert dialog.grab().save(str(report_path.with_name("deployment-dialog.png")))
                 dialog.reject()
+                report["portable_deployment_disabled"] = True
                 report["scenario_passed"] = True
             except BaseException as error:
                 report["error_type"] = type(error).__name__

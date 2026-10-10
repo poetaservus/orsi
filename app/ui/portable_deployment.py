@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (QApplication, QCheckBox, QDialog, QFileDialog, QH
                                QProgressBar, QPushButton, QRadioButton, QVBoxLayout)
 
 from app.portable.deployment import DeploymentError, deploy_node
+from app.portable.identity import DEPLOYMENT_DISABLED, is_deployed_node, node_name
 from app.runtime.cancellation import CancellationSource, TaskCancelled
 from app.ui.personal_profile import _STYLE, label
 from app.vault.profiles import public_error
@@ -66,7 +67,7 @@ class PortableDeploymentDialog(QDialog):
         """)
         self.setWindowTitle("Deploy portable node")
         self.setMinimumWidth(520)
-        self.resize(640, 590)
+        self.resize(640, 650)
         self.manager, self.window = manager, window
         self.worker = None
         self.result = None
@@ -97,6 +98,8 @@ class PortableDeploymentDialog(QDialog):
         self.models.setAccessibleName("Include installed local models")
         body.addWidget(self.models)
         body.addWidget(label("Leave off for a smaller cloud-only node. Including local models copies this app's installed models and local runtime."))
+        body.addWidget(label("External drives are named automatically: O.R.S.I Portable Node Nr. 001, 002, … "
+            "FAT/exFAT drives use shorter names such as ORSI 001."))
         body.addWidget(label("Destination · choose a new node folder"))
         location_row = QHBoxLayout()
         self.location = QLineEdit()
@@ -135,6 +138,9 @@ class PortableDeploymentDialog(QDialog):
         self.close_button.clicked.connect(self.reject)
         actions.addWidget(self.close_button)
         body.addLayout(actions)
+        if is_deployed_node(manager.application_root):
+            self.start_button.setEnabled(False)
+            self.status.setText(DEPLOYMENT_DISABLED)
 
     def _choose(self):
         parent = QFileDialog.getExistingDirectory(self, "Choose a drive or parent folder for the new node")
@@ -145,6 +151,9 @@ class PortableDeploymentDialog(QDialog):
         return self.worker is not None and self.worker.isRunning()
 
     def _start(self):
+        if is_deployed_node(self.manager.application_root):
+            self.status.setText(DEPLOYMENT_DISABLED)
+            return
         if self._busy() or self.result is not None:
             return
         if not self.location.text().strip():
@@ -184,8 +193,12 @@ class PortableDeploymentDialog(QDialog):
     @Slot(object)
     def _succeeded(self, result):
         self.result = result
-        self.status.setText("Node ready. Run ORSI.cmd in the new folder." if result.copy_registered else
-            "Node ready. Its location could not be added to profile copy tracking; keep track of this copy separately.")
+        message = node_name(result.node_number) + " is ready. Run ORSI.cmd in the new folder."
+        if result.drive_message:
+            message += "\n" + result.drive_message
+        if not result.copy_registered:
+            message += "\nIts location could not be added to profile copy tracking; keep track of this copy separately."
+        self.status.setText(message)
         self.open_folder.show()
 
     @Slot()
