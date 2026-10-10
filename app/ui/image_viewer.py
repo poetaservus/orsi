@@ -144,16 +144,16 @@ class ImageViewer(QDialog):
         self.save_button.setObjectName("imageViewerSave")
         self.save_button.setAccessibleName("Save original image")
         if self._vault_enabled:
-            self.save_button.setText("Export outside vault…")
-            self.save_button.setAccessibleName("Export original image outside vault")
-            self.save_button.setToolTip("Creates an outside copy that remains after the vault is locked or this image is deleted.")
+            self.save_button.setText("Export outside profile…")
+            self.save_button.setAccessibleName("Export original image outside profile")
+            self.save_button.setToolTip("Creates an outside copy that remains after the profile is locked or this image is deleted.")
         self.save_button.clicked.connect(self._save_image)
         self.close_button.setAccessibleName("Close image viewer")
         header.addWidget(self.name, 1)
         header.addWidget(self.counter)
         if self._vault_enabled:
-            self.store_button = QPushButton("Store in vault")
-            self.store_button.setAccessibleName("Store image in vault")
+            self.store_button = QPushButton("Store in profile")
+            self.store_button.setAccessibleName("Store image in profile")
             self.store_button.clicked.connect(self._store_in_vault)
             header.addWidget(self.store_button)
         header.addWidget(self.save_button)
@@ -163,7 +163,7 @@ class ImageViewer(QDialog):
         header.addWidget(self.close_button)
         layout.addLayout(header)
         if self._vault_enabled and (self._profile_manager is None or self._profile_manager.guidance()):
-            self.vault_hint = QLabel("Recommended: store in your vault. Your saved copy is encrypted while the vault is locked.")
+            self.vault_hint = QLabel("Recommended: store in your profile. Your saved copy is encrypted while the profile is locked.")
             self.vault_hint.setWordWrap(True)
             layout.addWidget(self.vault_hint)
         self.canvas = _ImageCanvas(self.loader)
@@ -277,7 +277,7 @@ class ImageViewer(QDialog):
 
     def _save_image(self):
         from pathlib import Path
-        path, _ = QFileDialog.getSaveFileName(self, "Export outside vault" if self._vault_enabled else "Save original image", self.reference.name,
+        path, _ = QFileDialog.getSaveFileName(self, "Export outside profile" if self._vault_enabled else "Save original image", self.reference.name,
                                              "Images (*.png *.jpg *.jpeg *.webp);;All files (*)")
         if not path:
             return
@@ -286,7 +286,7 @@ class ImageViewer(QDialog):
         except Exception:
             self.status.setText("Could not save the image. Choose another location and try again.")
             return
-        self.status.setText("Image exported outside vault; this copy remains after locking." if self._vault_enabled else "Image saved.")
+        self.status.setText("Image exported outside profile; this copy remains after locking." if self._vault_enabled else "Image saved.")
 
     def _store_in_vault(self):
         try:
@@ -295,7 +295,7 @@ class ImageViewer(QDialog):
                 store.commit_document(store.session.path("imports/images/" + self.reference.id + ".json"),
                     {"image": self.reference.model_dump(mode="json")}, (self.reference,))
                 store.retain_drafts((self.reference,))
-            self.status.setText("Image stored in vault. Your saved copy is encrypted while locked.")
+            self.status.setText("Image stored in profile. Your saved copy is encrypted while locked.")
         except Exception as error:
             from app.vault.profiles import public_error
             self.status.setText(public_error(error))

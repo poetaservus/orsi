@@ -4,7 +4,12 @@ from pathlib import Path
 import sys
 from time import sleep
 
+SOURCE_ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(SOURCE_ROOT))
+sys.path.append(str(SOURCE_ROOT / "runtime/python/Lib/site-packages"))
+
 from PySide6.QtCore import QTimer
+from PySide6.QtWidgets import QPushButton
 
 import app.main as desktop
 import app.ui.personal_profile as profile_ui
@@ -20,7 +25,7 @@ def run(root, selection, action):
     root.mkdir()
     report = {"selection": selection, "action": action, "covers": [], "compositions": 0}
     manager = ProfileManager(root)
-    if selection != "legacy":
+    if selection != "fresh":
         manager.create(root / "profiles/selected", mode="portable", encrypted=selection == "locked",
                        password=PASSWORD if selection == "locked" else b"")
         manager.lock()
@@ -69,6 +74,9 @@ def run(root, selection, action):
             assert len(report["covers"]) == 1, "Fresh launch did not present the splash"
             if selection == "locked":
                 assert self.window.login_panel.isVisible() and report["compositions"] == 0
+            elif selection == "fresh":
+                assert self.window.login_panel.isVisible() and report["compositions"] == 0
+                assert [button.text() for button in self.window.personal_profile_page.findChildren(QPushButton)] == ["Create profile"]
 
         def continue_login(self):
             nonlocal phase
@@ -77,7 +85,10 @@ def run(root, selection, action):
                 old = self.window
                 old.setGeometry(100, 100, 760, 600)
                 page = old.personal_profile_page
-                if action == "unlock":
+                if action == "create":
+                    self.transition(lambda: self.manager.create(root / "profiles/created", mode="portable", password=PASSWORD))
+                    assert self.manager.active
+                elif action == "unlock":
                     page.password.setText(PASSWORD.decode())
                     page._unlock()
                     assert self.manager.active

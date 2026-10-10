@@ -10,7 +10,8 @@ import pytest
 
 @pytest.mark.skipif(os.name != "nt", reason="Native Windows desktop launcher")
 @pytest.mark.parametrize("selection,action,compositions", [
-    ("legacy", "none", 1),
+    ("fresh", "none", 0),
+    ("fresh", "create", 1),
     ("plain", "none", 1),
     ("locked", "none", 0),
     ("locked", "unlock", 1),
@@ -20,7 +21,7 @@ def test_real_desktop_launch_and_login_show_native_splash(tmp_path, selection, a
     root = tmp_path / "application"
     environment = dict(os.environ, QT_QPA_PLATFORM="windows")
     process = subprocess.Popen([str(Path(sys.executable).with_name("pythonw.exe")),
-        "-m", "tests.startup_splash_probe", str(root), selection, action],
+        str(Path(__file__).with_name("startup_splash_probe.py")), str(root), selection, action],
         cwd=Path(__file__).resolve().parents[1], env=environment,
         creationflags=subprocess.CREATE_NO_WINDOW)
     try:

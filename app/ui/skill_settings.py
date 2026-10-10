@@ -80,7 +80,7 @@ class SkillSettingsPage(QWidget):
         source_hint = QLabel("Paste a GitHub repository or skill-file link, or drop a folder/file.")
         source_hint.setWordWrap(True)
         layout.addWidget(source_hint)
-        self.vault_hint = QLabel("Recommended: import a copy into your vault. Your saved copy is encrypted while locked; external originals remain unchanged.")
+        self.vault_hint = QLabel("Recommended: import a copy into your profile. Your saved copy is encrypted while locked; external originals remain unchanged.")
         self.vault_hint.setWordWrap(True)
         self.vault_hint.hide()
         layout.addWidget(self.vault_hint)
@@ -160,7 +160,7 @@ class SkillSettingsPage(QWidget):
         self._refresh_installed()
 
     def set_vault_guidance(self, enabled, recommend=True):
-        self.install_button.setText("Install in vault" if enabled else "Install")
+        self.install_button.setText("Install in profile" if enabled else "Install")
         self.vault_hint.setVisible(bool(enabled and recommend))
 
     def _source_changed(self):

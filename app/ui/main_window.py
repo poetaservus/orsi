@@ -965,8 +965,8 @@ class MainWindow(QMainWindow):
                                                name_filter=SUPPORTED_FILE_FILTER)
         manager = getattr(self, "_profile_manager", None)
         if manager is not None and manager.guidance():
-            dialog.setWindowTitle("Import a copy into vault · Recommended")
-            dialog.setLabelText(QFileDialog.DialogLabel.Accept, "Import into vault")
+            dialog.setWindowTitle("Import a copy into profile · Recommended")
+            dialog.setLabelText(QFileDialog.DialogLabel.Accept, "Import into profile")
             dialog.setLabelText(QFileDialog.DialogLabel.FileName,
                 "Your saved copy is encrypted while locked. External originals remain unchanged.")
         self._attachment_picker = dialog

@@ -111,12 +111,12 @@ class ProfileChoice(QDialog):
         location_layout.addWidget(self.location, 1)
         location_layout.addWidget(browse)
         self.mode.currentIndexChanged.connect(lambda: self.location.setText(str(manager.default_location(self.mode.currentData()))))
-        self.password, self.repeat = secret("Vault password"), secret("Repeat vault password")
+        self.password, self.repeat = secret("Profile password"), secret("Repeat profile password")
         self.quota = CompactNumberInput()
         self.quota.setRange(1, 1_000_000)
         self.quota.setValue(1)
         self.quota.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.quota.setAccessibleName("Vault quota")
+        self.quota.setAccessibleName("Profile quota")
         self.policy = combo((("Ask whenever cloud is selected", CredentialPolicy.ASK),
                              ("Allow explicitly saved encrypted credentials", CredentialPolicy.SAVED)))
         self.policy.setAccessibleName("Credential policy")
@@ -179,12 +179,13 @@ class PersonalProfilePage(QWidget):
     transition_requested = Signal(object)
     reload_requested = Signal(object)
 
-    def __init__(self, manager, window, *, message="", login=False):
+    def __init__(self, manager, window, *, message="", login=False, setup_required=False):
         super().__init__()
         self.setObjectName("personalProfilePage")
         self.setStyleSheet(_STYLE)
         self.manager, self.window = manager, window
         self.login = login
+        self.setup_required = setup_required
         self.tabbed = manager.active and not login and not manager.deletion_pending
         if manager.active:
             unregister = manager.session.register(clear=self._clear_private_controls)
@@ -208,6 +209,14 @@ class PersonalProfilePage(QWidget):
         self.layout.addWidget(self.summary)
         self.status = FeedbackLabel(message)
         self.status.setAccessibleName("Personal profile status")
+        if setup_required:
+            self.summary.hide()
+            self.layout.addWidget(self.status)
+            self.status.setVisible(bool(message))
+            self.create_profile, = self._buttons((("Create profile", self._new),))
+            self.create_profile.setObjectName("loginPrimary")
+            self.create_profile.setFixedHeight(44)
+            return
         if manager.deletion_pending:
             self.summary.setText("Profile deletion is not finished.")
             self.layout.addWidget(self.status)
@@ -239,9 +248,9 @@ class PersonalProfilePage(QWidget):
         else:
             self._buttons((("New profile…", self._new), ("Select existing…", self._select)))
         if manager.locator is not None and not manager.active:
-            self.password, self.recovery = secret("Vault password"), secret("Recovery key (optional)")
+            self.password, self.recovery = secret("Profile password"), secret("Recovery key (optional)")
             if login:
-                self.password.setPlaceholderText("Enter your vault password")
+                self.password.setPlaceholderText("Enter your profile password")
                 self.recovery.setPlaceholderText("Or paste your recovery key")
                 for title, field in (("Password", self.password), ("Recovery key (optional)", self.recovery)):
                     field.setFixedHeight(44)
@@ -253,8 +262,7 @@ class PersonalProfilePage(QWidget):
             else:
                 self.layout.addWidget(self.password)
                 self.layout.addWidget(self.recovery)
-            self.unlock_button, = self._buttons((("Unlock vault" if login and manager.encrypted else
-                            "Unlock profile" if manager.encrypted else "Open profile", self._unlock),))
+            self.unlock_button, = self._buttons((("Unlock profile" if manager.encrypted else "Open profile", self._unlock),))
             if login:
                 self.unlock_button.setObjectName("loginPrimary")
                 self.unlock_button.setFixedHeight(44)
@@ -284,13 +292,13 @@ class PersonalProfilePage(QWidget):
         heading = label("Personal profile")
         heading.setObjectName("profileHeading")
         outer.addWidget(heading)
-        self.subtitle = label("Your vault, access and backups.")
+        self.subtitle = label("Your profile, access and backups.")
         outer.addWidget(self.subtitle)
         identity = QWidget()
         identity_box = QVBoxLayout(identity)
         identity_box.setContentsMargins(0, 0, 0, 0)
         identity_box.setSpacing(5)
-        name = label("Personal vault")
+        name = label("Personal profile")
         name.setObjectName("profileName")
         name.setToolTip(str(self.manager.locator.root))
         identity_box.addWidget(name)
@@ -342,7 +350,7 @@ class PersonalProfilePage(QWidget):
         self.tab_transition = SettingsPageTransition(self.tabs.findChild(QStackedWidget))
         outer.addWidget(self.tabs, 1)
         self._section("Storage")
-        self._card("Vault storage", "Personal storage grows with usage, up to your quota.")
+        self._card("Profile storage", "Personal storage grows with usage, up to your quota.")
         self.usage = label("")
         self.usage.setAccessibleName("Storage usage")
         self.layout.addWidget(self.usage)
@@ -364,9 +372,9 @@ class PersonalProfilePage(QWidget):
             self._card("Encrypted backups", "Encrypted backup creation and retention require an encrypted profile.")
         self._section("Security")
         if self.manager.encrypted:
-            self._card("Vault password", "Changing your password keeps existing vault data. Older backups retain their previous password.")
+            self._card("Profile password", "Changing your password keeps existing profile data. Older backups retain their previous password.")
             self._buttons((("Change password…", self._change_password),))
-            self._card("Recovery key", "Keep your recovery key somewhere accessible without this vault or its disk.")
+            self._card("Recovery key", "Keep your recovery key somewhere accessible without this profile or its disk.")
             self._buttons((("Generate recovery key…", self._recovery_key), ("Disable recovery key", self._disable_recovery)))
         else:
             self._card("Profile security", "This profile stores personal data without encryption. Password and recovery controls require an encrypted profile.")
@@ -376,7 +384,7 @@ class PersonalProfilePage(QWidget):
             self._buttons((("Relocate verified copy…", self._relocate),))
         self._section("Data")
         if self.manager.encrypted:
-            self._card("Import files and folders", "Copy documents from anywhere on this computer or a connected drive into your current vault. "
+            self._card("Import files and folders", "Copy documents from anywhere on this computer or a connected drive into your current profile. "
                 "Folder imports include subfolders. Originals stay unchanged.")
             self._migration_controls()
             self._retention_controls()
@@ -607,7 +615,7 @@ class PersonalProfilePage(QWidget):
         row.addStretch()
         self.layout.addWidget(self.idle_controls)
         if self.manager.encrypted:
-            self.guidance = QCheckBox("Show vault storage recommendations")
+            self.guidance = QCheckBox("Show profile storage recommendations")
             self.guidance.setChecked(not settings.get("storage_guidance_dismissed", False))
             self.guidance.toggled.connect(lambda enabled: self._perform(
                 lambda: self.manager.configure(storage_guidance_dismissed=not enabled)))
@@ -649,7 +657,7 @@ class PersonalProfilePage(QWidget):
         self.key = secret("New connection credential")
         self.key.setPlaceholderText("Paste a replacement key")
         self.key.setFixedHeight(36)
-        self.consent = QCheckBox("Save this credential encrypted in this vault")
+        self.consent = QCheckBox("Save this credential encrypted in this profile")
         self.consent.setEnabled(self.manager.encrypted)
         form = self._form()
         form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
@@ -746,12 +754,12 @@ class PersonalProfilePage(QWidget):
         self.quota.setRange(1, 1_000_000)
         self.quota.setValue(max(1, (self.manager.vault().quota_bytes + 1024**3 - 1) // 1024**3))
         self.quota.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.quota.setAccessibleName("Vault quota")
+        self.quota.setAccessibleName("Profile quota")
         self.quota.setToolTip("Personal storage quota in GiB (1–1,000,000)")
         self.quota_save = QPushButton("Change quota", self.quota_controls)
         self.quota_save.setFixedSize(128, 36)
         self.quota_save.clicked.connect(self._save_quota)
-        title = label("Vault quota")
+        title = label("Profile quota")
         title.setBuddy(self.quota)
         for widget in (title, self.quota, label("GiB"), self.quota_save):
             row.addWidget(widget)
@@ -760,15 +768,15 @@ class PersonalProfilePage(QWidget):
 
     def _save_quota(self):
         self.quota.interpretText()
-        if self._perform(lambda: self.manager.vault().set_quota(self.quota.value() * 1024**3), "Vault quota saved."):
+        if self._perform(lambda: self.manager.vault().set_quota(self.quota.value() * 1024**3), "Profile quota saved."):
             self._refresh_usage()
-            self.status.setText("Vault quota saved.")
+            self.status.setText("Profile quota saved.")
 
     def _change_password(self):
         dialog = profile_dialog(self)
-        dialog.setWindowTitle("Change vault password")
+        dialog.setWindowTitle("Change profile password")
         layout = QVBoxLayout(dialog)
-        first, second = secret("New vault password"), secret("Repeat new password")
+        first, second = secret("New profile password"), secret("Repeat new password")
         layout.addWidget(first)
         layout.addWidget(second)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
@@ -791,12 +799,12 @@ class PersonalProfilePage(QWidget):
             dialog.setWindowTitle("Save your recovery key separately")
             layout = QVBoxLayout(dialog)
             layout.addWidget(label("This new key replaces the previous recovery key. Keep a copy somewhere accessible "
-                "without this vault or its disk. Anyone with this key can unlock this profile. There is no password-reset backdoor."))
+                "without this profile or its disk. Anyone with this key can unlock this profile. There is no password-reset backdoor."))
             value = QLineEdit(key.hex())
             value.setReadOnly(True)
             value.setAccessibleName("Recovery key")
             layout.addWidget(value)
-            export = QPushButton("Export recovery key outside vault…")
+            export = QPushButton("Export recovery key outside profile…")
             layout.addWidget(export)
             def save():
                 path, _ = QFileDialog.getSaveFileName(dialog, "Save independent recovery key", "orsi-recovery-key.txt")
@@ -806,7 +814,7 @@ class PersonalProfilePage(QWidget):
                         raise VaultError("Choose an independent location outside profile storage.")
                     from app.vault.files import atomic_write
                     atomic_write(target, (key.hex() + "\n").encode())
-            export.clicked.connect(lambda: self._perform(save, "Recovery key exported outside the vault."))
+            export.clicked.connect(lambda: self._perform(save, "Recovery key exported outside the profile."))
             close = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
             close.rejected.connect(dialog.reject)
             layout.addWidget(close)
@@ -872,7 +880,7 @@ class PersonalProfilePage(QWidget):
         layout = QVBoxLayout(content)
         scroll.setWidget(content)
         outer.addWidget(scroll)
-        layout.addWidget(label("Bring saved data from a previous O.R.S.I installation into your current vault. "
+        layout.addWidget(label("Bring saved data from a previous O.R.S.I installation into your current profile. "
             "To add ordinary documents instead, cancel and use Import files or Import folder in the Data tab."))
         def folder_field(box, title, value, picker_title):
             field = QLineEdit(value)
@@ -907,7 +915,7 @@ class PersonalProfilePage(QWidget):
         layout.addWidget(skills_group)
         skills_group.hide()
         checks["skills"].toggled.connect(skills_group.setVisible)
-        replace = QCheckBox("Replace matching selected settings or records already in this vault")
+        replace = QCheckBox("Replace matching selected settings or records already in this profile")
         layout.addWidget(replace)
         layout.addWidget(label("Import verifies every selected copy before reporting completion. Originals stay unchanged; "
             "you can review their exact locations and choose cleanup separately afterward."))
@@ -939,7 +947,7 @@ class PersonalProfilePage(QWidget):
             self.reload_requested.emit(migrate)
 
     def _import_copy(self):
-        title = "Select files to copy into your vault; originals stay unchanged"
+        title = "Select files to copy into your profile; originals stay unchanged"
         if self.manager.guidance():
             title = "Recommended: " + title
         sources, _ = QFileDialog.getOpenFileNames(self, title, str(Path.home()))
@@ -952,7 +960,7 @@ class PersonalProfilePage(QWidget):
         self.reload_requested.emit(copy)
 
     def _import_folder(self):
-        source = QFileDialog.getExistingDirectory(self, "Choose a folder to copy into your vault, including subfolders", str(Path.home()))
+        source = QFileDialog.getExistingDirectory(self, "Choose a folder to copy into your profile, including subfolders", str(Path.home()))
         if not source:
             return
         def copy():
@@ -966,7 +974,7 @@ class PersonalProfilePage(QWidget):
         dialog.setWindowTitle("Retained plaintext originals")
         dialog.resize(720, 430)
         layout = QVBoxLayout(dialog)
-        layout.addWidget(label("These originals remain outside the vault. Select specific originals to remove. "
+        layout.addWidget(label("These originals remain outside the profile. Select specific originals to remove. "
             "Credential cleanup removes only its imported JSON field. Exports and independent backups are not swept. "
             "Deletion does not guarantee physical erasure on an SSD."))
         listing = QListWidget()
@@ -1113,18 +1121,18 @@ class PersonalProfilePage(QWidget):
                 image = QPushButton("View saved images…")
                 layout.addWidget(image)
                 image.clicked.connect(lambda: (dialog.accept(), self.window._open_image_viewer(refs, 0)))
-            export = QPushButton("Export outside vault…")
-            layout.addWidget(label("An exported copy remains outside vault protection after locking or deleting this record."))
+            export = QPushButton("Export outside profile…")
+            layout.addWidget(label("An exported copy remains outside profile protection after locking or deleting this record."))
             layout.addWidget(export)
             def save():
-                path, _ = QFileDialog.getSaveFileName(dialog, "Export outside vault", Path(key).name)
+                path, _ = QFileDialog.getSaveFileName(dialog, "Export outside profile", Path(key).name)
                 if path:
                     target = Path(path).absolute()
                     if any(target.is_relative_to(root) for root in self.manager.known_roots):
                         raise VaultError("Choose an export destination outside profile storage.")
                     from app.vault.files import atomic_write
                     atomic_write(target, data)
-            export.clicked.connect(lambda: self._perform(save, "Copy exported outside vault."))
+            export.clicked.connect(lambda: self._perform(save, "Copy exported outside profile."))
             unregister = self.manager.session.register(clear=lambda: (body.clear(), dialog.reject()))
             try:
                 dialog.exec()

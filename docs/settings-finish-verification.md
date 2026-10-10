@@ -1,5 +1,46 @@
 # Settings consistency, transitions and loading logo
 
+## Profile-first startup and terminology, 10 October 2026
+
+Branch `codex/profile-first-startup` starts from local main `02b20d4`. The login
+lock mark and O.R.S.I wordmark are removed. Profile-facing headings, fields,
+storage/import/export actions and quota feedback now consistently say "profile";
+internal encrypted-storage identifiers and record formats are unchanged.
+
+With no saved selection, startup shows the same dark panel with only **Create
+profile**, before composing chat or inference clients. Canceling or failing
+creation keeps this panel and preserves existing files. Successful creation opens
+the selected local or portable profile. Existing encrypted/plain profiles,
+unreadable selections and deletion recovery retain their appropriate actions.
+An explicit choice to use current unencrypted storage still works for that app
+session; a later fresh launch without a selected profile returns to creation.
+
+Only necessary checks ran on native Qt 6.12.0: **28 distinct targeted cases
+passed**, including five new onboarding cases, six actual `pythonw` desktop
+launch cases, locked startup, explicit legacy transitions, deletion retry,
+password/recovery/backup controls, image storage/export, skill management and
+configured host-access propagation after profile selection. The first run had
+25 passes and three stale test assertions: two old image-export labels and a
+button inventory that included a closed dialog. Only the seven cases sharing
+those assertions were rechecked, all passing; application logic was unchanged
+for those repairs. There were 35 executions total, without a full-suite repeat.
+Both test runs used repository-local `--basetemp`; raw XML/log evidence is under
+`state/profile-first*-native.*`, with final distinct results in
+`state/profile-first-final-native.xml`.
+
+A separate native appearance check rendered the create-only panel, normal and
+compact unlock panels and authentication feedback. It verified removal of the
+branding, profile wording and reachability of all five existing login actions.
+Four visually inspected captures and its report are under ignored
+`state/profile-first-preview/`. Zero network attempts; the owned profile was
+released. No live provider/model gates or portable rebuild were run.
+
+Fourteen settings/runtime/artwork fingerprints and all four other worktree tips
+and attachments are unchanged. Recovery evidence is under
+`state/backups/profile-first-startup-20261010/`, with prior main preserved at
+`archive/2026-10-10/main-before-profile-first-startup`. Commit, fast-forward local
+main and remove only the merged feature branch; no remote publication.
+
 ## Vault login redesign, 10 October 2026
 
 Branch `codex/vault-login-redesign` starts from local main `6d6117d`. The login

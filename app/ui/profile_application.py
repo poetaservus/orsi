@@ -26,6 +26,7 @@ class ProfileApplication(QObject):
         self._retired = []
         self._transitioning = False
         self._legacy_pending = None
+        self._legacy_selected = False
         self.last_activity = monotonic()
         self.idle_timer = QTimer(self)
         self.idle_timer.setInterval(5000)
@@ -92,8 +93,12 @@ class ProfileApplication(QObject):
             if renew:
                 self.manager.renew()
             action()
+            if action == self.manager.use_legacy:
+                self._legacy_selected = True
+            elif self.manager.active:
+                self._legacy_selected = False
             if renew:
-                message = "Import completed and verified. Originals remain outside the vault; review them before choosing cleanup."
+                message = "Import completed and verified. Originals remain outside the profile; review them before choosing cleanup."
         except Exception as error:
             message = public_error(error)
             if (self.manager.active and self.window is not None
@@ -137,7 +142,8 @@ class ProfileApplication(QObject):
         loading = None
         try:
             without_profile = (self.manager.locator is None and not self.manager.bootstrap_error
-                               and not self.manager.deletion_pending and not self.manager.profile_deleted)
+                               and not self.manager.deletion_pending and not self.manager.profile_deleted
+                               and self._legacy_selected)
             if (self.window is not None
                     and ((getattr(self.window, "_profile_locked", False) and self.manager.active)
                          or (without_profile and (getattr(self.window, "_profile_locked", False)
@@ -176,6 +182,7 @@ class ProfileApplication(QObject):
             self._retired.append(old)
         selected = (self.manager.locator is not None or self.manager.bootstrap_error
                     or self.manager.deletion_pending or self.manager.profile_deleted or self._legacy_pending is not None)
+        setup_required = not selected and not self.manager.active and not self._legacy_selected
         if self.manager.active:
             session = self.manager.session
             try:
@@ -185,7 +192,7 @@ class ProfileApplication(QObject):
                 message = public_error(build_error)
                 self.manager.lock()
                 service, host, error, inference, preferences = None, {"hostname": ""}, None, None, None
-        elif selected:
+        elif selected or setup_required:
             service, host, error, inference, preferences = None, {"hostname": ""}, None, None, None
             # Locked errors are transient fixed messages, with no legacy file logger.
             root = logging.getLogger()
@@ -204,12 +211,13 @@ class ProfileApplication(QObject):
             self.window.setGeometry(old.geometry())
         elif self.initial_geometry is not None:
             self.window.setGeometry(self.initial_geometry)
-        self.window._owns_legacy = not selected
+        self.window._owns_legacy = not (selected or setup_required)
         if self.manager.active:
             self.window.bind_profile(self.manager.session)
         self.window._profile_manager = self.manager
-        locked = bool(selected and not self.manager.active)
-        page = PersonalProfilePage(self.manager, self.window, message=message, login=locked)
+        locked = bool((selected or setup_required) and not self.manager.active)
+        page = PersonalProfilePage(self.manager, self.window, message=message, login=locked,
+                                   setup_required=setup_required)
         self.window.personal_profile_page = page
         page.transition_requested.connect(lambda action, window=self.window: self._transition_from(window, action))
         page.reload_requested.connect(lambda action, window=self.window: self._transition_from(window, action, renew=True))
@@ -224,9 +232,11 @@ class ProfileApplication(QObject):
         if hasattr(page, "guidance"):
             page.guidance.toggled.connect(lambda enabled, window=self.window:
                 window.skill_settings_page.set_vault_guidance(True, enabled) if window is self.window else None)
-        if selected and not self.manager.active:
+        if locked:
             self.window._profile_locked = True
-            if self.manager.deletion_pending:
+            if setup_required:
+                greeting, hint, activity = "Create your profile", "Create a profile to chat", "Profile setup required"
+            elif self.manager.deletion_pending:
                 greeting, hint, activity = "Profile deletion pending", "Finish deleting the profile to continue", "Profile deletion needs a retry"
             elif self.manager.profile_deleted:
                 greeting, hint, activity = "Choose how to continue", "Choose a profile to chat", "Profile deleted"
@@ -241,7 +251,7 @@ class ProfileApplication(QObject):
                 button.setEnabled(False)
                 self.window.settings_panel.pages.widget(index).setEnabled(False)
         # Restore must remain available when password/recovery unlock fails.
-        if not self.manager.active and not self.manager.deletion_pending:
+        if not self.manager.active and not self.manager.deletion_pending and not setup_required:
             page._buttons((("Restore encrypted backup…", lambda: restore_dialog(page, self.manager, page.transition_requested.emit)),))
         if old is not None and old.isMaximized():
             self.window.showMaximized()

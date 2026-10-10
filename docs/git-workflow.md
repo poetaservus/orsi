@@ -1,5 +1,21 @@
 # Git layout and baseline hygiene
 
+## Profile-first startup, 10 October 2026
+
+`codex/profile-first-startup` starts from local main `02b20d4`. It removes the
+login branding, standardizes profile terminology and makes fresh startup show
+only Create profile before composing chat. Existing selected-profile and
+explicit unencrypted-storage actions remain. Twenty-eight distinct focused
+native cases and an appearance check passed; see
+[verification](settings-finish-verification.md#profile-first-startup-and-terminology-10-october-2026).
+Only necessary checks ran; no full suite, live provider call or portable rebuild.
+
+Fourteen preservation fingerprints and the four other worktree attachments are
+unchanged. Recovery evidence is under `state/backups/profile-first-startup-20261010/`.
+Preserve prior main at `archive/2026-10-10/main-before-profile-first-startup`, commit,
+fast-forward local main and remove only the merged feature branch.
+No remote publication.
+
 ## Vault login redesign, 10 October 2026
 
 `codex/vault-login-redesign` starts from local main `6d6117d`. It matches the

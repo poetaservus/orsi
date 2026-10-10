@@ -374,7 +374,7 @@ def public_error(error):
     if isinstance(error, InvalidCredentials):
         return "Could not unlock. Check the password or recovery key and try again."
     if isinstance(error, QuotaExceeded):
-        return "The vault is full. Increase its quota or manage saved data, then retry."
+        return "The profile is full. Increase its quota or manage saved data, then retry."
     if isinstance(error, StorageUnavailable):
         return "Storage is unavailable, read-only or low on free space. Reconnect or choose a writable location, then retry."
     if isinstance(error, RecoveryRequired):

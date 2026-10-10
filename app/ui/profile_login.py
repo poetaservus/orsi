@@ -1,28 +1,7 @@
-"""A dedicated locked-profile surface, separate from the settings navigation."""
+"""Profile setup and login, separate from the settings navigation."""
 from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPen
-from PySide6.QtWidgets import QFrame, QGraphicsBlurEffect, QHBoxLayout, QLabel, QScrollArea, QVBoxLayout, QWidget
-from app.ui.settings_style import CONTROL_SURFACE
-
-
-class VaultLoginEmblem(QWidget):
-    """A small public vault mark; it contains no profile information."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setFixedSize(48, 48)
-
-    def paintEvent(self, event):  # noqa: N802
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setBrush(QColor(CONTROL_SURFACE))
-        painter.setPen(QPen(QColor("#40536d"), 1))
-        painter.drawEllipse(QRectF(0.5, 0.5, 47, 47))
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        painter.setPen(QPen(QColor("#a9cbe5"), 1.8, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
-        painter.drawArc(QRectF(18, 13, 12, 20), 0, 180 * 16)
-        painter.drawRoundedRect(QRectF(15, 23, 18, 14), 3, 3)
-        painter.drawLine(24, 28, 24, 32)
+from PySide6.QtWidgets import QFrame, QGraphicsBlurEffect, QLabel, QScrollArea, QVBoxLayout, QWidget
 
 
 _LOGIN_PAGE_STYLE = """
@@ -49,7 +28,7 @@ class ProfileLoginPanel(QFrame):
     def __init__(self, page, parent):
         super().__init__(parent)
         self.setObjectName("profileLoginPanel")
-        self.setAccessibleName("Vault login")
+        self.setAccessibleName("Profile login")
         self.page = page
         page.setStyleSheet(page.styleSheet() + _LOGIN_PAGE_STYLE)
         page.layout.setContentsMargins(0, 0, 6, 0)
@@ -62,7 +41,6 @@ class ProfileLoginPanel(QFrame):
             QFrame#profileLoginPanel { background: transparent; border: none; }
             QFrame#profileLoginPanel QWidget { font-family: Saira; color: #e4e5eb; }
             QFrame#profileLoginPanel QLabel { background: transparent; font-size: 14px; }
-            QFrame#profileLoginPanel QLabel#loginBrand { font-size: 17px; font-weight: 500; letter-spacing: 2px; }
             QFrame#profileLoginPanel QLabel#loginHeading { font-size: 30px; font-weight: 500; }
             QFrame#profileLoginPanel QLabel#loginSubtitle { color: #b9c7d9; font-size: 14px; }
             QWidget#loginContent { background: transparent; }
@@ -89,24 +67,16 @@ class ProfileLoginPanel(QFrame):
         body.setAlignment(Qt.AlignmentFlag.AlignTop)
         header = QVBoxLayout()
         header.setSpacing(8)
-        brand = QHBoxLayout()
-        brand.setSpacing(10)
-        brand.addStretch()
-        brand.addWidget(VaultLoginEmblem())
-        wordmark = QLabel("O.R.S.I")
-        wordmark.setObjectName("loginBrand")
-        brand.addWidget(wordmark)
-        brand.addStretch()
-        header.addLayout(brand)
-        header.addSpacing(8)
-        heading = QLabel("Finish profile deletion" if page.manager.deletion_pending else
+        heading = QLabel("Create your profile" if page.setup_required else
+                         "Finish profile deletion" if page.manager.deletion_pending else
                          "Profile deleted" if page.manager.profile_deleted else
-                         "Unlock your vault" if page.manager.encrypted else "Open your personal profile")
+                         "Unlock your profile" if page.manager.encrypted else "Open your personal profile")
         heading.setObjectName("loginHeading")
         heading.setAlignment(Qt.AlignmentFlag.AlignCenter)
         heading.setWordWrap(True)
         header.addWidget(heading)
-        subtitle = QLabel("Some profile locations still need to be removed." if page.manager.deletion_pending else
+        subtitle = QLabel("Set up your personal profile to get started." if page.setup_required else
+                          "Some profile locations still need to be removed." if page.manager.deletion_pending else
                           "Create or select a profile, or continue without a profile." if page.manager.profile_deleted else
                           "Enter your password or recovery key to continue." if page.manager.encrypted else
                           "Open your profile to continue." if page.manager.locator is not None else
@@ -123,7 +93,8 @@ class ProfileLoginPanel(QFrame):
 
     def fit_to_parent(self):
         parent = self.parentWidget()
-        self.resize(min(600, parent.width() - 32), min(720, parent.height() - 72))
+        preferred_height = 260 if self.page.setup_required else 700 if self.page.status.text() else 640
+        self.resize(min(600, parent.width() - 32), min(preferred_height, parent.height() - 72))
         self.move((parent.width() - self.width()) // 2, max(44, (parent.height() - self.height()) // 2))
 
     def focus_password(self):
@@ -131,6 +102,9 @@ class ProfileLoginPanel(QFrame):
         if field is not None:
             field.setFocus()
             self.scroll.ensureWidgetVisible(field)
+        elif self.page.setup_required:
+            self.page.create_profile.setFocus()
+            self.scroll.ensureWidgetVisible(self.page.create_profile)
 
     def paintEvent(self, event):  # noqa: N802
         painter = QPainter(self)

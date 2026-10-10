@@ -227,6 +227,9 @@ def test_app_startup_uses_configured_access_without_warning(monkeypatch, tmp_pat
     import PySide6.QtWidgets as widgets
 
     application = QApplication.instance() or QApplication([])
+    selected = profiles.ProfileManager(tmp_path)
+    selected.create(tmp_path / "profiles/selected", encrypted=False)
+    selected.lock()
     config = SimpleNamespace(full_local_read_enabled=full_local)
     captured = {}
     owner_type, owners = profiles.ProfileApplication, []
@@ -245,8 +248,8 @@ def test_app_startup_uses_configured_access_without_warning(monkeypatch, tmp_pat
     monkeypatch.setattr(loading, "ProfileLoadingCover", lambda: SimpleNamespace(
         geometry=None, present=lambda: None, dismiss=lambda **kwargs: None, deleteLater=lambda: None))
 
-    def build(*, session_credentials, **kwargs):
-        assert session_credentials is True
+    def build(*, profile_session, **kwargs):
+        assert profile_session._active
         captured.update(kwargs)
         return None, {"hostname": "test"}, None, None
 

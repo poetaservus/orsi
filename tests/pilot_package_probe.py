@@ -5,6 +5,7 @@ import sys
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtTest import QTest
+from PySide6.QtWidgets import QPushButton
 
 import app.main as desktop
 import app.ui.profile_application as owners
@@ -71,9 +72,11 @@ def run(root, phase, report_path, *, unlocked_check=None):
         def exercise(self):
             try:
                 if phase == "fresh":
-                    report["stage"] = "fresh_composition"
+                    report["stage"] = "fresh_profile_setup"
                     assert self.manager.locator is None
-                    self.check_cloud()
+                    assert self.window.login_panel.isVisible() and self.window.personal_profile_page.setup_required
+                    assert self.window.service is None and self.window.inference is None
+                    assert [button.text() for button in self.window.personal_profile_page.findChildren(QPushButton)] == ["Create profile"]
                     report["stage"] = "create_profile"
                     self.transition(lambda: self.manager.create(root / "profiles/pilot-fixture",
                         mode="portable", password=PASSWORD))

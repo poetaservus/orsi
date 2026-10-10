@@ -431,7 +431,7 @@ def test_image_protected_save_export_and_viewer_lock_clear(qt, manager, tmp_path
     window._profile_manager = manager
     viewer = ImageViewer(store, (ref,), parent=window)
     try:
-        assert viewer.save_button.text() == "Export outside vault…" and hasattr(viewer, "vault_hint")
+        assert viewer.save_button.text() == "Export outside profile…" and hasattr(viewer, "vault_hint")
         viewer._store_in_vault()
         owner = "imports/images/" + ref.id + ".json"
         assert owner in manager.vault().list_paths()
@@ -482,7 +482,7 @@ def test_password_recovery_backup_restore_and_relocate_through_controls(qt, mana
         page = controller.window.personal_profile_page
         def change(dialog):
             fields = {w.accessibleName(): w for w in dialog.findChildren(QLineEdit)}
-            fields["New vault password"].setText("replacement synthetic password")
+            fields["New profile password"].setText("replacement synthetic password")
             fields["Repeat new password"].setText("replacement synthetic password")
             dialog.accept()
         modal_action(qt, page._change_password, change)
@@ -588,7 +588,7 @@ def test_guidance_disabled_on_plain_profiles_and_dismissed_on_image_viewer(qt, m
     viewer = ImageViewer(store, (ref,), parent=window)
     try:
         assert not hasattr(viewer, "vault_hint")
-        assert viewer.save_button.text() == "Export outside vault…"
+        assert viewer.save_button.text() == "Export outside profile…"
     finally:
         viewer.close()
         window.close()
