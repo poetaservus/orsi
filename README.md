@@ -251,3 +251,9 @@ powershell -ExecutionPolicy Bypass -File .\packaging\build-portable-runtime.ps1 
 Use `-Backend cpu` for the CPU-only build. The packaging scripts pin and verify the matching
 llama-server archive and install the declared runtime dependencies without changing application
 configuration or credentials.
+
+All build variants include pinned PyNaCl for encrypted personal profiles. Before marking a runtime
+ready, the offline package check creates an isolated portable profile, verifies personal and
+credential records, locks and reopens it, then releases its keys/handles and removes the fixture.
+Missing encryption dependencies or a failed round trip fail the build. Existing personal profiles
+and runtime selections are not used. See [packaging verification](docs/portable-vault-packaging.md).

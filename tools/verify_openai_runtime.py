@@ -1,10 +1,83 @@
-"""Offline verification of the shipped SDK and portable cloud startup."""
+"""Offline verification of the shipped SDK, encrypted profiles and cloud startup."""
 from __future__ import annotations
 
 import asyncio
 import argparse
 import json
 from pathlib import Path
+import shutil
+import tempfile
+
+
+def verify_encrypted_profile(root: Path) -> dict:
+    """Exercise real encryption in an owned fixture, never the selected profile."""
+    import nacl
+    import tomllib
+    from app.vault import files
+    from app.vault.profiles import ProfileManager
+    from app.vault.types import Domain, State, VaultLocked
+
+    manifest = tomllib.loads((root / "pyproject.toml").read_text())
+    requirement = next(value for value in manifest["project"]["optional-dependencies"]["windows"]
+                       if value.startswith("PyNaCl=="))
+    pin = requirement.split("==", 1)[1]
+    if nacl.__version__ != pin or requirement not in (root / "requirements.txt").read_text().splitlines():
+        raise RuntimeError("Portable encryption dependency does not match the Windows manifest.")
+
+    state = (root / "state").absolute()
+    files.ordinary(state)
+    state.mkdir(parents=True, exist_ok=True)
+    state = state.resolve()
+    fixture = Path(tempfile.mkdtemp(prefix="verify-vault-", dir=state))
+    manager = None
+    password = b"synthetic-package-verification-password"
+    personal = b"synthetic-package-personal-record"
+    credential = b"synthetic-package-credential-record"
+    opened = []
+    try:
+        application = fixture / "application"
+        application.mkdir()
+        manager = ProfileManager(application)
+        manager.create(application / "profiles" / "verification", mode="portable", password=password)
+        vault = manager.vault()
+        opened.append((vault, vault._keys))
+        vault.put("verification/personal", personal)
+        vault.put("verification/credential", credential, domain=Domain.CREDENTIAL)
+        if (vault.read("verification/personal") != personal
+                or vault.read("verification/credential", domain=Domain.CREDENTIAL) != credential):
+            raise RuntimeError("Encrypted profile records did not round trip.")
+        manager.lock()
+        try:
+            vault.read("verification/personal")
+        except VaultLocked:
+            pass
+        else:
+            raise RuntimeError("Locked encrypted profile allowed a read.")
+
+        # Reconstruct the manager to verify the portable locator and durable data.
+        manager = ProfileManager(application)
+        manager.unlock(password)
+        vault = manager.vault()
+        opened.append((vault, vault._keys))
+        if (vault.read("verification/personal") != personal
+                or vault.read("verification/credential", domain=Domain.CREDENTIAL) != credential):
+            raise RuntimeError("Encrypted profile records did not survive reopening.")
+    finally:
+        try:
+            if manager is not None:
+                manager.lock()
+        finally:
+            # Cleanup only the freshly owned direct child of the package state.
+            files.ordinary(fixture)
+            if fixture.resolve().parent != state:
+                raise RuntimeError("Encrypted verification cleanup escaped its fixture directory.")
+            shutil.rmtree(fixture)
+    if any(vault.state != State.LOCKED or vault._lease is not None
+           or vault._keys is not None or any(keys) for vault, keys in opened):
+        raise RuntimeError("Encrypted profile verification retained owned resources.")
+    return {"crypto_version": nacl.__version__, "vault_round_trip_passed": True,
+            "vault_locked_read_denied": True, "vault_owned_resources_released": True,
+            "vault_temporary_files_removed": True}
 
 
 def verify(root: Path, *, cloud_only: bool = False) -> dict:
@@ -39,6 +112,7 @@ def verify(root: Path, *, cloud_only: bool = False) -> dict:
     engine.close()
     report = {"passed": True, "sdk_version": openai.__version__, "qt_version": PySide6.__version__,
             "sdk_transport_fixture_passed": True, "lazy_client_released": True}
+    report.update(verify_encrypted_profile(root))
     if cloud_only:
         import logging
         import os

@@ -1,5 +1,25 @@
 # Git layout and baseline hygiene
 
+## Portable encrypted-profile packaging, 10 October 2026
+
+`codex/portable-vault-packaging` starts from local main `8335102`. Fresh runtimes
+now install pinned PyNaCl, and the shared offline package check verifies a real
+synthetic portable vault through lock, reopen and cleanup. The same fresh build
+exposed and fixed cloud-option splatting in PowerShell. The existing user runtime
+and profile selection are preserved.
+
+125 focused native cases and an actual clean cloud-runtime build passed; see
+[verification and regression limitations](portable-vault-packaging.md). The full
+suite is recorded separately from focused passes, including its pre-existing
+failures and the aborted native Windows attempt. No live provider/model or
+physical-media qualification is claimed.
+
+Recovery refs, worktree tips and fourteen content-free preservation entries are
+under ignored `state/backups/portable-vault-packaging-20261010/`. Prior main is
+preserved at `archive/2026-10-10/main-before-portable-vault-packaging`. Commit,
+fast-forward local main and remove only the merged feature branch. No remote
+publication or changes to another worktree.
+
 ## Desktop startup splash, 10 October 2026
 
 `codex/splash-launch` starts from main `70d4d28`. The desktop entry point now

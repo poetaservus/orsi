@@ -69,9 +69,10 @@ if ($Backend -eq "cuda") {
     $cudaBin = Join-Path $pythonRoot "Lib\site-packages\nvidia\cu13\bin\x86_64"
     $env:PATH = "$cudaBin;$env:PATH"
 }
-$cloudVerificationOptions = if ($Backend -eq "cloud") { @("--cloud-only") } else { @() }
+[string[]]$cloudVerificationOptions = @()
+if ($Backend -eq "cloud") { $cloudVerificationOptions = @("--cloud-only") }
 & $portablePython -m tools.verify_openai_runtime @cloudVerificationOptions
-if ($LASTEXITCODE -ne 0) { throw "OpenAI runtime verification failed with exit code $LASTEXITCODE." }
+if ($LASTEXITCODE -ne 0) { throw "SDK and encrypted-profile verification failed with exit code $LASTEXITCODE." }
 if ($Backend -ne "cloud") {
 & $portablePython -c "import sys; import PySide6, pydantic; from app.inference.llama_backend import _configure_portable_cuda_dlls; _configure_portable_cuda_dlls(); from llama_cpp import llama_cpp; print('Python:', sys.version.split()[0]); print('GPU offload:', llama_cpp.llama_supports_gpu_offload())"
 if ($LASTEXITCODE -ne 0) { throw "Portable runtime verification failed with exit code $LASTEXITCODE." }
