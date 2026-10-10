@@ -188,7 +188,7 @@ class PersonalProfilePage(QWidget):
         self.setStyleSheet(_STYLE)
         self.manager, self.window = manager, window
         self.login = login
-        self.tabbed = manager.active and not login
+        self.tabbed = manager.active and not login and not manager.deletion_pending
         if manager.active:
             unregister = manager.session.register(clear=self._clear_private_controls)
             self.destroyed.connect(unregister)
@@ -205,6 +205,26 @@ class PersonalProfilePage(QWidget):
         self.layout.addWidget(self.summary)
         self.status = FeedbackLabel(message)
         self.status.setAccessibleName("Personal profile status")
+        if manager.deletion_pending:
+            self.summary.setText("Profile deletion is not finished.")
+            self.layout.addWidget(self.status)
+            self.layout.addWidget(label("Reconnect the profile's drives and close any other instance using its copies, then retry. "
+                "O.R.S.I keeps track of the remaining locations until deletion completes."))
+            locations = QListWidget()
+            locations.setAccessibleName("Pending profile deletion locations")
+            locations.setTextElideMode(Qt.TextElideMode.ElideMiddle)
+            locations.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+            locations.setMaximumHeight(160)
+            try:
+                for path in manager.deletion_targets():
+                    locations.addItem(str(path))
+            except Exception as error:
+                self.status.setText(public_error(error))
+            self.layout.addWidget(locations)
+            self._buttons((("Retry profile deletion", lambda: self.transition_requested.emit(
+                lambda: self.manager.delete_current(consent=True))),))
+            self.layout.addStretch()
+            return
         if self.tabbed:
             self.layout.removeWidget(self.summary)
             self._workspace(message)
@@ -262,6 +282,8 @@ class PersonalProfilePage(QWidget):
         for title, action in (("New profile…", self._new), ("Select existing…", self._select),
                               ("Use current unencrypted storage", self._legacy)):
             menu.addAction(title, action)
+        menu.addSeparator()
+        menu.addAction("Delete profile…", self._delete_profile)
         self.manage_profile.setMenu(menu)
         self.lock_profile = self._button("Lock", lambda: self.transition_requested.emit(self.manager.lock))
         actions = QWidget()
@@ -424,6 +446,9 @@ class PersonalProfilePage(QWidget):
 
     def refresh_summary(self):
         locator = self.manager.locator
+        if self.manager.profile_deleted:
+            self.summary.setText("This profile and its recorded copies have been deleted.")
+            return
         self.summary.setText("Current unencrypted storage. Set up or select a personal profile here." if locator is None else
             f"{'Local' if locator.mode == 'local' else 'Portable'} · {'Encrypted' if locator.encrypted else 'Unencrypted'} · "
             f"{'Unlocked' if self.manager.active else 'Locked / unavailable'}\n{locator.root}")
@@ -464,6 +489,62 @@ class PersonalProfilePage(QWidget):
     def _legacy(self):
         if confirm(self, "Use unencrypted storage", "Open the existing unencrypted personal storage? No data will be copied or merged."):
             self.transition_requested.emit(self.manager.use_legacy)
+
+    def _delete_profile(self):
+        try:
+            targets = self.manager.deletion_targets()
+        except Exception as error:
+            self.status.setText(public_error(error))
+            return
+        dialog = profile_dialog(self)
+        dialog.setWindowTitle("Delete profile permanently")
+        dialog.resize(620, 510)
+        box = QVBoxLayout(dialog)
+        box.addWidget(label("Permanently delete this profile and every recorded backup or older copy below. "
+            "This removes its saved credentials, conversations, images, imported documents, settings and managed backups."))
+        locations = QListWidget()
+        locations.setAccessibleName("Profile locations to delete")
+        locations.setTextElideMode(Qt.TextElideMode.ElideMiddle)
+        locations.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        for target in targets:
+            locations.addItem(str(target))
+        box.addWidget(locations, 1)
+        extras = set()
+        include = QPushButton("Include another backup or copy…")
+        feedback = FeedbackLabel()
+        def choose_copy():
+            path = QFileDialog.getExistingDirectory(dialog, "Choose another copy of this profile")
+            if not path:
+                return
+            try:
+                chosen = extras | {Path(path).absolute()}
+                targets = self.manager.deletion_targets(extra_roots=chosen)
+                extras.update(chosen)
+                locations.clear()
+                for target in targets:
+                    locations.addItem(str(target))
+                feedback.setText("")
+            except Exception as error:
+                feedback.setText(public_error(error))
+        include.clicked.connect(choose_copy)
+        box.addWidget(include, 0, Qt.AlignmentFlag.AlignLeft)
+        box.addWidget(feedback)
+        box.addWidget(label("Imported source files and copies you exported elsewhere are separate files. "
+                            "Type DELETE to confirm permanent deletion."))
+        confirmation = QLineEdit()
+        confirmation.setAccessibleName("Confirm profile deletion")
+        confirmation.setPlaceholderText("DELETE")
+        box.addWidget(confirmation)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
+        remove = buttons.addButton("Delete profile permanently", QDialogButtonBox.ButtonRole.DestructiveRole)
+        remove.setEnabled(False)
+        confirmation.textChanged.connect(lambda text: remove.setEnabled(text == "DELETE"))
+        remove.clicked.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        buttons.button(QDialogButtonBox.StandardButton.Cancel).setDefault(True)
+        box.addWidget(buttons)
+        if dialog.exec() == QDialog.DialogCode.Accepted and confirmation.text() == "DELETE":
+            self.transition_requested.emit(lambda: self.manager.delete_current(consent=True, extra_roots=tuple(extras)))
 
     def _refresh_usage(self):
         def refresh():
@@ -734,7 +815,7 @@ class PersonalProfilePage(QWidget):
     def _backup(self):
         path = self._destination("Encrypted backup")
         if path:
-            self._perform(lambda: (self.manager._new_location(path), self.manager.vault().backup(path)),
+            self._perform(lambda: self.manager.backup(path),
                           "Encrypted backup verified. This independent copy has its own retention.")
 
     def _restore(self):

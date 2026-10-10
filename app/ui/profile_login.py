@@ -33,10 +33,14 @@ class ProfileLoginPanel(QFrame):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(36, 26, 36, 28)
         layout.setSpacing(12)
-        heading = QLabel("Unlock your vault" if page.manager.encrypted else "Open your personal profile")
+        heading = QLabel("Finish profile deletion" if page.manager.deletion_pending else
+                         "Profile deleted" if page.manager.profile_deleted else
+                         "Unlock your vault" if page.manager.encrypted else "Open your personal profile")
         heading.setObjectName("loginHeading")
         layout.addWidget(heading)
-        subtitle = QLabel("Enter your password or recovery key to continue." if page.manager.encrypted else
+        subtitle = QLabel("Some profile locations still need to be removed." if page.manager.deletion_pending else
+                          "Create or select a profile, or continue without a profile." if page.manager.profile_deleted else
+                          "Enter your password or recovery key to continue." if page.manager.encrypted else
                           "Open your profile to continue." if page.manager.locator is not None else
                           "Select a profile to continue.")
         subtitle.setWordWrap(True)

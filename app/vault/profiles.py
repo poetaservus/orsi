@@ -39,10 +39,13 @@ class ProfileManager:
     def __init__(self, application_root, *, bootstrap=None):
         self.application_root = Path(application_root).absolute()
         self.bootstrap = JsonStore(bootstrap or self.application_root / "state/profile_locator_v1.json")
+        from app.vault.profile_cleanup import ProfileCopies
+        self.copies = ProfileCopies(self.application_root)
         self.locator = None
         self.session = None
         self.known_roots = set()
         self.bootstrap_error = False
+        self.profile_deleted = False
         try:
             data = self.bootstrap.load()
             if data is not None:
@@ -80,11 +83,13 @@ class ProfileManager:
         return base / "O.R.S.I/profiles" / uuid4().hex
 
     def _remember(self, locator):
+        self.copies.remember(locator.root, locator.profile_id, locator.encrypted, portable=locator.mode == "portable")
         relative = locator.mode == "portable" and locator.root.is_relative_to(self.application_root)
         location = locator.root.relative_to(self.application_root) if relative else locator.root
         self.bootstrap.save({"version": 1, "location": str(location), "relative": relative,
             "mode": locator.mode, "encrypted": locator.encrypted, "profile_id": locator.profile_id})
         self.locator, self.bootstrap_error = locator, False
+        self.profile_deleted = False
         self.known_roots.add(locator.root)
 
     def lock(self):
@@ -93,9 +98,11 @@ class ProfileManager:
             self.session = None
 
     def use_legacy(self):
+        self._check_deletion()
         self.lock()
         self.bootstrap.path.unlink(missing_ok=True)
         self.locator, self.bootstrap_error = None, False
+        self.profile_deleted = False
 
     def renew(self):
         self.require_active()
@@ -115,6 +122,7 @@ class ProfileManager:
 
     def create(self, root, *, mode="local", encrypted=True, password=b"", quota_bytes=1024**3,
                credential_policy="ask_each_session"):
+        self._check_deletion()
         if mode not in {"local", "portable"} or type(encrypted) is not bool:
             raise VaultError("Choose local or portable personal storage.")
         if credential_policy not in {"ask_each_session", "save_encrypted"} or (not encrypted and credential_policy != "ask_each_session"):
@@ -145,6 +153,7 @@ class ProfileManager:
         return session
 
     def select(self, root, *, mode="local", encrypted=True, password=None, recovery_key=None, _expected_id=None):
+        self._check_deletion()
         if mode not in {"local", "portable"} or type(encrypted) is not bool:
             raise VaultError("Choose local or portable personal storage.")
         self.lock()
@@ -217,14 +226,71 @@ class ProfileManager:
         return {"application": application + runtime, "models": models, "personal": personal,
             "quota": backend.quota_bytes if self.encrypted else None, "free": shutil.disk_usage(backend.root).free}
 
+    @property
+    def deletion_pending(self):
+        return self.copies.pending.path.exists()
+
+    def _check_deletion(self):
+        if self.deletion_pending:
+            from app.vault.profile_cleanup import ProfileDeletionError
+            raise ProfileDeletionError("Finish the pending profile deletion first.")
+
+    def deletion_targets(self, *, extra_roots=()):
+        if self.deletion_pending:
+            job = self.copies.job()
+            return tuple(self.copies.path(entry) for entry in job["locations"])
+        self.require_active()
+        from app.vault.profile_cleanup import identity, ProfileDeletionError
+        extra_roots = {Path(root).absolute() for root in extra_roots}
+        for root in extra_roots:
+            self.copies.safe_root(root)
+            if identity(root, self.encrypted) != self.locator.profile_id:
+                raise ProfileDeletionError("The chosen copy belongs to a different profile.")
+        try:
+            return self.copies.targets(self.locator, self.known_roots | extra_roots)
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            raise ProfileDeletionError("Could not verify the recorded profile copies.") from error
+
+    def delete_current(self, *, consent=False, extra_roots=()):
+        if consent is not True:
+            raise VaultError("Profile deletion requires explicit confirmation.")
+        if not self.deletion_pending:
+            roots = self.deletion_targets(extra_roots=extra_roots)
+            for root in extra_roots:
+                self.copies.remember(root, self.locator.profile_id, self.encrypted, portable=self.locator.mode == "portable")
+            self.copies.begin(self.locator, roots)
+        # Revoke paths/streams, join workers and clear credentials before removing files.
+        try:
+            self.lock()
+            removed = self.copies.remove()
+            self.bootstrap.path.unlink(missing_ok=True)
+            self.copies.pending.path.unlink()
+        except Exception as error:
+            from app.vault.profile_cleanup import ProfileDeletionError
+            raise ProfileDeletionError("Profile deletion needs a retry.") from error
+        self.known_roots = {root for root in self.known_roots if not any(root.is_relative_to(parent) for parent in removed)}
+        self.locator, self.bootstrap_error = None, False
+        self.profile_deleted = True
+
+    def backup(self, destination=None):
+        self._check_deletion()
+        vault = self.vault()
+        if destination is not None:
+            destination = Path(destination).absolute()
+            self._new_location(destination)
+            self.copies.remember(destination, self.locator.profile_id, True, portable=self.locator.mode == "portable")
+            self.known_roots.add(destination)
+        return vault.backup(destination)
+
     def relocate(self, destination, *, mode):
-        source = self.vault()
+        self._check_deletion()
+        self.vault()
         if mode not in {"local", "portable"}:
             raise VaultError("Choose local or portable storage for the copy.")
         self._new_location(Path(destination).absolute())
         # Stop every writer before taking the relocation snapshot.
         self.renew()
-        destination = source.backup(destination)
+        destination = self.backup(destination)
         # _snapshot authenticates every copied object before selection changes.
         from app.vault.engine import Vault
         copied = Vault(destination)
@@ -234,6 +300,7 @@ class ProfileManager:
         return copied.root
 
     def restore(self, source, destination, *, mode, password=None, recovery_key=None):
+        self._check_deletion()
         if mode not in {"local", "portable"}:
             raise VaultError("Choose local or portable storage for the restored profile.")
         source, destination = Path(source).absolute(), Path(destination).absolute()
@@ -245,6 +312,8 @@ class ProfileManager:
         from app.vault.engine import Vault
         backend = Vault.restore(source, destination, password=password, recovery_key=recovery_key)
         try:
+            self.copies.remember(source, backend._header["profile_id"], True, portable=mode == "portable")
+            self.known_roots.add(source)
             self._remember(ProfileLocator(backend.root, mode, True, backend._header["profile_id"]))
             self.session = ProfileSession(backend, protected_roots=self.known_roots)
         except BaseException:
@@ -289,6 +358,9 @@ def public_error(error):
     """Fixed UI errors never interpolate source, provider or exception contents."""
     from app.vault.types import InvalidCredentials, RecoveryRequired, StorageUnavailable, QuotaExceeded, VaultBusy
     from app.vault.types import MigrationConflict, OriginalChanged, UnverifiedMigration
+    from app.vault.profile_cleanup import ProfileDeletionError
+    if isinstance(error, ProfileDeletionError):
+        return "Profile deletion needs attention. Reconnect its recorded locations, close other instances, then retry deletion."
     if isinstance(error, MigrationConflict):
         return "Matching records already contain different data. Choose explicit replacement or import fewer categories."
     if isinstance(error, OriginalChanged):

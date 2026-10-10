@@ -1,5 +1,18 @@
 # Git layout and baseline hygiene
 
+## Profile deletion and no-profile splash, 10 October 2026
+
+`codex/profile-delete-startup` starts from main `c8be6fc`. Confirmed deletion removes
+the complete profile, credentials, managed backups and recorded external copies,
+with safe staging and persistent retries. No-profile continuation now receives
+the same loading splash. Forty focused native cases and three synthetic visual
+previews passed; see [verification](profile-delete-startup-verification.md).
+No full suite, actual user-profile deletion or live gates. Recovery refs, worktree
+tips and twelve preservation entries are under ignored
+`state/backups/profile-delete-startup-20261010/`. Preserve prior main at
+`archive/2026-10-10/main-before-profile-delete-startup`, commit, fast-forward local
+main, publish under the user's chat authorization and remove the merged branch.
+
 ## Clear vault import browsers, 10 October 2026
 
 `codex/vault-import-browser` starts from main `0181919`. Data now exposes file and

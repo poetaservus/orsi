@@ -40,7 +40,8 @@ class ProfileApplication(QObject):
             self.manager.known_roots.add(backend.root)
 
     def start(self):
-        if self.manager.locator is not None and not self.manager.encrypted and not self.manager.active:
+        if (self.manager.locator is not None and not self.manager.encrypted and not self.manager.active
+                and not self.manager.deletion_pending):
             try:
                 self.manager.unlock()
             except Exception as error:
@@ -134,8 +135,12 @@ class ProfileApplication(QObject):
     def render(self, message="", *, show_profile=False):
         loading = None
         try:
-            if (self.window is not None and getattr(self.window, "_profile_locked", False)
-                    and self.manager.active):
+            without_profile = (self.manager.locator is None and not self.manager.bootstrap_error
+                               and not self.manager.deletion_pending and not self.manager.profile_deleted)
+            if (self.window is not None
+                    and ((getattr(self.window, "_profile_locked", False) and self.manager.active)
+                         or (without_profile and (getattr(self.window, "_profile_locked", False)
+                                                  or getattr(self.window, "_profile_session", None) is not None)))):
                 loading = ProfileLoadingCover(self.window)
                 loading.present()
             self._render(message, show_profile=show_profile)
@@ -168,7 +173,8 @@ class ProfileApplication(QObject):
             old.settings_panel.hide()
             old.hide()
             self._retired.append(old)
-        selected = self.manager.locator is not None or self.manager.bootstrap_error or self._legacy_pending is not None
+        selected = (self.manager.locator is not None or self.manager.bootstrap_error
+                    or self.manager.deletion_pending or self.manager.profile_deleted or self._legacy_pending is not None)
         if self.manager.active:
             session = self.manager.session
             try:
@@ -217,16 +223,22 @@ class ProfileApplication(QObject):
                 window.skill_settings_page.set_vault_guidance(True, enabled) if window is self.window else None)
         if selected and not self.manager.active:
             self.window._profile_locked = True
-            self.window.startup_greeting.setText("Unlock your personal profile")
-            self.window.input.setPlaceholderText("Unlock your personal profile to chat")
-            self.window.activity.set_activity("Profile locked · Unlock to continue")
+            if self.manager.deletion_pending:
+                greeting, hint, activity = "Profile deletion pending", "Finish deleting the profile to continue", "Profile deletion needs a retry"
+            elif self.manager.profile_deleted:
+                greeting, hint, activity = "Choose how to continue", "Choose a profile to chat", "Profile deleted"
+            else:
+                greeting, hint, activity = "Unlock your personal profile", "Unlock your personal profile to chat", "Profile locked · Unlock to continue"
+            self.window.startup_greeting.setText(greeting)
+            self.window.input.setPlaceholderText(hint)
+            self.window.activity.set_activity(activity)
             self.window._update_context_window()
             self.window.composer.setEnabled(False)
             for index, button in enumerate(self.window.settings_panel.navigation):
                 button.setEnabled(False)
                 self.window.settings_panel.pages.widget(index).setEnabled(False)
         # Restore must remain available when password/recovery unlock fails.
-        if not self.manager.active:
+        if not self.manager.active and not self.manager.deletion_pending:
             page._buttons((("Restore encrypted backup…", lambda: restore_dialog(page, self.manager, page.transition_requested.emit)),))
         if old is not None and old.isMaximized():
             self.window.showMaximized()

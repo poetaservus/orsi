@@ -75,7 +75,9 @@ An unlocked profile uses the selected five-tab layout. Its persistent summary
 shows the profile title and copyable location. The user-requested mode/encryption/
 unlock badges and extra credential explanation/footer were removed. Compact
 **Manage profile** and **Lock** actions remain above every tab. Manage profile
-contains New profile, Select existing and Use current unencrypted storage.
+contains New profile, Select existing, Use current unencrypted storage and
+Delete profile. Deletion requires entering DELETE and shows the exact recorded
+profile/backup locations first; an older unlisted copy can be included explicitly.
 
 | Tab | Controls |
 | --- | --- |
@@ -145,6 +147,33 @@ A failed action that leaves the current session intact keeps that existing view
 and consumers, displaying the error without composing duplicates.
 Locking rejects pending credential dialogs and prevents their obsolete callbacks
 from binding credentials to a retired view.
+
+## Profile deletion
+
+Delete profile removes the complete selected directory, including both encrypted
+record domains, credentials, settings, images, documents and managed backups.
+All recorded external backups, restored copies and previous relocated locations
+of the same profile are included. A public locator-only registry records future
+create/select/backup/restore/relocate operations and survives restarting O.R.S.I;
+it contains no passwords, keys or personal record bodies. Copies made before
+tracking existed or copied manually to unknown locations must be included in the
+confirmation. Imported host originals and independently exported files are separate.
+
+Before removal, every session consumer is stopped, joined and cleared, streams
+are closed and vault keys are revoked. All copy locations must be verifiable and
+exclusively available. Safe directory checks reject application/home ancestors,
+different profile identities and filesystem links. Confirmed locations are staged
+beside their original folders before deleting content. A locator-only deletion
+journal and per-folder markers retain unfinished work across interruption and
+restart; known copies are not forgotten until cleanup finishes. The retry screen
+lists the locations and blocks opening other profile storage until completion.
+Deletion returns to profile choices rather than implicitly opening legacy history.
+
+The bundled pulsing splash now also covers composition when continuing without
+a profile, from either locked login or the open profile's menu. It retains the
+existing geometry, topmost display, independent animation and fade-out cleanup.
+
+See [deletion and startup verification](profile-delete-startup-verification.md).
 
 ## Credentials
 
