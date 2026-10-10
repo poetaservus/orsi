@@ -1,5 +1,21 @@
 # Git layout and baseline hygiene
 
+## Portable-node deployment, 10 October 2026
+
+`codex/deploy-portable-nodes` starts from local main `1627bfb`. Settings can
+deploy a fresh node or copy the current profile, with optional installed local
+models. Encrypted export includes skills, stored files, settings, credentials
+and managed backups while retaining the source selection. Forty-one distinct
+focused native cases and an actual relocated-node launch passed; see
+[verification and usage](portable-node-deployment.md). Only necessary checks
+ran; no full suite, live inference/provider call or physical-device gate.
+
+Sixteen preservation fingerprints and the four other worktree attachments are
+unchanged. Recovery evidence is under `state/backups/deploy-portable-nodes-20261010/`.
+Prior main is preserved at `archive/2026-10-10/main-before-deploy-portable-nodes`.
+Commit, fast-forward local main and remove only the merged feature branch.
+No remote publication.
+
 ## Missing selected profiles, 10 October 2026
 
 `codex/missing-profile-entry` starts from local main `e596c1a`. Missing saved

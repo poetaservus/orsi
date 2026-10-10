@@ -3,7 +3,7 @@
 Immutable encrypted blobs precede one atomic encrypted catalog replacement.
 Only the committed catalog grants access; abandoned ciphertext is reclaimable.
 """
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from copy import deepcopy
 import hmac
 import os
@@ -291,11 +291,13 @@ class Vault:
     def _blob_context(self, object_id, domain):
         return self._context("object", object_id=object_id, domain=domain.value)
 
-    def _verify_objects(self, root, catalog):
+    def _verify_objects(self, root, catalog, *, check_cancelled=lambda: None):
         for domain in Domain:
             for entry in catalog[domain.value].values():
+                check_cancelled()
                 c.read_object(root / "objects" / (entry["object_id"] + ".bin"), self._key(domain),
-                              self._blob_context(entry["object_id"], domain), entry["size"], collect=False)
+                              self._blob_context(entry["object_id"], domain), entry["size"], collect=False,
+                              check_cancelled=check_cancelled)
 
     def _usage(self):
         return sum(size for path, size in f.iter_files(self.root) if path != self.root / ".lease")
@@ -620,6 +622,59 @@ class Vault:
             self._commit(catalog)
             self._cleanup()
             return final
+
+    def export_copy(self, destination, *, copy_file, check_cancelled=lambda: None):
+        """Copy a complete encrypted profile, including its managed backups.
+
+        The caller owns the new staging directory and cancellable verified I/O.
+        Destination failures must not revoke or change the source profile.
+        """
+        destination = Path(destination).absolute()
+        with self._mutex, ExitStack() as leases:
+            self._require()
+            if destination.is_relative_to(self.root) or self.root.is_relative_to(destination):
+                raise VaultError("A profile export must use an independent location.")
+            check_cancelled()
+            f.ordinary(destination)
+            destination.mkdir()
+            (destination / "objects").mkdir()
+            (destination / "backups").mkdir()
+            paths = [self.root / "header.json", self.root / "state.bin"]
+            paths.extend(self.root / "objects" / (entry["object_id"] + ".bin")
+                         for domain in Domain for entry in self._catalog[domain.value].values())
+            for backup in self._catalog["backups"]:
+                root = self.root / "backups" / backup["id"]
+                check_cancelled()
+                lease = f.Lease(root)
+                leases.callback(lease.close)
+                header = c.parse(f.read_bytes(root / "header.json", _MAX_HEADER))
+                if not isinstance(header, dict) or header.get("profile_id") != self._header["profile_id"]:
+                    raise RecoveryRequired("A managed backup has a different profile identity.")
+                for path, _ in f.iter_files(root):
+                    relative = path.relative_to(root)
+                    if relative.as_posix() == ".lease":
+                        continue
+                    if not (relative.as_posix() in {"header.json", "state.bin"}
+                            or len(relative.parts) == 2 and relative.parts[0] == "objects"
+                            and relative.suffix == ".bin" and _ID.fullmatch(relative.stem)):
+                        raise RecoveryRequired("Unexpected managed backup files were preserved.")
+                    paths.append(path)
+                (destination / "backups" / backup["id"] / "objects").mkdir(parents=True)
+                (destination / "backups" / backup["id"] / "backups").mkdir()
+                if not (root / "state.bin").is_file():
+                    raise RecoveryRequired("A managed backup is incomplete.")
+            for path in dict.fromkeys(paths):
+                check_cancelled()
+                target = destination / path.relative_to(self.root)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                copy_file(path, target)
+            check_cancelled()
+            if f.read_bytes(destination / "header.json", _MAX_HEADER) != c.canonical(self._header):
+                raise RecoveryRequired("Exported profile header verification failed.")
+            catalog = self._decode_catalog(f.read_bytes(destination / "state.bin", c.MAX_CATALOG + 40))
+            if catalog != self._catalog:
+                raise RecoveryRequired("Exported profile catalog verification failed.")
+            self._verify_objects(destination, catalog, check_cancelled=check_cancelled)
 
     @staticmethod
     def _retained_backups(catalog, now):

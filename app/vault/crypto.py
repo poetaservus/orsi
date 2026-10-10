@@ -132,7 +132,7 @@ def write_object(path, source, key, context, reserve):
     return total
 
 
-def read_object(path, key, context, expected_size, *, collect=True):
+def read_object(path, key, context, expected_size, *, collect=True, check_cancelled=lambda: None):
     aad, total, output = canonical(context), 0, BytesIO() if collect else None
     def exact(source, size):
         data = source.read(size)
@@ -144,6 +144,7 @@ def read_object(path, key, context, expected_size, *, collect=True):
             state = sodium.crypto_secretstream_xchacha20poly1305_state()
             sodium.crypto_secretstream_xchacha20poly1305_init_pull(state, exact(source, 24), key)
             while True:
+                check_cancelled()
                 size = _LENGTH.unpack(exact(source, 4))[0]
                 if not _OVERHEAD <= size <= CHUNK + _OVERHEAD:
                     raise RecoveryRequired("Invalid encrypted object frame length.")

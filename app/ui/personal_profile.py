@@ -291,6 +291,7 @@ class PersonalProfilePage(QWidget):
             self.layout.addLayout(choices)
         self._buttons((("Use current unencrypted storage", self._legacy),))
         if not login:
+            self._buttons((("Deploy portable node…", self._deploy_node),))
             self.layout.addStretch()
         self.refresh_summary()
         if message:
@@ -368,6 +369,8 @@ class PersonalProfilePage(QWidget):
             self._quota_controls()
         self._card("Automatic lock")
         self._idle_controls()
+        self._card("Portable nodes", "Create a fresh node or include a complete copy of this profile on another drive.")
+        self._buttons((("Deploy portable node…", self._deploy_node),))
         self._section("Cloud access")
         self._credential_controls()
         self._section("Backups")
@@ -531,6 +534,11 @@ class PersonalProfilePage(QWidget):
     def _legacy(self):
         if confirm(self, "Use unencrypted storage", "Open the existing unencrypted personal storage? No data will be copied or merged."):
             self.transition_requested.emit(self.manager.use_legacy)
+
+    def _deploy_node(self):
+        from app.ui.portable_deployment import PortableDeploymentDialog
+        dialog = PortableDeploymentDialog(self.manager, self.window, self)
+        dialog.exec()
 
     def _delete_profile(self):
         try:
