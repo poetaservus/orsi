@@ -28,6 +28,11 @@ available, including safe cancellation when the profile locks or the app quits.
 Run **ORSI.cmd** in the new folder. Close the node before moving its complete
 folder to another drive or computer.
 
+Application, taskbar and tray icons use the transparent O.R.S.I logo. Run
+**Create shortcut.cmd** in a node's folder to create its branded shortcut on the
+current computer. Run it again after moving that folder. See
+[application icon and shortcuts](app-icon.md).
+
 Each deployment reserves a number from the local installation, starting at
 **001**, and stores its full name, **O.R.S.I Portable Node Nr. 001**, in its
 manifest and start guide. The next deployment uses 002, and so on. Cancelled or

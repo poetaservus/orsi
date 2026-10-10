@@ -33,6 +33,8 @@ def main(*, profile_session=None) -> int:
     from app.ui.instance import DesktopInstance
 
     app = QApplication(sys.argv)
+    from app.ui.branding import configure_application
+    configure_application(app)
     instance = DesktopInstance(PATHS.root, app)
     owner = None
     try:

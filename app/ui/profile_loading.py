@@ -25,6 +25,8 @@ class ProfileLoadingWindow(QWidget):
                          | Qt.WindowType.WindowDoesNotAcceptFocus | Qt.WindowType.WindowStaysOnTopHint)
         self.setObjectName("profileLoadingWindow")
         self.setWindowTitle("O.R.S.I")
+        from app.ui.branding import app_icon
+        self.setWindowIcon(app_icon())
         self.setAccessibleName("Opening personal profile")
         self.setAttribute(Qt.WidgetAttribute.WA_QuitOnClose, False)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
@@ -203,6 +205,8 @@ def run_loading_helper(arguments):
     if not 1 <= geometry.width() <= 32768 or not 1 <= geometry.height() <= 32768:
         return 2
     application = QApplication([sys.argv[0]])
+    from app.ui.branding import configure_application
+    configure_application(application)
     loading = ProfileLoadingWindow(geometry=geometry)
     class Commands(QObject):
         received = Signal(str)

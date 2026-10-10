@@ -371,6 +371,8 @@ class MainWindow(QMainWindow):
 
         self.setObjectName("mainWindow")
         self.setWindowTitle("O.R.S.I")
+        from app.ui.branding import app_icon
+        self.setWindowIcon(app_icon())
         self._window_frame = WindowsFrame(self)
         self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowMinMaxButtonsHint | Qt.WindowType.WindowCloseButtonHint)

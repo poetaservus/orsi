@@ -5,6 +5,8 @@ from ctypes import wintypes
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import QWidget
 
+from app.ui.branding import APP_ICON
+
 
 class GUID(ctypes.Structure):
     _fields_ = [("data1", wintypes.DWORD), ("data2", wintypes.WORD),
@@ -38,11 +40,20 @@ class WindowsNotifications(QWidget):
         self.shell.Shell_NotifyIconW.restype = wintypes.BOOL
         self.user.LoadIconW.argtypes = [wintypes.HINSTANCE, ctypes.c_void_p]
         self.user.LoadIconW.restype = wintypes.HICON
+        self.user.LoadImageW.argtypes = [wintypes.HINSTANCE, wintypes.LPCWSTR, wintypes.UINT,
+                                        ctypes.c_int, ctypes.c_int, wintypes.UINT]
+        self.user.LoadImageW.restype = wintypes.HICON
+        self.user.DestroyIcon.argtypes = [wintypes.HICON]
+        self.user.DestroyIcon.restype = wintypes.BOOL
         self.user.RegisterWindowMessageW.argtypes = [wintypes.LPCWSTR]
         self.user.RegisterWindowMessageW.restype = wintypes.UINT
         self.taskbar_created = self.user.RegisterWindowMessageW("TaskbarCreated")
-        # Shared stock icon: Windows retains ownership; do not DestroyIcon.
-        self.icon = self.user.LoadIconW(None, ctypes.c_void_p(32516))
+        self.icon = self.user.LoadImageW(None, str(APP_ICON), 1, 0, 0, 0x10 | 0x40)
+        self._owns_icon = bool(self.icon)
+        if not self.icon:
+            # Missing/corrupt artwork must not disable notifications. This
+            # stock handle is shared and must never be passed to DestroyIcon.
+            self.icon = self.user.LoadIconW(None, ctypes.c_void_p(32516))
         self.hwnd = int(self.winId())
 
     def _data(self):
@@ -73,9 +84,11 @@ class WindowsNotifications(QWidget):
         data.uFlags = 0x10  # NIF_INFO
         data.szInfoTitle = title[:63]
         data.szInfo = message[:255]
-        # NIIF_INFO | NIIF_NOSOUND | NIIF_RESPECT_QUIET_TIME. Qt's tray
+        # Custom artwork | NIIF_NOSOUND | NIIF_RESPECT_QUIET_TIME. Qt's tray
         # showMessage API cannot suppress the extra Windows notification sound.
-        data.dwInfoFlags = 0x01 | 0x10 | 0x80
+        data.dwInfoFlags = (0x04 if self._owns_icon else 0x01) | 0x10 | 0x80
+        if self._owns_icon:
+            data.hBalloonIcon = self.icon
         return bool(self.shell.Shell_NotifyIconW(1, ctypes.byref(data)))
 
     def nativeEvent(self, event_type, message):  # noqa: N802
@@ -95,3 +108,7 @@ class WindowsNotifications(QWidget):
         if self._installed:
             self.shell.Shell_NotifyIconW(2, ctypes.byref(self._data()))
             self._installed = False
+        if self._owns_icon:
+            self.user.DestroyIcon(self.icon)
+            self._owns_icon = False
+            self.icon = None

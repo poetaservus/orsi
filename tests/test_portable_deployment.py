@@ -41,6 +41,9 @@ def source(tmp_path):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(PRIVATE)
     (root / "models").mkdir()
+    icon = root / "app/ui/assets/orsi.ico"
+    icon.parent.mkdir(parents=True)
+    icon.write_bytes((Path(__file__).resolve().parents[1] / "app/ui/assets/orsi.ico").read_bytes())
     return root
 
 
@@ -153,6 +156,7 @@ def test_fresh_node_has_no_profile_or_instance_state(manager, models):
     assert not (result.destination / "app/private.json").exists()
     assert not (result.destination / "runtime/python/Scripts").exists()
     assert (result.destination / "runtime/python/Lib/site-packages/vendor/LICENSE").exists()
+    assert (result.destination / "app/ui/assets/orsi.ico").read_bytes() == (manager.application_root / "app/ui/assets/orsi.ico").read_bytes()
     assert (result.destination / "models/model.gguf").exists() == models
     assert (result.destination / "models/mmproj-model.gguf").exists() == models
     assert (result.destination / "runtime/llama-server/ggml.dll").exists() == models

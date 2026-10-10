@@ -16,7 +16,7 @@ import zipfile
 PUBLIC_FILES = (
     "ORSI.cmd", "THIRD_PARTY_NOTICES.md", "pyproject.toml", "requirements.txt",
     "config/agent.json", "config/cloud.json", "config/model.json",
-    "tools/verify_openai_runtime.py",
+    "tools/verify_openai_runtime.py", "Create shortcut.cmd", "tools/create_shortcut.ps1",
 )
 PYTHON_PATHS = ["python312.zip", ".", "Lib\\site-packages", "..\\..", "import site"]
 GUIDE = """O.R.S.I — cloud-only Windows x64 pilot
@@ -101,7 +101,7 @@ def public_export(source: Path, revision: str) -> list[tuple[str, bytes]]:
             if not member.isfile():
                 raise ValueError("Public export contains a link or unsupported entry.")
             if member.name not in PUBLIC_FILES and not (
-                    name.parts[0] == "app" and name.suffix in {".py", ".png", ".svg", ".ogg", ".ttf", ".txt"}):
+                    name.parts[0] == "app" and name.suffix in {".py", ".png", ".ico", ".svg", ".ogg", ".ttf", ".txt"}):
                 raise ValueError("Unexpected public application file.")
             exported.append((member.name, content.extractfile(member).read()))
     if not {*PUBLIC_FILES, "app/main.py"} <= {name for name, _ in exported}:

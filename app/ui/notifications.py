@@ -4,8 +4,9 @@ import sys
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QObject, QUrl
-from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QSystemTrayIcon
+
+from app.ui.branding import app_icon
 
 
 log = logging.getLogger(__name__)
@@ -97,7 +98,7 @@ class NotificationManager(QObject):
             self.backend = WindowsNotifications(self.window)
             self.backend.clicked.connect(self.open_window)
         elif QSystemTrayIcon.isSystemTrayAvailable():
-            self.backend = QSystemTrayIcon(QIcon(str(SOUNDS.parent / "top_new_session.svg")), self)
+            self.backend = QSystemTrayIcon(app_icon(), self)
             self.backend.setToolTip("O.R.S.I")
             self.backend.messageClicked.connect(self.open_window)
             self.backend.show()

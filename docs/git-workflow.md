@@ -1,5 +1,19 @@
 # Git layout and baseline hygiene
 
+## Transparent application icon, 10 October 2026
+
+`codex/app-logo-icon` starts from local main `8295169`. The unchanged bundled
+transparent logo now provides application, taskbar, tray and shortcut artwork.
+New nodes/pilot packages include the multi-size ICO and host shortcut creator.
+Twenty-seven distinct focused native checks and an updated relocated-node
+launch passed; see [usage and verification](app-icon.md). A branded local Desktop
+shortcut was created and its shell identity verified. Seventeen preservation
+fingerprints and four other worktree attachments are unchanged. Recovery:
+`state/backups/app-logo-icon-20261010/`; prior main:
+`archive/2026-10-10/main-before-app-logo-icon`. Commit, fast-forward local main,
+then delete only the merged feature branch. No full suite, live provider/model
+calls, distributed ZIP rebuild or remote publication.
+
 ## Portable-node identity and drive naming, 10 October 2026
 
 `codex/portable-node-identity` starts from local main `5c5123c`. Portable/pilot

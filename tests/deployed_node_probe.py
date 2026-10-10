@@ -74,6 +74,10 @@ def run(root, report_path):
                 page.password.setText(PASSWORD.decode())
                 QTest.keyClick(page.password, Qt.Key.Key_Return)
                 assert self.manager.active and not hasattr(self.window, "login_panel")
+                from app.ui.branding import app_icon
+                assert self.application.applicationName() == "O.R.S.I"
+                assert self.window.windowIcon().pixmap(32, 32).toImage() == app_icon().pixmap(32, 32).toImage()
+                report["application_logo_applied"] = True
                 vault = self.manager.vault()
                 keys = vault._keys
                 inference = self.window.inference
@@ -136,7 +140,8 @@ def run(root, report_path):
         owners.ProfileApplication = Owner
         sys.argv = ["deployed-node-check"]
         report["stage"] = "desktop_entry"
-        assert desktop.main() == 0 and report.get("scenario_passed")
+        from app.launcher import main as launch
+        assert launch() == 0 and report.get("scenario_passed")
         report["stage"] = "released_resources"
         assert owner is not None and not owner.manager.active
         assert vault.state == State.LOCKED and vault._keys is None and not any(keys) and vault._lease is None

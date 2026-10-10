@@ -305,15 +305,18 @@ def test_native_delivery_suppresses_system_chime_click_and_cleanup(app, monkeypa
         calls.append((operation, data))
         return True
     shell = SimpleNamespace(Shell_NotifyIconW=Mock(side_effect=send))
-    user = SimpleNamespace(LoadIconW=Mock(return_value=123), RegisterWindowMessageW=Mock(return_value=999))
-    monkeypatch.setattr(ctypes, "WinDLL", lambda name, **kw: shell if name == "shell32" else user)
+    user = SimpleNamespace(LoadImageW=Mock(return_value=123), LoadIconW=Mock(return_value=456),
+        DestroyIcon=Mock(return_value=True), RegisterWindowMessageW=Mock(return_value=999))
     window = MainWindow(None, "test")
+    monkeypatch.setattr(ctypes, "WinDLL", lambda name, **kw: shell if name == "shell32" else user)
     backend = WindowsNotifications(window)
     try:
         assert ctypes.sizeof(NotifyIconData) == (976 if ctypes.sizeof(ctypes.c_void_p) == 8 else 956)
         assert backend.show_message(*EVENTS["approval"])
         assert [operation for operation, _ in calls] == [0, 4, 1]
         data = calls[-1][1]
+        assert calls[0][1].hIcon == 123
+        assert data.dwInfoFlags & 0x04 and data.hBalloonIcon == 123
         assert data.dwInfoFlags & 0x10  # NIIF_NOSOUND
         assert data.dwInfoFlags & 0x80
         assert data.szInfoTitle == EVENTS["approval"][0]
@@ -329,8 +332,11 @@ def test_native_delivery_suppresses_system_chime_click_and_cleanup(app, monkeypa
         assert [operation for operation, _ in calls][-2:] == [0, 4]
         backend.shutdown()
         assert calls[-1][0] == 2
+        user.DestroyIcon.assert_called_once_with(123)
+        user.LoadIconW.assert_not_called()
         count = len(calls)
         backend.shutdown()
+        user.DestroyIcon.assert_called_once_with(123)
         assert not backend.show_message(*EVENTS["response"])
         assert len(calls) == count
     finally:
