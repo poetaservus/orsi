@@ -1,5 +1,36 @@
 # Settings consistency, transitions and loading logo
 
+## Vault login redesign, 10 October 2026
+
+Branch `codex/vault-login-redesign` starts from local main `6d6117d`. The login
+panel now uses the Settings gradient (`#090c15` to `#1d2637`) and a centered,
+600-pixel-wide card with a vault mark, O.R.S.I wordmark, profile summary, explicit
+field labels and a prominent unlock action. Profile choices, unencrypted storage
+and encrypted-backup recovery remain separate visible actions beneath the form.
+The entire card content scrolls when needed in smaller windows. Existing action
+handlers, password/recovery semantics, backdrop blur and 16-pixel radius remain.
+
+Only necessary checks ran: **11 existing native cases passed in 12.30 seconds**
+on Qt 6.12.0, using `--basetemp state/vault-login-native`. They cover failed and
+successful password entry, lock/unlock isolation, profile creation/selection,
+continue-without-profile transitions, deletion retry and post-deletion choices.
+Native XML/log evidence shares that prefix. No new tests, full-suite repetition
+or live provider calls.
+
+A separate synthetic native check verified every login button is reachable at
+1280×800, 1000×700 and 760×600; failed authentication shows feedback and clears
+secrets; New/Select open the existing dialogs; Restore opens the existing backup
+picker; recovery-key Enter and the password unlock button both open the vault.
+Four captures were visually inspected. Evidence is under ignored
+`state/vault-login-preview/`; zero network attempts and the synthetic profile
+released. Only local source changed; no portable package was rebuilt.
+
+Fourteen settings/runtime/artwork fingerprints and all four other worktree tips
+and attachments are unchanged. Recovery evidence is under
+`state/backups/vault-login-redesign-20261010/`, with prior main preserved at
+`archive/2026-10-10/main-before-vault-login-redesign`. Commit, fast-forward local
+main and remove only the merged feature branch; no remote publication.
+
 ## Slate-blue Settings controls, 10 October 2026
 
 Branch `codex/settings-accent-palette` starts from local main `6650355`. Shared

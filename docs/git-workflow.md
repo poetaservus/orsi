@@ -1,5 +1,20 @@
 # Git layout and baseline hygiene
 
+## Vault login redesign, 10 October 2026
+
+`codex/vault-login-redesign` starts from local main `6d6117d`. It matches the
+login background to Settings and reorganizes the existing controls into a
+centered login card. All original actions and authentication handlers remain.
+Eleven focused native cases and a separate appearance/action check passed; see
+[verification](settings-finish-verification.md#vault-login-redesign-10-october-2026).
+Only necessary checks ran; no full suite, live provider call or portable rebuild.
+
+Fourteen preservation fingerprints and the four other worktree attachments are
+unchanged. Recovery evidence is under `state/backups/vault-login-redesign-20261010/`.
+Preserve prior main at `archive/2026-10-10/main-before-vault-login-redesign`, commit,
+fast-forward local main and remove only the merged feature branch.
+No remote publication.
+
 ## Settings accent palette, 10 October 2026
 
 `codex/settings-accent-palette` starts from local main `6650355`. It replaces

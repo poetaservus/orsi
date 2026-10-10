@@ -191,7 +191,9 @@ class PersonalProfilePage(QWidget):
             self.destroyed.connect(unregister)
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(0, 0, 6, 0)
-        self.layout.setSpacing(10 if login else 12)
+        self.layout.setSpacing(8 if login else 12)
+        if login:
+            self.layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         if not login and not self.tabbed:
             heading = label("Personal profile")
             heading.setObjectName("profileHeading")
@@ -199,6 +201,10 @@ class PersonalProfilePage(QWidget):
             self.layout.addWidget(label("Set up a profile to keep your personal storage and preferences together."))
         self.summary = label("")
         self.summary.setAccessibleName("Selected personal profile")
+        if login:
+            self.summary.setObjectName("loginProfileSummary")
+            self.summary.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            self.summary.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.layout.addWidget(self.summary)
         self.status = FeedbackLabel(message)
         self.status.setAccessibleName("Personal profile status")
@@ -220,7 +226,8 @@ class PersonalProfilePage(QWidget):
             self.layout.addWidget(locations)
             self._buttons((("Retry profile deletion", lambda: self.transition_requested.emit(
                 lambda: self.manager.delete_current(consent=True))),))
-            self.layout.addStretch()
+            if not login:
+                self.layout.addStretch()
             return
         if self.tabbed:
             self.layout.removeWidget(self.summary)
@@ -234,23 +241,40 @@ class PersonalProfilePage(QWidget):
         if manager.locator is not None and not manager.active:
             self.password, self.recovery = secret("Vault password"), secret("Recovery key (optional)")
             if login:
-                self.password.setFixedHeight(42)
-                self.recovery.setFixedHeight(42)
-            self.layout.addWidget(self.password)
-            self.layout.addWidget(self.recovery)
-            self._buttons((("Unlock vault" if login and manager.encrypted else
+                self.password.setPlaceholderText("Enter your vault password")
+                self.recovery.setPlaceholderText("Or paste your recovery key")
+                for title, field in (("Password", self.password), ("Recovery key (optional)", self.recovery)):
+                    field.setFixedHeight(44)
+                    caption = label(title)
+                    caption.setObjectName("loginFieldLabel")
+                    caption.setBuddy(field)
+                    self.layout.addWidget(caption)
+                    self.layout.addWidget(field)
+            else:
+                self.layout.addWidget(self.password)
+                self.layout.addWidget(self.recovery)
+            self.unlock_button, = self._buttons((("Unlock vault" if login and manager.encrypted else
                             "Unlock profile" if manager.encrypted else "Open profile", self._unlock),))
+            if login:
+                self.unlock_button.setObjectName("loginPrimary")
+                self.unlock_button.setFixedHeight(44)
             self.password.returnPressed.connect(self._unlock)
             self.recovery.returnPressed.connect(self._unlock)
         if login:
+            self.layout.addSpacing(10)
+            options = label("Other profile options")
+            options.setObjectName("loginOptionsHeading")
+            self.layout.addWidget(options)
             choices = QHBoxLayout()
             for title, action in (("New profile…", self._new), ("Select existing…", self._select)):
                 button = QPushButton(title)
+                button.setFixedHeight(36)
                 button.clicked.connect(action)
                 choices.addWidget(button)
             self.layout.addLayout(choices)
         self._buttons((("Use current unencrypted storage", self._legacy),))
-        self.layout.addStretch()
+        if not login:
+            self.layout.addStretch()
         self.refresh_summary()
         if message:
             self.status.setText(message)
@@ -429,6 +453,7 @@ class PersonalProfilePage(QWidget):
         for title, action in actions:
             button = QPushButton(title)
             button.setAccessibleName(title.removesuffix("…"))
+            button.setFixedHeight(36)
             button.clicked.connect(action)
             row.addWidget(button)
             buttons.append(button)
