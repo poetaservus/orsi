@@ -1,5 +1,17 @@
 # Git layout and baseline hygiene
 
+## Desktop startup splash, 10 October 2026
+
+`codex/splash-launch` starts from main `70d4d28`. The desktop entry point now
+presents the bundled animated splash on every fresh launch before composing
+login or chat. Twenty-six focused native cases passed, including five actual
+`pythonw.exe` entry-point cases; see [verification](splash-launch-verification.md).
+No full suite or live gates. Recovery refs, worktree tips and twelve unchanged
+preservation entries are under ignored `state/backups/splash-launch-20261010/`.
+Preserve prior main at `archive/2026-10-10/main-before-splash-launch`, commit,
+fast-forward local main, publish under the user's chat authorization and remove
+the merged branch.
+
 ## Profile deletion and no-profile splash, 10 October 2026
 
 `codex/profile-delete-startup` starts from main `c8be6fc`. Confirmed deletion removes

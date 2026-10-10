@@ -66,7 +66,7 @@ from app.ui.settings_panel import SettingsPanel
 from app.ui.inputs import ScrollSafeComboBox
 from app.ui.notifications import NotificationManager
 from app.ui.settings_motion import SettingsIconButton
-from app.ui.window_frame import CAPTION_HEIGHT, DragStrip, WindowControls, WindowsFrame
+from app.ui.window_frame import CAPTION_HEIGHT, DEFAULT_WINDOW_SIZE, DragStrip, WindowControls, WindowsFrame
 from app.ui.attachments import AttachmentTray
 from app.ui.image_viewer import ImageViewer
 from app.ui.motion import create_attachment_file_dialog
@@ -374,7 +374,7 @@ class MainWindow(QMainWindow):
         self._window_frame = WindowsFrame(self)
         self.setWindowFlags(Qt.WindowType.Window | Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.WindowMinMaxButtonsHint | Qt.WindowType.WindowCloseButtonHint)
-        self.resize(1280, 800)
+        self.resize(*DEFAULT_WINDOW_SIZE)
         self.setMinimumSize(760, 600)
 
         root = QWidget()

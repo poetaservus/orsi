@@ -34,31 +34,45 @@ def main(*, profile_session=None) -> int:
 
     app = QApplication(sys.argv)
     instance = DesktopInstance(PATHS.root, app)
+    owner = None
     try:
         if not instance.claim():
             return 0
-        from app.ui.profile_application import ProfileApplication
+        from app.ui.profile_loading import ProfileLoadingCover
+        # First launch has no previous window; present before composing either
+        # the login panel or chat, after claiming the single desktop instance.
+        loading = ProfileLoadingCover()
         try:
-            startup_agent_config = load_agent_feature_config()
-        except (OSError, TypeError, ValueError):
-            startup_agent_config = None
-        # Host access follows the configured setting, without a per-launch popup.
-        full_local_read_acknowledged = bool(
-            startup_agent_config is not None and startup_agent_config.full_local_read_enabled
-        )
-        def compose(**kwargs):
-            return build_application(agent_config_override=startup_agent_config,
-                full_local_read_acknowledged=full_local_read_acknowledged, **kwargs)
-        owner = ProfileApplication(app, PATHS.root, compose, initial_session=profile_session,
-            legacy_logging=lambda: configure_logging(PATHS.state / "orsi.log"))
-        instance.activation_requested.connect(owner.activate)
-        try:
+            loading.present()
+            from app.ui.profile_application import ProfileApplication
+            try:
+                startup_agent_config = load_agent_feature_config()
+            except (OSError, TypeError, ValueError):
+                startup_agent_config = None
+            # Host access follows the configured setting, without a per-launch popup.
+            full_local_read_acknowledged = bool(
+                startup_agent_config is not None and startup_agent_config.full_local_read_enabled
+            )
+            def compose(**kwargs):
+                return build_application(agent_config_override=startup_agent_config,
+                    full_local_read_acknowledged=full_local_read_acknowledged, **kwargs)
+            owner = ProfileApplication(app, PATHS.root, compose, initial_session=profile_session,
+                initial_geometry=loading.geometry,
+                legacy_logging=lambda: configure_logging(PATHS.state / "orsi.log"))
+            instance.activation_requested.connect(owner.activate)
             owner.start()
-            return app.exec()
         finally:
-            owner.shutdown()
+            try:
+                loading.dismiss(reveal=owner.window if owner is not None else None)
+            finally:
+                loading.deleteLater()
+        return app.exec()
     finally:
-        instance.close()
+        try:
+            if owner is not None:
+                owner.shutdown()
+        finally:
+            instance.close()
 
 
 if __name__ == "__main__":

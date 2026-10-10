@@ -14,12 +14,13 @@ from app.vault.profiles import ProfileManager, public_error
 
 class ProfileApplication(QObject):
     def __init__(self, application, application_root, builder, *, manager=None, initial_session=None,
-                 legacy_logging=None, window_factory=None):
+                 legacy_logging=None, window_factory=None, initial_geometry=None):
         super().__init__(application)
         self.application, self.builder = application, builder
         self.manager = manager or ProfileManager(application_root)
         self.legacy_logging = legacy_logging
         self.window_factory = window_factory or MainWindow
+        self.initial_geometry = initial_geometry
         self._composition = (None, None)
         self.window = None
         self._retired = []
@@ -201,6 +202,8 @@ class ProfileApplication(QObject):
         self.window = self.window_factory(service, host["hostname"], error, inference, preferences)
         if old is not None:
             self.window.setGeometry(old.geometry())
+        elif self.initial_geometry is not None:
+            self.window.setGeometry(self.initial_geometry)
         self.window._owns_legacy = not selected
         if self.manager.active:
             self.window.bind_profile(self.manager.session)

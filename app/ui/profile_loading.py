@@ -1,4 +1,4 @@
-"""Public bundled artwork covering the window while an unlocked profile loads."""
+"""Public bundled artwork for desktop startup and profile loading."""
 from pathlib import Path
 from math import cos, pi
 import os
@@ -9,6 +9,8 @@ from threading import Event, Thread
 from PySide6.QtCore import QEasingCurve, QEventLoop, QObject, QPropertyAnimation, QRect, QRectF, Qt, Signal, QVariantAnimation
 from PySide6.QtGui import QColor, QPainter, QPixmap
 from PySide6.QtWidgets import QApplication, QWidget
+
+from app.ui.window_frame import DEFAULT_WINDOW_SIZE
 
 
 _FADE_IN_MS = 240
@@ -109,10 +111,16 @@ class ProfileLoadingWindow(QWidget):
 
 
 class ProfileLoadingCover(QObject):
-    """Keep the public artwork animating while profile composition blocks Qt."""
-    def __init__(self, previous):
+    """Keep the public artwork animating while startup or profile composition blocks Qt."""
+    def __init__(self, previous=None):
         super().__init__(QApplication.instance())
-        self.geometry = previous.geometry()
+        if previous is not None:
+            self.geometry = previous.geometry()
+        else:
+            available = QApplication.primaryScreen().availableGeometry()
+            self.geometry = QRect(0, 0, min(DEFAULT_WINDOW_SIZE[0], available.width()),
+                                  min(DEFAULT_WINDOW_SIZE[1], available.height()))
+            self.geometry.moveCenter(available.center())
         self.process = None
         self.fallback = None
         QApplication.instance().aboutToQuit.connect(self.abort)

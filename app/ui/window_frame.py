@@ -12,6 +12,7 @@ from PySide6.QtWidgets import QAbstractButton, QApplication, QHBoxLayout, QPushB
 
 CAPTION_HEIGHT = 34
 RESIZE_MARGIN = 7
+DEFAULT_WINDOW_SIZE = (1280, 800)
 
 
 def resize_edges(position: QPoint, size, maximized: bool = False) -> Qt.Edges:
