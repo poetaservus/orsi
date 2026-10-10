@@ -185,12 +185,27 @@ backend API callers retain their existing opt-in environment behavior.
 
 ## Migration and originals
 
-**Migrate selected personal data** presents unchecked category choices and an
-optional explicit replacement choice. Choose the source application directory
-and personal skills directory. Close other source instances before importing
+**Import files…** opens a file browser with multiple selection. **Import folder…**
+opens a folder browser and copies all files in that folder and its subfolders,
+preserving their relative paths. These choices accept ordinary folders anywhere
+on the host or a connected drive; no O.R.S.I directory layout is required. Copies
+go into the current unlocked vault under unique `imports/` locations. Same-named
+selected files remain separate, cancellation imports nothing, and an empty folder
+reports that there are no files to import. Sources remain unchanged and each copy
+uses the same verification and separately authorized original-cleanup mechanism.
+
+**Import from another O.R.S.I.…** is the separate previous-installation flow.
+It presents unchecked category choices, a visibly labeled application folder
+with a Browse button, and an optional explicit replacement choice. The separately
+labeled personal skills folder and its browser appear only when skills are selected.
+The application folder starts empty, and Import selected data stays disabled until
+the required selections are present. Close other source instances before importing
 or cleaning originals. Source snapshots reject links/shared hardlinks, validate
 supported history/attachment relationships and skill packages, and are checked
 again for changes before publication. No source is moved during import.
+
+See [the file/folder browser verification](vault-import-browser-verification.md)
+for the 10 October 2026 usability follow-up.
 
 | Choice | Imported material |
 | --- | --- |

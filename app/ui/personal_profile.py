@@ -333,7 +333,8 @@ class PersonalProfilePage(QWidget):
             self._buttons((("Relocate verified copy…", self._relocate),))
         self._section("Data")
         if self.manager.encrypted:
-            self._card("Import copies", "Originals stay outside the vault until you separately choose cleanup.")
+            self._card("Import files and folders", "Copy documents from anywhere on this computer or a connected drive into your current vault. "
+                "Folder imports include subfolders. Originals stay unchanged.")
             self._migration_controls()
             self._retention_controls()
         else:
@@ -749,62 +750,111 @@ class PersonalProfilePage(QWidget):
             self.transition_requested.emit(lambda: self.manager.relocate(path, mode=mode))
 
     def _migration_controls(self):
-        self._buttons((("Migrate selected personal data…", self._migrate), ("Import a copy into vault…", self._import_copy),
-                       ("Review retained originals…", self._originals)))
+        self._buttons((("Import files…", self._import_copy), ("Import folder…", self._import_folder)))
+        self.layout.addWidget(label("Moving from another O.R.S.I installation? Import its saved settings, conversations or personal data."))
+        self._buttons((("Import from another O.R.S.I.…", self._migrate),))
+        self._buttons((("Review retained originals…", self._originals),))
 
     def _migrate(self):
         from app.vault.migration import CATEGORIES, prepare_migration, apply_migration
         dialog = profile_dialog(self)
-        dialog.setWindowTitle("Choose personal data to migrate")
-        dialog.resize(620, 560)
+        dialog.setWindowTitle("Import from another O.R.S.I installation")
+        dialog.resize(680, 580)
         outer = QVBoxLayout(dialog)
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         content = QWidget()
         layout = QVBoxLayout(content)
         scroll.setWidget(content)
         outer.addWidget(scroll)
-        source = QLineEdit(str(self.manager.application_root))
-        source.setAccessibleName("Existing application folder")
-        skills = QLineEdit(str(Path.home() / ".orsi/skills"))
-        skills.setAccessibleName("Existing personal skills folder")
-        layout.addWidget(label("Choose an existing O.R.S.I application folder. Select only the categories you want. "
-            "Conversations become saved archives. Unsupported features are not added; existing files in the named personal folders are imported."))
-        layout.addWidget(source)
-        layout.addWidget(skills)
+        layout.addWidget(label("Bring saved data from a previous O.R.S.I installation into your current vault. "
+            "To add ordinary documents instead, cancel and use Import files or Import folder in the Data tab."))
+        def folder_field(box, title, value, picker_title):
+            field = QLineEdit(value)
+            field.setMinimumWidth(0)
+            field.setAccessibleName(title)
+            caption = label(title)
+            caption.setBuddy(field)
+            box.addWidget(caption)
+            row = QHBoxLayout()
+            row.addWidget(field, 1)
+            browse = QPushButton("Browse…")
+            browse.setAccessibleName("Browse for " + title.lower())
+            def choose():
+                path = QFileDialog.getExistingDirectory(dialog, picker_title, field.text() or str(Path.home()))
+                if path:
+                    field.setText(path)
+            browse.clicked.connect(choose)
+            row.addWidget(browse)
+            box.addLayout(row)
+            return field
+        source = folder_field(layout, "Previous O.R.S.I application folder", "", "Choose the previous O.R.S.I application folder")
+        source.setPlaceholderText("Choose the previous O.R.S.I folder")
+        layout.addWidget(label("Select what to import. Conversations become saved archives."))
         checks = {}
         for name, title in CATEGORIES.items():
             checks[name] = QCheckBox(title)
             layout.addWidget(checks[name])
+        skills_group = QWidget()
+        skills_layout = QVBoxLayout(skills_group)
+        skills_layout.setContentsMargins(0, 0, 0, 0)
+        skills = folder_field(skills_layout, "Personal skills folder", str(Path.home() / ".orsi/skills"), "Choose the personal skills folder")
+        layout.addWidget(skills_group)
+        skills_group.hide()
+        checks["skills"].toggled.connect(skills_group.setVisible)
         replace = QCheckBox("Replace matching selected settings or records already in this vault")
         layout.addWidget(replace)
         layout.addWidget(label("Import verifies every selected copy before reporting completion. Originals stay unchanged; "
             "you can review their exact locations and choose cleanup separately afterward."))
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        import_button = buttons.button(QDialogButtonBox.StandardButton.Ok)
+        import_button.setText("Import selected data")
+        def update_import():
+            selected = {name for name, check in checks.items() if check.isChecked()}
+            import_button.setEnabled(bool(selected) and (bool(source.text().strip()) or selected == {"skills"})
+                                     and ("skills" not in selected or bool(skills.text().strip())))
+        source.textChanged.connect(update_import)
+        skills.textChanged.connect(update_import)
+        for check in checks.values():
+            check.toggled.connect(update_import)
+        update_import()
         outer.addWidget(buttons)
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         if dialog.exec() == QDialog.DialogCode.Accepted:
             categories = tuple(name for name, check in checks.items() if check.isChecked())
-            root, skills_root, replacement = source.text(), skills.text(), replace.isChecked()
+            root, skills_root, replacement = source.text().strip(), skills.text().strip(), replace.isChecked()
             def migrate():
+                if set(categories) != {"skills"} and not Path(root).is_dir():
+                    raise VaultError("Choose an existing O.R.S.I application folder.")
                 plan = prepare_migration(root, categories, skills_root=Path(skills_root))
+                if not plan.writes:
+                    raise VaultError("No matching saved data was found in the selected folders.")
                 apply_migration(self.manager.session, plan, replace=replacement)
             self.reload_requested.emit(migrate)
 
     def _import_copy(self):
-        title = "Import a copy into vault; original remains unchanged"
+        title = "Select files to copy into your vault; originals stay unchanged"
         if self.manager.guidance():
             title = "Recommended: " + title
-        source, _ = QFileDialog.getOpenFileName(self, title)
+        sources, _ = QFileDialog.getOpenFileNames(self, title, str(Path.home()))
+        if not sources:
+            return
+        def copy():
+            from app.vault.migration import prepare_file_import, apply_migration
+            plan = prepare_file_import(sources)
+            apply_migration(self.manager.session, plan)
+        self.reload_requested.emit(copy)
+
+    def _import_folder(self):
+        source = QFileDialog.getExistingDirectory(self, "Choose a folder to copy into your vault, including subfolders", str(Path.home()))
         if not source:
             return
         def copy():
-            from app.vault.migration import MigrationPlan, _add, apply_migration
-            from uuid import uuid4
-            plan = MigrationPlan(("explicit_import",))
-            _add(plan, source, "imports/" + uuid4().hex + "/" + Path(source).name)
-            apply_migration(self.manager.session, plan)
+            from app.vault.migration import prepare_folder_import, apply_migration
+            apply_migration(self.manager.session, prepare_folder_import(source))
         self.reload_requested.emit(copy)
 
     def _originals(self):

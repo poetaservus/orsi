@@ -1,5 +1,17 @@
 # Git layout and baseline hygiene
 
+## Clear vault import browsers, 10 October 2026
+
+`codex/vault-import-browser` starts from main `0181919`. Data now exposes file and
+folder browsers for arbitrary host documents, separately from the clearly labeled
+previous-installation import. Nineteen focused native cases and normal/minimum-size
+visual previews passed; see [the verification record](vault-import-browser-verification.md).
+No full suite or live gates. Recovery refs, worktree tips and configuration/artwork
+fingerprints are under ignored `state/backups/vault-import-browser-20261010/`.
+Preserve prior main at `archive/2026-10-10/main-before-vault-import-browser`, commit,
+fast-forward local main, publish under the user's chat authorization and remove
+only the merged feature branch.
+
 ## Quicker Settings navigation, 10 October 2026
 
 `codex/settings-navigation-speed` starts from main `b62882a`. Settings sections

@@ -70,6 +70,33 @@ def _add(plan, source, target, *, references=(), retained=True, expires_at=None,
     return raw
 
 
+def prepare_file_import(sources):
+    """Copy explicitly chosen host files without requiring an O.R.S.I layout."""
+    sources = tuple(dict.fromkeys(Path(source).absolute() for source in sources))
+    if not sources:
+        raise VaultError("Choose at least one file to import.")
+    plan = MigrationPlan(("explicit_import",))
+    for source in sources:
+        # Separate locations retain same-named files without overwriting a copy.
+        _add(plan, source, "imports/" + uuid4().hex + "/" + source.name)
+    return plan
+
+
+def prepare_folder_import(source):
+    """Copy a selected folder and its subfolders, preserving relative paths."""
+    source = Path(source).absolute()
+    files.ordinary(source)
+    if not source.is_dir():
+        raise VaultError("Choose an existing folder to import.")
+    plan = MigrationPlan(("explicit_import",))
+    prefix = "imports/" + plan.identity + "/" + (source.name or "folder") + "/"
+    for path, _ in files.iter_files(source):
+        _add(plan, path, prefix + path.relative_to(source).as_posix())
+    if not plan.writes:
+        raise VaultError("This folder has no files to import. Choose a folder containing your documents.")
+    return plan
+
+
 def prepare_migration(application_root, categories, *, skills_root=None):
     root = Path(application_root).absolute()
     categories = tuple(categories)

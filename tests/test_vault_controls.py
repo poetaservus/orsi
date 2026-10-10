@@ -695,8 +695,8 @@ def test_import_guidance_respects_dismissal_without_saving_credentials(qt, manag
     titles = []
     def choose(parent, title, *args, **kwargs):
         titles.append(title)
-        return "", ""
-    monkeypatch.setattr(QFileDialog, "getOpenFileName", choose)
+        return [], ""
+    monkeypatch.setattr(QFileDialog, "getOpenFileNames", choose)
     try:
         controller.start()
         controller.window.personal_profile_page._import_copy()
