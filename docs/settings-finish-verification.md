@@ -1,5 +1,43 @@
 # Settings consistency, transitions and loading logo
 
+## Requested darker Settings gradient, 10 October 2026
+
+Branch `codex/settings-gradient` starts from local main `8c2796f`. The only
+application change is replacing the Settings panel's two gradient stops with
+the user's colors: darkest `#090c15`, brightest `#1d2637`. Its bottom-left to
+top-right direction, 16-pixel radius, border, geometry and controls are unchanged.
+The previous number-field correction remains included.
+
+Only necessary checks ran: **2 existing native Settings geometry cases passed
+in 5.11 seconds**, covering local/portable profiles, all sections and normal,
+maximized, full-screen and minimum-size windows. Pytest used Qt 6.12.0 and
+repository-local `--basetemp state/sg-native`. No new tests or full-suite repeat.
+
+The exact portable update was extracted only into an owned synthetic pilot.
+Its actual `pythonw` runtime rendered the new panel, passed sampled-pixel checks
+against the requested gradient interpolation, and produced a visually inspected
+preview. Existing encrypted records and archived chat remained accessible;
+keys, leases, helpers, inference clients and desktop ownership were released.
+No live API call: zero network connection attempts and zero remaining owned
+pilot processes. Evidence is under ignored `state/settings-gradient-*`, including
+the native XML/log and `settings-gradient-preview.png`.
+
+The **6,345-byte** `dist/orsi-settings-update-20261010.zip` includes only the
+updated `app/ui/settings_panel.py`, the previously corrected `app/ui/inputs.py`,
+instructions and a file manifest. It works whether or not the earlier input fix
+was applied. Close O.R.S.I, copy its `app` folder into the existing portable
+application folder, allow replacing those two files, and restart. Profiles,
+state, configuration and runtime folders are not included. Archive SHA-256:
+`3a677f9daa23d841d1783b96fd58efded09d7c1b5ce0112c3d05efe5a569fdb2`.
+
+Fourteen settings/runtime/artwork fingerprints and all four other worktree tips
+and attachments are unchanged. Recovery evidence is under
+`state/backups/settings-gradient-20261010/`. Preserve prior main at
+`archive/2026-10-10/main-before-settings-gradient`, commit, fast-forward local
+main and remove only the merged feature branch. No remote publication.
+
+## Original Settings update, 10 October 2026
+
 10 October 2026. Branch `codex/settings-finish`, from local main `73304f5`.
 
 ## Delivered behavior

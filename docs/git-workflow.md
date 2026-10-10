@@ -1,5 +1,21 @@
 # Git layout and baseline hygiene
 
+## Settings gradient colors, 10 October 2026
+
+`codex/settings-gradient` starts from local main `8c2796f`. Only the two Settings
+panel gradient colors change, to `#090c15` and `#1d2637`. Radius, border, direction
+and layout are preserved. Two existing native geometry cases and an exact-update
+windowless visual/pixel check passed; see
+[verification and portable update](settings-finish-verification.md#requested-darker-settings-gradient-10-october-2026).
+Only necessary tests ran; no full suite or live provider call.
+
+Fourteen preservation fingerprints and the four other worktree attachments are
+unchanged. Recovery evidence is under `state/backups/settings-gradient-20261010/`.
+Preserve prior main at `archive/2026-10-10/main-before-settings-gradient`, commit,
+fast-forward local main and remove only the merged feature branch. The small
+portable update includes the preceding number-field fix; original artifacts are
+preserved. No remote publication.
+
 ## Profile number fields, 10 October 2026
 
 `codex/profile-number-fields` starts from local main `3803022`. A compact-input
