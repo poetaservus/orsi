@@ -179,13 +179,15 @@ class PersonalProfilePage(QWidget):
     transition_requested = Signal(object)
     reload_requested = Signal(object)
 
-    def __init__(self, manager, window, *, message="", login=False, setup_required=False):
+    def __init__(self, manager, window, *, message="", login=False, setup_required=False, location_error=None):
         super().__init__()
         self.setObjectName("personalProfilePage")
         self.setStyleSheet(_STYLE)
         self.manager, self.window = manager, window
         self.login = login
         self.setup_required = setup_required
+        self.location_error = location_error
+        message = message or (public_error(location_error) if location_error is not None else "")
         self.tabbed = manager.active and not login and not manager.deletion_pending
         if manager.active:
             unregister = manager.session.register(clear=self._clear_private_controls)
@@ -247,7 +249,12 @@ class PersonalProfilePage(QWidget):
             self.status.setVisible(bool(message))
         else:
             self._buttons((("New profile…", self._new), ("Select existing…", self._select)))
-        if manager.locator is not None and not manager.active:
+        if location_error is not None:
+            self.create_profile, = self._buttons((("Create profile", self._new),))
+            self.create_profile.setObjectName("loginPrimary")
+            self.create_profile.setFixedHeight(44)
+            self._buttons((("Check location again", lambda: self.transition_requested.emit(lambda: None)),))
+        elif manager.locator is not None and not manager.active:
             self.password, self.recovery = secret("Profile password"), secret("Recovery key (optional)")
             if login:
                 self.password.setPlaceholderText("Enter your profile password")
@@ -274,7 +281,9 @@ class PersonalProfilePage(QWidget):
             options.setObjectName("loginOptionsHeading")
             self.layout.addWidget(options)
             choices = QHBoxLayout()
-            for title, action in (("New profile…", self._new), ("Select existing…", self._select)):
+            actions = (("Select existing…", self._select),) if location_error is not None else (
+                ("New profile…", self._new), ("Select existing…", self._select))
+            for title, action in actions:
                 button = QPushButton(title)
                 button.setFixedHeight(36)
                 button.clicked.connect(action)
@@ -479,9 +488,12 @@ class PersonalProfilePage(QWidget):
         if self.manager.profile_deleted:
             self.summary.setText("This profile and its recorded copies have been deleted.")
             return
+        if self.location_error is not None:
+            self.summary.setText(f"Previous profile location\n{locator.root}")
+            return
         self.summary.setText("Current unencrypted storage. Set up or select a personal profile here." if locator is None else
             f"{'Local' if locator.mode == 'local' else 'Portable'} · {'Encrypted' if locator.encrypted else 'Unencrypted'} · "
-            f"{'Unlocked' if self.manager.active else 'Locked / unavailable'}\n{locator.root}")
+            f"{'Unlocked' if self.manager.active else 'Locked'}\n{locator.root}")
         if self.manager.bootstrap_error:
             self.summary.setText("The saved profile selection could not be read. Select an existing profile to continue.")
 

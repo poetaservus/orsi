@@ -3,6 +3,8 @@ from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPen
 from PySide6.QtWidgets import QFrame, QGraphicsBlurEffect, QLabel, QScrollArea, QVBoxLayout, QWidget
 
+from app.vault.types import ProfileNotFound, RecoveryRequired
+
 
 _LOGIN_PAGE_STYLE = """
 QWidget#personalProfilePage QLabel#loginProfileSummary {
@@ -70,6 +72,9 @@ class ProfileLoginPanel(QFrame):
         heading = QLabel("Create your profile" if page.setup_required else
                          "Finish profile deletion" if page.manager.deletion_pending else
                          "Profile deleted" if page.manager.profile_deleted else
+                         "Profile not found" if isinstance(page.location_error, ProfileNotFound) else
+                         "Profile needs recovery" if isinstance(page.location_error, RecoveryRequired) else
+                         "Profile unavailable" if page.location_error is not None else
                          "Unlock your profile" if page.manager.encrypted else "Open your personal profile")
         heading.setObjectName("loginHeading")
         heading.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -78,6 +83,7 @@ class ProfileLoginPanel(QFrame):
         subtitle = QLabel("Set up your personal profile to get started." if page.setup_required else
                           "Some profile locations still need to be removed." if page.manager.deletion_pending else
                           "Create or select a profile, or continue without a profile." if page.manager.profile_deleted else
+                          "Choose how to continue, or reconnect its drive and check again." if page.location_error is not None else
                           "Enter your password or recovery key to continue." if page.manager.encrypted else
                           "Open your profile to continue." if page.manager.locator is not None else
                           "Select a profile to continue.")
@@ -93,7 +99,8 @@ class ProfileLoginPanel(QFrame):
 
     def fit_to_parent(self):
         parent = self.parentWidget()
-        preferred_height = 260 if self.page.setup_required else 700 if self.page.status.text() else 640
+        preferred_height = (260 if self.page.setup_required else 580 if self.page.location_error is not None
+                            else 700 if self.page.status.text() else 640)
         self.resize(min(600, parent.width() - 32), min(preferred_height, parent.height() - 72))
         self.move((parent.width() - self.width()) // 2, max(44, (parent.height() - self.height()) // 2))
 
@@ -102,7 +109,7 @@ class ProfileLoginPanel(QFrame):
         if field is not None:
             field.setFocus()
             self.scroll.ensureWidgetVisible(field)
-        elif self.page.setup_required:
+        elif hasattr(self.page, "create_profile"):
             self.page.create_profile.setFocus()
             self.scroll.ensureWidgetVisible(self.page.create_profile)
 

@@ -4,12 +4,14 @@ from pathlib import Path
 import json
 import os
 import shutil
+import stat
 from uuid import UUID, uuid4
 
 from app.state.storage import JsonStore
 from app.vault import files
 from app.vault.session import ProfileSession
-from app.vault.types import BackupPolicy, Domain, State, VaultError, VaultLocked
+from app.vault.types import (BackupPolicy, Domain, ProfileNotFound, RecoveryRequired,
+                             State, StorageUnavailable, VaultError, VaultLocked)
 
 
 @dataclass(frozen=True)
@@ -75,6 +77,38 @@ class ProfileManager:
     @property
     def encrypted(self):
         return self.locator is not None and self.locator.encrypted
+
+    @staticmethod
+    def _check_location(root, encrypted):
+        """Inspect public file metadata without opening or recreating a profile."""
+        try:
+            files.ordinary(root)
+            try:
+                info = root.lstat()
+            except FileNotFoundError:
+                raise ProfileNotFound("The selected profile location is missing.") from None
+            if not stat.S_ISDIR(info.st_mode):
+                raise RecoveryRequired("The selected profile location is not a directory.")
+            for name in (("header.json", "state.bin") if encrypted else ("profile.json",)):
+                path = root / name
+                files.ordinary(path)
+                try:
+                    info = path.lstat()
+                except FileNotFoundError:
+                    raise RecoveryRequired("Required profile files are missing.") from None
+                if not stat.S_ISREG(info.st_mode):
+                    raise RecoveryRequired("Required profile files are not regular files.")
+        except OSError:
+            raise StorageUnavailable("Cannot inspect the selected profile location.") from None
+
+    def selection_error(self):
+        if self.locator is None or self.active or self.deletion_pending:
+            return None
+        try:
+            self._check_location(self.locator.root, self.locator.encrypted)
+        except VaultError as error:
+            return error
+        return None
 
     def default_location(self, mode="local"):
         if mode == "portable":
@@ -158,20 +192,26 @@ class ProfileManager:
             raise VaultError("Choose local or portable personal storage.")
         self.lock()
         root = Path(root).absolute()
-        if encrypted:
-            from app.vault.engine import Vault
-            backend = Vault(root)
-            if recovery_key is None:
-                backend.unlock(password)
+        self._check_location(root, encrypted)
+        try:
+            if encrypted:
+                from app.vault.engine import Vault
+                backend = Vault(root)
+                if recovery_key is None:
+                    backend.unlock(password)
+                else:
+                    backend.unlock_with_recovery(recovery_key)
+                identity = backend._header["profile_id"]
             else:
-                backend.unlock_with_recovery(recovery_key)
-            identity = backend._header["profile_id"]
-        else:
-            data = json.loads(files.read_bytes(root / "profile.json", 4096))
-            if set(data) != {"version", "profile_id"} or data["version"] != 1:
-                raise VaultError("Select an O.R.S.I personal profile directory.")
-            identity = str(UUID(data["profile_id"]))
-            backend = PlainProfile(root)
+                data = json.loads(files.read_bytes(root / "profile.json", 4096))
+                if set(data) != {"version", "profile_id"} or data["version"] != 1:
+                    raise VaultError("Select an O.R.S.I personal profile directory.")
+                identity = str(UUID(data["profile_id"]))
+                backend = PlainProfile(root)
+        except (OSError, StorageUnavailable):
+            # The location may disappear between the metadata check and opening.
+            self._check_location(root, encrypted)
+            raise StorageUnavailable("Cannot open the selected profile storage.") from None
         try:
             if _expected_id is not None and identity != _expected_id:
                 raise VaultError("This location contains a different profile. Select it explicitly.")
@@ -369,6 +409,9 @@ def public_error(error):
         return "Migration verification is incomplete. Originals remain; retry the import before choosing cleanup."
     if isinstance(error, FileExistsError):
         return "The destination already exists. Choose a new directory; existing files were preserved."
+    if isinstance(error, ProfileNotFound):
+        return ("Your saved profile could not be found. It may have been deleted or moved, or its drive disconnected. "
+                "Create a profile, select an existing one or restore a backup.")
     if isinstance(error, FileNotFoundError):
         return "The selected profile or source file is missing. Reconnect its location or select it again."
     if isinstance(error, InvalidCredentials):

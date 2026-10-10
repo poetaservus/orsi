@@ -1,5 +1,49 @@
 # Settings consistency, transitions and loading logo
 
+## Missing selected profiles, 10 October 2026
+
+Branch `codex/missing-profile-entry` starts from local main `e596c1a`. A saved
+locator no longer implies that its profile is present. Startup inspects public
+file metadata before presenting the login form. A missing directory shows
+**Profile not found**, explains deletion, relocation or disconnected storage,
+and offers Create profile, Check location again, Select existing, current
+unencrypted storage and encrypted-backup restore. Password and recovery-key
+fields are absent until the location is present again. The previous path stays
+visible as a previous location; its locator and copy registry remain intact.
+
+Selection and unlock repeat this check, including when storage disappears
+during opening. Missing required files in an existing directory report recovery;
+access failures report unavailable storage. Missing paths are never recreated
+by an unlock attempt. Rechecking a reconnected profile restores its login flow;
+canceling creation preserves the missing-profile screen and choosing a new
+profile opens only that profile. Fresh startup without a saved selection still
+offers only Create profile. Pending deletion retains its retry screen.
+
+Only necessary checks ran on native Qt 6.12.0: **32 distinct targeted cases
+passed**, covering local/portable and encrypted/plain missing selections,
+reconnection, actual folder deletion and replacement, disappearance before and
+during unlock, missing required files, denied access, existing onboarding,
+password/recovery/backup controls, deletion retry, and five real `pythonw`
+startup cases. The first run passed 30 cases; two replacement-flow assertions
+incorrectly counted fields in a closed dialog. Their corrected visible-field
+checks passed. Four storage-error cases passed again after making access-denied
+errors consistent across profile types. There were 38 executions total; no
+full-suite repeat. All runs used repository-local `--basetemp`. Raw logs/XML are
+under `state/missing-profile*-native.*`; the final distinct results are in
+`state/missing-profile-final-native.xml`.
+
+An isolated appearance check captured normal and compact missing-profile panels
+and the reconnected login, with all actions reachable. The three visually
+inspected captures and report are under `state/missing-profile-preview/`.
+Zero chat compositions or network attempts; the owned profile was released.
+No live provider/model gates or portable rebuild were run.
+
+Fourteen settings/runtime/artwork fingerprints and all four other worktree tips
+and attachments are unchanged. Recovery evidence is under
+`state/backups/missing-profile-entry-20261010/`, with prior main preserved at
+`archive/2026-10-10/main-before-missing-profile-entry`. Commit, fast-forward local
+main and remove only the merged feature branch; no remote publication.
+
 ## Profile-first startup and terminology, 10 October 2026
 
 Branch `codex/profile-first-startup` starts from local main `02b20d4`. The login

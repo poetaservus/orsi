@@ -1,5 +1,21 @@
 # Git layout and baseline hygiene
 
+## Missing selected profiles, 10 October 2026
+
+`codex/missing-profile-entry` starts from local main `e596c1a`. Missing saved
+profile locations now show a dedicated recovery/creation screen before asking
+for credentials. The locator remains available for disconnected-drive recovery;
+unlock rechecks presence and distinguishes missing, incomplete and inaccessible
+storage. Thirty-two distinct focused native cases and an appearance check
+passed; see [verification](settings-finish-verification.md#missing-selected-profiles-10-october-2026).
+Only necessary checks ran; no full suite, live provider call or portable rebuild.
+
+Fourteen preservation fingerprints and the four other worktree attachments are
+unchanged. Recovery evidence is under `state/backups/missing-profile-entry-20261010/`.
+Preserve prior main at `archive/2026-10-10/main-before-missing-profile-entry`, commit,
+fast-forward local main and remove only the merged feature branch.
+No remote publication.
+
 ## Profile-first startup, 10 October 2026
 
 `codex/profile-first-startup` starts from local main `02b20d4`. It removes the

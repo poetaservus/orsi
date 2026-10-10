@@ -9,7 +9,7 @@ sys.path.insert(0, str(SOURCE_ROOT))
 sys.path.append(str(SOURCE_ROOT / "runtime/python/Lib/site-packages"))
 
 from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import QPushButton
+from PySide6.QtWidgets import QLineEdit, QPushButton
 
 import app.main as desktop
 import app.ui.personal_profile as profile_ui
@@ -26,9 +26,12 @@ def run(root, selection, action):
     report = {"selection": selection, "action": action, "covers": [], "compositions": 0}
     manager = ProfileManager(root)
     if selection != "fresh":
-        manager.create(root / "profiles/selected", mode="portable", encrypted=selection == "locked",
-                       password=PASSWORD if selection == "locked" else b"")
+        encrypted = selection in {"locked", "missing-encrypted"}
+        manager.create(root / "profiles/selected", mode="portable", encrypted=encrypted,
+                       password=PASSWORD if encrypted else b"")
         manager.lock()
+        if selection.startswith("missing-"):
+            (root / "profiles/selected").rename(root / "profiles/disconnected")
     active_cover = None
     desktop_owner = None
     phase = "launch"
@@ -77,6 +80,11 @@ def run(root, selection, action):
             elif selection == "fresh":
                 assert self.window.login_panel.isVisible() and report["compositions"] == 0
                 assert [button.text() for button in self.window.personal_profile_page.findChildren(QPushButton)] == ["Create profile"]
+            elif selection.startswith("missing-"):
+                page = self.window.personal_profile_page
+                assert self.window.login_panel.isVisible() and report["compositions"] == 0
+                assert "could not be found" in page.status.text() and not page.findChildren(QLineEdit)
+                assert "Check location again" in [button.text() for button in page.findChildren(QPushButton)]
 
         def continue_login(self):
             nonlocal phase

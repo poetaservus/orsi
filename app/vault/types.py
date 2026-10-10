@@ -20,6 +20,10 @@ class StorageUnavailable(VaultError):
     pass
 
 
+class ProfileNotFound(VaultError):
+    pass
+
+
 class VaultBusy(VaultError):
     pass
 

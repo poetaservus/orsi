@@ -216,8 +216,9 @@ class ProfileApplication(QObject):
             self.window.bind_profile(self.manager.session)
         self.window._profile_manager = self.manager
         locked = bool((selected or setup_required) and not self.manager.active)
+        location_error = self.manager.selection_error() if locked else None
         page = PersonalProfilePage(self.manager, self.window, message=message, login=locked,
-                                   setup_required=setup_required)
+                                   setup_required=setup_required, location_error=location_error)
         self.window.personal_profile_page = page
         page.transition_requested.connect(lambda action, window=self.window: self._transition_from(window, action))
         page.reload_requested.connect(lambda action, window=self.window: self._transition_from(window, action, renew=True))
@@ -240,6 +241,8 @@ class ProfileApplication(QObject):
                 greeting, hint, activity = "Profile deletion pending", "Finish deleting the profile to continue", "Profile deletion needs a retry"
             elif self.manager.profile_deleted:
                 greeting, hint, activity = "Choose how to continue", "Choose a profile to chat", "Profile deleted"
+            elif location_error is not None:
+                greeting, hint, activity = "Choose how to continue", "Choose a profile to chat", "Profile unavailable"
             else:
                 greeting, hint, activity = "Unlock your personal profile", "Unlock your personal profile to chat", "Profile locked · Unlock to continue"
             self.window.startup_greeting.setText(greeting)

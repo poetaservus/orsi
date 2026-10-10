@@ -16,6 +16,8 @@ import pytest
     ("locked", "none", 0),
     ("locked", "unlock", 1),
     ("locked", "legacy", 1),
+    ("missing-encrypted", "none", 0),
+    ("missing-plain", "none", 0),
 ])
 def test_real_desktop_launch_and_login_show_native_splash(tmp_path, selection, action, compositions):
     root = tmp_path / "application"
