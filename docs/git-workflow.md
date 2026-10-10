@@ -1,5 +1,20 @@
 # Git layout and baseline hygiene
 
+## Settings accent palette, 10 October 2026
+
+`codex/settings-accent-palette` starts from local main `6650355`. It replaces
+neutral charcoal Settings control surfaces with flat slate blue `#243247`,
+coordinates interaction states, and shares the palette with profile menus and
+switch tracks. Eight focused native cases and an isolated visual check passed;
+see [verification](settings-finish-verification.md#slate-blue-settings-controls-10-october-2026).
+Only necessary checks ran; no full suite, live provider call or portable rebuild.
+
+Fourteen preservation fingerprints and the four other worktree attachments are
+unchanged. Recovery evidence is under `state/backups/settings-accent-palette-20261010/`.
+Preserve prior main at `archive/2026-10-10/main-before-settings-accent-palette`,
+commit, fast-forward local main and remove only the merged feature branch.
+No remote publication.
+
 ## Settings gradient colors, 10 October 2026
 
 `codex/settings-gradient` starts from local main `8c2796f`. Only the two Settings

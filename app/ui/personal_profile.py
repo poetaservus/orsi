@@ -30,9 +30,6 @@ QWidget#personalProfilePage QFrame#profileCard { background: rgba(25, 31, 42, 30
 QWidget#personalProfilePage QLabel#profileCardHeading { font-size: 20px; font-weight: 400; }
 QWidget#personalProfilePage QLabel#profileHint { font-size: 14px; color: #b9c2d0; }
 QWidget#personalProfilePage QRadioButton, QWidget#personalProfilePage QCheckBox { font-size: 14px; }
-QWidget#personalProfilePage QMenu { background: #303946; color: #e4e5eb; border: 1px solid #626772; padding: 5px; }
-QWidget#personalProfilePage QMenu::item { padding: 8px 16px; }
-QWidget#personalProfilePage QMenu::item:selected { background: #51627a; }
 QWidget#personalProfilePage QTabWidget::pane { border: none; background: transparent; }
 QWidget#personalProfilePage QTabBar, QWidget#personalProfilePage QTabWidget, QWidget#personalProfilePage QStackedWidget { background: transparent; border: none; }
 QWidget#personalProfilePage QTabBar::tab { background: transparent; color: #ccd3de; border: none; border-bottom: 2px solid transparent; padding: 10px 12px; font-size: 14px; }

@@ -1,5 +1,34 @@
 # Settings consistency, transitions and loading logo
 
+## Slate-blue Settings controls, 10 October 2026
+
+Branch `codex/settings-accent-palette` starts from local main `6650355`. Shared
+Settings control surfaces now use flat muted slate blue `#243247`, with related
+hover, pressed, selection and border colors. The palette covers fields, buttons,
+lists, dropdown popups, profile menus and switch tracks, including app-owned
+Settings dialogs. Existing geometry, radii, gradient and number-field fix remain.
+
+Only necessary checks ran: **8 existing native cases passed in 17.79 seconds**
+on Qt 6.12.0. They cover numeric editing/save/reopen, profile setup quota, section
+geometry in both profile modes and window sizes, greeting persistence, switch
+mouse/keyboard input, and embedded skill preview/install/remove. Pytest used
+`--basetemp state/settings-accent-native`; XML/log evidence shares that prefix.
+No new tests, full-suite repetition or live provider calls.
+
+An isolated synthetic encrypted profile rendered all six Settings sections,
+five profile tabs, dropdown/menu popups and three dialogs. Fifteen visually
+inspected captures and the sampled-surface report are under ignored
+`state/settings-accent-preview/`. Text/control contrast is 10.30:1; disabled
+button text/control contrast is 5.82:1. The profile was released and there were
+zero network connection attempts. This is a local update; the next portable
+package has not been built.
+
+Fourteen settings/runtime/artwork fingerprints and all four other worktree tips
+and attachments are unchanged. Recovery evidence is under
+`state/backups/settings-accent-palette-20261010/`, with prior main preserved at
+`archive/2026-10-10/main-before-settings-accent-palette`. Commit, fast-forward
+local main and remove only the merged feature branch; no remote publication.
+
 ## Requested darker Settings gradient, 10 October 2026
 
 Branch `codex/settings-gradient` starts from local main `8c2796f`. The only

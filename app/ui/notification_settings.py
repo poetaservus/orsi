@@ -5,10 +5,11 @@ from PySide6.QtCore import QEasingCurve, QRectF, QSize, Qt, QVariantAnimation
 from PySide6.QtGui import QColor, QIcon, QPainter, QPen
 from PySide6.QtWidgets import QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QPushButton, QWidget
 from app.ui.inputs import ScrollSafeComboBox
+from app.ui.settings_style import CONTROL_SURFACE
 
 
 class NotificationSwitch(QCheckBox):
-    """Keyboard-accessible switch with the settings panel's neutral styling."""
+    """Keyboard-accessible switch with the shared Settings control surface."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -43,7 +44,7 @@ class NotificationSwitch(QCheckBox):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor("#343b48"))
+        painter.setBrush(QColor(CONTROL_SURFACE))
         painter.drawRoundedRect(QRectF(0, 3, 44, 18), 9, 9)
         painter.setBrush(QColor("#e4e5eb" if self.isEnabled() else "#a7adb7"))
         painter.drawRoundedRect(QRectF(3 + 24 * self._position, 5, 14, 14), 5, 5)
