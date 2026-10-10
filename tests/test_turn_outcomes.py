@@ -188,10 +188,10 @@ def test_history_write_gap_recovers_journal_success_and_never_replays_edit(tmp_p
     target = tmp_path / "note.txt"
     target.write_bytes(b"old")
     service, approvals = edit_service(tmp_path, [edit_call(target), ModelResponse.text("unused")])
-    original_save = service.store._store.save
-    def fail_save(value):
+    original_save = service.store._save_document
+    def fail_save(path, document):
         raise PermissionError("injected history write failure")
-    service.inference.before_request[0] = lambda *args: monkeypatch.setattr(service.store._store, "save", fail_save)
+    service.inference.before_request[0] = lambda *args: monkeypatch.setattr(service.store, "_save_document", fail_save)
     try:
         with pytest.raises(RuntimeError, match="retained durably"):
             service.run("Edit the text file")
@@ -200,7 +200,7 @@ def test_history_write_gap_recovers_journal_success_and_never_replays_edit(tmp_p
         with pytest.raises(TurnHistoryError, match="retained safely"):
             service.run("Try again")
         assert len(service.inference.requests) == 1
-        monkeypatch.setattr(service.store._store, "save", original_save)
+        monkeypatch.setattr(service.store, "_save_document", original_save)
         service.shutdown()
         service, resumed_approvals = edit_service(tmp_path, [ModelResponse.text("The recovered edit succeeded.")])
         turn = service.store.turns()[0]

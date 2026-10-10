@@ -13,7 +13,7 @@ import pytest
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QImage
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QDialog, QPushButton
+from PySide6.QtWidgets import QApplication, QDialog, QPushButton, QStyle, QStyleOptionButton
 
 from app.conversation.store import ConversationStore
 from app.inference.completion import CompletionText
@@ -914,8 +914,15 @@ def test_profile_tabs_keep_edits_uncommitted_and_clear_them_on_lock(qt, manager)
         window.settings_panel.show()
         page = window.personal_profile_page
         page.show_section("Cloud access")
+        choice = page.policy.group.button(1)
+        page.sections["Cloud access"].ensureWidgetVisible(choice)
         qt.processEvents()
-        QTest.mouseClick(page.policy.group.button(1), Qt.MouseButton.LeftButton)
+        option = QStyleOptionButton()
+        choice.initStyleOption(option)
+        # A stretched radio's center can fall outside its clickable label/indicator.
+        indicator = choice.style().subElementRect(QStyle.SubElement.SE_RadioButtonIndicator, option, choice)
+        QTest.mouseClick(choice, Qt.MouseButton.LeftButton, pos=indicator.center())
+        assert page.policy.currentData() == CredentialPolicy.SAVED
         page.key.setText(SECRET)
         page.consent.setChecked(True)
         tabs = page.tabs.tabBar()

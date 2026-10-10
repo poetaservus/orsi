@@ -1,5 +1,21 @@
 # Git layout and baseline hygiene
 
+## Portable regression test maintenance, 10 October 2026
+
+`codex/portable-regression-gates` starts from local main `c6aa4f9`. It repairs five
+stale history-save injections, two startup setups and off-screen radio input in
+two profile cases, preserving their original acceptance assertions. Only tests
+and notes change. All nine affected cases pass off-screen, and the four UI cases
+also pass on native Windows; see [verification](portable-regression-gates.md).
+The full suite was not repeated at the user's request to run only necessary
+tests. No live provider/model gates.
+
+Fourteen preservation fingerprints and the four other worktree attachments are
+unchanged. Recovery evidence is under ignored
+`state/backups/portable-regression-gates-20261010/`. Preserve prior main at
+`archive/2026-10-10/main-before-portable-regression-gates`, commit, fast-forward
+local main and remove only the merged feature branch. No remote publication.
+
 ## Portable encrypted-profile packaging, 10 October 2026
 
 `codex/portable-vault-packaging` starts from local main `8335102`. Fresh runtimes

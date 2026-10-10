@@ -222,24 +222,43 @@ def test_saved_off_runs_native_write_with_status_and_no_composer_review(tmp_path
 @pytest.mark.parametrize("full_local", [False, True])
 def test_app_startup_uses_configured_access_without_warning(monkeypatch, tmp_path, full_local):
     import app.main as main
-    import app.ui.main_window as ui_module
+    import app.ui.profile_application as profiles
+    import app.ui.profile_loading as loading
     import PySide6.QtWidgets as widgets
 
+    application = QApplication.instance() or QApplication([])
     config = SimpleNamespace(full_local_read_enabled=full_local)
     captured = {}
+    owner_type, owners = profiles.ProfileApplication, []
+    def owner_factory(*args, **kwargs):
+        owner = owner_type(*args, **kwargs)
+        owners.append(owner)
+        return owner
     monkeypatch.setattr(main.sys, "argv", ["orsi"])
-    monkeypatch.setattr(main, "PATHS", SimpleNamespace(state=tmp_path, ensure_directories=lambda: None))
+    monkeypatch.setattr(main, "PATHS", SimpleNamespace(root=tmp_path, state=tmp_path / "state", ensure_directories=lambda: None))
     monkeypatch.setattr(main, "configure_logging", lambda path: None)
     monkeypatch.setattr(main, "load_agent_feature_config", lambda: config)
     monkeypatch.setattr(widgets.QMessageBox, "question", lambda *args: pytest.fail("Startup warning"))
-    monkeypatch.setattr(widgets, "QApplication", lambda args: SimpleNamespace(
-        aboutToQuit=SimpleNamespace(connect=lambda callback: None), exec=lambda: 0))
-    monkeypatch.setattr(ui_module, "MainWindow", lambda *args: SimpleNamespace(show=lambda: None))
+    monkeypatch.setattr(widgets, "QApplication", lambda args: application)
+    monkeypatch.setattr(application, "exec", lambda: 0)
+    monkeypatch.setattr(profiles, "ProfileApplication", owner_factory)
+    monkeypatch.setattr(loading, "ProfileLoadingCover", lambda: SimpleNamespace(
+        geometry=None, present=lambda: None, dismiss=lambda **kwargs: None, deleteLater=lambda: None))
 
-    def build(**kwargs):
+    def build(*, session_credentials, **kwargs):
+        assert session_credentials is True
         captured.update(kwargs)
         return None, {"hostname": "test"}, None, None
 
     monkeypatch.setattr(main, "build_application", build)
-    assert main.main() == 0
-    assert captured == dict(agent_config_override=config, full_local_read_acknowledged=full_local)
+    try:
+        assert main.main() == 0
+        assert captured == dict(agent_config_override=config, full_local_read_acknowledged=full_local)
+    finally:
+        for owner in owners:
+            owner.shutdown()
+            if owner.window is not None:
+                owner.window.close()
+            application.removeEventFilter(owner)
+            owner.deleteLater()
+        application.processEvents()

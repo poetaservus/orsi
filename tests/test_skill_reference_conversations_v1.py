@@ -500,10 +500,10 @@ def test_restoring_bytes_after_observed_change_does_not_revive_scope_without_ref
 def test_failed_history_save_expires_references_but_retains_completed_write(tmp_path, monkeypatch, operation):
     target = tmp_path / "approved.txt"
     with conversation(tmp_path, write=True) as (service, model, _):
-        original_save = service.store._store.save
-        def fail_save(value): raise PermissionError("injected history write failure")
+        original_save = service.store._save_document
+        def fail_save(path, document): raise PermissionError("injected history write failure")
         def request(messages, definitions):
-            monkeypatch.setattr(service.store._store, "save", fail_save)
+            monkeypatch.setattr(service.store, "_save_document", fail_save)
             if operation == "reference":
                 return request_reference()(messages, definitions)
             return ModelResponse.calls((ModelCapabilityCall(provider_call_id="write", capability="filesystem.write_text",
@@ -525,7 +525,7 @@ def test_failed_history_save_expires_references_but_retains_completed_write(tmp_
                 service.run("Try again")
             assert len(model.requests) == 1
         finally:
-            monkeypatch.setattr(service.store._store, "save", original_save)
+            monkeypatch.setattr(service.store, "_save_document", original_save)
 
 
 def test_shutdown_revokes_active_binding_even_when_cancellation_cleanup_fails(tmp_path, monkeypatch):

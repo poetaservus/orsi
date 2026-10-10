@@ -93,7 +93,7 @@ def test_failed_save_does_not_transfer_ownership(tmp_path, monkeypatch):
     ref = history.attachment_store.import_bytes(b'Draft', name='source.txt', draft=True)
     def fail(*args):
         raise OSError('Synthetic persistence failure')
-    monkeypatch.setattr(history._store, 'save', fail)
+    monkeypatch.setattr(history, '_save_document', fail)
     with pytest.raises(TurnHistoryError):
         history.begin_turn('Read', attachments=[ref])
     assert not history.messages()
@@ -104,12 +104,12 @@ def test_abandonment_cannot_race_successful_history_commit(tmp_path, monkeypatch
     history = ConversationStore(tmp_path / 'chat.json')
     ref = history.attachment_store.import_bytes(b'Protected', name='source.txt', draft=True)
     committing, release = Event(), Event()
-    actual = history._store.save
-    def save(value):
+    actual = history._save_document
+    def save(path, document):
         committing.set()
         assert release.wait(5)
-        actual(value)
-    monkeypatch.setattr(history._store, 'save', save)
+        actual(path, document)
+    monkeypatch.setattr(history, '_save_document', save)
     with ThreadPoolExecutor(max_workers=2) as pool:
         pending = pool.submit(history.begin_turn, 'Read', attachments=[ref])
         assert committing.wait(3)
