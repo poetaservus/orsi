@@ -93,3 +93,19 @@ A native 1280 × 800 capture was visually inspected; its peak logo measured
 settings/artwork fingerprints and other worktree tips are unchanged. Recovery
 evidence is under `state/backups/splash-motion-tuning-20261010/`; prior main is
 retained at `archive/2026-10-10/main-before-splash-motion-tuning`.
+
+## Quicker Settings navigation, 10 October 2026
+
+Branch `codex/settings-navigation-speed`, from main `b62882a`: both Settings
+sections and Personal profile tabs now reveal in 50 ms with OutCubic easing.
+The new page is mostly visible within 20 ms, removing the previous slow start.
+The existing transition check verifies that early reveal and completion while
+retaining immediate navigation, interruption and hide/resize cleanup.
+
+Six focused native Windows cases passed: two navigation/presentation checks in
+`state/settings-navigation-speed.xml`, plus four local/portable profile geometry
+and edit/save/lock checks in `state/settings-navigation-profile.xml`. The first
+run had a pytest cache-write warning; both tests passed, and the second run used
+an isolated repository-local cache. No full suite or live provider/model gates
+were run. Ten configuration/artwork fingerprints and other worktree tips were
+preserved under ignored `state/backups/settings-navigation-speed-20261010/`.

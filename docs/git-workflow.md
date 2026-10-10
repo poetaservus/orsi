@@ -1,5 +1,15 @@
 # Git layout and baseline hygiene
 
+## Quicker Settings navigation, 10 October 2026
+
+`codex/settings-navigation-speed` starts from main `b62882a`. Settings sections
+and profile tabs reveal in 50 ms with a faster initial easing curve. Six focused
+native checks passed; see [the verification record](settings-finish-verification.md#quicker-settings-navigation-10-october-2026).
+No full suite or live gates. Content-free recovery evidence is under ignored
+`state/backups/settings-navigation-speed-20261010/`. Preserve prior main at
+`archive/2026-10-10/main-before-settings-navigation-speed`, commit, fast-forward
+local main and remove only the merged feature branch.
+
 ## Smaller splash and faster tabs, 10 October 2026
 
 `codex/splash-motion-tuning` starts from local main `e1e7da0`. The splash logo now

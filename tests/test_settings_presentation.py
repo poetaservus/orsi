@@ -35,8 +35,8 @@ def test_page_transition_keeps_latest_navigation_and_clears_on_hide_resize(qt):
         qt.processEvents()
         stack.setCurrentIndex(1)
         assert stack.currentIndex() == 1 and transition.cover.isVisible()
-        QTest.qWait(30)
-        assert 0 < transition.cover.opacity < 1
+        transition.animation.setCurrentTime(20)
+        assert 0 < transition.cover.opacity < .25
         stack.setCurrentIndex(2)
         assert stack.currentIndex() == 2
         clicked = []
@@ -44,7 +44,7 @@ def test_page_transition_keeps_latest_navigation_and_clears_on_hide_resize(qt):
         button.clicked.connect(lambda: clicked.append(True))
         QTest.mouseClick(button, Qt.MouseButton.LeftButton)
         assert clicked == [True]
-        QTest.qWait(140)
+        QTest.qWait(90)
         assert transition.cover.isHidden() and transition.cover.picture.isNull()
         stack.setCurrentIndex(0)
         stack.resize(420, 320)
