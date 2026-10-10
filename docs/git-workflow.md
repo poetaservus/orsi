@@ -1,5 +1,22 @@
 # Git layout and baseline hygiene
 
+## Profile number fields, 10 October 2026
+
+`codex/profile-number-fields` starts from local main `3803022`. A compact-input
+style correction prevents Qt 6.12 from collapsing the four profile number
+editors. Eight focused native executions across five cases passed on the pilot
+and working Qt versions; the exact one-file update also passed in a synthetic
+encrypted pilot using its actual windowless runtime. See
+[verification and update instructions](profile-number-fields.md). Only necessary
+tests ran; no full suite or live provider call.
+
+Fourteen preservation fingerprints and the four other worktree attachments are
+unchanged. Recovery evidence is under ignored
+`state/backups/profile-number-fields-20261010/`. Preserve prior main at
+`archive/2026-10-10/main-before-profile-number-fields`, commit, fast-forward local
+main and remove only the merged feature branch. The small update ZIP remains
+under ignored `dist/`; the original pilot is preserved. No remote publication.
+
 ## Cloud-only portable pilot, 10 October 2026
 
 `codex/portable-pilot-package` starts from local main `bdf3d66`. It adds a bounded

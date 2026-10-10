@@ -23,6 +23,11 @@ The ZIP and its pristine unpacked sibling remain under ignored `dist/`. All
 smoke-test state is confined to separately extracted copies under ignored
 `state/`; none was added to the deliverable.
 
+A later Qt 6.12 correction restores the four profile number fields. Apply the
+small `dist/orsi-number-fields-fix-20261010.zip` overlay to this original pilot;
+see [the correction and update instructions](profile-number-fields.md). The
+original pilot ZIP and checksum are unchanged.
+
 ## Use the pilot
 
 Extract the entire ZIP to a writable folder and run `ORSI.cmd`. Before personal

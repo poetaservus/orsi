@@ -20,7 +20,7 @@ CREDENTIAL = b"synthetic pilot credential record"
 HISTORY = "synthetic pilot history"
 
 
-def run(root, phase, report_path):
+def run(root, phase, report_path, *, unlocked_check=None):
     report = {"passed": False, "phase": phase, "network_attempts": 0}
     controller = None
     helpers, opened, inferences = [], [], []
@@ -114,6 +114,11 @@ def run(root, phase, report_path):
                     assert archived[0]["session_status"] == "closed"
                     assert archived[0]["messages"][0]["content"] == HISTORY
                     report["personal_credential_history_retained"] = True
+                    if unlocked_check is not None:
+                        # QTest's unlock key release must finish before another
+                        # event loop can delete the retired login editor.
+                        report["stage"] = "unlocked_check"
+                        unlocked_check(self)
                 report["scenario_passed"] = True
             except BaseException as error:
                 report["error_type"] = type(error).__name__
