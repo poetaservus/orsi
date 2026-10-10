@@ -1,5 +1,23 @@
 # Git layout and baseline hygiene
 
+## Cloud-only portable pilot, 10 October 2026
+
+`codex/portable-pilot-package` starts from local main `bdf3d66`. It adds a bounded
+public-file assembler and produces the user's selected cloud-only pilot ZIP
+from committed application files and the previously verified fresh runtime.
+No application behavior or user settings change. Nine package cases, exact ZIP
+inventory/checksum, actual launcher, offline runtime checks and native encrypted
+profile create/restart/relocation passed; see [the artifact record](portable-pilot-package.md).
+Only necessary tests ran; no full-suite repetition or live provider/model gates.
+
+Fourteen preservation fingerprints and the four other worktree attachments are
+unchanged. Recovery evidence is under ignored
+`state/backups/portable-pilot-package-20261010/`. Preserve prior main at
+`archive/2026-10-10/main-before-portable-pilot-package`, commit, fast-forward
+local main and remove only the merged feature branch. The sanitized ZIP remains
+under ignored `dist/`; no remote publication. Physical-media and second-host
+qualification remain pending.
+
 ## Portable regression test maintenance, 10 October 2026
 
 `codex/portable-regression-gates` starts from local main `c6aa4f9`. It repairs five

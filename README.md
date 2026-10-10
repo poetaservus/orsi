@@ -257,3 +257,8 @@ ready, the offline package check creates an isolated portable profile, verifies 
 credential records, locks and reopens it, then releases its keys/handles and removes the fixture.
 Missing encryption dependencies or a failed round trip fail the build. Existing personal profiles
 and runtime selections are not used. See [packaging verification](docs/portable-vault-packaging.md).
+
+A sanitized cloud-only Windows pilot is now available under ignored `dist/`,
+with empty instance state, an inventory and an archive checksum. See the
+[pilot package record and assembly instructions](docs/portable-pilot-package.md)
+for the exact artifact, necessary checks and remaining host/media qualification.
