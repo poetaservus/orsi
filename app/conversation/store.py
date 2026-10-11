@@ -340,7 +340,8 @@ class ConversationStore:
                 self._commit(proposed)
 
     def agent_messages(self, *, capability_names: tuple[str, ...] | None = None, openai_replay: bool = False,
-                       reference_scope: tuple[str, str] | None = None) -> list[dict]:
+                       reference_scope: tuple[str, str] | None = None, summarize_completed: bool = False,
+                       preserve_unfinished: bool = False) -> list[dict]:
         with self._lock:
             turns = {turn.user_index: turn for turn in self._conversation.turns}
             stopped = {turn.assistant_index: turn for turn in self._conversation.turns
@@ -355,6 +356,21 @@ class ConversationStore:
                 history.append(message.input_message())
                 turn = turns.get(index)
                 if turn is not None:
+                    if preserve_unfinished and turn.outcome is not None and turn.outcome.status != AgentRunStatus.COMPLETED:
+                        review = turn.outcome.completion_review
+                        history.append({"role": "assistant", "content": "Unresolved historical work: " + json.dumps({
+                            "turn_id": turn.turn_id, "status": turn.outcome.status.value,
+                            "remaining": list(review.remaining) if review is not None else [],
+                            "stop_reason": turn.outcome.message,
+                            "notice": "Retained unfinished work, not a replacement for the latest request. Original request and receipts remain available."},
+                            ensure_ascii=False, separators=(",", ":"))})
+                    if summarize_completed and turn.outcome is not None and turn.outcome.status == AgentRunStatus.COMPLETED:
+                        from app.conversation.history_context import completed_turn_summary
+                        answer = self._conversation.messages[turn.assistant_index].content if turn.assistant_index is not None else ""
+                        history.append(completed_turn_summary(turn, answer))
+                        if turn.assistant_index is not None:
+                            replayed_assistants.add(turn.assistant_index)
+                        continue
                     retained = set()
                     reference_notice = False
                     def append_settled(settled):
@@ -408,6 +424,20 @@ class ConversationStore:
                             f"state {recovered.state}, success {recovered.result_success}. "
                             "Detailed trace was interrupted. Do not replay this operation automatically."})
             return history
+
+    def recall_turn(self, turn_id: str) -> dict | None:
+        """Neutral history only: never restore expired skill bodies or opaque provider state."""
+        with self._lock:
+            turn = next((item for item in self._conversation.turns if item.turn_id == turn_id), None)
+            if turn is None:
+                return None
+            return {"turn_id": turn.turn_id, "request": self._conversation.messages[turn.user_index].input_message(),
+                "assistant": self._conversation.messages[turn.assistant_index].input_message() if turn.assistant_index is not None else None,
+                "status": turn.outcome.status.value if turn.outcome else "active",
+                "remaining": list(turn.outcome.completion_review.remaining) if turn.outcome and turn.outcome.completion_review else [],
+                "settled_calls": [item.model_dump(mode="json") if item.call.capability != "skill.read_reference" else {
+                    "call_id": item.result.call_id, "capability": "skill.read_reference", "notice": "Expired skill body omitted; read the active package instead."}
+                    for item in turn.settled_calls]}
 
     @staticmethod
     def _reference_visible(settled, reference_scope):

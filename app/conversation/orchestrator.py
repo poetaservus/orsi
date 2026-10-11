@@ -29,6 +29,7 @@ from app.conversation.prompt import (
 from app.conversation.result_grounding import grounded_text_read_answer
 from app.conversation.diagnostics import record_route, record_turn
 from app.conversation.store import ConversationStore, TurnHistoryError
+from app.conversation.history_context import bind_history_runtime
 from app.conversation.skill_references import ConversationSkillReferences
 from app.conversation.local_documents import LocalDocuments, LocalDocumentCounter, with_local_document_guidance, with_local_image_guidance
 from app.security.host_access import HostAccessPolicy, HostReadScope
@@ -52,10 +53,12 @@ log = logging.getLogger(__name__)
 class ConversationService:
     """UI-facing conversation session and the sole owner of agent turn lifecycle."""
 
-    def _stored_agent_history(self, *, capability_names=None):
+    def _stored_agent_history(self, *, capability_names=None, summarize_completed=False):
         return self.store.agent_messages(capability_names=self.agent_capabilities if capability_names is None else capability_names,
             openai_replay=getattr(self.inference, "supports_openai_replay", False) is True,
-            reference_scope=self._references.scope if self._reference_runtime is not None else None)
+            reference_scope=self._references.scope if self._reference_runtime is not None else None,
+            summarize_completed=summarize_completed,
+            preserve_unfinished=bool(self.agent_runtime and self.agent_runtime.conversation_context_enabled))
 
     def _retain_provider_response(self, scope, replay):
         try:
@@ -105,6 +108,7 @@ class ConversationService:
         self._references = ConversationSkillReferences(enabled=skill_references_enabled,
             storage=getattr(self.skill_registry, "reference_storage", None))
         self._reference_runtime = None
+        agent_runtime = bind_history_runtime(agent_runtime, store)
         self.agent_runtime = agent_runtime
         self.portable_root = portable_root
         self.allowed_read_roots = (
@@ -938,8 +942,18 @@ class ConversationService:
             system_prompt=prompt,
             history=history,
             reserved_tokens=schema_reserve,
-            recovery_enabled=bool(self.agent_runtime and self.agent_runtime.context_recovery_enabled),
+            recovery_enabled=bool(self.agent_runtime and (self.agent_runtime.context_recovery_enabled or self.agent_runtime.conversation_context_enabled)),
         )
+        if self.agent_runtime and self.agent_runtime.conversation_context_enabled and (
+                not request.budget.fits or request.budget.remaining_tokens < request.budget.model_context_limit // 4):
+            # Current and unfinished turns remain whole; only terminal completed
+            # exchanges are summarized. All user messages/attachments stay literal.
+            history = self._stored_agent_history(capability_names=capabilities if use_agent else (), summarize_completed=True)
+            summarized = select_context_request(counter, system_prompt=prompt, history=history,
+                reserved_tokens=schema_reserve, recovery_enabled=True)
+            if summarized.budget.total_estimated_request_tokens < request.budget.total_estimated_request_tokens:
+                request = summarized
+            log.info("Completed history summarized for context admission; fits=%s", request.budget.fits)
         if document_inputs:
             return ContextSelection(self._documents.project(request.messages), request.budget)
         return request

@@ -164,6 +164,7 @@ class AgentRuntime:
         fallback_call_id_factory: Callable[[], str] = lambda: f"fallback-{uuid4().hex}",
         approval_requester: Callable[[ApprovalRecord], None] | None = None,
         context_recovery_enabled: bool = False,
+        conversation_context_enabled: bool = False,
     ):
         if not isinstance(model, InferenceEngine):
             raise TypeError("AgentRuntime requires an InferenceEngine.")
@@ -199,6 +200,9 @@ class AgentRuntime:
         if type(context_recovery_enabled) is not bool:
             raise TypeError("Context recovery requires an explicit boolean.")
         self.context_recovery_enabled = context_recovery_enabled
+        if type(conversation_context_enabled) is not bool:
+            raise TypeError("Conversation context requires an explicit boolean.")
+        self.conversation_context_enabled = conversation_context_enabled
 
     @property
     def effective_max_steps(self) -> int:
@@ -1005,7 +1009,7 @@ class AgentRuntime:
                                "openai_response": response.openai_response.model_dump(mode="python")})
 
     def _recover_transcript(self, transcript, definitions, usage):
-        if not self.context_recovery_enabled:
+        if not (self.context_recovery_enabled or self.conversation_context_enabled):
             return True
         from app.conversation.context import capability_schema_reserve
         from app.conversation.recovery import recover_context_request

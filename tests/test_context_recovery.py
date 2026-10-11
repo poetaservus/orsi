@@ -146,9 +146,10 @@ def test_catalog_reachability_does_not_depend_on_phrases(tmp_path, recovery_enab
         service.shutdown()
 
 
-def test_recovery_is_opt_in_and_default_profile_remains_baseline():
+def test_recovery_is_fail_closed_in_config_and_enabled_in_production():
     assert AgentFeatureConfig().context_recovery_enabled is False
-    assert load_agent_feature_config().context_recovery_enabled is False
+    assert load_agent_feature_config().context_recovery_enabled is True
+    assert load_agent_feature_config().conversation_context_enabled is True
 
 
 def test_projection_failure_retains_already_settled_call_and_stops_next_model_request(tmp_path, monkeypatch):
@@ -239,8 +240,11 @@ def test_continuous_session_keeps_standing_requirements_full_pairing_and_durable
                 return review
             if messages[-1].get("role") == "capability":
                 text = messages[-1]["result"]["output"]["text"]
-                assert "SESSION_MARKER=verified" in text
                 assert "context_projection" in messages[-1]["result"]["metadata"]
+                if "SESSION_MARKER=verified" not in text:
+                    continuation = messages[-1]["result"]["output"]["next_read"]
+                    return ModelResponse.calls((ModelCapabilityCall(provider_call_id="call_0", capability="filesystem.read_text",
+                        arguments=continuation),))
                 return ModelResponse.text("verified")
             latest = next(m["content"] for m in reversed(messages) if m.get("role") == "user")
             if latest.startswith("Standing requirement"):
@@ -251,7 +255,8 @@ def test_continuous_session_keeps_standing_requirements_full_pairing_and_durable
     text = "prefix\n" + "x" * 25_000 + "\nSESSION_MARKER=verified\n" + "y" * 30_000
     (tmp_path / "large.txt").write_bytes(text.encode("utf-8"))
     model = ContinuousModel()
-    flags = AgentFeatureConfig(filesystem_stat_enabled=True, filesystem_read_text_enabled=True, context_recovery_enabled=True)
+    flags = AgentFeatureConfig(filesystem_stat_enabled=True, filesystem_read_text_enabled=True, context_recovery_enabled=True,
+        conversation_context_enabled=True)
     runtime = build_agent_runtime(model, config=flags, portable_root=tmp_path, state_directory=tmp_path / "state")
     store = ConversationStore(tmp_path / "conversation.json")
     service = ConversationService(model, store, agent_runtime=runtime, portable_root=tmp_path)
@@ -263,11 +268,14 @@ def test_continuous_session_keeps_standing_requirements_full_pairing_and_durable
         assert service.store.session_id == session_id
         turns = store.turns()
         assert len(turns) == 21 and all(t.outcome.status == AgentRunStatus.COMPLETED for t in turns)
-        assert sum(t.outcome.inference_requests for t in turns) == len(model.requests) == 62
+        assert sum(t.outcome.inference_requests for t in turns) == len(model.requests)
+        assert all(len(t.settled_calls) > 1 for t in turns[1:])
         assert sum(t.outcome.context_compactions for t in turns) > 0
-        assert len(runtime.executor.journal.records) == 20
+        assert len(runtime.executor.journal.records) == sum(len(t.settled_calls) for t in turns)
         for turn in turns[1:]:
-            assert turn.settled_calls[0].result.output["text"] == text
+            first_page = turn.settled_calls[0].result.output
+            assert text.startswith(first_page["text"]) and first_page["truncated_by_output"]
+            assert first_page["next_read"]["offset"] == first_page["end_offset"]
             assert "context_projection" not in turn.settled_calls[0].result.metadata
         restored = ConversationStore(store.path)
         assert restored.session_id == session_id and len(restored.turns()) == 21

@@ -127,9 +127,9 @@ _WRITE_CAPABILITIES = frozenset(
         "filesystem.trash",
     }
 )
-_EXECUTE_CAPABILITIES = frozenset({"application.launch"})
+_EXECUTE_CAPABILITIES = frozenset({"application.launch", "project.verify", "project.inspect"})
 _SUPPORTED_CAPABILITIES = (
-    _READ_CAPABILITIES | _WRITE_CAPABILITIES | _EXECUTE_CAPABILITIES | {"skill.read_reference"}
+    _READ_CAPABILITIES | _WRITE_CAPABILITIES | _EXECUTE_CAPABILITIES | {"skill.read_reference", "conversation.read_turn"}
 )
 _COUNT_WORDS = {
     1: "one",
@@ -384,7 +384,12 @@ def agent_system_prompt(
                 "- skill.read_reference returns bounded task guidance only from the active skill inventory, "
                 "independently of filesystem roots, at the skill's lower priority."
             )
-        count_word = _COUNT_WORDS[len(capability_lines)]
+        for name, detail in (("project.verify", "runs a bounded project build or selected test command after exact approval"),
+                ("project.inspect", "inspects a local preview or project desktop window after exact approval"),
+                ("conversation.read_turn", "recalls bounded original neutral evidence from this conversation")):
+            if name in capability_names:
+                capability_lines.append(f"- {name} {detail}.")
+        count_word = _COUNT_WORDS.get(len(capability_lines), str(len(capability_lines)))
         limitations = []
         if not find_enabled:
             limitations.append("resolve exact file or folder names")

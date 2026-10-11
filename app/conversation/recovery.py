@@ -6,6 +6,7 @@ system policy, call arguments and scoped call/result identities are never trimme
 from __future__ import annotations
 
 import json
+import os
 import re
 from copy import deepcopy
 from dataclasses import dataclass
@@ -99,22 +100,38 @@ def _project_result(message: dict, *, text_limit: int, item_limit: int, anchors:
     raw = _encoded(output)
     if len(raw) <= text_limit:
         return False
-    if result.get("capability") == "skill.read_reference" and isinstance(output, dict) and isinstance(output.get("text"), str):
+    paged = result.get("capability") in {"skill.read_reference", "conversation.read_turn"}
+    source_page = result.get("capability") == "filesystem.read_text" and isinstance(output, dict) and "text_offset" in output
+    if (paged or source_page) and isinstance(output, dict) and isinstance(output.get("text"), str):
         # This reader has contiguous byte offsets. Preserve its provenance and
         # continuation contract when projecting, rather than joining head/tail
         # snippets and leaving a misleading complete_document flag.
         projected = deepcopy(output)
-        text = output["text"].encode("utf-8")[:text_limit].decode("utf-8", errors="ignore")
-        end = output["offset"] + len(text.encode("utf-8"))
+        codec = output.get("page_encoding", "utf-8") if source_page else "utf-8"
+        text = output["text"].encode(codec)[:text_limit].decode(codec, errors="ignore")
+        start = output["text_offset"] if source_page else output["offset"]
+        total = output["total_size_bytes"] if source_page else output["total_text_bytes"]
+        end = start + len(text.encode(codec))
+        more = end < total
         projected.update(text=text, bytes_returned=end - output["offset"], end_offset=end,
-                         has_more=end < output["total_text_bytes"],
-                         next_offset=end if end < output["total_text_bytes"] else None,
-                         complete_document=output["offset"] == 0 and end == output["total_text_bytes"])
+                         has_more=more, next_offset=end if more else None)
+        if source_page:
+            projected.update(source_complete=output["offset"] == 0 and not more,
+                truncated_by_bytes=more, lines_returned=len(text.splitlines()),
+                read_hint="Source page reduced for context. Follow next_read for the omitted contiguous source." if more else None)
+            projected["next_read"] = {"path": output["path"], "encoding": output["encoding"],
+                "offset": end, "expected_revision": output["revision"], "max_bytes": text_limit,
+                "max_lines": 1000} if more else None
+        else:
+            projected["complete_document"] = output["offset"] == 0 and not more
+            if "next_read" in output:
+                projected["next_read"] = {**(output.get("next_read") or {"turn_id": output.get("turn_id"),
+                    "expected_revision": output.get("revision")}), "offset": end, "max_bytes": max(128, text_limit)} if more else None
     else:
         projected = _project_value(output, text_limit=text_limit, item_limit=item_limit, anchors=anchors)
     encoded_projection = _encoded(projected)
     # Very broad dictionaries can exceed the budget despite per-value projection.
-    if len(encoded_projection) > text_limit * 3 and result.get("capability") != "skill.read_reference":
+    if len(encoded_projection) > text_limit * 3 and not (paged or source_page):
         projected = {"context_projection_excerpt": _text_excerpt(raw.decode("utf-8"), text_limit, anchors)}
         if isinstance(output, dict):
             projected.update({key: value for key, value in output.items()
@@ -123,7 +140,7 @@ def _project_result(message: dict, *, text_limit: int, item_limit: int, anchors:
         encoded_projection = _encoded(projected)
     if (result.get("capability") == "filesystem.read_text"
             and isinstance(output, dict) and isinstance(output.get("text"), str)
-            and projected.get("text") != output["text"]):
+            and not source_page and projected.get("text") != output["text"]):
         # Keep source completeness truthful for the text actually sent to the
         # model, without changing projection policy or the durable read result.
         projected["source_complete"] = False
@@ -152,6 +169,38 @@ def _project_result(message: dict, *, text_limit: int, item_limit: int, anchors:
     return True
 
 
+def retire_stale_sources(messages: list[dict]) -> int:
+    """Retain receipts and exact pairs, retire superseded source bodies explicitly."""
+    latest, retired = {}, 0
+    for message in reversed(messages):
+        result = message.get("result", {})
+        output = result.get("output") or {}
+        capability = result.get("capability")
+        if result.get("success") and capability in {"filesystem.copy", "filesystem.move", "filesystem.trash"}:
+            names = ("destination_path",) if capability == "filesystem.copy" else ("path", "source_path", "destination_path")
+            for name in names:
+                if isinstance(output.get(name), str):
+                    latest.setdefault(os.path.normcase(os.path.normpath(output[name])), ("mutation", result.get("call_id")))
+        path = output.get("path")
+        if not result.get("success") or not isinstance(path, str):
+            continue
+        key = os.path.normcase(os.path.normpath(path))
+        if capability in {"filesystem.edit_text", "filesystem.write_text"}:
+            latest.setdefault(key, ("mutation", result.get("call_id")))
+        elif capability == "filesystem.read_text":
+            revision = output.get("revision") or output.get("sha256")
+            if revision is None:
+                continue
+            identity = ("source", revision)
+            if key in latest and latest[key] != identity and isinstance(output.get("text"), str):
+                result["output"] = {k: output[k] for k in ("path", "sha256", "revision", "offset", "end_offset", "content_is_untrusted") if k in output}
+                result["output"].update(source_complete=False, source_retired=True,
+                    read_hint="Superseded source revision retired from context; original receipt remains in conversation history. Read the current file before editing.")
+                retired += 1
+            latest.setdefault(key, identity)
+    return retired
+
+
 def recover_context_request(inference, messages: list[dict], *, reserved_tokens: int = 0,
                             safety_buffer: int = 256, projection_enabled: bool = True) -> RecoveredContext:
     """Project results first, compact old assistant material only on admission pressure.
@@ -170,7 +219,8 @@ def recover_context_request(inference, messages: list[dict], *, reserved_tokens:
         if not openai_context or admission.fits or not projection_enabled:
             return RecoveredContext(projected, admission)
     anchors = _anchors(messages)
-    count = sum(_project_result(m, text_limit=4096, item_limit=16, anchors=anchors) for m in projected)
+    count = retire_stale_sources(projected)
+    count += sum(_project_result(m, text_limit=4096, item_limit=16, anchors=anchors) for m in projected)
     def budget(values):
         return calculate_context_budget(inference, values, reserved_tokens=reserved_tokens, safety_buffer=safety_buffer)
     admission = budget(projected)
@@ -184,13 +234,14 @@ def recover_context_request(inference, messages: list[dict], *, reserved_tokens:
     for index, message in enumerate(compacted):
         if message.get("role") == "capability" and index != latest_result:
             # Re-project original evidence, not an already excerpted string.
-            message = deepcopy(messages[index])
+            message = deepcopy(projected[index] if projected[index].get("result", {}).get("output", {}).get("source_retired") else messages[index])
             if _project_result(message, text_limit=256, item_limit=4, anchors=anchors):
                 compacted[index] = message
                 changed = True
         elif (index < latest_user and message.get("role") == "assistant" and "capability_calls" not in message
               and "openai_response" not in message
-              and isinstance(message.get("content"), str) and len(message["content"]) > 256):
+              and isinstance(message.get("content"), str) and len(message["content"]) > 256
+              and not message["content"].startswith("Unresolved historical work: ")):
             message["content"] = _text_excerpt(message["content"], 256, ())
             changed = True
     admission = budget(compacted)

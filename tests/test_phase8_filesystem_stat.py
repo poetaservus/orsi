@@ -127,6 +127,10 @@ def test_checked_in_config_enables_requested_read_capabilities(monkeypatch):
         filesystem_move_enabled=True,
         filesystem_trash_enabled=True,
         application_launch_enabled=True,
+        project_verify_enabled=True,
+        project_inspect_enabled=True,
+        context_recovery_enabled=True,
+        conversation_context_enabled=True,
         full_local_read_enabled=True,
     )
 

@@ -1,5 +1,20 @@
 # Git layout and baseline hygiene
 
+## Project verification, context and paging, 11 October 2026
+
+`codex/verification-context-paging` starts from local main `527b5e9`. It adds
+approved bounded project build/test execution and browser/desktop inspection,
+loss-aware long-conversation context with original history recovery, and
+revision-bound contiguous source paging. See [the contract and qualification](verification-context-paging.md).
+Only necessary focused checks run; full-suite and live model/provider gates are
+unrun by request. Qualification passed 380 distinct focused native checks with
+one host symlink skip, including real browser and desktop inspection. Before
+local integration, retain content-free refs/worktrees
+under `state/backups/verification-context-paging-20261011/` and prior main at
+`archive/2026-10-11/main-before-verification-context-paging`. Commit, fast-forward
+local main and remove only the merged feature branch. Other worktrees and
+historical/unmerged tips remain intact; no remote publication.
+
 ## Current request and completion checks, 11 October 2026
 
 `codex/current-task-completion` starts from local main `dd2da89`. It separates

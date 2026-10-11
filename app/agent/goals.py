@@ -27,6 +27,16 @@ class ArtifactEvidence(BaseModel):
     integrity_uncertain: bool = False
 
 
+class VerificationEvidence(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+    call_id: str = Field(min_length=1, max_length=128)
+    project_path: str = Field(min_length=1, max_length=32767)
+    kind: Literal["build", "test", "browser", "desktop"]
+    passed: bool
+    stale: bool = False
+    screenshot_path: str | None = None
+
+
 class TaskGoal(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True, hide_input_in_errors=True)
     goal_id: str = Field(pattern=r"^turn-[1-9][0-9]*$")
@@ -35,7 +45,10 @@ class TaskGoal(BaseModel):
     state: Literal["active", "reported_unverified", "stopped"] = "active"
     # A tool receipt verifies a save; a later complete matching read checks source.
     artifacts: tuple[ArtifactEvidence, ...] = Field(default=(), max_length=MAX_AGENT_CAPABILITY_CALLS)
+    verification: tuple[VerificationEvidence, ...] = Field(default=(), max_length=MAX_AGENT_CAPABILITY_CALLS)
     behaviour_verified: Literal[False] = False
+    # Legacy availability field retained for existing durable histories. New
+    # scoped verification receipts, not this snapshot, describe executed checks.
     unavailable_checks: tuple[Literal["runtime_execution", "gui_validation"], ...] = (
         "runtime_execution", "gui_validation")
 
@@ -44,6 +57,21 @@ def observe_goal(goal: TaskGoal, settled) -> TaskGoal:
     """Project only bounded tool evidence, identically in runtime and durable storage."""
     call, result = settled.call, settled.result
     output = result.output or {}
+    if call.capability in {"project.verify", "project.inspect"}:
+        project = output.get("project_path") or call.arguments.get("project_path")
+        kind = call.arguments.get("kind")
+        if isinstance(project, str) and kind in {"build", "test", "browser", "desktop"}:
+            item = VerificationEvidence(call_id=result.call_id, project_path=project, kind=kind,
+                passed=result.success and output.get("passed") is True,
+                screenshot_path=output.get("screenshot_path") if isinstance(output.get("screenshot_path"), str) else None)
+            check = "runtime_execution" if call.capability == "project.verify" else "gui_validation"
+            return goal.model_copy(update={"verification": (*goal.verification, item),
+                "unavailable_checks": tuple(value for value in goal.unavailable_checks if value != check) if result.success else goal.unavailable_checks})
+    if call.capability in {"filesystem.edit_text", "filesystem.write_text", "filesystem.copy", "filesystem.move", "filesystem.trash"} and (
+            result.success or result.error is not None and result.error.code == CapabilityErrorCode.OUTCOME_UNKNOWN):
+        paths = [output.get("path"), *(call.arguments.get(key) for key in ("path", "source_path", "destination_path"))]
+        goal = goal.model_copy(update={"verification": tuple(item.model_copy(update={"stale": True})
+            if any(isinstance(path, str) and _under(path, item.project_path) for path in paths) else item for item in goal.verification)})
     if call.capability in {"filesystem.copy", "filesystem.move", "filesystem.trash"}:
         # Placement can invalidate another artifact's receipt; copy leaves its source intact.
         names = ("path", "source_path", "destination_path") if call.capability != "filesystem.copy" else ("destination_path",)
@@ -85,6 +113,13 @@ def finish_goal(goal: TaskGoal, *, completed: bool) -> TaskGoal:
     return goal.model_copy(update={"state": "reported_unverified" if completed else "stopped"})
 
 
+def _under(path: str, directory: str) -> bool:
+    try:
+        return os.path.commonpath((path_key(path), path_key(directory))) == path_key(directory)
+    except ValueError:
+        return False
+
+
 def goal_feedback(goal: TaskGoal) -> str:
     checked = sum(item.source_check_call_id is not None and not item.integrity_uncertain for item in goal.artifacts)
     uncertain = sum(item.integrity_uncertain for item in goal.artifacts)
@@ -95,18 +130,29 @@ def goal_feedback(goal: TaskGoal) -> str:
         "These are file evidence, not proof that every requested change is implemented. "
         "Compare the latest explicit user requirements with the settled work. Continue only for an identified "
         "unmet requirement, or finish with changed files and remaining/unrun checks. "
-        "No runtime execution or GUI validation capability is available; do not edit speculatively to replace those checks."
+        "Use advertised project.verify for the documented build and relevant tests, then project.inspect for UI changes. "
+        "Respect approval and execution limits; report failed, stale and unrun checks explicitly. "
+        + verification_report(goal)
     )
 
 
 def evidence_report(goal: TaskGoal) -> str:
     if not goal.artifacts:
-        return ""
+        return verification_report(goal) if goal.verification else ""
     checked = sum(item.source_check_call_id is not None and not item.integrity_uncertain for item in goal.artifacts)
     uncertain = sum(item.integrity_uncertain for item in goal.artifacts)
     report = (f"Completion evidence: {len(goal.artifacts)} text file(s) saved; "
         f"{checked}/{len(goal.artifacts)} subsequently checked against the saved revision. "
-        "Requested behaviour is not independently verified. Runtime execution and GUI validation were not run by ORSI.")
+        "Requested behaviour is not independently verified. "
+        + (verification_report(goal) if goal.verification else "Runtime execution and GUI validation were not run by ORSI."))
     if uncertain:
         report += f" {uncertain} file(s) require review because the saved revision is no longer confirmed."
     return report
+
+
+def verification_report(goal: TaskGoal) -> str:
+    if not goal.verification:
+        return "No project verification or inspection receipts for this request."
+    return "Verification receipts (only the recorded scopes): " + "; ".join(
+        f"{item.kind} {'stale' if item.stale else 'passed' if item.passed else 'failed or interrupted'} [{item.call_id}]"
+        for item in goal.verification) + ". Screenshots require visual review."

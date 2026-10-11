@@ -81,6 +81,10 @@ def build_default_permission_gate(
                 capability_pattern="application.launch",
             )
         )
+    for flag, capability in ((config.project_verify_enabled, "project.verify"), (config.project_inspect_enabled, "project.inspect")):
+        if flag:
+            rules.append(PermissionRule(capability + "-explicit-approval", PermissionDecision.ASK,
+                permission=PermissionClass.EXECUTE, capability_pattern=capability))
     return PermissionGate(rules)
 
 

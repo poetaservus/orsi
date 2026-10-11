@@ -4,6 +4,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from app.capabilities.application_launch import ApplicationLaunchCapability
+from app.capabilities.project_verification import ProjectVerifyCapability, ProjectInspectCapability
 from app.capabilities.contracts import Capability
 from app.capabilities.filesystem_copy import FilesystemCopyCapability
 from app.capabilities.filesystem_find import FilesystemFindCapability
@@ -42,6 +43,8 @@ def build_builtin_registry(
         (config.filesystem_read_text_enabled, FilesystemReadTextCapability),
         (config.filesystem_search_enabled, FilesystemSearchCapability),
         (config.application_launch_enabled, ApplicationLaunchCapability),
+        (config.project_verify_enabled, lambda: ProjectVerifyCapability(state_directory)),
+        (config.project_inspect_enabled, lambda: ProjectInspectCapability(state_directory)),
     ]
     write_flags = (
         config.filesystem_mkdir_enabled,

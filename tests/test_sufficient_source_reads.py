@@ -73,8 +73,8 @@ def test_supported_ceiling_reports_actionable_limitation(tmp_path, raw, byte_cut
     assert output["truncated_by_bytes"] is byte_cut
     assert output["truncated_by_lines"] is line_cut
     assert "missing_target" not in output["text"]
-    assert "stop and request a smaller source file" in output["read_hint"]
-    assert "does not support range reads" in output["read_hint"]
+    assert output["next_read"]["offset"] == output["end_offset"]
+    assert output["next_read"]["expected_revision"] == output["revision"]
     assert output["sha256"] == (None if byte_cut else hashlib.sha256(raw).hexdigest())
 
 
@@ -115,8 +115,9 @@ def test_context_excerpt_cannot_claim_complete_source(tmp_path):
     result = recovered.messages[-1]["result"]
     assert result["metadata"]["context_projection"]["complete"] is False
     assert result["output"]["source_complete"] is False
-    assert "context limitation" in result["output"]["read_hint"]
-    assert "characters omitted" in result["output"]["text"]
+    assert "Follow next_read" in result["output"]["read_hint"]
+    assert output["text"].startswith(result["output"]["text"])
+    assert result["output"]["next_read"]["offset"] == result["output"]["end_offset"]
     assert result["output"]["sha256"] == output["sha256"]
     assert output["source_complete"] and output["read_hint"] is None
     assert output["text"].encode("utf-8") == target.read_bytes()

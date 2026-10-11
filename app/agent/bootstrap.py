@@ -88,4 +88,5 @@ def build_agent_runtime(
         executor=executor,
         limits=config.runtime_limits,
         context_recovery_enabled=config.context_recovery_enabled,
+        conversation_context_enabled=config.conversation_context_enabled,
     )

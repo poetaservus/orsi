@@ -11,6 +11,10 @@
   "filesystem_move_enabled": true,
   "filesystem_trash_enabled": true,
   "application_launch_enabled": true,
+  "project_verify_enabled": true,
+  "project_inspect_enabled": true,
+  "conversation_context_enabled": true,
+  "context_recovery_enabled": true,
   "full_local_read_enabled": true,
   "runtime_limits": {
     "max_steps": 24,

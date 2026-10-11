@@ -45,7 +45,9 @@ def completion_review_message(goal: TaskGoal, pending_recovery: str | None) -> d
     return {"role": "system", "content": (
         REVIEW_PREFIX + " Compare every requested change and standing requirement with this turn's settled work. "
         "An unrelated answer, diagnosis, plan or read does not complete requested edits. Earlier work cannot prove "
-        "this request done; source cannot prove runtime/GUI checks. Return one JSON object with goal_id="
+        "this request done; source cannot prove runtime/GUI checks. For code changes, use advertised project.verify "
+        "for a bounded build and relevant tests, then project.inspect for UI/interaction changes. Account for "
+        "failed, stale, denied, unavailable and unrun checks; never call them passed. Return one JSON object with goal_id="
         + json.dumps(goal.goal_id)
         + ', status="ready", "continue" or "blocked", and remaining=[strings]. '
         "Ready requires all work accounted for and remaining=[]. Continue for routine reads/corrected patches or "

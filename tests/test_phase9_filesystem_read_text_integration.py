@@ -34,6 +34,10 @@ class DeterministicReadModel(InferenceEngine):
         return self.conversation_response
 
     def respond_with_capabilities(self, messages, capabilities):
+        from tests.fixtures.completion_reviews import ready_review_for
+        review = ready_review_for(messages)
+        if review is not None:
+            return review
         self.capability_requests.append(messages)
         latest = messages[-1]
         if latest.get("role") == "capability":

@@ -47,7 +47,8 @@ def test_read_text_returns_bounded_untrusted_text(tmp_path: Path):
     assert result.success and result.error is None
     assert result.capability == "filesystem.read_text"
     assert result.metadata["permission"] == PermissionClass.READ.value
-    assert result.output == {
+    assert {key: value for key, value in result.output.items() if key not in {
+        "offset", "text_offset", "end_offset", "bytes_returned", "page_encoding", "revision", "has_more", "next_offset", "next_read"}} == {
         "path": str(target.resolve()),
         "encoding": "utf-8",
         "text": "first line\nsecond line\n",
@@ -56,6 +57,7 @@ def test_read_text_returns_bounded_untrusted_text(tmp_path: Path):
         "lines_returned": 2,
         "truncated_by_bytes": False,
         "truncated_by_lines": False,
+        "truncated_by_output": False,
         "source_complete": True,
         "read_hint": None,
         "content_is_untrusted": True,

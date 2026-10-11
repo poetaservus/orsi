@@ -82,12 +82,17 @@ class AgentFeatureConfig(BaseModel):
     filesystem_move_enabled: bool = False
     filesystem_trash_enabled: bool = False
     application_launch_enabled: bool = False
+    project_verify_enabled: bool = False
+    project_inspect_enabled: bool = False
     full_local_read_enabled: bool = False
     context_recovery_enabled: bool = False
+    conversation_context_enabled: bool = False
     runtime_limits: AgentRuntimeLimits = Field(default_factory=AgentRuntimeLimits)
 
     @model_validator(mode="after")
     def validate_feature_dependencies(self):
+        if (self.project_verify_enabled or self.project_inspect_enabled or self.conversation_context_enabled) and not self.filesystem_stat_enabled:
+            raise ValueError("Project verification and conversation context require the structured capability agent.")
         if self.filesystem_find_enabled and not self.filesystem_stat_enabled:
             raise ValueError(
                 "Filesystem name lookup requires the filesystem metadata agent."
@@ -143,6 +148,9 @@ def load_agent_feature_config() -> AgentFeatureConfig:
         (_FILESYSTEM_MOVE_GATE, "filesystem_move_enabled"),
         (_FILESYSTEM_TRASH_GATE, "filesystem_trash_enabled"),
         (_APPLICATION_LAUNCH_GATE, "application_launch_enabled"),
+        ("ORSI_ENABLE_PROJECT_VERIFY", "project_verify_enabled"),
+        ("ORSI_ENABLE_PROJECT_INSPECT", "project_inspect_enabled"),
+        ("ORSI_ENABLE_CONVERSATION_CONTEXT", "conversation_context_enabled"),
         (_FULL_LOCAL_READ_GATE, "full_local_read_enabled"),
     ):
         override = os.environ.get(name)

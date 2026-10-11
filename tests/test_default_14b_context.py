@@ -30,6 +30,10 @@ class AdmissionRecorder(InferenceEngine):
         return "Hello."
 
     def respond_with_capabilities(self, messages, capabilities):
+        from tests.fixtures.completion_reviews import ready_review_for
+        review = ready_review_for(messages)
+        if review is not None:
+            return review
         self.requests.append((messages, tuple(capabilities)))
         return ModelResponse.text("Hello.")
 
@@ -70,7 +74,7 @@ def test_default_keeps_full_catalog_and_current_request_under_memory_pressure(
         assert service.run("hey") == "Hello."
         assert service._turn_result.status.value == "completed"
         messages, tools = backend.requests[-1]
-        assert len(tools) == 12
+        assert len(tools) == 15
         assert messages[-1] == {"role": "user", "content": "hey"}
         assert service.context_budget().fits
     finally:
