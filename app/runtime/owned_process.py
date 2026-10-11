@@ -158,9 +158,14 @@ class OwnedProcess:
     def close(self):
         with self._lock:
             if self._release.alive:
-                code = self.poll()
-                self._release()
-                self.returncode = code if code is not None else 1
+                code = None
+                try:
+                    code = self.poll()
+                finally:
+                    try:
+                        self._release()
+                    finally:
+                        self.returncode = code if code is not None else 1
 
 
 def start_owned_process(command, *, cwd, env, stdout=None, stderr=None, windows_command_line=None):

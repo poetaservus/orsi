@@ -1,5 +1,20 @@
 # Git layout and baseline hygiene
 
+## Persistent shell sessions, 11 October 2026
+
+`codex/persistent-shell-sessions` starts from local main `f35d4a5`. It adds
+explicit managed background sessions to the existing shell tool, with status,
+stop, bounded logs/lifetimes and runtime shutdown cleanup. Ordinary commands
+retain their current lifecycle and approvals. The real npm start/status/stop
+chat passed with independent HTTP checks and released owned processes; 205
+distinct focused checks passed, including actual browser interactions. See
+[the contract and qualification](persistent-shell-sessions.md). Preserve
+content-free integration evidence under
+`state/backups/persistent-shell-sessions-20261011/` and prior main at
+`archive/2026-10-11/main-before-persistent-shell-sessions`. Commit, fast-forward
+local main and remove only the merged feature branch. Preserve other worktrees,
+historical refs, configuration and remote branches; no publication.
+
 ## Recursive filename searches, 11 October 2026
 
 `codex/recursive-file-search` starts from local main `1e47484`. It guides

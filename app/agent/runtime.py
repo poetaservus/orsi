@@ -252,7 +252,13 @@ class AgentRuntime:
     def shutdown(self) -> None:
         """Resolve pending approval waits and stop capability execution."""
         self.approval_manager.shutdown()
-        self.executor.executor.shutdown()
+        try:
+            self.executor.executor.shutdown()
+        finally:
+            for name in self.registry.enabled_names:
+                close = getattr(self.registry.resolve(name), "shutdown", None)
+                if callable(close):
+                    close()
 
     def run_conversation(
         self,
