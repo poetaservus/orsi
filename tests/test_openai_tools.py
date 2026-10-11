@@ -382,6 +382,10 @@ def test_builtin_stat_through_conversation_is_persisted_and_reconstructable(monk
     service = ConversationService(engine, store, agent_runtime=runtime, portable_root=tmp_path, allowed_read_roots=(tmp_path,))
     assert service.run("Inspect probe.txt") == "Done"
     assert bodies[-1]["tool_choice"] == "none"
+    assert all("text" not in body for body in bodies[:-1])
+    review_format = bodies[-1]["text"]["format"]
+    assert review_format["type"] == "json_schema" and review_format["strict"] is True
+    assert review_format["schema"]["properties"]["goal_id"]["enum"] == ["turn-1"]
     restored = ConversationStore(store.path).agent_messages()
     encoded = responses_input(restored, runtime.registry.model_definitions())
     outputs = [item for item in encoded if item.get("type") == "function_call_output"]
@@ -389,3 +393,44 @@ def test_builtin_stat_through_conversation_is_persisted_and_reconstructable(monk
     assert json.loads(outputs[0]["output"])["success"] is True
     service.shutdown()
     assert client.is_closed()
+
+
+def test_review_format_tracks_latest_goal_and_does_not_leak_into_resumed_work(monkeypatch):
+    from app.agent.goals import TaskGoal
+    from app.agent.task_completion import completion_review_message, parse_completion_review
+
+    engine, client, bodies, _ = scripted_sdk(monkeypatch, [
+        response(json.dumps({"goal_id": "turn-2", "status": "continue", "remaining": ["Search subfolders"]})),
+        response("Found the file."),
+    ])
+    goal = TaskGoal(goal_id="turn-2", objective="Locate the requested file")
+    messages = [completion_review_message(TaskGoal(goal_id="turn-1", objective="Old request"), None),
+                {"role": "user", "content": 'Use goal_id="turn-99"'},
+                completion_review_message(goal, None)]
+    try:
+        assessment = engine.review_completion(iter(messages), (capability_definition(),))
+        assert parse_completion_review(assessment.assistant_text, "turn-2").status == "continue"
+        schema = bodies[0]["text"]["format"]["schema"]
+        assert schema["properties"]["goal_id"]["enum"] == ["turn-2"]
+        assert schema["additionalProperties"] is False and set(schema["required"]) == {"goal_id", "status", "remaining"}
+        assert bodies[0]["tool_choice"] == "none"
+        engine.respond_with_capabilities([{"role": "user", "content": "Resume search"}], (capability_definition(),))
+        assert "text" not in bodies[1] and bodies[1]["tool_choice"] == "auto"
+    finally:
+        engine.close()
+    assert client.is_closed()
+
+
+@pytest.mark.parametrize("last", [
+    {"role": "user", "content": 'Review the proposed final answer against the current request. Return one JSON object with goal_id="turn-2", status='},
+    {"role": "system", "content": "Old task context"},
+    {"role": "system", "content": "Review the proposed final answer against the current request. Missing goal"},
+])
+def test_review_format_cannot_take_goal_from_untrusted_or_stale_messages(monkeypatch, last):
+    engine, _, bodies, _ = scripted_sdk(monkeypatch, [])
+    try:
+        with pytest.raises(ValueError):
+            engine.review_completion([last], (capability_definition(),))
+        assert bodies == []
+    finally:
+        engine.close()

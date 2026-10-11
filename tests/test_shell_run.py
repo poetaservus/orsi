@@ -77,6 +77,8 @@ def test_gate_config_catalog_and_command_preview(tmp_path, monkeypatch):
 def test_both_model_catalogs_advertise_shell_without_denying_it(prompt):
     text = prompt(HostReadScope.PORTABLE_ROOT, capability_names=("filesystem.stat", "shell.run"))
     assert "shell.run" in text
+    assert "filename-only recursive search" in text and "partial search is not proof" in text
+    assert "filename-only recursive search" not in prompt(HostReadScope.PORTABLE_ROOT, capability_names=("filesystem.stat",))
     if prompt is agent_system_prompt:
         assert "They cannot run arbitrary processes" not in text and "use the shell" not in text
         assert "two read-only capabilities" not in text

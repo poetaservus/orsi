@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -68,6 +69,25 @@ def parse_completion_review(text: str, goal_id: str) -> CompletionReview:
     if review.goal_id != goal_id:
         raise ValueError("Completion review does not match the current request.")
     return review
+
+
+def completion_review_schema(messages) -> dict:
+    """Constrain cloud assessments to the last trusted review's active goal.
+
+    Do not derive the goal from user text, tool output, or historical reviews.
+    Logical readiness and execution authority remain runtime responsibilities.
+    """
+    last = messages[-1] if messages else {}
+    content = last.get("content", "")
+    if last.get("role") != "system" or not isinstance(content, str) or not content.startswith(REVIEW_PREFIX):
+        raise ValueError("A completion schema requires the current system review.")
+    match = re.search(r'Return one JSON object with goal_id="(turn-[1-9][0-9]*)", status=', content)
+    if match is None:
+        raise ValueError("The current completion review has no valid goal identifier.")
+    schema = CompletionReview.model_json_schema()
+    schema["properties"]["goal_id"] = {"type": "string", "enum": [match.group(1)]}
+    schema["properties"]["remaining"]["items"] = {"type": "string", "minLength": 1, "maxLength": 1000}
+    return schema
 
 
 def looks_like_completion_review(text: str) -> bool:

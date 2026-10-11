@@ -17,6 +17,7 @@ from pathlib import Path
 from threading import RLock
 from typing import Any, Iterable
 
+from app.agent.task_completion import completion_review_schema
 from app.inference.cloud_errors import CloudErrorCode, CloudInferenceError
 from app.inference.completion import CompletionMetadata, CompletionText, IncompleteResponseError, TokenUsage, ResponseFailureReason
 from app.inference.engine import InferenceEngine
@@ -459,7 +460,8 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
 
     def _request(self, inputs: list[dict], *, tools: list[dict] | None = None,
                  attachment_estimate: int | None = None, count_only: bool = False,
-                 image_generation: bool = False, tool_choice: str = "auto") -> dict:
+                 image_generation: bool = False, tool_choice: str = "auto",
+                 text_format: dict | None = None) -> dict:
         with self._lock:
             self._ensure_open()
             profile = self.catalog.current_profile
@@ -489,6 +491,8 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
             body["temperature"] = profile.temperature
         if tools is not None:
             body.update(tools=tools, tool_choice=tool_choice, parallel_tool_calls=True)
+        if text_format is not None:
+            body["text"] = {"format": text_format}
         if image_generation:
             body["tool_choice"] = {"type": "image_generation"}
             body["max_output_tokens"] = min(profile.max_output_tokens, 4096)
@@ -497,6 +501,8 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
             if len(json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8")) > MAX_REQUEST_BYTES:
                 raise AttachmentError("The cloud request exceeds the transport size limit.")
         estimated_input = (estimate_input_tokens(inputs) if attachment_estimate is None else attachment_estimate) + estimate_schema_tokens(tools)
+        if text_format is not None:
+            estimated_input += estimate_schema_tokens([text_format])
         if attachment_estimate is None and estimated_input + 256 > profile.max_input_tokens:
             raise _provider_error(None, "context_length_exceeded")
         state = ResponsesStreamState(observer, allow_images=image_generation, activity=activity)
@@ -579,7 +585,7 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
                         runner.http_client.event_hooks["response"] = [count_headers]
                         try:
                             count_body = {key: body[key] for key in (
-                                "model", "input", "reasoning", "truncation", "tools", "tool_choice", "parallel_tool_calls") if key in body}
+                                "model", "input", "reasoning", "truncation", "tools", "tool_choice", "parallel_tool_calls", "text") if key in body}
                             counted = await runner.client.responses.input_tokens.count(**count_body)
                             actual = getattr(counted, "input_tokens", None)
                             if type(actual) is not int or actual < 0 or actual > 2**63 - 1:
@@ -712,6 +718,7 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
         return self._capability_response(messages, capabilities, reviewing=True)
 
     def _capability_response(self, messages, capabilities, *, reviewing=False) -> ModelResponse:
+        messages = tuple(messages)
         definitions = model_capability_definitions(capabilities, require_nonempty=True)
         tools = responses_function_tools(definitions)
         inputs = responses_input(messages, definitions, model_id=self.active_model)
@@ -720,6 +727,9 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
         # Keep definitions for validating/replaying settled calls, while preventing
         # assessment from initiating another filesystem/verification tool chain.
         options = {"tool_choice": "none"} if reviewing else {}
+        if reviewing:
+            options["text_format"] = {"type": "json_schema", "name": "completion_review", "strict": True,
+                                      "schema": completion_review_schema(messages)}
         try:
             payload = (self._request(inputs, tools=tools, **options) if estimate is None else
                        self._request(inputs, tools=tools, attachment_estimate=estimate, **options))

@@ -18,6 +18,24 @@ from tests.test_cloud_attachment_input import native_sdk, user
 from tests.test_openai_rate_limits import Clock, headers, limits
 
 
+def test_completion_review_count_includes_the_same_schema_as_generation(tmp_path, native_sdk):
+    from app.agent.goals import TaskGoal
+    from app.agent.task_completion import completion_review_message, parse_completion_review
+    from tests.test_cloud_inference import capability_definition
+
+    engine, counts, generations, _ = native_sdk()
+    service = ConversationService(engine, ConversationStore(tmp_path / 'chat.json'))
+    ref = service.store.attachment_store.import_bytes(b'synthetic source', name='source.txt')
+    messages = [user(ref), {'role': 'assistant', 'content': 'Done'},
+                completion_review_message(TaskGoal(goal_id='turn-2', objective='Read source'), None)]
+    result = engine.review_completion(messages, (capability_definition(),))
+    assert parse_completion_review(result.assistant_text, 'turn-2').status == 'ready'
+    assert len(counts) == len(generations) == 1
+    assert counts[0]['text'] == generations[0]['text']
+    assert counts[0]['tool_choice'] == generations[0]['tool_choice'] == 'none'
+    assert counts[0]['text']['format']['schema']['properties']['goal_id']['enum'] == ['turn-2']
+
+
 def test_large_source_uses_measured_content_before_admission(tmp_path, native_sdk):
     engine, counts, generations, _ = native_sdk(count=100)
     service = ConversationService(engine, ConversationStore(tmp_path / 'chat.json'))

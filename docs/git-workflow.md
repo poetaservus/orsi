@@ -1,5 +1,20 @@
 # Git layout and baseline hygiene
 
+## Recursive filename searches, 11 October 2026
+
+`codex/recursive-file-search` starts from local main `1e47484`. It guides
+unknown-location file requests through approved recursive filename-only shell
+searches and constrains cloud completion reviews to the current goal's JSON
+schema. The unchanged two-prompt live reproduction first missed nested files
+and stopped on invalid reviews; both repaired runs found all three synthetic
+matches and completed. Necessary focused qualification passed 174 distinct
+checks. See [the contract and qualification](recursive-file-search.md).
+Preserve content-free integration evidence under
+`state/backups/recursive-file-search-20261011/` and prior main at
+`archive/2026-10-11/main-before-recursive-file-search`. Commit, fast-forward local
+main and remove only the merged feature branch. Preserve other worktrees,
+historical refs and configuration; no remote publication.
+
 ## Shell output and preview recovery, 11 October 2026
 
 `codex/shell-repeat-recovery` starts from local main `1198acb`. It flushes
