@@ -86,8 +86,21 @@ def browser_inspection(spec):
                 try:
                     page.goto(spec["url"], wait_until="load", timeout=10000)
                     break
-                except Exception:
-                    if server is None or server.poll() is not None or monotonic() >= deadline:
+                except BrowserError as error:
+                    if server is None:
+                        return {"passed": False, "inspection_complete": False,
+                            "verification_status": "unavailable",
+                            "failure_kind": "preview_navigation_failed", "preview_server_started": False,
+                            "error": str(error)[:300], "recovery": {
+                                "capability": "project.inspect",
+                                "required_if_preview_not_running": ["server_executable", "server_arguments"],
+                                "instruction": "No preview server was started by this inspection. If no server is already running, "
+                                    "retry project.inspect with the installed interpreter in server_executable and the project's "
+                                    "documented preview command in server_arguments, using the same host/port as url. "
+                                    "This keeps the server alive throughout inspection and stops it afterward. "
+                                    "shell.run stops its child processes when it returns, so starting a server there "
+                                    "cannot keep it alive for a later inspection. The corrected call still requires approval."}}
+                    if server.poll() is not None or monotonic() >= deadline:
                         raise
                     problems.clear()
                     sleep(0.1)
@@ -142,9 +155,15 @@ def browser_inspection(spec):
             for value in layout["missingFragments"]:
                 problem("missing_fragment", value)
             page.screenshot(path=spec["screenshot"], full_page=False, timeout=3000)
-            return {"passed": not problems and all(item["passed"] for item in checks), "url": page.url,
+            passed = not problems and all(item["passed"] for item in checks)
+            return {"passed": passed, "verification_status": "passed" if passed else "failed", "url": page.url,
                 "title": page.title()[:200], "checks": checks, "problems": problems, "layout": layout,
                 "screenshot_path": spec["screenshot"], "preview_pid": server.pid if server is not None else None,
+                "retry_guidance": None if passed else (
+                    "Inspection ran; these are failed checks, not an unavailable browser. "
+                    "Correct invalid selectors or preview setup before retrying. Repeating checks does not repair project code. "
+                    "For a read-only test/report request, report the observed failures and any unverified interaction or visual checks. "
+                    "If source edits are authorized, fix the relevant code before retesting. Do not claim failed checks passed."),
                 "scope": "Loaded local preview, specified interactions and viewport; screenshot requires visual review."}
         finally:
             context.close()

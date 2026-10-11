@@ -1,5 +1,19 @@
 # Git layout and baseline hygiene
 
+## Shell output and preview recovery, 11 October 2026
+
+`codex/shell-repeat-recovery` starts from local main `1198acb`. It flushes
+PowerShell object output, makes owned preview-server recovery explicit, separates
+failed checks from unavailable inspection and preserves execution reports through
+supporting source reads. The final unchanged live shell prompt completed in 18
+requests with its reviewed report intact. Necessary focused qualification passed
+105 distinct tests; intermediate failed live gates remain separately recorded.
+See [the repair and qualification](shell-repeat-recovery.md). Preserve content-free
+integration evidence under `state/backups/shell-repeat-recovery-20261011/` and prior
+main at `archive/2026-10-11/main-before-shell-repeat-recovery`. Commit, fast-forward
+local main and remove only the merged feature branch. Preserve other worktrees,
+historical refs and user configuration; no remote publication.
+
 ## General shell access, 11 October 2026
 
 `codex/general-shell-access` starts from local main `2c2e33b`. It adds approved

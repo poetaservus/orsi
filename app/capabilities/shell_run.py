@@ -66,7 +66,9 @@ def shell_command(arguments: ShellRunArguments, executable: Path) -> tuple[list[
         "$ProgressPreference = 'SilentlyContinue'\n"
         "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false\n"
         "$OutputEncoding = [Console]::OutputEncoding\n"
-        "$LASTEXITCODE = 0\ntry {\n. {\n" + arguments.command + "\n}\n"
+        # Drain PowerShell's object formatter before the explicit process exit.
+        # Otherwise deferred table output can be lost despite a successful command.
+        "$LASTEXITCODE = 0\ntry {\n. {\n" + arguments.command + "\n} | Out-Default\n"
         "if (-not $?) { exit 1 }; exit $LASTEXITCODE\n"
         "} catch { [Console]::Error.WriteLine(($_ | Out-String)); exit 1 }\n")
     encoded = base64.b64encode(program.encode("utf-16-le")).decode("ascii")
@@ -126,6 +128,7 @@ class ShellRunCapability(Capability):
             "shell_executable": str(executable), "elapsed_ms": int((monotonic() - started) * 1000),
             "command_completed": result["stop_reason"] is None,
             "command_succeeded": result["exit_code"] == 0 and result["stop_reason"] is None,
+            "background_processes_retained": False,
             "content_is_untrusted": True, **result}
         # Preserve exit/cleanup metadata within the executor's 64-KiB JSON envelope.
         # Escaped controls can expand pipe output sixfold when serialized.

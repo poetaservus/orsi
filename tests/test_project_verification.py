@@ -144,9 +144,12 @@ def test_real_browser_inspection_catches_references_scroll_and_interactions(tmp_
     output = result.output
     assert output.get("inspection_complete"), output
     assert output["passed"] is not broken
+    assert output["verification_status"] == ("failed" if broken else "passed")
+    assert (output["retry_guidance"] is not None) is broken
     assert output["checks"][2]["passed"]
     assert Path(output["screenshot_path"]).is_file()
     if broken:
+        assert "read-only test/report request" in output["retry_guidance"]
         assert any(item["kind"] == "http_error" for item in output["problems"])
         assert output["layout"]["missingFragments"] == ["#missing"]
         assert not output["checks"][-1]["passed"]  # Real wheel scrolling catches overflow:hidden.
@@ -174,6 +177,39 @@ def test_browser_waits_for_slow_preview_without_corrupting_observations(tmp_path
     assert result.success, result.error
     assert result.output.get("inspection_complete"), result.output
     assert result.output["passed"], result.output
+    assert result.output["owned_processes_released"]
+    try:
+        psutil.Process(result.output["preview_pid"]).wait(timeout=1)
+    except psutil.NoSuchProcess:
+        pass
+
+
+def test_missing_preview_returns_owned_server_recovery_then_corrected_call_passes(tmp_path):
+    pytest.importorskip("playwright")
+    state = Path(__file__).resolve().parents[1] / "state"
+    if not (state / "playwright").is_dir():
+        pytest.skip("Local Playwright browser is not installed.")
+    (tmp_path / "index.html").write_text("<h1>Recovered preview</h1>", encoding="utf-8")
+    port = free_port()
+    tool = ProjectInspectCapability(state)
+    args = {"project_path": str(tmp_path), "kind": "browser", "url": f"http://127.0.0.1:{port}/",
+        "steps": [{"action": "text", "target": "h1", "value": "Recovered preview"}]}
+    result = tool.invoke(args, approved(tool, args, context(tmp_path)))
+    assert result.success and result.output["owned_processes_released"]
+    assert not result.output["passed"] and not result.output["inspection_complete"]
+    assert result.output["verification_status"] == "unavailable"
+    assert result.output["failure_kind"] == "preview_navigation_failed"
+    assert result.output["preview_server_started"] is False
+    recovery = result.output["recovery"]
+    assert recovery["capability"] == "project.inspect"
+    assert recovery["required_if_preview_not_running"] == ["server_executable", "server_arguments"]
+    assert "shell.run stops its child processes" in recovery["instruction"]
+    corrected = args | {"server_executable": str(Path(sys.executable).resolve()),
+        "server_arguments": ["-m", "http.server", str(port), "--bind", "127.0.0.1"]}
+    # Recovery supplies guidance, never authority for the corrected executable.
+    assert not tool.invoke(corrected, approved(tool, args, context(tmp_path))).success
+    result = tool.invoke(corrected, approved(tool, corrected, context(tmp_path)))
+    assert result.success and result.output["inspection_complete"] and result.output["passed"]
     assert result.output["owned_processes_released"]
     try:
         psutil.Process(result.output["preview_pid"]).wait(timeout=1)

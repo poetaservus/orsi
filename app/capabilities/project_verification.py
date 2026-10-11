@@ -229,7 +229,8 @@ class ProjectInspectCapability(_ProjectCapability):
     description = ("After building/testing, inspect a local browser preview or a project desktop process. "
         "Runs up to 12 approved click/fill/scroll/visible/text checks, captures a screenshot and bounded layout/control evidence. "
         "Browser inspection reports broken loaded references, console errors, overflow and actual scroll movement. "
-        "Use a temporary server executable when needed. Desktop targets use automation IDs. "
+        "If the preview is not already running, supply server_executable and server_arguments in this call. "
+        "A server started by shell.run stops when that shell call returns. Desktop targets use automation IDs. "
         "Screenshots and observations are evidence for the inspected surface, not proof of all visual correctness.")
     arguments_model = ProjectInspectionArguments
     timeout_seconds = 75.0

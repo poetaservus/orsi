@@ -63,6 +63,23 @@ def test_direct_reads_still_replace_missing_content(user_text):
     assert SOURCE in result
 
 
+@pytest.mark.parametrize("capability", ["shell.run", "project.verify", "project.inspect"])
+@pytest.mark.parametrize("success", [True, False])
+def test_supporting_read_does_not_replace_execution_or_verification_report(capability, success):
+    request = ("Test your shell access. Read the package scripts and setup instructions. "
+        "Use PowerShell to show the working directory and run a pipeline that lists the first five files. "
+        "Run the build and report the checks.")
+    assert grounded_text_read_answer(request, REPORT,
+        [observed(capability, success), read_result()]) is None
+
+
+@pytest.mark.parametrize("capability", ["shell.run", "project.verify", "project.inspect"])
+def test_explicit_file_display_preserves_execution_report(capability):
+    result = grounded_text_read_answer("Run the build and show the current file contents.", REPORT,
+        [observed(capability), read_result()])
+    assert result.startswith(REPORT) and SOURCE in result
+
+
 @pytest.mark.skipif(os.name != "nt", reason="Native Windows edit/approval adapter.")
 def test_actual_edit_read_report_is_returned_and_persisted(tmp_path):
     from app.agent.bootstrap import build_agent_runtime

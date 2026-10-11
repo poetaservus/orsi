@@ -142,7 +142,19 @@ def test_actual_powershell_script_pipeline_unicode_cwd_and_stderr(tmp_path):
     assert "err-ő" in output["output"] and str(folder) in output["output"]
     assert output["exit_code"] == 0 and output["command_completed"] and output["owned_processes_released"]
     assert output["command_succeeded"]
+    assert output["background_processes_retained"] is False
     assert output["content_is_untrusted"]
+
+
+def test_powershell_default_object_formatting_flushes_before_exit(tmp_path):
+    for name in ("first.txt", "second.txt"):
+        (tmp_path / name).write_text("fixture")
+    output = invoke(tmp_path, "Get-Location; Get-ChildItem -File | Select-Object -First 5 FullName")
+    assert output["command_succeeded"] and output["owned_processes_released"]
+    assert str(tmp_path) in output["output"]
+    # Default table formatting may wrap long paths at the console width.
+    compact = "".join(output["output"].split())
+    assert "first.txt" in compact and "second.txt" in compact
 
 
 @pytest.mark.parametrize("command,code", [("throw 'expected failure'", 1),
