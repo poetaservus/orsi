@@ -134,7 +134,7 @@ def test_every_builtin_catalog_tool_compiles_without_changing_its_schema(tmp_pat
     definitions = registry.model_definitions()
     before = [definition.model_dump_json() for definition in definitions]
     tools = responses_function_tools(definitions)
-    assert len(tools) == 14
+    assert len(tools) == 15
     assert all(tool["strict"] is True for tool in tools)
     assert [definition.model_dump_json() for definition in definitions] == before
 

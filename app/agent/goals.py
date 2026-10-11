@@ -57,6 +57,14 @@ def observe_goal(goal: TaskGoal, settled) -> TaskGoal:
     """Project only bounded tool evidence, identically in runtime and durable storage."""
     call, result = settled.call, settled.result
     output = result.output or {}
+    if call.capability == "shell.run" and (result.success or result.error is not None and
+            result.error.code in {CapabilityErrorCode.OUTCOME_UNKNOWN, CapabilityErrorCode.CANCELLED, CapabilityErrorCode.TIMED_OUT,
+                CapabilityErrorCode.INTERNAL_ERROR}):
+        # General shell commands can change any account-accessible file, including
+        # outside cwd. They cannot establish scoped build/test or source evidence.
+        return goal.model_copy(update={
+            "verification": tuple(item.model_copy(update={"stale": True}) for item in goal.verification),
+            "artifacts": tuple(item.model_copy(update={"source_check_call_id": None, "integrity_uncertain": True}) for item in goal.artifacts)})
     if call.capability in {"project.verify", "project.inspect"}:
         project = output.get("project_path") or call.arguments.get("project_path")
         kind = call.arguments.get("kind")

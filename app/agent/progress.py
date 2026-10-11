@@ -22,6 +22,7 @@ _OPERATIONS = {
     "filesystem.move": ("file move", "file moves"),
     "filesystem.trash": ("file trash operation", "file trash operations"),
     "application.launch": ("application launch", "application launches"),
+    "shell.run": ("shell command", "shell commands"),
     "skill.read_reference": ("skill reference read", "skill reference reads"),
 }
 
@@ -70,6 +71,9 @@ def recovery_stop_progress(result: AgentRunResult) -> str:
             lines.append(f"- {name}: {count} {labels[0] if count == 1 else labels[1]}.")
         if len(changes) > 8:
             lines.append(f"- {len(changes) - 8} additional changed targets are retained in the tool history.")
+    elif any(item.call.capability == "shell.run" for item in result.settled_calls):
+        lines.extend(["", "Shell commands do not enumerate file changes. Review their recorded output and exit status; "
+            "changes may remain after a failed or interrupted command."])
     else:
         lines.extend(["", "No successful file changes were recorded in this turn."])
     failures = [item for item in result.settled_calls if not item.result.success]

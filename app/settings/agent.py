@@ -84,6 +84,7 @@ class AgentFeatureConfig(BaseModel):
     application_launch_enabled: bool = False
     project_verify_enabled: bool = False
     project_inspect_enabled: bool = False
+    shell_run_enabled: bool = False
     full_local_read_enabled: bool = False
     context_recovery_enabled: bool = False
     conversation_context_enabled: bool = False
@@ -91,8 +92,8 @@ class AgentFeatureConfig(BaseModel):
 
     @model_validator(mode="after")
     def validate_feature_dependencies(self):
-        if (self.project_verify_enabled or self.project_inspect_enabled or self.conversation_context_enabled) and not self.filesystem_stat_enabled:
-            raise ValueError("Project verification and conversation context require the structured capability agent.")
+        if (self.project_verify_enabled or self.project_inspect_enabled or self.shell_run_enabled or self.conversation_context_enabled) and not self.filesystem_stat_enabled:
+            raise ValueError("Project verification, shell execution and conversation context require the structured capability agent.")
         if self.filesystem_find_enabled and not self.filesystem_stat_enabled:
             raise ValueError(
                 "Filesystem name lookup requires the filesystem metadata agent."
@@ -150,6 +151,7 @@ def load_agent_feature_config() -> AgentFeatureConfig:
         (_APPLICATION_LAUNCH_GATE, "application_launch_enabled"),
         ("ORSI_ENABLE_PROJECT_VERIFY", "project_verify_enabled"),
         ("ORSI_ENABLE_PROJECT_INSPECT", "project_inspect_enabled"),
+        ("ORSI_ENABLE_SHELL_RUN", "shell_run_enabled"),
         ("ORSI_ENABLE_CONVERSATION_CONTEXT", "conversation_context_enabled"),
         (_FULL_LOCAL_READ_GATE, "full_local_read_enabled"),
     ):

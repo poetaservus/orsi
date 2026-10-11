@@ -163,14 +163,19 @@ class OwnedProcess:
                 self.returncode = code if code is not None else 1
 
 
-def start_owned_process(command, *, cwd, env, stdout=None, stderr=None):
+def start_owned_process(command, *, cwd, env, stdout=None, stderr=None, windows_command_line=None):
     """Start hidden, with only explicit standard handles inherited (Windows 10+).
 
     stdout/stderr are optional file descriptors, otherwise discarded. Ownership failure never falls back to
     launching an unguarded process. Neither the command nor environment is logged.
+    windows_command_line is for a trusted caller implementing a shell's non-CRT
+    quoting. The executable remains command[0]; ordinary callers use argv quoting.
     """
     if os.name != "nt":
         raise ProcessOwnershipError("Local server ownership requires Windows 10 or later.")
+    launch_line = subprocess.list2cmdline(command) if windows_command_line is None else windows_command_line
+    if not isinstance(launch_line, str) or "\0" in launch_line or len(launch_line.encode("utf-16-le")) // 2 >= 32767:
+        raise ProcessOwnershipError("The Windows command line exceeds its valid bounds.")
     import msvcrt
 
     api = _api()
@@ -226,7 +231,7 @@ def start_owned_process(command, *, cwd, env, stdout=None, stderr=None):
         environment = C.create_unicode_buffer("\0".join(
             f"{key}={value}" for key, value in sorted(env.items(), key=lambda item: item[0].upper())
         ) + "\0\0")
-        command_line = C.create_unicode_buffer(subprocess.list2cmdline(command))
+        command_line = C.create_unicode_buffer(launch_line)
         flags = 0x08000000 | 0x00080000 | 0x00000400
         # CREATE_NO_WINDOW | EXTENDED_STARTUPINFO_PRESENT | CREATE_UNICODE_ENVIRONMENT
         if not api.CreateProcessW(str(command[0]), command_line, None, None, True,

@@ -19,6 +19,7 @@ _CAPABILITY_ACTIVITY = {
     "filesystem.move": "Moving files…",
     "filesystem.trash": "Moving files to the Recycle Bin…",
     "application.launch": "Opening an application…",
+    "shell.run": "Running a command…",
 }
 
 

@@ -105,6 +105,20 @@ def test_animation_reverses_mid_growth_and_keeps_bottom_anchored_on_resize(ui):
     assert window.composer.height() == 54
 
 
+@pytest.mark.parametrize("approved", [True, False])
+def test_shell_command_details_are_visible_and_can_be_approved_or_declined(ui, approved):
+    app, window, service = ui
+    preview = 'Run with your account access\n{"workdir":"C:/project","command":"Get-ChildItem | Select-Object -First 1","timeout_seconds":60}'
+    window._show_approval(record(capability="shell.run", resource="C:/project", approval_preview=preview))
+    app.processEvents()
+    panel = window._approval_panel
+    assert panel is not None
+    details = panel.findChild(QPlainTextEdit, "approvalDetails")
+    assert details.isReadOnly() and details.toPlainText() == preview
+    panel.finish(approved)
+    assert service.decisions == [("one", approved)]
+
+
 def test_new_approval_reverses_retraction_without_old_animation_overwriting_it(ui):
     _, window, service = ui
     window._show_approval(record())

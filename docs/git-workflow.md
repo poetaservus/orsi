@@ -1,5 +1,20 @@
 # Git layout and baseline hygiene
 
+## General shell access, 11 October 2026
+
+`codex/general-shell-access` starts from local main `2c2e33b`. It adds approved
+PowerShell/cmd commands with an absolute working folder, output/exit status,
+bounded deadlines and owned descendant cleanup. Existing review preferences
+and exact-call permissions remain in force. Both installed project-tool probes
+passed; 206 distinct focused checks passed. Six older catalog fixture failures
+also reproduce on unchanged main and are recorded separately. See
+[the contract and qualification](general-shell-access.md). Only necessary checks
+ran; no full suite or live inference gate. Content-free preservation evidence is
+under `state/backups/general-shell-access-20261011/`; prior main is retained at
+`archive/2026-10-11/main-before-general-shell-access`. Commit, fast-forward local
+main and remove only the merged feature branch. Preserve existing settings,
+historical tips and other worktrees; no remote publication.
+
 ## Browser verification and answer retention, 11 October 2026
 
 `codex/browser-verification-preview` starts from local main `84ee315`. It fixes

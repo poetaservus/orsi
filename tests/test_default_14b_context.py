@@ -74,7 +74,8 @@ def test_default_keeps_full_catalog_and_current_request_under_memory_pressure(
         assert service.run("hey") == "Hello."
         assert service._turn_result.status.value == "completed"
         messages, tools = backend.requests[-1]
-        assert len(tools) == 15
+        assert len(tools) == 16
+        assert "shell.run" in {tool.name for tool in tools}
         assert messages[-1] == {"role": "user", "content": "hey"}
         assert service.context_budget().fits
     finally:

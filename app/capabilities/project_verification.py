@@ -112,7 +112,7 @@ def worker_environment() -> dict[str, str]:
     return values
 
 
-def run_worker(command: list[str], *, cwd: Path, timeout: int, cancellation, limit=48 * 1024) -> dict:
+def run_worker(command: list[str], *, cwd: Path, timeout: int, cancellation, limit=48 * 1024, windows_command_line=None) -> dict:
     """Drain capped pipe output; atomically own and release all worker descendants."""
     read_fd, write_fd = os.pipe()
     data, exceeded, finished = bytearray(), Event(), Event()
@@ -130,7 +130,8 @@ def run_worker(command: list[str], *, cwd: Path, timeout: int, cancellation, lim
     reason = None
     try:
         cancellation.raise_if_cancelled()
-        process = start_owned_process(command, cwd=cwd, env=worker_environment(), stdout=write_fd, stderr=write_fd)
+        process = start_owned_process(command, cwd=cwd, env=worker_environment(), stdout=write_fd, stderr=write_fd,
+            windows_command_line=windows_command_line)
         os.close(write_fd)
         write_fd = None
         deadline = monotonic() + timeout

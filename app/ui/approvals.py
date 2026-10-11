@@ -23,6 +23,7 @@ _SPECS = {
     "filesystem.trash": ApprovalSpec("Send to Recycle Bin?", "details"),
     "filesystem.write_text": ApprovalSpec("Write file?", "path_and_content"),
     "application.launch": ApprovalSpec("Launch application?", "details"),
+    "shell.run": ApprovalSpec("Run shell command?", "details"),
 }
 
 

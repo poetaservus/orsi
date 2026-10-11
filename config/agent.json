@@ -13,6 +13,7 @@
   "application_launch_enabled": true,
   "project_verify_enabled": true,
   "project_inspect_enabled": true,
+  "shell_run_enabled": true,
   "conversation_context_enabled": true,
   "context_recovery_enabled": true,
   "full_local_read_enabled": true,
