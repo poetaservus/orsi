@@ -74,10 +74,11 @@ def test_fresh_read_and_corrected_patch_continue_inside_review(tmp_path, make_se
 
 
 @native
-def test_review_can_perform_prerequisite_directly(tmp_path, make_service):
+def test_review_requests_a_prerequisite_then_resumes_work_in_same_turn(tmp_path, make_service):
     path = tmp_path / "main.py"
     path.write_text("old", encoding="utf-8")
-    service, _, approvals = make_service([ModelResponse.text("I will fix main.py."), read(1, path),
+    service, _, approvals = make_service([ModelResponse.text("I will fix main.py."),
+        review("continue", ["Read main.py and perform the requested edit"]), read(1, path),
         edit(2, path, "old", "new"), ModelResponse.text("Changed main.py."), review()], auto_review=False)
     assert service.run("Change old to new in main.py.") == "Changed main.py."
     assert path.read_text() == "new" and len(approvals) == 1
@@ -87,19 +88,22 @@ def test_review_can_perform_prerequisite_directly(tmp_path, make_service):
 def test_review_work_requires_an_updated_answer_before_ready(tmp_path, make_service):
     path = tmp_path / "main.py"
     path.write_text("old", encoding="utf-8")
-    service, model, approvals = make_service([ModelResponse.text("I will fix main.py."), read(1, path),
+    service, model, approvals = make_service([ModelResponse.text("I will fix main.py."),
+        review("continue", ["Perform the requested edit"]), read(1, path),
         edit(2, path, "old", "new"), review(), ModelResponse.text("Changed main.py."), review()], auto_review=False)
     assert service.run("Change old to new in main.py.") == "Changed main.py."
-    assert len(model.requests) == 6 and len(approvals) == 1 and path.read_text() == "new"
-    assert "updated answer" in model.requests[4][-1]["content"]
+    assert len(model.requests) == 7 and len(approvals) == 1 and path.read_text() == "new"
+    assert "updated answer" in model.requests[5][-1]["content"]
 
 
 @native
 def test_review_cannot_relabel_a_denied_prerequisite_as_ready(tmp_path, make_service):
     path = tmp_path / "main.py"
     path.write_text("old", encoding="utf-8")
-    service, _, approvals = make_service([ModelResponse.text("I will fix main.py."), read(1, path),
-        edit(2, path, "old", "new"), review()], approvals_allowed=False, auto_review=False)
+    service, _, approvals = make_service([ModelResponse.text("I will fix main.py."),
+        review("continue", ["Perform the requested edit"]), read(1, path),
+        edit(2, path, "old", "new"), ModelResponse.text("The edit was denied."), review()],
+        approvals_allowed=False, auto_review=False)
     assert "Task unfinished" in service.run("Change old to new in main.py.")
     assert service._turn_result.completion_review.status == "blocked"
     assert len(approvals) == 1 and path.read_text() == "old"
@@ -208,20 +212,22 @@ def test_completion_review_works_through_constrained_text_fallback(tmp_path):
         runtime.shutdown()
 
 
-def test_completion_review_reads_keep_the_answer_in_text_fallback(tmp_path):
+def test_completion_review_resumes_reads_in_text_fallback(tmp_path):
     from tests.test_agent_runtime import build_runtime
     from tests.test_opencode_tool_resolution_port import TextOnlyStructuredFallbackModel
     runtime, _, echo, _, _ = build_runtime(tmp_path, [])
     model = TextOnlyStructuredFallbackModel([
         json.dumps({"tool": None, "arguments": {}, "response": "The project summary."}),
+        json.dumps({"tool": None, "arguments": {}, "response": review("continue", ["Read the missing evidence"]).assistant_text}),
         json.dumps({"tool": "test.echo", "arguments": {"value": "evidence"}, "response": None}),
+        json.dumps({"tool": None, "arguments": {}, "response": "The project summary."}),
         json.dumps({"tool": None, "arguments": {}, "response": review().assistant_text})])
     runtime.model = model
     try:
         result = runtime.run([{"role": "user", "content": "Summarize the project"}], session_id="session", turn_id="turn-1",
             portable_root=tmp_path, allowed_read_roots=(tmp_path,), goal_request="Summarize the project")
         assert result.status == AgentRunStatus.COMPLETED and result.assistant_text == "The project summary."
-        assert result.model_requests == 4 and len(model.requests) == 3 and echo.values == ["evidence"]
+        assert result.model_requests == 6 and len(model.requests) == 5 and echo.values == ["evidence"]
     finally:
         runtime.shutdown()
 
@@ -276,9 +282,65 @@ def test_internal_review_is_not_replayed_as_the_assistant_answer(tmp_path):
         runtime.shutdown()
 
 
-@pytest.mark.parametrize("reads", [1, 3])
-def test_review_reads_preserve_the_candidate_until_ready(tmp_path, reads):
-    """Live failure: answer, review tools, ready JSON, then another review forever."""
+@pytest.mark.parametrize("adapter", ["native", "fallback"])
+def test_completion_check_cannot_execute_or_loop_on_tools(tmp_path, adapter):
+    from tests.test_agent_runtime import build_runtime, capability_call
+    runtime, model, echo, _, _ = build_runtime(tmp_path,
+        [ModelResponse.text("The project summary."), capability_call(1), capability_call(2)])
+    model.auto_review = False
+    if adapter == "fallback":
+        from tests.test_opencode_tool_resolution_port import TextOnlyStructuredFallbackModel
+        model = TextOnlyStructuredFallbackModel([
+            json.dumps({"tool": None, "arguments": {}, "response": "The project summary."}),
+            *[json.dumps({"tool": "test.echo", "arguments": {"value": "evidence"}, "response": None}) for _ in range(2)]])
+        runtime.model = model
+    try:
+        result = runtime.run([{"role": "user", "content": "Summarize the project"}], session_id="session", turn_id="turn-1",
+            portable_root=tmp_path, allowed_read_roots=(tmp_path,), goal_request="Summarize the project")
+        assert result.status == AgentRunStatus.PROTOCOL_FAILURE_LIMIT
+        assert len(model.requests) == 3 and result.capability_calls == 0 and echo.values == []
+        assert result.partial_text == "The project summary." and result.goal.state == "stopped"
+        assert result.completion.incomplete
+    finally:
+        runtime.shutdown()
+
+
+def test_completion_check_rejects_malformed_directory_cursor_without_listing(tmp_path):
+    from app.capabilities.filesystem_list import FilesystemListCapability
+    from app.inference.protocol import ModelCapabilityCall
+    from tests.test_agent_runtime import build_runtime
+    calls = [ModelResponse.calls((ModelCapabilityCall(provider_call_id=f"list-{index}", capability="filesystem.list",
+        arguments={"path": str(tmp_path), "cursor": "0"}),)) for index in range(2)]
+    runtime, model, _, journal, _ = build_runtime(tmp_path, [ModelResponse.text("The project summary."), *calls],
+        capability=FilesystemListCapability())
+    model.auto_review = False
+    try:
+        result = runtime.run([{"role": "user", "content": "Summarize the project"}], session_id="session", turn_id="turn-1",
+            portable_root=tmp_path, allowed_read_roots=(tmp_path,), goal_request="Summarize the project")
+        assert result.status == AgentRunStatus.PROTOCOL_FAILURE_LIMIT and result.capability_calls == 0
+        assert result.partial_text == "The project summary." and len(model.requests) == 3
+        assert not result.settled_calls and not journal.records
+    finally:
+        runtime.shutdown()
+
+
+@native
+def test_completion_check_cannot_trigger_write_approval(tmp_path, make_service):
+    from app.inference.completion import IncompleteResponseError
+    path = tmp_path / "main.py"
+    path.write_text("old", encoding="utf-8")
+    service, _, approvals = make_service([ModelResponse.text("I will fix main.py."),
+        edit(1, path, "old", "new"), edit(2, path, "old", "new")], auto_review=False)
+    with pytest.raises(IncompleteResponseError, match="completion check cannot call tools") as caught:
+        service.run("Change old to new in main.py.")
+    assert caught.value.partial_text == "I will fix main.py." and caught.value.completion.incomplete
+    assert service._turn_result.status == AgentRunStatus.PROTOCOL_FAILURE_LIMIT
+    assert service._turn_result.capability_calls == 0 and not approvals and path.read_text() == "old"
+
+
+@pytest.mark.parametrize("mode", ["local", "cloud"])
+def test_rejected_review_tool_preserves_candidate_until_assessed(tmp_path, mode):
+    """Reject review tools without losing the candidate or restarting its review."""
     from tests.test_agent_runtime import build_runtime, capability_call
     from tests.test_openai_replay import evidence, message
     answer = ModelResponse.text("The requested project summary.").model_copy(update={
@@ -286,8 +348,9 @@ def test_review_reads_preserve_the_candidate_until_ready(tmp_path, reads):
     assessment = review().model_copy(update={
         "openai_response": evidence([message(review().assistant_text)], identity="resp-review")})
     runtime, model, echo, _, _ = build_runtime(tmp_path,
-        [answer, *(capability_call(index, value=str(index)) for index in range(1, reads + 1)), assessment])
+        [answer, capability_call(1), assessment])
     model.auto_review = False
+    model.mode = mode
     retained, phases = [], []
     try:
         result = runtime.run([{"role": "user", "content": "Summarize the project"}], session_id="session",
@@ -296,10 +359,10 @@ def test_review_reads_preserve_the_candidate_until_ready(tmp_path, reads):
             completion_review_observer=phases.append)
         assert result.status == AgentRunStatus.COMPLETED
         assert result.assistant_text == "The requested project summary."
-        assert result.model_requests == len(model.requests) == reads + 2
+        assert result.model_requests == len(model.requests) == 3
         assert result.completion_review.status == "ready"
-        assert echo.values == [str(index) for index in range(1, reads + 1)]
+        assert echo.values == [] and result.capability_calls == 0 and result.settled_calls == ()
         assert [item.response_id for item in retained] == ["resp-answer"]
-        assert phases == [False, *([True] * (reads + 1))]
+        assert phases == [False, True, True]
     finally:
         runtime.shutdown()

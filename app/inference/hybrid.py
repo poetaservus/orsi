@@ -83,6 +83,10 @@ class LazyInferenceEngine(InferenceEngine):
         )
         return self._get_engine().respond_with_capabilities(messages, definitions)
 
+    def review_completion(self, messages, capabilities) -> ModelResponse:
+        definitions = model_capability_definitions(capabilities, require_nonempty=True)
+        return self._get_engine().review_completion(messages, definitions)
+
     def unload(self) -> None:
         with self._lock:
             engine, self._engine = self._engine, None
@@ -514,18 +518,27 @@ class HybridInferenceEngine(InferenceEngine):
         messages: list[dict[str, str]],
         capabilities: Iterable[ModelCapabilityDefinition],
     ) -> ModelResponse:
+        return self._capability_response(messages, capabilities)
+
+    def review_completion(self, messages, capabilities) -> ModelResponse:
+        return self._capability_response(messages, capabilities, reviewing=True)
+
+    def _capability_response(self, messages, capabilities, *, reviewing=False) -> ModelResponse:
         definitions = model_capability_definitions(
             capabilities,
             require_nonempty=True,
         )
         mode = self.mode
         engine = self._engine_for(mode)
+        def respond(engine, messages):
+            method = engine.review_completion if reviewing else engine.respond_with_capabilities
+            return method(messages, definitions)
         if mode != "cloud":
-            result = engine.respond_with_capabilities(neutral_messages(messages), definitions)
+            result = respond(engine, neutral_messages(messages))
             self._refresh_limits(engine)
             return result
         try:
-            result = engine.respond_with_capabilities(messages, definitions)
+            result = respond(engine, messages)
             self._refresh_limits(engine)
             return result
         except CloudInferenceError as exc:
@@ -537,10 +550,7 @@ class HybridInferenceEngine(InferenceEngine):
             ):
                 raise
             try:
-                result = self._engine_for("local").respond_with_capabilities(
-                    neutral_messages(messages),
-                    definitions,
-                )
+                result = respond(self._engine_for("local"), neutral_messages(messages))
             except Exception as local_exc:
                 raise CloudInferenceError(
                     f"{exc} Local fallback was also unavailable: {local_exc}"

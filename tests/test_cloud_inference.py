@@ -922,3 +922,44 @@ def test_hybrid_structured_request_falls_back_to_native_local_adapter():
     assert engine.consume_notice() == (
         "Cloud was unavailable, so O.R.S.I safely switched to the local model."
     )
+
+
+@pytest.mark.parametrize("mode,outage", [("local", False), ("cloud", False), ("cloud", True)])
+def test_hybrid_preserves_the_completion_review_boundary(mode, outage):
+    class Reviewer(StructuredStub):
+        def __init__(self, result, error=None):
+            super().__init__(result, error)
+            self.reviews = []
+
+        def review_completion(self, messages, capabilities):
+            self.reviews.append((messages, capabilities))
+            return super().respond_with_capabilities(messages, capabilities)
+
+    local = Reviewer(ModelResponse.text("local assessment"))
+    cloud = Reviewer(ModelResponse.text("cloud assessment"),
+        CloudInferenceError("offline", allow_local_fallback=True) if outage else None)
+    engine = HybridInferenceEngine(local=local, cloud=cloud, default_mode=mode)
+    definitions = (capability_definition(),)
+    result = engine.review_completion([{"role": "user", "content": "Review existing evidence"}], iter(definitions))
+    assert result.assistant_text == ("local assessment" if mode == "local" or outage else "cloud assessment")
+    assert len(local.reviews) == int(mode == "local" or outage)
+    assert len(cloud.reviews) == int(mode == "cloud")
+    assert engine.mode == ("local" if outage else mode)
+    assert (local.reviews or cloud.reviews)[0][1] == definitions
+
+
+def test_lazy_engine_delegates_completion_review_without_using_normal_tool_response():
+    class Reviewer(StructuredStub):
+        def review_completion(self, messages, capabilities):
+            assert tuple(capabilities) == (capability_definition(),)
+            return ModelResponse.text("assessment only")
+
+        def respond_with_capabilities(self, *args):
+            raise AssertionError("The review boundary was lost.")
+
+    lazy = LazyInferenceEngine(lambda: Reviewer(), context_length=8192)
+    try:
+        result = lazy.review_completion([{"role": "user", "content": "Review"}], iter((capability_definition(),)))
+        assert result.assistant_text == "assessment only"
+    finally:
+        lazy.close()

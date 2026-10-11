@@ -1,5 +1,19 @@
 # Git layout and baseline hygiene
 
+## Bounded completion checks, 11 October 2026
+
+`codex/bounded-completion-check` starts from local main `c45f42f`. A live run
+reproduced another completion tool loop after the streamed summary. Review is
+now assessment-only, with provider tool selection disabled and a runtime guard
+before execution. Continue assessments resume ordinary work in the same turn.
+See [the contract and live qualification](bounded-completion-check.md). Both
+repaired fresh live chats completed in seven requests; 354 distinct focused
+checks passed. Preserve content-free refs/worktrees under
+`state/backups/bounded-completion-check-20261011/` and prior main at
+`archive/2026-10-11/main-before-bounded-completion-check`. Commit, fast-forward
+local main and remove only the merged feature branch. Other worktrees and
+historical/unmerged tips remain intact; no remote publication.
+
 ## Live completion loop, 11 October 2026
 
 `codex/live-completion-loop` starts from local main `afc4e14`. A live reproduction

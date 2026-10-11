@@ -54,3 +54,7 @@ class InferenceEngine(ABC):
             ModelProtocolFailureCode.UNSUPPORTED_CAPABILITY_CALLS,
             "This model adapter does not support native capability calls.",
         )
+
+    def review_completion(self, messages, capabilities) -> ModelResponse:
+        """Assess existing evidence. The runtime rejects all tool proposals here."""
+        return self.respond_with_capabilities(messages, capabilities)

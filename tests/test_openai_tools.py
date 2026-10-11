@@ -134,7 +134,7 @@ def test_every_builtin_catalog_tool_compiles_without_changing_its_schema(tmp_pat
     definitions = registry.model_definitions()
     before = [definition.model_dump_json() for definition in definitions]
     tools = responses_function_tools(definitions)
-    assert len(tools) == 12
+    assert len(tools) == 14
     assert all(tool["strict"] is True for tool in tools)
     assert [definition.model_dump_json() for definition in definitions] == before
 
@@ -373,12 +373,15 @@ def test_multiple_calls_keep_order_and_are_executed_sequentially(monkeypatch, tm
 
 def test_builtin_stat_through_conversation_is_persisted_and_reconstructable(monkeypatch, tmp_path):
     (tmp_path / "probe.txt").write_bytes(b"private-fixture")
-    engine, client, _, _ = scripted_sdk(monkeypatch, [response(output=[function()]), response("Done")])
+    assessment = response(json.dumps({"goal_id": "turn-1", "status": "ready", "remaining": []}), id="resp-review")
+    assessment["output"][0]["id"] = "msg-review"
+    engine, client, bodies, _ = scripted_sdk(monkeypatch, [response(output=[function()]), response("Done"), assessment])
     features = AgentFeatureConfig(filesystem_stat_enabled=True)
     runtime = build_agent_runtime(engine, config=features, portable_root=tmp_path, state_directory=tmp_path / "state")
     store = ConversationStore(tmp_path / "conversation.json")
     service = ConversationService(engine, store, agent_runtime=runtime, portable_root=tmp_path, allowed_read_roots=(tmp_path,))
     assert service.run("Inspect probe.txt") == "Done"
+    assert bodies[-1]["tool_choice"] == "none"
     restored = ConversationStore(store.path).agent_messages()
     encoded = responses_input(restored, runtime.registry.model_definitions())
     outputs = [item for item in encoded if item.get("type") == "function_call_output"]

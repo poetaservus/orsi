@@ -173,7 +173,7 @@ def test_snapshot_reads_keep_existing_argument_and_revision_guards(tmp_path, arg
 
 @pytest.mark.skipif(os.name != "nt", reason="Native host source read")
 @pytest.mark.parametrize("revise_answer", [False, True])
-def test_first_cloud_turn_can_recall_project_evidence_after_streamed_candidate(tmp_path, monkeypatch, revise_answer):
+def test_first_cloud_turn_resumes_evidence_reads_after_assessment(tmp_path, monkeypatch, revise_answer):
     """Real SDK/stream normalization and durable receipts, with no network call."""
     import httpx
     import openai
@@ -210,10 +210,16 @@ def test_first_cloud_turn_can_recall_project_evidence_after_streamed_candidate(t
         elif index == 2:
             payload = response(candidate, id=f"resp-{index}")
         elif index == 3:
-            # Completion checking is allowed to recover evidence after a candidate.
+            # Assessment requests evidence; tools resume in the ordinary work phase.
             assert ready_review_for(body["input"]) is not None
+            assert body["tool_choice"] == "none"
+            payload = response(json.dumps({"goal_id": "turn-1", "status": "continue", "remaining": ["Recover source evidence"]}),
+                id=f"resp-{index}")
+        elif index == 4:
+            assert body["tool_choice"] == "auto"
             payload = tool_call("conversation.read_turn", {"turn_id": "turn-1", "max_bytes": 4096})
         elif ready_review_for(body["input"]) is not None:
+            assert body["tool_choice"] == "none"
             payload = response(ready_review_for(body["input"]).assistant_text, id=f"resp-{index}")
         else:
             receipt = json.loads([m for m in body["input"] if m.get("type") == "function_call_output"][-1]["output"])
@@ -225,8 +231,7 @@ def test_first_cloud_turn_can_recall_project_evidence_after_streamed_candidate(t
             else:
                 restored = json.loads("".join(pieces))
                 assert restored["settled_calls"][0]["result"]["output"]["text"] == source
-                payload = response(final if revise_answer else json.dumps({"goal_id": "turn-1", "status": "ready", "remaining": []}),
-                    id=f"resp-{index}")
+                payload = response(final if revise_answer else candidate, id=f"resp-{index}")
         for item in payload["output"]:
             if item["type"] == "message":
                 item["id"] = f"msg-{index}"
@@ -252,7 +257,8 @@ def test_first_cloud_turn_can_recall_project_evidence_after_streamed_candidate(t
         expected_answer = final if revise_answer else candidate
         assert answer == expected_answer
         assert candidate in previews and len(pieces) > 1
-        assert previews[previews.index(candidate):] == [candidate]
+        assert previews[-1] == expected_answer
+        assert not any('"goal_id"' in value for value in previews)
         outcome = service._turn_result
         assert outcome.status == AgentRunStatus.COMPLETED and outcome.completion_review.status == "ready"
         assert all(item.result.success for item in outcome.settled_calls)

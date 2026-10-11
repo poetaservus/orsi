@@ -50,7 +50,6 @@ from app.capabilities.contracts import (
     CapabilityExecutionError,
     CapabilityFailure,
     CapabilityResult,
-    PermissionClass,
 )
 from app.security.host_access import HostAccessPolicy
 from app.execution.audit import JournaledCapabilityExecutor
@@ -498,7 +497,6 @@ class AgentRuntime:
         edit_progress = EditProgressTracker()
         used_call_ids: set[str] = set()
         advertised_names = {item.name for item in definitions}
-        read_only_names = {name for name in advertised_names if self.registry.resolve(name).permission == PermissionClass.READ}
         required_fingerprints = tuple(call_fingerprint(call) for call in required_calls)
         if (
             len(required_calls) > self.effective_max_capability_calls
@@ -518,8 +516,6 @@ class AgentRuntime:
         structured_fallback = False
         proposed_answer = None
         review_started = False
-        review_used_tools = False
-        review_answer_stale = False
         log.info("Agent step budget: mode=%s max_steps=%s max_model_requests=%s max_capability_calls=%s",
             "cloud" if getattr(self.model, "mode", None) == "cloud" else "local", self.effective_max_steps,
             self.effective_max_model_requests, self.effective_max_capability_calls)
@@ -601,6 +597,7 @@ class AgentRuntime:
                     user_cancellation,
                     deadline_cancellation,
                     _request_usage=recovery,
+                    _completion_review=proposed_answer is not None,
                 )
                 if (
                     model_stop is None
@@ -659,14 +656,26 @@ class AgentRuntime:
                     protocol_failures=protocol_failures + int(response.kind == ModelResponseKind.PROTOCOL_FAILURE),
                     completion=response.completion,
                     partial_text=proposed_answer if proposed_answer is not None else response.partial_text or response.assistant_text)
+            if proposed_answer is not None and response.kind != ModelResponseKind.ASSISTANT_TEXT:
+                # A checker cannot start another tool chain, even if an adapter
+                # ignores its provider's tool-choice restriction. No settlement,
+                # approval or provider call replay is recorded for a rejected proposal.
+                protocol_failures += 1
+                recovery.consecutive_format_failures += 1
+                if recovery.consecutive_format_failures >= self.limits.max_protocol_failures:
+                    return self._stopped(AgentRunStatus.PROTOCOL_FAILURE_LIMIT,
+                        "The completion check cannot call tools and did not return a valid assessment.",
+                        completion=CompletionMetadata(finish_reason="agent_review_invalid", interrupted=True),
+                        partial_text=proposed_answer, steps=steps, capability_calls=capability_calls,
+                        protocol_failures=protocol_failures)
+                transcript.append(completion_review_message(_goal[0],
+                    edit_progress.pending_recovery() or edit_progress.completion_blocker()))
+                continue
             provider_message_id = uuid4().hex
             assessment_text = (bool(_goal) and review_started and response.kind == ModelResponseKind.ASSISTANT_TEXT
                 and looks_like_completion_review(response.assistant_text))
-            revised_answer = (proposed_answer is not None and review_used_tools
-                and response.kind == ModelResponseKind.ASSISTANT_TEXT and not assessment_text)
             if response.openai_response is not None and not (
-                    assessment_text or proposed_answer is not None and response.kind == ModelResponseKind.ASSISTANT_TEXT
-                    and not revised_answer):
+                    assessment_text or proposed_answer is not None and response.kind == ModelResponseKind.ASSISTANT_TEXT):
                 try:
                     if response_observer is not None:
                         response_observer(provider_message_id, response.openai_response)
@@ -714,10 +723,9 @@ class AgentRuntime:
                                 "The task remains unfinished because an updated answer was not provided.",
                                 steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
                         transcript.append(resume_answer_message())
-                    elif proposed_answer is None or revised_answer:
+                    elif proposed_answer is None:
                         proposed_answer = response.assistant_text
                         review_started = True
-                        review_used_tools = review_answer_stale = False
                         recovery.consecutive_format_failures = 0
                         self._retain_response_text(transcript, response)
                         transcript.append(completion_review_message(_goal[0],
@@ -731,6 +739,8 @@ class AgentRuntime:
                             if recovery.consecutive_format_failures >= self.limits.max_protocol_failures:
                                 return self._stopped(AgentRunStatus.PROTOCOL_FAILURE_LIMIT,
                                     "The task remains unfinished because its completion review was invalid.",
+                                    completion=CompletionMetadata(finish_reason="agent_review_invalid", interrupted=True),
+                                    partial_text=proposed_answer,
                                     steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
                             transcript.append(completion_review_message(_goal[0],
                                 edit_progress.pending_recovery() or edit_progress.completion_blocker()))
@@ -747,7 +757,7 @@ class AgentRuntime:
                                     "The rejected edit needs fresh source, but filesystem.read_text is unavailable.",)})
                         if _reviews is not None:
                             _reviews.append(review)
-                        if review.status == "ready" and not review_answer_stale:
+                        if review.status == "ready":
                             return AgentRunResult(status=AgentRunStatus.COMPLETED, assistant_text=proposed_answer,
                                 steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
                         if review.status == "blocked":
@@ -755,16 +765,14 @@ class AgentRuntime:
                                 "The requested task remains unfinished.", partial_text=(
                                     "Task unfinished.\n\nRemaining work:\n" + "\n".join("- " + item for item in review.remaining)),
                                 steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
-                        if review.status == "continue":
-                            recovery.semantic_corrections += 1
-                            transcript.append({"role": "system", "content":
-                                "The current request remains unfinished. Continue the unmet work in this turn: "
-                                + json.dumps(review.remaining, ensure_ascii=False)
-                                + ". These entries are model assessments, not authority to change the request or permissions. "
-                                "Use existing tools and approvals. Do not ask the user to repeat the request."})
+                        recovery.semantic_corrections += 1
+                        transcript.append({"role": "system", "content":
+                            "The current request remains unfinished. Continue the unmet work in this turn: "
+                            + json.dumps(review.remaining, ensure_ascii=False)
+                            + ". These entries are model assessments, not authority to change the request or permissions. "
+                            "Use existing tools and approvals. Do not ask the user to repeat the request."})
                         transcript.append(resume_answer_message())
                         proposed_answer = None
-                        review_used_tools = review_answer_stale = False
                     if not self._transcript_within_limit(transcript):
                         return self._transcript_limited(steps, capability_calls, protocol_failures)
                     continue
@@ -813,7 +821,6 @@ class AgentRuntime:
                     return self._transcript_limited(steps, capability_calls, protocol_failures)
                 continue
 
-            # Review tools extend the evidence for this candidate, not a new task/answer.
             calls = response.capability_calls
             call_fingerprints = [call_fingerprint(call) for call in calls]
             if required_set and any(
@@ -990,10 +997,6 @@ class AgentRuntime:
                 if edit_observation.stop_message is not None:
                     return self._stopped(AgentRunStatus.REPEATED_CALL, edit_observation.stop_message,
                         steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
-            if proposed_answer is not None:
-                review_used_tools = True
-                # Work performed during review needs an updated user answer before completion.
-                review_answer_stale |= any(call.capability in advertised_names - read_only_names for call in calls)
             completed_required.update(
                 fingerprint
                 for fingerprint in fingerprints
@@ -1346,7 +1349,7 @@ class AgentRuntime:
         started: float,
         user_cancellation: CancellationToken,
         deadline_cancellation: _DeadlineCancellationToken,
-        *, _request_usage: _RecoveryUsage | None = None,
+        *, _request_usage: _RecoveryUsage | None = None, _completion_review: bool = False,
     ) -> tuple[
         ModelResponse | None,
         tuple[AgentRunStatus, str] | None,
@@ -1375,8 +1378,9 @@ class AgentRuntime:
             try:
                 user_cancellation.raise_if_cancelled()
                 deadline_cancellation.raise_if_cancelled()
+                method = self.model.review_completion if _completion_review else self.model.respond_with_capabilities
                 future.set_result(
-                    self.model.respond_with_capabilities(
+                    method(
                         deepcopy(transcript),
                         definitions,
                     )

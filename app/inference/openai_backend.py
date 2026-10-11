@@ -459,7 +459,7 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
 
     def _request(self, inputs: list[dict], *, tools: list[dict] | None = None,
                  attachment_estimate: int | None = None, count_only: bool = False,
-                 image_generation: bool = False) -> dict:
+                 image_generation: bool = False, tool_choice: str = "auto") -> dict:
         with self._lock:
             self._ensure_open()
             profile = self.catalog.current_profile
@@ -488,7 +488,7 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
         if profile.temperature is not None:
             body["temperature"] = profile.temperature
         if tools is not None:
-            body.update(tools=tools, tool_choice="auto", parallel_tool_calls=True)
+            body.update(tools=tools, tool_choice=tool_choice, parallel_tool_calls=True)
         if image_generation:
             body["tool_choice"] = {"type": "image_generation"}
             body["max_output_tokens"] = min(profile.max_output_tokens, 4096)
@@ -706,14 +706,23 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
 
     def respond_with_capabilities(self, messages: list[dict[str, str]],
                                   capabilities: Iterable[ModelCapabilityDefinition]) -> ModelResponse:
+        return self._capability_response(messages, capabilities)
+
+    def review_completion(self, messages, capabilities) -> ModelResponse:
+        return self._capability_response(messages, capabilities, reviewing=True)
+
+    def _capability_response(self, messages, capabilities, *, reviewing=False) -> ModelResponse:
         definitions = model_capability_definitions(capabilities, require_nonempty=True)
         tools = responses_function_tools(definitions)
         inputs = responses_input(messages, definitions, model_id=self.active_model)
         inputs, estimate = self._project_attachments(inputs)
         previous_ids = {item["call_id"] for item in inputs if item.get("type") == "function_call"}
+        # Keep definitions for validating/replaying settled calls, while preventing
+        # assessment from initiating another filesystem/verification tool chain.
+        options = {"tool_choice": "none"} if reviewing else {}
         try:
-            payload = (self._request(inputs, tools=tools) if estimate is None else
-                       self._request(inputs, tools=tools, attachment_estimate=estimate))
+            payload = (self._request(inputs, tools=tools, **options) if estimate is None else
+                       self._request(inputs, tools=tools, attachment_estimate=estimate, **options))
         except IncompleteResponseError as exc:
             return ModelResponse.failure(ModelProtocolFailureCode.OUTPUT_TRUNCATED,
                 "The OpenAI stream ended before completing its response; no tool calls can execute.").model_copy(

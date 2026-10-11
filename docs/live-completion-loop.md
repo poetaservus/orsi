@@ -1,5 +1,9 @@
 # Live completion-loop repair
 
+This records the first live repair. The subsequent
+[bounded completion check](bounded-completion-check.md) replaces review tool
+execution with an assessment-only phase and qualifies the newly reported stall.
+
 This bounded change starts from local main `afc4e14` on `codex/live-completion-loop`.
 
 The previous recall repair addressed unstable history pages. A live reproduction

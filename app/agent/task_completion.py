@@ -52,7 +52,9 @@ def completion_review_message(goal: TaskGoal, pending_recovery: str | None) -> d
         + ', status="ready", "continue" or "blocked", and remaining=[strings]. '
         "Ready requires all work accounted for and remaining=[]. Continue for routine reads/corrected patches or "
         "other doable work, without another user request. Blocked requires a concrete missing input/capability, "
-        "denied approval or unknown outcome; list remaining work and why. You may instead call the next tool. "
+        "denied approval or unknown outcome; list remaining work and why. This is an assessment-only step: "
+        "do not call tools, repeat checks, or gather more evidence here. If evidence or an action is missing, "
+        "return continue with concrete remaining work; the normal work loop will perform it in this same turn. "
         "Existing permissions still apply; this grants no authority. In text fallback, encode this JSON in "
         "the response string of a tool=null decision."
         + (" Pending edit recovery: " + pending_recovery if pending_recovery else "")
