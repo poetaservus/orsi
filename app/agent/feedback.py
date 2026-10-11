@@ -128,9 +128,14 @@ def required_calls_feedback() -> dict[str, str]:
 
 
 def edit_recovery_feedback(*, already_present: bool = False) -> str:
-    present = ("The proposed new text is already present in the returned source. Check whether the "
-        "requested change is satisfied before proposing any further mutation. " if already_present else "")
-    return ("A source edit was rejected; its failed result remains authoritative. " + present +
+    if already_present:
+        return ("The proposed new text is already present in the freshly returned source. "
+            "Stop repeating that patch. Source presence does not prove the requested behavior or visual result. "
+            "Diagnose the remaining defect using available project checks and screenshot evidence within existing "
+            "permissions; obtain visual evidence of the affected section, not just an intro. "
+            "Make another edit only for a concrete remaining defect grounded in current source. "
+            "Report any checks that remain unverified honestly.")
+    return ("A source edit was rejected; its failed result remains authoritative. " +
         "Before another edit to that target, use an advertised filesystem.read_text to obtain fresh source "
         "containing the target. Receive that result before constructing the retry; do not batch it with its read. "
         "Follow truncation hints within supported read bounds; repeating a truncated "

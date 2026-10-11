@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+from io import BytesIO
 import json
 import os
 from pathlib import Path
@@ -37,10 +38,13 @@ class ProjectVerificationArguments(BaseModel):
 
 class InspectionStep(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    action: Literal["click", "fill", "scroll", "visible", "text"]
+    action: Literal["click", "fill", "scroll", "visible", "text", "wait", "in_view", "model_loaded"]
     target: str = Field(default="", max_length=256, description="Browser CSS selector or unique desktop automation ID/exact accessible name. Empty scroll target means the page.")
     value: str = Field(default="", max_length=1000)
     amount: int = Field(default=500, ge=-10000, le=10000)
+    state: Literal["visible", "hidden", "attached", "detached"] = "visible"
+    timeout_ms: int = Field(default=2000, ge=1, le=15000,
+        description="Bounded browser readiness wait. For wait with an empty target, wait this duration. Use wait/hidden for an intro, then in_view for the affected section.")
 
 
 class ProjectInspectionArguments(BaseModel):
@@ -65,6 +69,10 @@ class ProjectInspectionArguments(BaseModel):
             local_origin(self.url)
         elif self.pid is None or self.url is not None or self.server_executable is not None:
             raise ValueError("Desktop inspection requires an existing project process PID and no URL/server.")
+        if self.kind == "desktop" and any(step.action in {"wait", "in_view", "model_loaded"} for step in self.steps):
+            raise ValueError("Readiness and viewport actions are browser-only.")
+        if any(step.action in {"in_view", "model_loaded"} and not step.target for step in self.steps):
+            raise ValueError("Viewport and model checks require an exact selector.")
         if self.server_arguments and self.server_executable is None:
             raise ValueError("Server arguments require a server executable.")
         if any(len(value) > 4096 or "\0" in value for value in self.server_arguments) or sum(map(len, self.server_arguments)) > 16000:
@@ -227,7 +235,9 @@ class ProjectVerifyCapability(_ProjectCapability):
 class ProjectInspectCapability(_ProjectCapability):
     name = "project.inspect"
     description = ("After building/testing, inspect a local browser preview or a project desktop process. "
-        "Runs up to 12 approved click/fill/scroll/visible/text checks, captures a screenshot and bounded layout/control evidence. "
+        "Runs up to 12 approved interaction/readiness checks, captures a screenshot and bounded layout/control evidence. "
+        "Use wait (selector/state or a bounded delay) for intro completion, then in_view on the affected section. "
+        "model_loaded checks model-viewer readiness; a loaded model still requires screenshot review for visual correctness. "
         "Browser inspection reports broken loaded references, console errors, overflow and actual scroll movement. "
         "If the preview is not already running, supply server_executable and server_arguments in this call. "
         "A server started by shell.run stops when that shell call returns. Desktop targets use automation IDs. "
@@ -257,6 +267,23 @@ class ProjectInspectCapability(_ProjectCapability):
                     raise ValueError
             except ValueError:
                 raise Error(Code.INVALID_OUTPUT, "Inspection did not return structured observations.") from None
+            screenshot = folder / "screenshot.png"
+            if observations.get("screenshot_path") is not None:
+                if observations["screenshot_path"] != str(screenshot) or screenshot.is_symlink():
+                    raise Error(Code.INVALID_OUTPUT, "Inspection returned an unexpected screenshot.")
+                from PIL import Image
+                from app.inference.local_images import MAX_IMAGE_BYTES
+                with screenshot.open("rb") as stream:
+                    pixels = stream.read(MAX_IMAGE_BYTES + 1)
+                if len(pixels) > MAX_IMAGE_BYTES:
+                    raise Error(Code.INVALID_OUTPUT, "Inspection screenshot exceeds its transport bound.")
+                with Image.open(BytesIO(pixels)) as captured:
+                    if captured.format != "PNG" or not (0 < captured.width <= arguments.width and 0 < captured.height <= arguments.height):
+                        raise Error(Code.INVALID_OUTPUT, "Inspection screenshot exceeds its viewport bounds.")
+                    observations["screenshot_dimensions"] = [captured.width, captured.height]
+                    captured.verify()
+                observations["screenshot_sha256"] = hashlib.sha256(pixels).hexdigest()
+                observations["visual_verification_status"] = "requires_review"
             return {"project_path": str(project), "kind": arguments.kind, "inspection_complete": True,
                 "content_is_untrusted": True, **observations, "owned_processes_released": True}
         finally:

@@ -112,12 +112,38 @@ def browser_inspection(spec):
                 check = {"action": action, "target": target, "passed": False}
                 try:
                     locator = page.locator(target) if target else None
-                    if action == "click":
+                    timeout = step.get("timeout_ms", 2000)
+                    if action == "wait":
+                        if locator:
+                            locator.wait_for(state=step.get("state", "visible"), timeout=timeout)
+                        else:
+                            page.wait_for_timeout(timeout)
+                    elif action == "in_view":
+                        locator.scroll_into_view_if_needed(timeout=timeout)
+                        page.wait_for_timeout(250)  # Observe application scroll handlers after the move.
+                        box = locator.bounding_box()
+                        check["bounds"] = box
+                        if not box or box["width"] <= 0 or box["height"] <= 0 or not (
+                                box["y"] < spec["height"] and box["y"] + box["height"] > 0 and
+                                box["x"] < spec["width"] and box["x"] + box["width"] > 0):
+                            raise ValueError("Target did not remain in the viewport; wait for intro/scroll-lock completion before inspecting this section.")
+                    elif action == "model_loaded":
+                        locator.wait_for(state="attached", timeout=timeout)
+                        locator.evaluate("""(e, timeout) => new Promise((resolve, reject) => {
+                            const start=performance.now();
+                            const poll=()=> {
+                                if(e.tagName !== 'MODEL-VIEWER') { reject(new Error('Target must be model-viewer.')); return; }
+                                if(customElements.get('model-viewer') && e.loaded === true) { resolve(true); return; }
+                                if(performance.now()-start >= timeout) { reject(new Error('model-viewer is undefined or its model has not loaded.')); return; }
+                                setTimeout(poll,50);
+                            }; poll();
+                        })""", timeout)
+                    elif action == "click":
                         locator.click()
                     elif action == "fill":
                         locator.fill(step["value"])
                     elif action == "visible":
-                        locator.wait_for(state="visible")
+                        locator.wait_for(state="visible", timeout=timeout)
                     elif action == "text":
                         if step["value"] not in locator.inner_text():
                             raise ValueError("Expected text is absent.")
@@ -146,8 +172,34 @@ def browser_inspection(spec):
                 const missingFragments=scan.filter(x=>x.tagName==='A' && (x.getAttribute('href')||'').startsWith('#') && x.hash.length>1 && !document.getElementById(decodeURIComponent(x.hash.slice(1)))).slice(0,20).map(x=>x.hash);
                 return {scrollTop:e.scrollTop, scrollHeight:e.scrollHeight, viewportHeight:e.clientHeight,
                     horizontalOverflow:e.scrollWidth>e.clientWidth+1, brokenImages, missingFragments,
-                    elementsScanned:scan.length, scanTruncated:all.length>scan.length};
+                    elementsScanned:scan.length, scanTruncated:all.length>scan.length,
+                    previewError:document.querySelector('vite-error-overlay')?.shadowRoot?.textContent?.slice(0,1000) || null,
+                    models:scan.filter(x=>x.tagName==='MODEL-VIEWER').slice(0,12).map(x=> {
+                        const r=x.getBoundingClientRect();
+                        return {src:x.getAttribute('src'), defined:!!customElements.get('model-viewer'),
+                            loaded:x.loaded===true, modelIsVisible:x.modelIsVisible===true,
+                            width:r.width, height:r.height,
+                            inViewport:r.width>0 && r.height>0 && r.top<innerHeight && r.bottom>0 && r.left<innerWidth && r.right>0};
+                    })};
             }""")
+            if layout["previewError"]:
+                problem("preview_error", layout["previewError"])
+            # Re-check requested sections at capture time: a subsequent action or
+            # late intro handler may have moved an earlier target out of view.
+            capture_targets = []
+            for step in spec["steps"]:
+                if step["action"] != "in_view":
+                    continue
+                try:
+                    box = page.locator(step["target"]).bounding_box()
+                except BrowserError:
+                    box = None
+                visible = bool(box and box["width"] > 0 and box["height"] > 0 and
+                    box["y"] < spec["height"] and box["y"] + box["height"] > 0 and
+                    box["x"] < spec["width"] and box["x"] + box["width"] > 0)
+                capture_targets.append({"target": step["target"], "in_viewport": visible, "bounds": box})
+                if not visible:
+                    problem("capture_target_outside_viewport", step["target"])
             if layout["horizontalOverflow"]:
                 problem("horizontal_overflow", "Page extends beyond the viewport.")
             for value in layout["brokenImages"]:
@@ -158,6 +210,7 @@ def browser_inspection(spec):
             passed = not problems and all(item["passed"] for item in checks)
             return {"passed": passed, "verification_status": "passed" if passed else "failed", "url": page.url,
                 "title": page.title()[:200], "checks": checks, "problems": problems, "layout": layout,
+                "capture_targets": capture_targets,
                 "screenshot_path": spec["screenshot"], "preview_pid": server.pid if server is not None else None,
                 "retry_guidance": None if passed else (
                     "Inspection ran; these are failed checks, not an unavailable browser. "

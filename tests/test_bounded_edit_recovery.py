@@ -307,6 +307,18 @@ def test_repeated_noop_variants_remain_failures_and_stop(tmp_path, make_service)
     assert "makes no change" in report and path.read_bytes() == original
 
 
+def test_already_present_patch_recovery_directs_remaining_visual_diagnosis(tmp_path, make_service):
+    path = tmp_path / "main.py"
+    path.write_bytes(b"new")
+    service, model, approvals = make_service([edit(1, path, "new", "new"), read(2, path),
+        ModelResponse.text("The source change is present. Visual correctness remains unverified.")])
+    service.run("Fix the remaining visual glitch in this project.")
+    feedback = [m["content"] for m in model.requests[2] if m["role"] == "system"]
+    assert any("Stop repeating that patch" in text and "Diagnose the remaining defect" in text for text in feedback), feedback
+    assert approvals == [] and path.read_bytes() == b"new"
+    assert len(service._turn_result.settled_calls) == 2
+
+
 def test_target_aliases_do_not_create_independent_failure_allowances(tmp_path, make_service):
     path = tmp_path / "main.py"
     path.write_bytes(b"old")

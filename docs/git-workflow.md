@@ -1,5 +1,21 @@
 # Git layout and baseline hygiene
 
+## Visual verification and useful rechecks, 12 October 2026
+
+`codex/visual-verification-recovery` starts from local main `3a79fdb`. It renews
+project checks after proven edits, delivers verified inspection pixels to
+vision-capable models, adds bounded intro/viewport/model readiness checks and
+directs already-present patches toward diagnosis. See
+[the repair and qualification](visual-verification-recovery.md). Necessary
+qualification passed 314 distinct checks; the final affected run passed 93,
+with one host symlink skip. Four older fixture failures reproduce on unchanged
+main and remain separate. Full-suite and live inference gates were not run by
+request. Preserve content-free refs/worktrees under
+`state/backups/visual-verification-recovery-20261012/` and prior main at
+`archive/2026-10-12/main-before-visual-verification-recovery`. Commit,
+fast-forward local main and remove only the merged feature branch. Preserve
+other worktrees, historical/unmerged tips and configuration; no publication.
+
 ## Interrupted-operation recovery, 11 October 2026
 
 `codex/operation-review-recovery` starts from local main `3ec1c1f`. It replaces

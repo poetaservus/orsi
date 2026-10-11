@@ -39,6 +39,7 @@ from app.agent.feedback import (
 )
 from app.agent.file_resolution import filename_disambiguation_feedback
 from app.agent.read_progress import ReadProgressTracker
+from app.agent.project_progress import ProjectProgressTracker
 from app.agent.edit_progress import EditProgressTracker
 from app.agent.goals import TaskGoal, observe_goal, finish_goal, goal_feedback, evidence_report
 from app.agent.task_completion import (CompletionReview, task_context_message,
@@ -496,6 +497,7 @@ class AgentRuntime:
         protocol_failures = 0
         repeated: dict[str, int] = {}
         read_progress = ReadProgressTracker()
+        project_progress = ProjectProgressTracker()
         edit_progress = EditProgressTracker()
         used_call_ids: set[str] = set()
         advertised_names = {item.name for item in definitions}
@@ -985,6 +987,7 @@ class AgentRuntime:
                     )
                 results.append(outcome.result)
                 read_progress.observe(call, outcome.result, repeated)
+                project_progress.observe(call, outcome.result, repeated)
                 edit_observation = edit_progress.observe(call, outcome.result, step=steps)
                 if edit_observation.feedback is not None:
                     recovery_feedback.append(edit_observation.feedback)
@@ -1033,6 +1036,12 @@ class AgentRuntime:
                             provider_message_id=provider_message_id,
                         )
                     )
+                for call, result in zip(calls, results, strict=True):
+                    if call.capability == "project.inspect" and result.success:
+                        from app.agent.inspection_images import inspection_image_message
+                        message = inspection_image_message(self.registry.resolve(call.capability), result, self.model)
+                        if message is not None:
+                            transcript.append(message)
             except (TypeError, ValueError):
                 return self._transcript_limited(
                     steps,

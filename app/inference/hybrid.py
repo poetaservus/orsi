@@ -7,6 +7,7 @@ from typing import Callable, Iterable
 from app.inference.cloud_errors import CloudInferenceError
 from app.inference.engine import InferenceEngine, InferenceUnavailable
 from app.inference.attachments import AttachmentError, has_attachments
+from app.inference.local_images import has_image_inputs
 from app.inference.openai_replay import neutral_messages
 from app.runtime.activity import report_activity
 from app.inference.protocol import (
@@ -255,6 +256,8 @@ class HybridInferenceEngine(InferenceEngine):
         self._refresh_limits(self.local)
 
     def count_image_message_tokens(self, messages):
+        if self.mode == "cloud" and getattr(self.cloud, "supports_native_attachment_tools", False) is True:
+            return self.cloud.count_image_message_tokens(messages)
         if not self.supports_local_image_inputs:
             raise AttachmentError("The selected mode/model cannot account for local images.")
         return self.local.count_image_message_tokens(messages)
@@ -500,6 +503,7 @@ class HybridInferenceEngine(InferenceEngine):
             if not (
                 self.fallback_to_local
                 and not has_attachments(messages)
+                and not has_image_inputs(messages)
                 and exc.allow_local_fallback
                 and self.local is not None
             ):
@@ -545,6 +549,7 @@ class HybridInferenceEngine(InferenceEngine):
             if not (
                 self.fallback_to_local
                 and not has_attachments(messages)
+                and not has_image_inputs(messages)
                 and exc.allow_local_fallback
                 and self.local is not None
             ):

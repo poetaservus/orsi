@@ -236,6 +236,11 @@ def _neutral_responses_input(messages: Iterable[dict], definitions: Iterable[Mod
                 raise ValueError("OpenAI tool result envelope does not match its capability.")
             result.append({"type": "function_call_output", "call_id": original.provider_call_id,
                            "output": _canonical_json(envelope.model_dump(mode="json"))})
+        elif message["role"] == "user" and isinstance(message.get("content"), list):
+            result.append({"role": "user", "content": [
+                {"type": "input_text", "text": part["text"]} if part["type"] == "text" else
+                {"type": "input_image", "image_url": part["image_url"]["url"], "detail": "auto"}
+                for part in message["content"]]})
         else:
             result.append(message)
     return result

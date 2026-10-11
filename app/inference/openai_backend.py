@@ -723,6 +723,9 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
         tools = responses_function_tools(definitions)
         inputs = responses_input(messages, definitions, model_id=self.active_model)
         inputs, estimate = self._project_attachments(inputs)
+        from app.inference.local_images import has_image_inputs
+        if has_image_inputs(messages):
+            estimate = self.count_image_message_tokens(messages)
         previous_ids = {item["call_id"] for item in inputs if item.get("type") == "function_call"}
         # Keep definitions for validating/replaying settled calls, while preventing
         # assessment from initiating another filesystem/verification tool chain.
@@ -749,9 +752,23 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
         return estimate_schema_tokens(tools)
 
     def count_context_message_tokens(self, messages):
+        from app.inference.local_images import has_image_inputs
+        if has_image_inputs(messages):
+            return self.count_image_message_tokens(messages)
         if has_attachments(messages):
             return self.count_attachment_message_tokens(messages)
         return estimate_input_tokens(context_input_items(messages, self.active_model))
+
+    def count_image_message_tokens(self, messages):
+        from app.inference.local_images import image_accounting_messages
+        countable = image_accounting_messages(messages)
+        images = sum(part.get("type") == "image_url" for message in messages
+            if isinstance(message.get("content"), list) for part in message["content"])
+        # Bounded inspection viewports; conservative image reserve, never count
+        # base64 as text tokens. Provider usage remains authoritative.
+        estimate = (self.count_attachment_message_tokens(countable) if has_attachments(countable) else
+            estimate_input_tokens(context_input_items(countable, self.active_model)))
+        return estimate + images * 16384
 
     def count_message_tokens(self, messages):
         return self.count_context_message_tokens(messages)
