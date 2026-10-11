@@ -13,7 +13,7 @@ from urllib.parse import urlsplit, urljoin
 def browser_inspection(spec):
     if spec.get("browser_directory"):
         os.environ["PLAYWRIGHT_BROWSERS_PATH"] = spec["browser_directory"]
-    from playwright.sync_api import sync_playwright
+    from playwright.sync_api import Error as BrowserError, sync_playwright
     server = None
     if spec["server_executable"]:
         server = subprocess.Popen([spec["server_executable"], *spec["server_arguments"]],
@@ -32,26 +32,46 @@ def browser_inspection(spec):
         context = browser.new_context(viewport={"width": spec["width"], "height": spec["height"]},
             service_workers="block", accept_downloads=False)
         try:
+            # Routed HTTP responses otherwise appear outside the local address
+            # space to Chromium, blocking Vite's same-origin development socket.
+            # This disposable origin grant leaves the HTTP/WebSocket routes below
+            # responsible for enforcing the exact approved host and port.
+            context.grant_permissions(["local-network-access"], origin=f"{origin.scheme}://{origin.netloc}")
             def route(request):
-                if urlsplit(request.request.url).scheme == "http" and same_origin(request.request.url):
-                    response = request.fetch(max_redirects=0, timeout=2000)
-                    redirect = response.headers.get("location")
-                    if response.status in {301, 302, 303, 307, 308} and redirect and (
-                            urlsplit(urljoin(request.request.url, redirect)).scheme != "http"
-                            or not same_origin(urljoin(request.request.url, redirect))):
-                        problem("blocked_redirect", redirect)
-                        request.abort()
+                try:
+                    if urlsplit(request.request.url).scheme == "http" and same_origin(request.request.url):
+                        response = request.fetch(max_redirects=0, timeout=10000)
+                        redirect = response.headers.get("location")
+                        if response.status in {301, 302, 303, 307, 308} and redirect and (
+                                urlsplit(urljoin(request.request.url, redirect)).scheme != "http"
+                                or not same_origin(urljoin(request.request.url, redirect))):
+                            problem("blocked_redirect", redirect)
+                            request.abort()
+                        else:
+                            request.fulfill(response=response)
                     else:
-                        request.fulfill(response=response)
-                else:
-                    problem("blocked_reference", request.request.url)
-                    request.abort()
+                        problem("blocked_reference", request.request.url)
+                        request.abort()
+                except BrowserError:
+                    # Startup/refused connections and slow assets are observations,
+                    # not unhandled callback tracebacks mixed into the JSON receipt.
+                    problem("failed_reference", request.request.url)
+                    try:
+                        request.abort("failed")
+                    except BrowserError:
+                        pass  # Navigation/context may already have closed this route.
             context.route("**/*", route)
+            blocked_sockets = []
             def websocket(route):
                 if same_origin(route.url) and urlsplit(route.url).scheme == "ws":
                     route.connect_to_server()
                 else:
-                    route.close()
+                    problem("blocked_reference", route.url)
+                    # Never connect this route. Closing from the initial script's
+                    # routing callback can wait on that same script's context;
+                    # settle the mock socket after navigation instead.
+                    if len(blocked_sockets) < 24:
+                        blocked_sockets.append(route)
             context.route_web_socket("**/*", websocket)
             page = context.new_page()
             page.set_default_timeout(2000)
@@ -64,13 +84,16 @@ def browser_inspection(spec):
             deadline = monotonic() + min(10, spec["timeout_seconds"])
             while True:
                 try:
-                    page.goto(spec["url"], wait_until="load", timeout=2000)
+                    page.goto(spec["url"], wait_until="load", timeout=10000)
                     break
                 except Exception:
                     if server is None or server.poll() is not None or monotonic() >= deadline:
                         raise
                     problems.clear()
                     sleep(0.1)
+            for socket in blocked_sockets:
+                socket.close(code=1000, reason="Outside the approved preview origin")
+            blocked_sockets.clear()
             for step in spec["steps"]:
                 action, target = step["action"], step["target"]
                 check = {"action": action, "target": target, "passed": False}
@@ -81,8 +104,7 @@ def browser_inspection(spec):
                     elif action == "fill":
                         locator.fill(step["value"])
                     elif action == "visible":
-                        if not locator.is_visible():
-                            raise ValueError("Target is not visible.")
+                        locator.wait_for(state="visible")
                     elif action == "text":
                         if step["value"] not in locator.inner_text():
                             raise ValueError("Expected text is absent.")

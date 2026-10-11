@@ -5,6 +5,8 @@ import json
 import os
 from threading import Event
 
+import pytest
+
 from app.agent.bootstrap import build_agent_runtime
 from app.conversation.orchestrator import ConversationService
 from app.conversation.store import ConversationStore
@@ -13,6 +15,41 @@ from app.settings.agent import AgentFeatureConfig
 from tests.test_openai_phase1 import response
 from tests.test_openai_streaming import make_engine, events, encode
 from tests.test_openai_tools import function
+from tests.test_attachment_composer import windows
+
+
+def test_empty_stream_reset_keeps_current_answer_until_replacement(windows):
+    window = windows()
+    window._set_busy(True)
+    window._stream_preview("The proposed answer.")
+    window.chat.set_activity("Checking completion…")
+    window._stream_preview("")  # A fresh work/tool stream after a continue assessment.
+    assert window.chat.stream_preview.text() == "The proposed answer."
+    assert window.chat.stream_preview.isVisible()
+    assert window.chat.activity_label.text() == "Checking completion…"
+    window._stream_preview("The updated answer.")
+    assert window.chat.stream_preview.text() == "The updated answer."
+    window._set_busy(False)
+    assert window.chat.stream_preview.text() == ""
+    window._set_busy(True)
+    assert window.chat.stream_preview.text() == ""
+
+
+@pytest.mark.parametrize("error", [False, True])
+def test_final_handoff_keeps_answer_visible_during_context_refresh(windows, monkeypatch, error):
+    window = windows()
+    window._set_busy(True)
+    window._stream_preview("The completed answer.")
+    during_refresh = []
+    def refresh():
+        during_refresh.append((window.chat.stream_preview.text(), window.chat.stream_preview.isVisible()))
+    monkeypatch.setattr(window, "_update_context_window", refresh)
+    monkeypatch.setattr(window.notifications, "notify", lambda *_: None)
+    window._done("The completed answer.", error)
+    assert during_refresh == [("The completed answer.", True)]
+    assert len(window.chat._messages) == 1
+    assert window.chat.stream_preview.text() == ""
+    assert not window._preview_active
 
 
 def test_review_stream_preserves_preview_replay_and_next_turn(make_engine, tmp_path):

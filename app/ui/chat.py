@@ -685,7 +685,9 @@ class ChatView(QScrollArea):
             QTimer.singleShot(0, self._scroll_to_bottom)
 
     def set_stream_preview(self, text: str) -> None:
-        if not self._response_elapsed.isValid():
+        # Empty provider events start a new stream, not a new user turn. Keep
+        # the proposed answer through review/continued work until replacement.
+        if not self._response_elapsed.isValid() or not text:
             return
         self.stream_preview.setText(text)
         if text:

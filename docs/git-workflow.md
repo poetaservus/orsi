@@ -1,5 +1,18 @@
 # Git layout and baseline hygiene
 
+## Browser verification and answer retention, 11 October 2026
+
+`codex/browser-verification-preview` starts from local main `84ee315`. It fixes
+preview-startup callback failures, local development sockets and rejected socket
+cleanup, and keeps the answer visible through stream resets and final context
+refresh. Both development and built previews of the user's Vite project passed
+inspection; 68 focused checks passed. See [the repair and qualification](browser-verification-preview.md).
+Retain content-free integration evidence under
+`state/backups/browser-verification-preview-20261011/` and prior main at
+`archive/2026-10-11/main-before-browser-verification-preview`. Commit,
+fast-forward local main and remove only the merged feature branch. Preserve
+configuration, historical tips and other worktrees; no remote publication.
+
 ## Bounded completion checks, 11 October 2026
 
 `codex/bounded-completion-check` starts from local main `c45f42f`. A live run

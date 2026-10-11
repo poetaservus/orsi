@@ -1240,7 +1240,6 @@ class MainWindow(QMainWindow):
     def _done(self, text: str, error: bool) -> None:
         if getattr(self, "_closing", False):
             return
-        duration_seconds = self._set_busy(False)
         images = getattr(text, "generated_images", ())
         cancelled = self._image_stopping or getattr(getattr(text, "completion", None), "finish_reason", None) == "cancelled"
         generation_frame = self.chat.take_generation_frame(images,
@@ -1262,6 +1261,9 @@ class MainWindow(QMainWindow):
             self._update_context_window()
         except Exception:
             log.warning("Could not refresh response controls or context meter.")
+        # Context measurement can wait on inference. Keep the streamed answer
+        # visible until the final bubble is ready to replace it in this slot.
+        duration_seconds = self._set_busy(False)
         self.chat.add_message(
             "Agent",
             text,

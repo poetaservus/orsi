@@ -4,6 +4,7 @@ from pathlib import Path
 import socket
 import subprocess
 import sys
+from types import SimpleNamespace
 from threading import Timer
 from time import monotonic, sleep
 
@@ -117,8 +118,9 @@ def free_port():
         return stream.getsockname()[1]
 
 
+@pytest.mark.parametrize("windowless", [False, True])
 @pytest.mark.parametrize("broken", [False, True])
-def test_real_browser_inspection_catches_references_scroll_and_interactions(tmp_path, broken):
+def test_real_browser_inspection_catches_references_scroll_and_interactions(tmp_path, broken, windowless, monkeypatch):
     pytest.importorskip("playwright")
     state = Path(__file__).resolve().parents[1] / "state"
     if not (state / "playwright").is_dir():
@@ -129,6 +131,10 @@ def test_real_browser_inspection_catches_references_scroll_and_interactions(tmp_
         % ("hidden" if broken else "auto", "<img src='/missing.png'><a href='#missing'>broken</a>" if broken else ""), encoding="utf-8")
     port = free_port()
     tool = ProjectInspectCapability(state)
+    if windowless:
+        # ORSI.cmd launches pythonw; console-only tests missed its child-worker behavior.
+        monkeypatch.setattr("app.capabilities.project_verification.sys",
+            SimpleNamespace(executable=str(Path(sys.executable).with_name("pythonw.exe"))))
     args = {"project_path": str(tmp_path), "kind": "browser", "url": f"http://127.0.0.1:{port}/",
         "server_executable": str(Path(sys.executable).resolve()), "server_arguments": ["-m", "http.server", str(port), "--bind", "127.0.0.1"],
         "steps": [{"action": "fill", "target": "#field", "value": "test"}, {"action": "click", "target": "#button"},
@@ -146,6 +152,122 @@ def test_real_browser_inspection_catches_references_scroll_and_interactions(tmp_
         assert not output["checks"][-1]["passed"]  # Real wheel scrolling catches overflow:hidden.
     try:
         psutil.Process(output["preview_pid"]).wait(timeout=1)
+    except psutil.NoSuchProcess:
+        pass
+
+
+def test_browser_waits_for_slow_preview_without_corrupting_observations(tmp_path):
+    pytest.importorskip("playwright")
+    state = Path(__file__).resolve().parents[1] / "state"
+    if not (state / "playwright").is_dir():
+        pytest.skip("Local Playwright browser is not installed.")
+    (tmp_path / "index.html").write_text("<h1>Ready preview</h1>", encoding="utf-8")
+    port = free_port()
+    code = ("import time,runpy,sys; time.sleep(1.5); "
+        f"sys.argv=['http.server','{port}','--bind','127.0.0.1']; "
+        "runpy.run_module('http.server',run_name='__main__')")
+    tool = ProjectInspectCapability(state)
+    args = {"project_path": str(tmp_path), "kind": "browser", "url": f"http://127.0.0.1:{port}/",
+        "server_executable": str(Path(sys.executable).resolve()), "server_arguments": ["-c", code],
+        "steps": [{"action": "text", "target": "h1", "value": "Ready preview"}]}
+    result = tool.invoke(args, approved(tool, args, context(tmp_path)))
+    assert result.success, result.error
+    assert result.output.get("inspection_complete"), result.output
+    assert result.output["passed"], result.output
+    assert result.output["owned_processes_released"]
+    try:
+        psutil.Process(result.output["preview_pid"]).wait(timeout=1)
+    except psutil.NoSuchProcess:
+        pass
+
+
+@pytest.mark.parametrize("mode", ["websocket", "slow_asset", "failed_asset", "blocked_origin", "blocked_socket"])
+def test_browser_handles_development_resources_and_preserves_real_failures(tmp_path, mode):
+    pytest.importorskip("playwright")
+    state = Path(__file__).resolve().parents[1] / "state"
+    if not (state / "playwright").is_dir():
+        pytest.skip("Local Playwright browser is not installed.")
+    port, other_port = free_port(), free_port()
+    script = tmp_path / "preview.py"
+    script.write_text('''import base64,hashlib,sys,time
+from pathlib import Path
+from threading import Thread
+from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
+mode=sys.argv[2]
+other_port=int(sys.argv[3])
+class Handler(BaseHTTPRequestHandler):
+ def log_message(self,*args): pass
+ def do_GET(self):
+  if self.server.server_port == other_port:
+   Path('escaped').write_text('Unexpected off-origin request')
+  if self.path == '/redirect.png':
+   self.send_response(302); self.send_header('Location',f'http://127.0.0.1:{other_port}/forbidden')
+   self.end_headers(); return
+  if self.path == '/socket':
+   key=self.headers['Sec-WebSocket-Key']+'258EAFA5-E914-47DA-95CA-C5AB0DC85B11'
+   self.send_response(101); self.send_header('Upgrade','websocket'); self.send_header('Connection','Upgrade')
+   self.send_header('Sec-WebSocket-Accept',base64.b64encode(hashlib.sha1(key.encode()).digest()).decode())
+   self.end_headers(); self.wfile.write(b'\\x81\\x02ok'); self.wfile.flush(); time.sleep(1); return
+  if self.path == '/missing.png':
+   self.close_connection=True; return
+  if self.path == '/app.js':
+   time.sleep(2.5)
+   body=b"setTimeout(()=>{document.querySelector('#root').innerHTML='<p id=ready>Ready</p>'},150)"
+   content_type='text/javascript'
+  else:
+   content_type='text/html'
+   if mode == 'websocket':
+    body=b"<div id=root></div><script>const ws=new WebSocket('ws://'+location.host+'/socket'); ws.onmessage=()=>document.querySelector('#root').innerHTML='<p id=ready>Ready</p>'</script>"
+   elif mode == 'slow_asset':
+    body=b"<div id=root></div><script type=module src=/app.js></script>"
+   elif mode == 'blocked_origin':
+    body=(f"<p id=ready>Ready</p><img src=/redirect.png><img src=http://127.0.0.1:{other_port}/forbidden>").encode()
+   elif mode == 'blocked_socket':
+    body=(f"<p id=ready>Ready</p><script>new WebSocket('ws://127.0.0.1:{other_port}/socket')</script>").encode()
+   else:
+    body=b"<p id=ready>Ready</p><img src=/missing.png>"
+  self.send_response(200); self.send_header('Content-Type',content_type)
+  self.send_header('Content-Length',str(len(body))); self.end_headers(); self.wfile.write(body)
+other=ThreadingHTTPServer(('127.0.0.1',other_port),Handler)
+Thread(target=other.serve_forever,daemon=True).start()
+ThreadingHTTPServer(('127.0.0.1',int(sys.argv[1])),Handler).serve_forever()
+''', encoding="utf-8")
+    tool = ProjectInspectCapability(state)
+    args = {"project_path": str(tmp_path), "kind": "browser", "url": f"http://127.0.0.1:{port}/",
+        "server_executable": str(Path(sys.executable).resolve()), "server_arguments": [str(script), str(port), mode, str(other_port)],
+        "steps": [{"action": "visible", "target": "#ready"}, {"action": "text", "target": "#ready", "value": "Ready"}]}
+    result = tool.invoke(args, approved(tool, args, context(tmp_path)))
+    assert result.success, result.error
+    assert result.output.get("inspection_complete"), result.output
+    assert result.output["passed"] is (mode not in {"failed_asset", "blocked_origin", "blocked_socket"}), result.output
+    assert all(check["passed"] for check in result.output["checks"]), result.output
+    if mode == "failed_asset":
+        assert any(item["kind"] == "failed_reference" for item in result.output["problems"])
+    if mode == "blocked_origin":
+        assert {"blocked_reference", "blocked_redirect"}.issubset(item["kind"] for item in result.output["problems"])
+        assert not (tmp_path / "escaped").exists()
+    if mode == "blocked_socket":
+        assert any(item["kind"] == "blocked_reference" for item in result.output["problems"])
+        assert not (tmp_path / "escaped").exists()
+
+
+def test_inspection_deadline_releases_a_preview_that_never_becomes_ready(tmp_path):
+    pytest.importorskip("playwright")
+    state = Path(__file__).resolve().parents[1] / "state"
+    if not (state / "playwright").is_dir():
+        pytest.skip("Local Playwright browser is not installed.")
+    port = free_port()
+    tool = ProjectInspectCapability(state)
+    args = {"project_path": str(tmp_path), "kind": "browser", "url": f"http://127.0.0.1:{port}/",
+        "server_executable": str(Path(sys.executable).resolve()),
+        "server_arguments": ["-c", "import os,time; from pathlib import Path; Path('preview.pid').write_text(str(os.getpid())); time.sleep(60)"],
+        "timeout_seconds": 2}
+    result = tool.invoke(args, approved(tool, args, context(tmp_path)))
+    assert result.success and not result.output["passed"]
+    assert not result.output["inspection_complete"] and result.output["stop_reason"] == "timeout"
+    assert result.output["owned_processes_released"]
+    try:
+        psutil.Process(int((tmp_path / "preview.pid").read_text())).wait(timeout=1)
     except psutil.NoSuchProcess:
         pass
 
