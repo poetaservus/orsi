@@ -147,10 +147,16 @@ class GroundedEditModel(InferenceEngine):
 
     def respond_with_capabilities(self, messages, capabilities):
         self.requests.append(deepcopy(messages))
+        from tests.fixtures.completion_reviews import ready_review_for
+        review = ready_review_for(messages)
+        if review is not None:
+            return review
         self.counter += 1
         latest = messages[-1]
         if latest.get("role") != "capability":
             tool, arguments = "filesystem.read_text", {"path": str(self.target)}
+            if latest.get("content", "").startswith("The current request remains unfinished"):
+                arguments.update(max_bytes=65536, max_lines=1000)
         elif latest["result"]["capability"] == "filesystem.read_text":
             output = latest["result"]["output"]
             if not output["source_complete"]:
@@ -172,8 +178,10 @@ class GroundedEditModel(InferenceEngine):
                 }
                 if self.stale:
                     self.target.write_bytes(self.target.read_bytes().replace(b"fixture 001", b"fixture 000"))
+                    self.stale = False
                 if self.missing:
                     arguments["old_text"] = excerpt.replace("sum(values) - 1", "sum(values) - 2")
+                    self.missing = False
         else:
             return ModelResponse.text("Source inspection finished.")
         return ModelResponse.calls((ModelCapabilityCall(provider_call_id=f"source-{self.counter}",
@@ -204,7 +212,8 @@ def test_below_line_200_edit_uses_returned_revision_and_native_approval(tmp_path
     approvals = []
 
     def approve(record):
-        assert record.resource == str(target.resolve()) and target.read_bytes() == original
+        expected_source = original.replace(b"fixture 001", b"fixture 000") if failure == "stale" else original
+        assert record.resource == str(target.resolve()) and target.read_bytes() == expected_source
         approvals.append(record)
         service.resolve_approval(record.approval_id, True)
 
@@ -213,7 +222,8 @@ def test_below_line_200_edit_uses_returned_revision_and_native_approval(tmp_path
         service.run(f'Fix draw_overlay in "{target}". Preserve unrelated source and line endings.')
         settled = service._turn_result.settled_calls
         assert [item.call.capability for item in settled] == [
-            "filesystem.read_text", "filesystem.read_text", "filesystem.edit_text"]
+            "filesystem.read_text", "filesystem.read_text", "filesystem.edit_text"] + ([
+                "filesystem.read_text", "filesystem.edit_text"] if failure else [])
         assert not settled[0].result.output["source_complete"]
         source = settled[1].result.output
         edit = settled[2]
@@ -229,7 +239,8 @@ def test_below_line_200_edit_uses_returned_revision_and_native_approval(tmp_path
             assert not edit.result.success and edit.result.error.code == CapabilityErrorCode.INVALID_ARGUMENTS
             assert ("digest" if failure == "stale" else "not found") in edit.result.error.message
             expected = original.replace(b"fixture 001", b"fixture 000") if failure == "stale" else original
-            assert target.read_bytes() == expected and approvals == []
+            assert target.read_bytes() == expected.replace(b"sum(values) - 1", b"sum(values)") and len(approvals) == 1
+            assert settled[-1].result.success
         else:
             assert edit.result.success and len(approvals) == 1
             assert target.read_bytes() == original.replace(b"sum(values) - 1", b"sum(values)")

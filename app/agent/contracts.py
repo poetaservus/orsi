@@ -9,6 +9,7 @@ from app.inference.completion import CompletionMetadata
 from app.inference.protocol import ModelCapabilityCall, model_capability_calls_message, model_capability_result_message
 from app.capabilities.contracts import CapabilityResult
 from app.agent.goals import TaskGoal
+from app.agent.task_completion import CompletionReview
 from app.settings.agent_limits import (
     MAX_AGENT_STEPS, MAX_AGENT_MODEL_REQUESTS, MAX_AGENT_CAPABILITY_CALLS, MAX_AGENT_COMPLETIONS,
 )
@@ -79,9 +80,15 @@ class AgentRunResult(BaseModel):
     partial_text: str | None = Field(default=None, min_length=1, max_length=1_000_000)
     settled_calls: tuple[SettledCall, ...] = Field(default=(), max_length=MAX_AGENT_CAPABILITY_CALLS)
     goal: TaskGoal | None = None
+    completion_review: CompletionReview | None = None
 
     @model_validator(mode="after")
     def validate_terminal_outcome(self):
+        if self.completion_review is not None:
+            if self.goal is None or self.completion_review.goal_id != self.goal.goal_id:
+                raise ValueError("Completion reviews must belong to the current goal.")
+            if self.status == AgentRunStatus.COMPLETED and self.completion_review.status != "ready":
+                raise ValueError("Unfinished reviews cannot complete a task.")
         if self.status == AgentRunStatus.COMPLETED:
             if (self.assistant_text is None or self.message is not None
                     or self.completion.incomplete or self.partial_text is not None):

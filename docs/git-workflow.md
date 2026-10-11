@@ -1,5 +1,23 @@
 # Git layout and baseline hygiene
 
+## Current request and completion checks, 11 October 2026
+
+`codex/current-task-completion` starts from local main `dd2da89`. It separates
+the latest request from standing requirements and historical work, checks a
+proposed final answer against requested work, and continues routine source reads
+and corrected patches within the same turn. Known denied or unresolved edits
+cannot be marked complete by a positive model review. Existing authority and
+budgets remain in force; a normal final answer adds one model review request.
+See [the contract and qualification](current-task-completion.md).
+
+Qualification passed 479 distinct focused native tests with one host symbolic-link
+skip. Only necessary checks ran; no full suite or live model/provider gate.
+Pre-integration refs/worktrees are retained under ignored
+`state/backups/current-task-completion-20261011/`; preserve prior main at
+`archive/2026-10-11/main-before-current-task-completion`. Commit, fast-forward
+local main and remove only the merged feature branch, preserving other worktrees
+and historical/unmerged tips. No remote publication.
+
 ## Transparent application icon, 10 October 2026
 
 `codex/app-logo-icon` starts from local main `8295169`. The unchanged bundled

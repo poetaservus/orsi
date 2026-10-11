@@ -94,7 +94,7 @@ def test_three_identical_reads_after_two_approved_changes_complete(scenario, mod
     assert all(service.approval_status(r.approval_id) == "consumed" for r in approvals)
     result = service._turn_result
     assert result.status == AgentRunStatus.COMPLETED and result.capability_calls == 5
-    assert len(model.requests) == 6 and len(result.settled_calls) == 5
+    assert len(model.requests) == 7 and len(result.settled_calls) == 5
     reads = [s.result.output for s in result.settled_calls if s.call.capability == "filesystem.read_text"]
     assert len(reads) == 3
     if max_bytes == 65536:

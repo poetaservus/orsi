@@ -21,9 +21,9 @@ def test_cloud_completes_beyond_old_32_request_limit(tmp_path):
         assert service.run("Inspect the synthetic fixtures") == "Done"
         reopened = type(store)(store.path)
         turn = reopened.turns()[0]
-        assert turn.outcome.model_requests == turn.outcome.steps == 41
+        assert turn.outcome.model_requests == turn.outcome.steps == 42
         assert len(turn.settled_calls) == 40 and all(item.result.success for item in turn.settled_calls)
-        assert len(turn.outcome.completion_history) == 41
+        assert len(turn.outcome.completion_history) == 42
         assert "batch up to seven independent filesystem.stat calls" in cloud.requests[0][0]["content"]
     finally:
         service.shutdown()
@@ -144,7 +144,7 @@ def test_budget_pause_after_approved_edit_resumes_without_reapplying(tmp_path):
 def test_native_metadata_batch_keeps_each_success_settled(tmp_path):
     calls = tuple(stat_call(f"fixture-{i}.txt", provider_call_id=f"stat-{i}").capability_calls[0]
                   for i in range(7))
-    cloud = ScriptedStatModel([ModelResponse.calls(calls), ModelResponse.text("Done")])
+    cloud = ScriptedStatModel([ModelResponse.calls(calls), ModelResponse.text("Done")], auto_review=True)
     cloud.mode = "cloud"
     cloud.context_length = 131_072
     cloud.max_response_tokens = 512
@@ -153,7 +153,7 @@ def test_native_metadata_batch_keeps_each_success_settled(tmp_path):
         (root / f"fixture-{i}.txt").write_bytes(b"fixture")
     try:
         assert service.run("Inspect the synthetic fixtures") == "Done"
-        assert len(cloud.requests) == 2
+        assert len(cloud.requests) == 3
         assert len(store.turns()[0].settled_calls) == 7
         assert all(item.result.success for item in store.turns()[0].settled_calls)
     finally:
@@ -178,7 +178,7 @@ def test_cloud_completes_33_approved_edits_with_original_bytes_preserved(tmp_pat
         assert untouched.read_bytes() == b"preserve exactly\r\n"
         assert all(service.approval_status(record.approval_id) == "consumed" for record in approvals)
         turn = type(service.store)(service.store.path).turns()[0]
-        assert turn.outcome.steps == turn.outcome.model_requests == 34
+        assert turn.outcome.steps == turn.outcome.model_requests == 35
         assert len(turn.settled_calls) == 33 and all(item.result.success for item in turn.settled_calls)
     finally:
         service.shutdown()
@@ -197,7 +197,7 @@ def test_local_prompt_and_mutation_guidance_keep_single_calls():
 
 def scripted_model(call_count):
     model = ScriptedStatModel([stat_call(f"fixture-{index}.txt", provider_call_id=f"stat-{index}")
-        for index in range(call_count)] + [ModelResponse.text("Done")])
+        for index in range(call_count)] + [ModelResponse.text("Done")], auto_review=True)
     model.context_length = 131_072
     model.max_response_tokens = 512
     return model
@@ -225,8 +225,8 @@ def test_real_switch_cloud_local_cloud_applies_budgets_and_retains_history(tmp_p
         assert runtime.effective_max_model_requests == 128 and runtime.effective_max_capability_calls == 256
         assert service.run("Inspect the synthetic fixtures") == "Done"
         outcome = store._conversation.turns[-1].outcome
-        assert outcome.status == AgentRunStatus.COMPLETED and outcome.steps == 32
-        assert outcome.capability_calls == 31 and len(cloud.requests) == 32
+        assert outcome.status == AgentRunStatus.COMPLETED and outcome.steps == 33
+        assert outcome.capability_calls == 31 and len(cloud.requests) == 33
         history = store.messages()
         hybrid.set_mode("local")
         assert runtime.effective_max_model_requests == runtime.effective_max_capability_calls == 32
@@ -241,10 +241,10 @@ def test_real_switch_cloud_local_cloud_applies_budgets_and_retains_history(tmp_p
         hybrid.set_mode("cloud")
         assert runtime.effective_max_steps == 128 and store.messages() == history
         assert service.run("Inspect the synthetic fixtures once more") == "Done"
-        assert store._conversation.turns[-1].outcome.steps == 32
+        assert store._conversation.turns[-1].outcome.steps == 33
         assert "mode=cloud max_steps=128" in caplog.text and "mode=local max_steps=24" in caplog.text
         reopened = type(store)(store.path)
-        assert [turn.outcome.steps for turn in reopened._conversation.turns] == [32, 24, 32]
+        assert [turn.outcome.steps for turn in reopened._conversation.turns] == [33, 24, 33]
     finally:
         service.shutdown()
 
@@ -274,7 +274,7 @@ def test_cloud_budget_pause_retains_128_results_without_request_129(tmp_path):
         assert len(reopened.turns()[0].provider_responses) == 128
         assert reopened._conversation.messages[-1].completion.failure_message == answer.status_message
         assert service.run("Continue using the recorded results") == "Done"
-        assert len(cloud.requests) == 129  # Only the explicit follow-up requests another response.
+        assert len(cloud.requests) == 130  # The explicit follow-up and its completion review.
         assert sum(item["role"] == "capability" for item in cloud.requests[-1]) == 128
     finally:
         service.shutdown()

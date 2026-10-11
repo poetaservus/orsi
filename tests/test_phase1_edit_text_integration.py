@@ -36,6 +36,10 @@ class EditModel(InferenceEngine):
 
     def respond_with_capabilities(self, messages, capabilities):
         self.seen.append(tuple(item.name for item in capabilities))
+        from tests.fixtures.completion_reviews import ready_review_for
+        review = ready_review_for(messages)
+        if review is not None:
+            return review
         if messages[-1].get("role") == "capability":
             return ModelResponse.text(json.dumps(messages[-1]["result"]))
         self.counter += 1
@@ -62,6 +66,13 @@ def setup_target(service, tmp_path, raw=b"old\r\nkeep\r\n"):
     target.write_bytes(raw)
     service.inference.arguments = {"path": str(target), "old_text": "old", "new_text": "new"}
     return target
+
+
+def run_result(service, request):
+    service.run(request)
+    # Rejected actions now remain unfinished; inspect the authoritative receipt
+    # rather than treating the old JSON failure answer as task completion.
+    return service._turn_result.settled_calls[-1].result.model_dump(mode="json")
 
 
 def test_exact_approval_compact_result_and_single_use(service, tmp_path):
@@ -115,7 +126,7 @@ def test_changes_after_preview_are_rejected(service, tmp_path, mutation):
             target.write_bytes(b"old\r\nkeep\r\n")
         service.resolve_approval(record.approval_id, True)
     service.set_approval_requester(mutate)
-    result = json.loads(service.run("Edit the file"))
+    result = run_result(service, "Edit the file")
     assert not result["success"]
     assert not target.exists() or b"new" not in target.read_bytes()
 
@@ -127,7 +138,7 @@ def test_invalid_edits_never_ask_for_approval(service, tmp_path, raw, update):
     service.inference.arguments.update(update)
     approvals = []
     service.set_approval_requester(approvals.append)
-    assert not json.loads(service.run("Edit the file"))["success"]
+    assert not run_result(service, "Edit the file")["success"]
     assert approvals == []
     assert target.read_bytes() == raw
 
@@ -141,6 +152,10 @@ def test_ambiguous_edit_can_be_corrected_but_still_requires_approval(service, tm
     calls = []
 
     def respond(messages, capabilities):
+        from tests.fixtures.completion_reviews import ready_review_for
+        review = ready_review_for(messages)
+        if review is not None:
+            return review
         if not calls:
             arguments = {"path": str(target), "old_text": "background: #222;",
                          "new_text": "background: linear-gradient(black, blue);"}
@@ -167,7 +182,7 @@ def test_ambiguous_edit_can_be_corrected_but_still_requires_approval(service, tm
         service.resolve_approval(record.approval_id, approved)
 
     service.set_approval_requester(approve)
-    result = json.loads(service.run("add a gradient in the header in style.css"))
+    result = run_result(service, "add a gradient in the header in style.css")
     assert result["success"] == approved
     assert len(approvals) == 1 and len(calls) == 2
     assert target.read_bytes() == (raw.replace(old.encode(), new.encode(), 1) if approved else raw)
@@ -177,7 +192,7 @@ def test_ambiguous_edit_can_be_corrected_but_still_requires_approval(service, tm
 def test_denial_preserves_source(service, tmp_path):
     target = setup_target(service, tmp_path)
     service.set_approval_requester(lambda r: service.resolve_approval(r.approval_id, False))
-    assert not json.loads(service.run("Edit the file"))["success"]
+    assert not run_result(service, "Edit the file")["success"]
     assert target.read_bytes() == b"old\r\nkeep\r\n"
 
 
@@ -277,7 +292,7 @@ def test_unrequested_edit_still_requires_denied_operation_approval(service, tmp_
         service.resolve_approval(record.approval_id, False)
     service.set_approval_requester(deny)
     # A malicious proposal stays visible but cannot execute without authorization.
-    result = json.loads(service.run("Inspect the file metadata"))
+    result = run_result(service, "Inspect the file metadata")
     assert all("filesystem.edit_text" in names for names in service.inference.seen)
     assert not result["success"] and len(approvals) == 1
     assert target.read_bytes() == b"old\r\nkeep\r\n"

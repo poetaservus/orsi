@@ -63,11 +63,30 @@ class _Target:
     reversal_digest: str | None = None
     reversal_operation: str | None = None
     rollback_used: bool = False
+    recovery_blocked: bool = False
+    unresolved_mutation: bool = False
+    mutation_blocked: bool = False
 
 
 class EditProgressTracker:
     def __init__(self):
         self._targets: dict[str, _Target] = {}
+
+    def pending_recovery(self) -> str | None:
+        pending = [state for state in self._targets.values()
+            if state.recovery and not state.recovery_blocked and not state.mutation_blocked
+            and not self._already_present(state)]
+        if not pending:
+            return None
+        return ("A rejected edit still needs a fresh source read and a corrected patch. "
+            "Receive the read before planning its patch. Continue in this turn within existing limits and approvals.")
+
+    def completion_blocker(self) -> str | None:
+        if any(state.unresolved_mutation and (state.recovery_blocked or state.mutation_blocked)
+                and not self._already_present(state) for state in self._targets.values()):
+            return ("The requested edit remains undone because approval was denied or its source is unavailable. "
+                "Resolve the reported tool failure before completing this request.")
+        return None
 
     def before(self, call: ModelCapabilityCall, *, step: int, assistant_text: str | None = None) -> EditRejection | None:
         if call.capability not in {"filesystem.edit_text", "filesystem.write_text"}:
@@ -157,7 +176,14 @@ class EditProgressTracker:
         state = self._targets.setdefault(path, _Target())
         if call.capability == "filesystem.read_text":
             if not result.success or not isinstance(output.get("text"), str):
+                if result.error is not None and result.error.code in {
+                        CapabilityErrorCode.NOT_FOUND, CapabilityErrorCode.PERMISSION_DENIED,
+                        CapabilityErrorCode.INACCESSIBLE, CapabilityErrorCode.DISABLED_CAPABILITY}:
+                    state.recovery_blocked = True
+                    state.read = None
+                    state.source = None
                 return EditObservation()
+            state.recovery_blocked = False
             digest = _digest(output.get("sha256"))
             complete = (output.get("source_complete") is True or digest is not None and
                 not output.get("truncated_by_bytes", False) and not output.get("truncated_by_lines", False))
@@ -179,6 +205,15 @@ class EditProgressTracker:
             return EditObservation(feedback=edit_recovery_feedback(already_present=self._already_present(state))) \
                 if state.recovery else EditObservation()
         if not result.success:
+            if result.error.code in {CapabilityErrorCode.PERMISSION_DENIED, CapabilityErrorCode.OUTCOME_UNKNOWN}:
+                state.recovery_blocked = True
+                state.mutation_blocked = True
+                state.unresolved_mutation = True
+                state.rejected = call
+            if result.error.code in {CapabilityErrorCode.NOT_FOUND, CapabilityErrorCode.INACCESSIBLE}:
+                state.recovery_blocked = True
+                state.unresolved_mutation = True
+                state.rejected = call
             reversal = result.metadata.get("edit_recovery")
             if reversal == "revision_reversal_limit":
                 return EditObservation(stop_message=result.error.message)
@@ -193,6 +228,7 @@ class EditProgressTracker:
                 state.rejected = call
                 state.recovery = any(part in state.error for part in (
                     "exact search text was not found", "source digest does not match", "requested edit makes no change"))
+                state.unresolved_mutation = state.recovery
             # A preflight rejection touched no file. Its fresh read remains usable
             # once the model has received it; do not force a redundant read.
             if state.failures >= _FAILED_EDITS_PER_TARGET:
@@ -204,6 +240,9 @@ class EditProgressTracker:
         state.source = predicted if predicted is not None and hashlib.sha256(predicted).hexdigest() == digest else None
         state.read = None
         state.recovery = False
+        state.unresolved_mutation = False
+        state.mutation_blocked = False
+        state.rejected = None
         if digest is not None:
             previous = state.digest or state.last_mutation_digest
             if digest != previous and (previous is not None or call.capability == "filesystem.edit_text"):

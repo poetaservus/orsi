@@ -100,8 +100,9 @@ class LargeOutputCapability(EchoCapability):
 
 
 class ScriptedModel(InferenceEngine):
-    def __init__(self, responses):
+    def __init__(self, responses, *, auto_review=True):
         self.responses = list(responses)
+        self.auto_review = auto_review
         self.requests: list[list[dict]] = []
         self.definitions = []
         self.before_request = {}
@@ -116,6 +117,11 @@ class ScriptedModel(InferenceEngine):
             callback(messages, capabilities)
         self.requests.append(deepcopy(messages))
         self.definitions.append(tuple(capabilities))
+        if self.auto_review:
+            from tests.fixtures.completion_reviews import ready_review_for
+            review = ready_review_for(messages)
+            if review is not None:
+                return review
         if not self.responses:
             raise AssertionError("The fake model response script was exhausted.")
         response = self.responses.pop(0)

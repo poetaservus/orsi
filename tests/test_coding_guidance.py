@@ -82,7 +82,7 @@ def test_service_request_keeps_whole_catalog_user_text_and_scoped_completion(tmp
     request = 'Fix the requested bugs in main.py and helpers.py; preserve unrelated source.'
     try:
         service.run(request)
-        messages, names = backend.requests[-1]
+        messages, names = backend.requests[0]
         assert set(names) == set(CATALOG) and names == runtime.registry.model_visible_names
         assert messages[-1] == {"role": "user", "content": request}
         core = messages[0]["content"]

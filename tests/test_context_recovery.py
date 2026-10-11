@@ -233,6 +233,10 @@ def test_continuous_session_keeps_standing_requirements_full_pairing_and_durable
             assert ids == [m["tool_call_id"] for m in native if m["role"] == "tool"]
             self.requests.append(deepcopy(messages))
             self.definitions.append(tuple(definitions))
+            from tests.fixtures.completion_reviews import ready_review_for
+            review = ready_review_for(messages)
+            if review is not None:
+                return review
             if messages[-1].get("role") == "capability":
                 text = messages[-1]["result"]["output"]["text"]
                 assert "SESSION_MARKER=verified" in text
@@ -259,7 +263,7 @@ def test_continuous_session_keeps_standing_requirements_full_pairing_and_durable
         assert service.store.session_id == session_id
         turns = store.turns()
         assert len(turns) == 21 and all(t.outcome.status == AgentRunStatus.COMPLETED for t in turns)
-        assert sum(t.outcome.inference_requests for t in turns) == len(model.requests) == 41
+        assert sum(t.outcome.inference_requests for t in turns) == len(model.requests) == 62
         assert sum(t.outcome.context_compactions for t in turns) > 0
         assert len(runtime.executor.journal.records) == 20
         for turn in turns[1:]:

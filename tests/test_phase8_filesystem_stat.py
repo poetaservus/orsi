@@ -25,8 +25,9 @@ from app.inference.protocol import ModelCapabilityCall, ModelResponse
 
 
 class ScriptedStatModel(InferenceEngine):
-    def __init__(self, responses):
+    def __init__(self, responses, *, auto_review=True):
         self.responses = list(responses)
+        self.auto_review = auto_review
         self.requests: list[list[dict]] = []
         self.definitions = []
 
@@ -36,6 +37,11 @@ class ScriptedStatModel(InferenceEngine):
     def respond_with_capabilities(self, messages, capabilities):
         self.requests.append(deepcopy(messages))
         self.definitions.append(tuple(capabilities))
+        if self.auto_review:
+            from tests.fixtures.completion_reviews import ready_review_for
+            review = ready_review_for(messages)
+            if review is not None:
+                return review
         if not self.responses:
             raise AssertionError("The scripted response list was exhausted.")
         return self.responses.pop(0)
@@ -238,7 +244,7 @@ def test_conversation_runs_real_stat_and_persists_only_user_and_final_text(
         answer = service.run("What is the size of sample.txt?")
 
         assert answer == "The file metadata is available."
-        assert len(model.requests) == 2
+        assert len(model.requests) == 3
         assert all(
             [definition.name for definition in definitions] == ["filesystem.stat"]
             for definitions in model.definitions

@@ -28,6 +28,10 @@ class RequestRecorder(InferenceEngine):
 
     def respond_with_capabilities(self, messages, capabilities):
         self.requests.append((messages, tuple(c.name for c in capabilities)))
+        from tests.fixtures.completion_reviews import ready_review_for
+        review = ready_review_for(messages)
+        if review is not None:
+            return review
         return ModelResponse.text("Rendben.")
 
 
@@ -48,7 +52,7 @@ def test_personality_survives_request_selection_without_changing_catalog_or_user
             model.respond(request.messages)
         else:
             assert service.run(user_text) == "Rendben."
-        messages, catalog = model.requests[-1]
+        messages, catalog = model.requests[0]
         system = messages[0]["content"]
         assert system.startswith(PERSONALITY_GUIDANCE)
         assert messages[-1] == {"role": "user", "content": user_text}
@@ -79,7 +83,7 @@ def test_full_native_catalog_uses_shared_policy_without_duplicating_tool_contrac
     try:
         for user_text in ("Explain game loops.", "confirmed", "List your available tools."):
             service.run(user_text)
-            messages, catalog = model.requests[-1]
+            messages, catalog = model.requests[-2]
             assert catalog == runtime.registry.model_visible_names and len(catalog) == 12
             assert messages[-1] == {"role": "user", "content": user_text}
             system = messages[0]["content"]

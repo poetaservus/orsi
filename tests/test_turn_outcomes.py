@@ -28,7 +28,7 @@ def edit_call(target):
 def edit_service(tmp_path, responses):
     portable = tmp_path / "portable"
     portable.mkdir(exist_ok=True)
-    model = ScriptedModel(responses)
+    model = ScriptedModel(responses, auto_review=True)
     runtime = build_agent_runtime(model,
         config=AgentFeatureConfig(filesystem_stat_enabled=True, filesystem_edit_text_enabled=True),
         portable_root=portable, state_directory=portable / "state")
@@ -282,7 +282,7 @@ def test_scoped_provider_id_reuse_translates_to_distinct_stable_native_ids():
 def test_reused_provider_id_across_service_turns_has_durable_message_scopes(tmp_path):
     from tests.test_phase8_filesystem_stat import ScriptedStatModel, stat_call, build_service
     model = ScriptedStatModel([stat_call("one.txt"), ModelResponse.text("first"),
-                               stat_call("two.txt"), ModelResponse.text("second")])
+                               stat_call("two.txt"), ModelResponse.text("second")], auto_review=True)
     service, runtime, store, root = build_service(tmp_path, model)
     (root / "one.txt").write_text("one")
     (root / "two.txt").write_text("two")

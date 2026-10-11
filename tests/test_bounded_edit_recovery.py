@@ -24,6 +24,9 @@ class RoomyScriptedModel(ScriptedModel):
     context_length = 131072
     max_response_tokens = 1024
 
+    def __init__(self, responses, *, auto_review=True):
+        super().__init__(responses, auto_review=auto_review)
+
 
 def stopped_report(service, prompt):
     with pytest.raises(IncompleteResponseError) as caught:
@@ -49,10 +52,10 @@ def edit(index, path, old, new, **arguments):
 @pytest.fixture
 def make_service(tmp_path):
     services = []
-    def make(responses, mode="local", approvals_allowed=True, write_enabled=False):
+    def make(responses, mode="local", approvals_allowed=True, write_enabled=False, auto_review=True):
         portable = tmp_path / f"portable-{len(services)}"
         portable.mkdir()
-        model = RoomyScriptedModel(responses)
+        model = RoomyScriptedModel(responses, auto_review=auto_review)
         model.mode = mode
         policy = HostAccessPolicy.full_local(application_root=portable, user_home=tmp_path, acknowledged=True)
         runtime = build_agent_runtime(model, config=AgentFeatureConfig(filesystem_stat_enabled=True,
@@ -347,7 +350,7 @@ def test_returned_batch_read_can_ground_the_next_response_without_rereading(tmp_
     service.run("Fix main.py.")
     assert service._turn_result.semantic_corrections == 2
     assert sum(c.call.capability == "filesystem.read_text" for c in service._turn_result.settled_calls) == 1
-    assert len(model.requests) == 4 and len(approvals) == 1 and path.read_bytes() == b"new"
+    assert len(model.requests) == 5 and len(approvals) == 1 and path.read_bytes() == b"new"
 
 
 def test_stop_report_identifies_the_failed_file_even_without_successful_changes(tmp_path, make_service):

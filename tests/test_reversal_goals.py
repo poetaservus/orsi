@@ -44,7 +44,7 @@ def test_first_reversal_is_blocked_before_approval_and_can_finish(tmp_path, make
     assert service.store.turns()[-1].goal == goal
     restored = ConversationStore(service.store.path)
     assert restored.turns()[-1].goal == goal
-    assert restored.turns()[-1].outcome.goal == goal and len(model.requests) == 5
+    assert restored.turns()[-1].outcome.goal == goal and len(model.requests) == 6
 
 
 def test_one_fresh_read_explained_rollback_is_still_approved(tmp_path, make_service):
@@ -201,6 +201,7 @@ def test_legacy_history_without_goals_remains_loadable(tmp_path, make_service):
     turn = raw["turns"][-1]
     del turn["goal"]
     del turn["outcome"]["goal"]
+    del turn["outcome"]["completion_review"]
     service.store.path.write_text(json.dumps(raw), encoding="utf-8")
     restored = ConversationStore(service.store.path)
     assert restored.turns()[-1].goal is None

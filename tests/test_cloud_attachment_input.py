@@ -51,9 +51,17 @@ def native_sdk(monkeypatch):
                     if status == 200 else {'error': {'code': 'rate_limit_exceeded', 'message': 'private body'}})
             assert request.url.path == '/v1/responses'
             generations.append(body)
+            from tests.fixtures.completion_reviews import ready_review_for
+            review = ready_review_for(body['input'])
+            if review is not None:
+                return sse_response(response(review.assistant_text, id='resp_review_' + str(len(generations))))
             value = next(values) if values is not None else response('Done', id='resp_' + str(len(generations)),
                 output=[{'id': 'msg_' + str(len(generations)), 'type': 'message', 'role': 'assistant',
                          'status': 'completed', 'content': [{'type': 'output_text', 'text': 'Done', 'annotations': []}]}])
+            value = deepcopy(value)
+            for item in value.get('output', ()):
+                if item.get('type') == 'message':
+                    item['id'] += '_generation_' + str(len(generations))
             return sse_response(value)
         http = httpx.AsyncClient(transport=httpx.MockTransport(handle))
         client = sdk_client(api_key='fake-never-live', max_retries=(engine_config.max_retries if engine_config else 0), http_client=http)
@@ -188,7 +196,7 @@ def test_service_native_tool_continuation_with_production_catalog_and_archive(tm
     (service.portable_root / 'probe.txt').write_text('stat target')
     ref = service.store.attachment_store.import_bytes(make_pdf(), name='evidence.pdf')
     assert service.run('Check probe.txt and use the attached PDF', attachments=[ref]) == 'Done'
-    assert len(counts) == 3 and len(bodies) == 2
+    assert len(counts) == 4 and len(bodies) == 3
     assert len(inputs(bodies[1], 'input_file')) == 1
     assert bodies[0]['input'][1] == bodies[1]['input'][1]
     assert bodies[1]['input'][-1]['type'] == 'function_call_output'

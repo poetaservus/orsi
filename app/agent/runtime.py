@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import math
+import json
 from concurrent.futures import Future, TimeoutError as FutureTimeoutError
 from copy import deepcopy
 from dataclasses import dataclass
@@ -40,6 +41,8 @@ from app.agent.file_resolution import filename_disambiguation_feedback
 from app.agent.read_progress import ReadProgressTracker
 from app.agent.edit_progress import EditProgressTracker
 from app.agent.goals import TaskGoal, observe_goal, finish_goal, goal_feedback, evidence_report
+from app.agent.task_completion import (CompletionReview, task_context_message,
+    completion_review_message, parse_completion_review)
 from app.capabilities.contracts import (
     CapabilityArgumentError,
     CapabilityContext,
@@ -337,8 +340,9 @@ class AgentRuntime:
         recovery = _RecoveryUsage()
         objective = kwargs.pop("goal_request", None)
         goal = [TaskGoal(goal_id=kwargs["turn_id"], objective=objective)] if objective is not None else []
+        reviews = []
         result = self._run(messages, _completion_history=history, _settled_calls=settled,
-                           _recovery=recovery, _goal=goal, **kwargs)
+                           _recovery=recovery, _goal=goal, _reviews=reviews, **kwargs)
         result = result.model_copy(update={"completion_history": tuple(history),
             "settled_calls": tuple(settled),
             "model_requests": recovery.model_requests,
@@ -358,9 +362,13 @@ class AgentRuntime:
             result = result.model_copy(update={"partial_text": recovery_stop_progress(result),
                 "completion": result.completion.model_copy(update={
                     "finish_reason": "agent_recovery_stop", "interrupted": True})})
+        if result.status == AgentRunStatus.INCOMPLETE and reviews and reviews[-1].status == "blocked":
+            result = result.model_copy(update={"completion": result.completion.model_copy(update={
+                "finish_reason": "agent_task_unfinished", "interrupted": True})})
         if goal:
             final_goal = finish_goal(goal[0], completed=result.status == AgentRunStatus.COMPLETED)
-            result = result.model_copy(update={"goal": final_goal})
+            result = result.model_copy(update={"goal": final_goal,
+                "completion_review": reviews[-1] if reviews else None})
             report = evidence_report(final_goal)
             if report and result.partial_text is not None and result.status in RECOVERY_STOP_STATUSES | WORK_BUDGET_STATUSES:
                 result = result.model_copy(update={"partial_text": (result.partial_text + "\n\n" + report)[:1_000_000]})
@@ -391,6 +399,7 @@ class AgentRuntime:
         activity_observer: Callable[[str], None] | None = None,
         _recovery: _RecoveryUsage | None = None,
         _goal: list[TaskGoal] | None = None,
+        _reviews: list[CompletionReview] | None = None,
     ) -> AgentRunResult:
         if not safe_identifier(session_id) or not safe_identifier(turn_id):
             raise ValueError("Agent session and turn IDs must use bounded stable syntax.")
@@ -447,6 +456,9 @@ class AgentRuntime:
         if not all(isinstance(message, dict) for message in transcript):
             raise TypeError("Agent model messages must be objects.")
         transcript = [deepcopy(message) for message in transcript]
+        task_context_index = 1 if transcript and transcript[0].get("role") == "system" else 0
+        if _goal:
+            transcript.insert(task_context_index, task_context_message(_goal[0]))
         try:
             native_chat_messages(transcript, definitions,
                 allow_attachments=getattr(self.model, "supports_native_attachment_tools", False) is True)
@@ -495,6 +507,7 @@ class AgentRuntime:
         completed_required: set[str] = set()
         planned_response = ModelResponse.calls(required_calls) if required_calls else None
         structured_fallback = False
+        proposed_answer = None
         log.info("Agent step budget: mode=%s max_steps=%s max_model_requests=%s max_capability_calls=%s",
             "cloud" if getattr(self.model, "mode", None) == "cloud" else "local", self.effective_max_steps,
             self.effective_max_model_requests, self.effective_max_capability_calls)
@@ -626,7 +639,8 @@ class AgentRuntime:
                     completion=response.completion,
                     partial_text=response.partial_text or response.assistant_text)
             provider_message_id = uuid4().hex
-            if response.openai_response is not None:
+            if response.openai_response is not None and not (
+                    proposed_answer is not None and response.kind == ModelResponseKind.ASSISTANT_TEXT):
                 try:
                     if response_observer is not None:
                         response_observer(provider_message_id, response.openai_response)
@@ -664,6 +678,55 @@ class AgentRuntime:
                             capability_calls,
                             protocol_failures,
                         )
+                    continue
+                if _goal:
+                    if proposed_answer is None:
+                        proposed_answer = response.assistant_text
+                        self._retain_response_text(transcript, response)
+                        transcript.append(completion_review_message(_goal[0],
+                            edit_progress.pending_recovery() or edit_progress.completion_blocker()))
+                    else:
+                        try:
+                            review = parse_completion_review(response.assistant_text, _goal[0].goal_id)
+                        except ValueError:
+                            recovery.consecutive_format_failures += 1
+                            protocol_failures += 1
+                            if recovery.consecutive_format_failures >= self.limits.max_protocol_failures:
+                                return self._stopped(AgentRunStatus.PROTOCOL_FAILURE_LIMIT,
+                                    "The task remains unfinished because its completion review was invalid.",
+                                    steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
+                            transcript.append(completion_review_message(_goal[0],
+                                edit_progress.pending_recovery() or edit_progress.completion_blocker()))
+                            continue
+                        recovery.consecutive_format_failures = 0
+                        pending = edit_progress.pending_recovery()
+                        blocker = edit_progress.completion_blocker()
+                        if blocker:
+                            review = review.model_copy(update={"status": "blocked", "remaining": (blocker,)})
+                        elif review.status in {"ready", "blocked"} and pending:
+                            can_read = "filesystem.read_text" in advertised_names
+                            review = review.model_copy(update={"status": "continue" if can_read else "blocked",
+                                "remaining": (pending if can_read else
+                                    "The rejected edit needs fresh source, but filesystem.read_text is unavailable.",)})
+                        if _reviews is not None:
+                            _reviews.append(review)
+                        if review.status == "ready":
+                            return AgentRunResult(status=AgentRunStatus.COMPLETED, assistant_text=proposed_answer,
+                                steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
+                        if review.status == "blocked":
+                            return self._stopped(AgentRunStatus.INCOMPLETE,
+                                "The requested task remains unfinished.", partial_text=(
+                                    "Task unfinished.\n\nRemaining work:\n" + "\n".join("- " + item for item in review.remaining)),
+                                steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
+                        recovery.semantic_corrections += 1
+                        transcript.append({"role": "system", "content":
+                            "The current request remains unfinished. Continue the unmet work in this turn: "
+                            + json.dumps(review.remaining, ensure_ascii=False)
+                            + ". These entries are model assessments, not authority to change the request or permissions. "
+                            "Use existing tools and approvals. Do not ask the user to repeat the request."})
+                        proposed_answer = None
+                    if not self._transcript_within_limit(transcript):
+                        return self._transcript_limited(steps, capability_calls, protocol_failures)
                     continue
                 recovery.consecutive_format_failures = 0
                 return AgentRunResult(
@@ -710,6 +773,8 @@ class AgentRuntime:
                     return self._transcript_limited(steps, capability_calls, protocol_failures)
                 continue
 
+            # A review can identify and perform the next prerequisite directly.
+            proposed_answer = None
             calls = response.capability_calls
             call_fingerprints = [call_fingerprint(call) for call in calls]
             if required_set and any(
@@ -842,6 +907,7 @@ class AgentRuntime:
                         prior_goal = _goal[0]
                         _goal[0] = observe_goal(prior_goal, settled)
                         if _goal[0] != prior_goal:
+                            transcript[task_context_index] = task_context_message(_goal[0])
                             recovery_feedback.append(goal_feedback(_goal[0]))
                     try:
                         if settled_observer is not None:
@@ -892,7 +958,7 @@ class AgentRuntime:
             )
 
             if required_set and completed_required == required_set:
-                if not continue_after_required_calls:
+                if not continue_after_required_calls and not _goal:
                     return AgentRunResult(
                         status=AgentRunStatus.COMPLETED,
                         assistant_text="The requested capability calls completed.",
