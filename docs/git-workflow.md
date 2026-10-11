@@ -1,5 +1,19 @@
 # Git layout and baseline hygiene
 
+## Live completion loop, 11 October 2026
+
+`codex/live-completion-loop` starts from local main `afc4e14`. A live reproduction
+found that review tool calls discarded the proposed answer, causing ready JSON
+to become another answer and trigger repeated reviews. Candidate retention and
+explicit review streaming now keep assessments separate from user answers.
+See [the repair and live verification](live-completion-loop.md). Two fresh live
+cloud chats completed after repair; 210 focused native checks passed. Only
+necessary checks ran. Preserve content-free refs/worktrees under
+`state/backups/live-completion-loop-20261011/` and prior main at
+`archive/2026-10-11/main-before-live-completion-loop`. Commit, fast-forward local
+main and remove only the merged feature branch. Other worktrees and historical
+tips remain intact; no remote publication.
+
 ## Stable active-turn recall, 11 October 2026
 
 `codex/stable-turn-recall` starts from local main `3b9ed54`. Immutable bounded

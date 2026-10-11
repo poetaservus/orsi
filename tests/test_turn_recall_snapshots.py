@@ -172,7 +172,8 @@ def test_snapshot_reads_keep_existing_argument_and_revision_guards(tmp_path, arg
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Native host source read")
-def test_first_cloud_turn_can_recall_project_evidence_after_streamed_candidate(tmp_path, monkeypatch):
+@pytest.mark.parametrize("revise_answer", [False, True])
+def test_first_cloud_turn_can_recall_project_evidence_after_streamed_candidate(tmp_path, monkeypatch, revise_answer):
     """Real SDK/stream normalization and durable receipts, with no network call."""
     import httpx
     import openai
@@ -224,7 +225,8 @@ def test_first_cloud_turn_can_recall_project_evidence_after_streamed_candidate(t
             else:
                 restored = json.loads("".join(pieces))
                 assert restored["settled_calls"][0]["result"]["output"]["text"] == source
-                payload = response(final, id=f"resp-{index}")
+                payload = response(final if revise_answer else json.dumps({"goal_id": "turn-1", "status": "ready", "remaining": []}),
+                    id=f"resp-{index}")
         for item in payload["output"]:
             if item["type"] == "message":
                 item["id"] = f"msg-{index}"
@@ -247,8 +249,10 @@ def test_first_cloud_turn_can_recall_project_evidence_after_streamed_candidate(t
     previews = []
     try:
         answer = service.run("Please read this project and summarize it to me: " + str(path), text_observer=previews.append)
-        assert answer == final
+        expected_answer = final if revise_answer else candidate
+        assert answer == expected_answer
         assert candidate in previews and len(pieces) > 1
+        assert previews[previews.index(candidate):] == [candidate]
         outcome = service._turn_result
         assert outcome.status == AgentRunStatus.COMPLETED and outcome.completion_review.status == "ready"
         assert all(item.result.success for item in outcome.settled_calls)
@@ -257,7 +261,7 @@ def test_first_cloud_turn_can_recall_project_evidence_after_streamed_candidate(t
         assert recall[0]["has_more"] and len(recall) == len(pieces)
         restored = ConversationStore(service.store.path)
         assert len(restored.turns()) == 1 and restored.turns()[0].outcome.status == AgentRunStatus.COMPLETED
-        assert restored.visible_messages()[-1].content == final
+        assert restored.visible_messages()[-1].content == expected_answer
     finally:
         service.shutdown()
         engine.close()

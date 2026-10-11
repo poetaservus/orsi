@@ -294,6 +294,19 @@ class ConversationService:
         self._reported_skill_name = None
         preview_setter = getattr(self.inference, "set_text_observer", None)
         preview_attached = False
+        reviewing_completion = False
+
+        def observe_review(active):
+            nonlocal reviewing_completion
+            reviewing_completion = active
+
+        def publish_preview(value):
+            if not reviewing_completion:
+                text_observer(value)
+
+        def publish_activity(value):
+            report_activity(activity, "Checking completion…" if reviewing_completion else value)
+
         cancellation_setter = getattr(self.inference, "set_request_cancellation", None)
         cancellation_attached = False
         activity_setter = getattr(self.inference, "set_activity_observer", None)
@@ -310,7 +323,7 @@ class ConversationService:
             image_turn = decision.route == "image_generation"
             report_activity(activity, "Preparing your request…")
             if callable(activity_setter):
-                activity_setter(activity)
+                activity_setter(publish_activity)
                 activity_attached = True
             self._documents.clear()
             self._documents.allow_images = getattr(self.inference, "supports_local_image_inputs", False) is True
@@ -397,7 +410,7 @@ class ConversationService:
                 self.store.record_reference_scope(turn_id, self._references.scope)
             self._agent_history = self._stored_agent_history()
             if text_observer is not None and callable(preview_setter):
-                preview_setter(text_observer)
+                preview_setter(publish_preview)
                 preview_attached = True
             if image_turn or self.agent_runtime is None:
                 if image_turn:
@@ -418,7 +431,7 @@ class ConversationService:
                     model_requests=1,
                     completion=value.completion, completion_history=value.completion_history)
             else:
-                answer = self._run_agent_turn(text, source, activity)
+                answer = self._run_agent_turn(text, source, activity, observe_review)
             report_activity(activity, "Saving the conversation…")
             self.store.finish_turn(turn_id, self._turn_result, answer)
             self._agent_history = self._stored_agent_history()
@@ -546,6 +559,7 @@ class ConversationService:
         text: str,
         source: CancellationSource,
         activity=None,
+        completion_review_observer=None,
     ) -> str:
         if self.agent_runtime is None or self.portable_root is None:
             raise RuntimeError("The structured agent runtime is unavailable.")
@@ -589,6 +603,7 @@ class ConversationService:
                 if self._reference_runtime is not None else None,
             capability_names=capabilities,
             activity_observer=activity,
+            completion_review_observer=completion_review_observer,
             goal_request=text,
         )
         if result.status == AgentRunStatus.COMPLETED:

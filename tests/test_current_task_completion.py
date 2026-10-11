@@ -84,6 +84,38 @@ def test_review_can_perform_prerequisite_directly(tmp_path, make_service):
 
 
 @native
+def test_review_work_requires_an_updated_answer_before_ready(tmp_path, make_service):
+    path = tmp_path / "main.py"
+    path.write_text("old", encoding="utf-8")
+    service, model, approvals = make_service([ModelResponse.text("I will fix main.py."), read(1, path),
+        edit(2, path, "old", "new"), review(), ModelResponse.text("Changed main.py."), review()], auto_review=False)
+    assert service.run("Change old to new in main.py.") == "Changed main.py."
+    assert len(model.requests) == 6 and len(approvals) == 1 and path.read_text() == "new"
+    assert "updated answer" in model.requests[4][-1]["content"]
+
+
+@native
+def test_review_cannot_relabel_a_denied_prerequisite_as_ready(tmp_path, make_service):
+    path = tmp_path / "main.py"
+    path.write_text("old", encoding="utf-8")
+    service, _, approvals = make_service([ModelResponse.text("I will fix main.py."), read(1, path),
+        edit(2, path, "old", "new"), review()], approvals_allowed=False, auto_review=False)
+    assert "Task unfinished" in service.run("Change old to new in main.py.")
+    assert service._turn_result.completion_review.status == "blocked"
+    assert len(approvals) == 1 and path.read_text() == "old"
+
+
+@native
+def test_misplaced_review_after_continue_never_becomes_an_answer(tmp_path, make_service):
+    service, model, _ = make_service([ModelResponse.text("A plan."), review("continue", ["Do the requested work"]),
+        review(), review()], auto_review=False)
+    with pytest.raises(RuntimeError, match="updated answer was not provided"):
+        service.run("Fix main.py.")
+    assert len(model.requests) == 4 and service._turn_result.goal.state == "stopped"
+    assert service._turn_result.status == AgentRunStatus.PROTOCOL_FAILURE_LIMIT
+
+
+@native
 @pytest.mark.parametrize("assessment", ["ready", "continue", "blocked"])
 def test_denied_approval_stays_unfinished_and_survives_reload(tmp_path, make_service, assessment):
     path = tmp_path / "main.py"
@@ -176,6 +208,41 @@ def test_completion_review_works_through_constrained_text_fallback(tmp_path):
         runtime.shutdown()
 
 
+def test_completion_review_reads_keep_the_answer_in_text_fallback(tmp_path):
+    from tests.test_agent_runtime import build_runtime
+    from tests.test_opencode_tool_resolution_port import TextOnlyStructuredFallbackModel
+    runtime, _, echo, _, _ = build_runtime(tmp_path, [])
+    model = TextOnlyStructuredFallbackModel([
+        json.dumps({"tool": None, "arguments": {}, "response": "The project summary."}),
+        json.dumps({"tool": "test.echo", "arguments": {"value": "evidence"}, "response": None}),
+        json.dumps({"tool": None, "arguments": {}, "response": review().assistant_text})])
+    runtime.model = model
+    try:
+        result = runtime.run([{"role": "user", "content": "Summarize the project"}], session_id="session", turn_id="turn-1",
+            portable_root=tmp_path, allowed_read_roots=(tmp_path,), goal_request="Summarize the project")
+        assert result.status == AgentRunStatus.COMPLETED and result.assistant_text == "The project summary."
+        assert result.model_requests == 4 and len(model.requests) == 3 and echo.values == ["evidence"]
+    finally:
+        runtime.shutdown()
+
+
+def test_interrupted_review_preserves_candidate_as_unfinished_partial_text(tmp_path):
+    from app.inference.completion import CompletionMetadata
+    from tests.test_agent_runtime import build_runtime
+    interrupted_review = ModelResponse.text('{"goal_id":"turn-1",').model_copy(update={
+        "completion": CompletionMetadata(finish_reason="length")})
+    runtime, model, _, _, _ = build_runtime(tmp_path, [ModelResponse.text("The project summary."), interrupted_review])
+    model.auto_review = False
+    try:
+        result = runtime.run([{"role": "user", "content": "Summarize the project"}], session_id="session", turn_id="turn-1",
+            portable_root=tmp_path, allowed_read_roots=(tmp_path,), goal_request="Summarize the project")
+        assert result.status == AgentRunStatus.INCOMPLETE and result.goal.state == "stopped"
+        assert result.partial_text == "The project summary." and result.assistant_text is None
+        assert result.completion.incomplete and result.completion_review is None
+    finally:
+        runtime.shutdown()
+
+
 def test_goal_frame_does_not_replace_user_message_when_no_system_prompt_is_supplied(tmp_path):
     from tests.test_agent_runtime import build_runtime, capability_call
     runtime, model, echo, _, _ = build_runtime(tmp_path, [capability_call(1), ModelResponse.text("Done."), review()])
@@ -205,5 +272,34 @@ def test_internal_review_is_not_replayed_as_the_assistant_answer(tmp_path):
         assert result.assistant_text == "The requested answer."
         assert [item.response_id for item in retained] == ["resp-answer"]
         assert result.completion_review.status == "ready" and len(result.completion_history) == 2
+    finally:
+        runtime.shutdown()
+
+
+@pytest.mark.parametrize("reads", [1, 3])
+def test_review_reads_preserve_the_candidate_until_ready(tmp_path, reads):
+    """Live failure: answer, review tools, ready JSON, then another review forever."""
+    from tests.test_agent_runtime import build_runtime, capability_call
+    from tests.test_openai_replay import evidence, message
+    answer = ModelResponse.text("The requested project summary.").model_copy(update={
+        "openai_response": evidence([message("The requested project summary.")], identity="resp-answer")})
+    assessment = review().model_copy(update={
+        "openai_response": evidence([message(review().assistant_text)], identity="resp-review")})
+    runtime, model, echo, _, _ = build_runtime(tmp_path,
+        [answer, *(capability_call(index, value=str(index)) for index in range(1, reads + 1)), assessment])
+    model.auto_review = False
+    retained, phases = [], []
+    try:
+        result = runtime.run([{"role": "user", "content": "Summarize the project"}], session_id="session",
+            turn_id="turn-1", portable_root=tmp_path, allowed_read_roots=(tmp_path,),
+            goal_request="Summarize the project", response_observer=lambda identity, replay: retained.append(replay),
+            completion_review_observer=phases.append)
+        assert result.status == AgentRunStatus.COMPLETED
+        assert result.assistant_text == "The requested project summary."
+        assert result.model_requests == len(model.requests) == reads + 2
+        assert result.completion_review.status == "ready"
+        assert echo.values == [str(index) for index in range(1, reads + 1)]
+        assert [item.response_id for item in retained] == ["resp-answer"]
+        assert phases == [False, *([True] * (reads + 1))]
     finally:
         runtime.shutdown()

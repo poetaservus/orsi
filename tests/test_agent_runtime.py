@@ -917,6 +917,10 @@ def test_agent_runtime_is_connected_only_through_the_startup_feature_gate():
         "filesystem_move_enabled": True,
         "filesystem_trash_enabled": True,
         "application_launch_enabled": True,
+        "project_verify_enabled": True,
+        "project_inspect_enabled": True,
+        "conversation_context_enabled": True,
+        "context_recovery_enabled": True,
         "full_local_read_enabled": True,
         "runtime_limits": {
             "max_steps": 24,

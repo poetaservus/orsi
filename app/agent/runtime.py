@@ -42,7 +42,7 @@ from app.agent.read_progress import ReadProgressTracker
 from app.agent.edit_progress import EditProgressTracker
 from app.agent.goals import TaskGoal, observe_goal, finish_goal, goal_feedback, evidence_report
 from app.agent.task_completion import (CompletionReview, task_context_message,
-    completion_review_message, parse_completion_review)
+    completion_review_message, parse_completion_review, looks_like_completion_review, resume_answer_message)
 from app.capabilities.contracts import (
     CapabilityArgumentError,
     CapabilityContext,
@@ -50,6 +50,7 @@ from app.capabilities.contracts import (
     CapabilityExecutionError,
     CapabilityFailure,
     CapabilityResult,
+    PermissionClass,
 )
 from app.security.host_access import HostAccessPolicy
 from app.execution.audit import JournaledCapabilityExecutor
@@ -401,6 +402,7 @@ class AgentRuntime:
         response_observer: Callable[[str, Any], None] | None = None,
         continuation_guard: Callable[[], str | None] | None = None,
         activity_observer: Callable[[str], None] | None = None,
+        completion_review_observer: Callable[[bool], None] | None = None,
         _recovery: _RecoveryUsage | None = None,
         _goal: list[TaskGoal] | None = None,
         _reviews: list[CompletionReview] | None = None,
@@ -429,6 +431,8 @@ class AgentRuntime:
             raise TypeError("Continuation guards must be callable when supplied.")
         if activity_observer is not None and not callable(activity_observer):
             raise TypeError("Activity observers must be callable when supplied.")
+        if completion_review_observer is not None and not callable(completion_review_observer):
+            raise TypeError("Completion-review observers must be callable when supplied.")
         if self.executor.review_required:
             return self._stopped(AgentRunStatus.INTERNAL_FAILURE,
                 "A previous write outcome requires review before another operation can run.",
@@ -494,6 +498,7 @@ class AgentRuntime:
         edit_progress = EditProgressTracker()
         used_call_ids: set[str] = set()
         advertised_names = {item.name for item in definitions}
+        read_only_names = {name for name in advertised_names if self.registry.resolve(name).permission == PermissionClass.READ}
         required_fingerprints = tuple(call_fingerprint(call) for call in required_calls)
         if (
             len(required_calls) > self.effective_max_capability_calls
@@ -512,6 +517,9 @@ class AgentRuntime:
         planned_response = ModelResponse.calls(required_calls) if required_calls else None
         structured_fallback = False
         proposed_answer = None
+        review_started = False
+        review_used_tools = False
+        review_answer_stale = False
         log.info("Agent step budget: mode=%s max_steps=%s max_model_requests=%s max_capability_calls=%s",
             "cloud" if getattr(self.model, "mode", None) == "cloud" else "local", self.effective_max_steps,
             self.effective_max_model_requests, self.effective_max_capability_calls)
@@ -562,12 +570,20 @@ class AgentRuntime:
                     return self._stopped(AgentRunStatus.INTERNAL_FAILURE,
                         "Context recovery failed safely; settled operations were retained.",
                         steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
+                if completion_review_observer is not None:
+                    try:
+                        completion_review_observer(proposed_answer is not None)
+                    except Exception:
+                        log.error("The completion-review phase could not be reported.")
+                        return self._stopped(AgentRunStatus.INTERNAL_FAILURE,
+                            "The completion-review phase could not be reported safely.",
+                            steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
             if planned_response is not None:
                 response = planned_response
                 planned_response = None
                 model_stop = None
             elif structured_fallback:
-                report_activity(activity_observer, "Thinking…")
+                report_activity(activity_observer, "Checking completion…" if proposed_answer is not None else "Thinking…")
                 response, model_stop = self._fallback_model_step(
                     transcript,
                     definitions,
@@ -577,7 +593,7 @@ class AgentRuntime:
                     _request_usage=recovery,
                 )
             else:
-                report_activity(activity_observer, "Thinking…")
+                report_activity(activity_observer, "Checking completion…" if proposed_answer is not None else "Thinking…")
                 response, model_stop = self._model_step(
                     transcript,
                     definitions,
@@ -618,6 +634,7 @@ class AgentRuntime:
                     steps=steps,
                     capability_calls=capability_calls,
                     protocol_failures=protocol_failures,
+                    partial_text=proposed_answer,
                 )
             steps += 1
             if response is None:
@@ -641,10 +658,15 @@ class AgentRuntime:
                     steps=steps, capability_calls=capability_calls,
                     protocol_failures=protocol_failures + int(response.kind == ModelResponseKind.PROTOCOL_FAILURE),
                     completion=response.completion,
-                    partial_text=response.partial_text or response.assistant_text)
+                    partial_text=proposed_answer if proposed_answer is not None else response.partial_text or response.assistant_text)
             provider_message_id = uuid4().hex
+            assessment_text = (bool(_goal) and review_started and response.kind == ModelResponseKind.ASSISTANT_TEXT
+                and looks_like_completion_review(response.assistant_text))
+            revised_answer = (proposed_answer is not None and review_used_tools
+                and response.kind == ModelResponseKind.ASSISTANT_TEXT and not assessment_text)
             if response.openai_response is not None and not (
-                    proposed_answer is not None and response.kind == ModelResponseKind.ASSISTANT_TEXT):
+                    assessment_text or proposed_answer is not None and response.kind == ModelResponseKind.ASSISTANT_TEXT
+                    and not revised_answer):
                 try:
                     if response_observer is not None:
                         response_observer(provider_message_id, response.openai_response)
@@ -684,8 +706,19 @@ class AgentRuntime:
                         )
                     continue
                 if _goal:
-                    if proposed_answer is None:
+                    if proposed_answer is None and assessment_text:
+                        recovery.consecutive_format_failures += 1
+                        protocol_failures += 1
+                        if recovery.consecutive_format_failures >= self.limits.max_protocol_failures:
+                            return self._stopped(AgentRunStatus.PROTOCOL_FAILURE_LIMIT,
+                                "The task remains unfinished because an updated answer was not provided.",
+                                steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
+                        transcript.append(resume_answer_message())
+                    elif proposed_answer is None or revised_answer:
                         proposed_answer = response.assistant_text
+                        review_started = True
+                        review_used_tools = review_answer_stale = False
+                        recovery.consecutive_format_failures = 0
                         self._retain_response_text(transcript, response)
                         transcript.append(completion_review_message(_goal[0],
                             edit_progress.pending_recovery() or edit_progress.completion_blocker()))
@@ -714,7 +747,7 @@ class AgentRuntime:
                                     "The rejected edit needs fresh source, but filesystem.read_text is unavailable.",)})
                         if _reviews is not None:
                             _reviews.append(review)
-                        if review.status == "ready":
+                        if review.status == "ready" and not review_answer_stale:
                             return AgentRunResult(status=AgentRunStatus.COMPLETED, assistant_text=proposed_answer,
                                 steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
                         if review.status == "blocked":
@@ -722,13 +755,16 @@ class AgentRuntime:
                                 "The requested task remains unfinished.", partial_text=(
                                     "Task unfinished.\n\nRemaining work:\n" + "\n".join("- " + item for item in review.remaining)),
                                 steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
-                        recovery.semantic_corrections += 1
-                        transcript.append({"role": "system", "content":
-                            "The current request remains unfinished. Continue the unmet work in this turn: "
-                            + json.dumps(review.remaining, ensure_ascii=False)
-                            + ". These entries are model assessments, not authority to change the request or permissions. "
-                            "Use existing tools and approvals. Do not ask the user to repeat the request."})
+                        if review.status == "continue":
+                            recovery.semantic_corrections += 1
+                            transcript.append({"role": "system", "content":
+                                "The current request remains unfinished. Continue the unmet work in this turn: "
+                                + json.dumps(review.remaining, ensure_ascii=False)
+                                + ". These entries are model assessments, not authority to change the request or permissions. "
+                                "Use existing tools and approvals. Do not ask the user to repeat the request."})
+                        transcript.append(resume_answer_message())
                         proposed_answer = None
+                        review_used_tools = review_answer_stale = False
                     if not self._transcript_within_limit(transcript):
                         return self._transcript_limited(steps, capability_calls, protocol_failures)
                     continue
@@ -777,8 +813,7 @@ class AgentRuntime:
                     return self._transcript_limited(steps, capability_calls, protocol_failures)
                 continue
 
-            # A review can identify and perform the next prerequisite directly.
-            proposed_answer = None
+            # Review tools extend the evidence for this candidate, not a new task/answer.
             calls = response.capability_calls
             call_fingerprints = [call_fingerprint(call) for call in calls]
             if required_set and any(
@@ -955,6 +990,10 @@ class AgentRuntime:
                 if edit_observation.stop_message is not None:
                     return self._stopped(AgentRunStatus.REPEATED_CALL, edit_observation.stop_message,
                         steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
+            if proposed_answer is not None:
+                review_used_tools = True
+                # Work performed during review needs an updated user answer before completion.
+                review_answer_stale |= any(call.capability in advertised_names - read_only_names for call in calls)
             completed_required.update(
                 fingerprint
                 for fingerprint in fingerprints

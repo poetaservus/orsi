@@ -66,3 +66,21 @@ def parse_completion_review(text: str, goal_id: str) -> CompletionReview:
     if review.goal_id != goal_id:
         raise ValueError("Completion review does not match the current request.")
     return review
+
+
+def looks_like_completion_review(text: str) -> bool:
+    """Keep malformed or misplaced assessments out of user answers and replay."""
+    try:
+        value = json.loads(text)
+    except (ValueError, RecursionError):
+        return False
+    return isinstance(value, dict) and ("goal_id" in value or {"status", "remaining"} <= value.keys())
+
+
+def resume_answer_message() -> dict:
+    return {"role": "system", "content": (
+        "Resume the current request using the settled results and existing approvals. "
+        "The previous completion-review JSON instruction applied only to that review. "
+        "Continue any remaining work, then provide an updated answer to the user. "
+        "Do not return a completion assessment as the answer; the updated answer will be reviewed separately."
+    )}
