@@ -83,6 +83,9 @@ constraints and unfinished work still cannot fit, admission stops explicitly
 instead of silently deleting them. No semantic summarization calls, acceptance
 prompt changes, routing changes or model-profile changes are needed.
 
+Active-turn recall now uses bounded immutable snapshots so recording a read
+cannot invalidate its continuation. See [the repair and qualification](stable-turn-recall.md).
+
 ## Large source files
 
 `filesystem.read_text` keeps its existing byte/line ceilings and adds byte

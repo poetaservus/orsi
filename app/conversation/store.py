@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from copy import deepcopy
+import hashlib
 import json
 from pathlib import Path
 from threading import RLock
@@ -23,6 +24,14 @@ from app.inference.protocol import model_capability_calls_message, model_capabil
 
 class TurnHistoryError(RuntimeError):
     """Durable history is unavailable; do not start another operation."""
+
+
+class TurnRecallLimitError(RuntimeError):
+    """An additional immutable snapshot would exceed the reader-turn budget."""
+
+
+MAX_TURN_RECALL_SNAPSHOTS = 16
+MAX_TURN_RECALL_BYTES = 64 * 1024 * 1024
 
 
 def _now() -> str:
@@ -162,6 +171,7 @@ class ConversationStore:
         self.attachment_store = attachment_store or AttachmentStore(storage_parent / "attachments")
         self._store = JsonStore(self.path)
         self._lock = RLock()
+        self._recall_snapshots: dict[tuple[str, str], bytes] = {}
         if isinstance(self.path, PersonalPath):
             self.path.session.register(clear=self.forget_protected_state)
         with self._lock:
@@ -205,6 +215,7 @@ class ConversationStore:
 
     def forget_protected_state(self):
         with self._lock:
+            self._recall_snapshots.clear()
             self._conversation = None
 
     @property
@@ -232,6 +243,7 @@ class ConversationStore:
             proposed.messages.append(ChatMessage(role="user", content=text, turn_id=turn_id, attachments=references))
             proposed.session_status = "active"
             self._commit(proposed)
+            self._recall_snapshots.clear()
             self.attachment_store.retain_drafts(references)
             return turn_id
 
@@ -435,9 +447,49 @@ class ConversationStore:
                 "assistant": self._conversation.messages[turn.assistant_index].input_message() if turn.assistant_index is not None else None,
                 "status": turn.outcome.status.value if turn.outcome else "active",
                 "remaining": list(turn.outcome.completion_review.remaining) if turn.outcome and turn.outcome.completion_review else [],
-                "settled_calls": [item.model_dump(mode="json") if item.call.capability != "skill.read_reference" else {
+                "settled_calls": [{
+                    "call_id": item.result.call_id, "capability": item.call.capability,
+                    "success": item.result.success,
+                    "error": item.result.error.code.value if item.result.error else None,
+                    "notice": "Recall output omitted to prevent recursively embedding history pages."}
+                    if item.call.capability == "conversation.read_turn" else
+                    item.model_dump(mode="json") if item.call.capability != "skill.read_reference" else {
                     "call_id": item.result.call_id, "capability": "skill.read_reference", "notice": "Expired skill body omitted; read the active package instead."}
                     for item in turn.settled_calls]}
+
+    def recall_turn_snapshot(self, turn_id: str, expected_revision: str | None = None) -> tuple[str, bytes] | None:
+        """Retain immutable, revision-addressed pages for this reader turn.
+
+        Recording a read's own receipt, subsequent work, or finishing its target
+        must not invalidate the next page. Snapshots are memory-only, bounded,
+        and cleared on the next user turn, session replacement or vault lock.
+        A new initial read can include later work without invalidating an older
+        chain. Existing snapshots are never evicted mid-read to admit another.
+        """
+        with self._lock:
+            # Enforce the vault lifetime even when returning cached bytes.
+            if self._conversation is None:
+                raise TurnHistoryError("Conversation history is unavailable.")
+            key = (turn_id, expected_revision)
+            if expected_revision is not None and key in self._recall_snapshots:
+                return expected_revision, self._recall_snapshots[key]
+            value = self.recall_turn(turn_id)
+            if value is None:
+                return None
+            raw = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+            revision = hashlib.sha256(raw).hexdigest()
+            if expected_revision is not None and expected_revision != revision:
+                # Let the capability report a stale token, without consuming
+                # snapshot capacity for a read it will reject.
+                return revision, raw
+            key = (turn_id, revision)
+            if key in self._recall_snapshots:
+                return revision, self._recall_snapshots[key]
+            if (len(self._recall_snapshots) >= MAX_TURN_RECALL_SNAPSHOTS
+                    or len(raw) + sum(len(item) for item in self._recall_snapshots.values()) > MAX_TURN_RECALL_BYTES):
+                raise TurnRecallLimitError("History snapshot budget reached. Continue an existing snapshot or use the current settled results.")
+            self._recall_snapshots[key] = raw
+            return revision, raw
 
     @staticmethod
     def _reference_visible(settled, reference_scope):
@@ -542,6 +594,7 @@ class ConversationStore:
                         "The previous conversation could not be archived safely. History was preserved."
                     ) from exc
             self._commit(Conversation())
+            self._recall_snapshots.clear()
 
     def _save(self) -> None:
         self._commit(self._conversation)

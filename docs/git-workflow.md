@@ -1,5 +1,19 @@
 # Git layout and baseline hygiene
 
+## Stable active-turn recall, 11 October 2026
+
+`codex/stable-turn-recall` starts from local main `3b9ed54`. Immutable bounded
+history snapshots prevent an active turn's own read receipts from invalidating
+its next page; nested recall bodies are omitted from recovered history. See
+[the repair and focused qualification](stable-turn-recall.md). Qualification
+passed 155 distinct focused checks, including a simulated first cloud turn
+through the real streaming adapter. Full-suite and live provider/model gates
+remain unrun by request. Before integration, retain content-free refs/worktrees
+under `state/backups/stable-turn-recall-20261011/` and prior main at
+`archive/2026-10-11/main-before-stable-turn-recall`. Commit, fast-forward local
+main and remove only the merged feature branch. Other worktrees and historical
+tips remain intact; no remote publication.
+
 ## Project verification, context and paging, 11 October 2026
 
 `codex/verification-context-paging` starts from local main `527b5e9`. It adds

@@ -44,6 +44,12 @@ def message(text, identity="msg_final", phase="final_answer"):
             "content": [{"type": "output_text", "text": text, "annotations": []}]}
 
 
+def review_payload():
+    # The turn-local completion gate adds a request after the candidate answer.
+    return response(id="resp_review", output=[message(json.dumps({
+        "goal_id": "turn-1", "status": "ready", "remaining": []}), "msg_review")])
+
+
 def definition_for(capability):
     return CapabilityRegistry((CapabilityRegistration(capability, enabled=True, model_visible=True),)).model_definitions()[0]
 
@@ -74,7 +80,7 @@ def test_sdk_and_real_harness_preserve_whole_output_order_arguments_ids_and_phas
               reasoning("rs_second"), function(definition, {"value": "two"}, call_id="call_two")]
     output[2]["arguments"] = ' { "value" : "one" } '
     engine, client, bodies, _ = scripted_sdk(monkeypatch, [response(output=output),
-        response(id="resp_done", output=[reasoning("rs_done"), message("Done")])])
+        response(id="resp_done", output=[reasoning("rs_done"), message("Done")]), review_payload()])
     service, runtime, implementation, journal, _ = service_for(engine, tmp_path, capability=capability)
     runtime.context_recovery_enabled = True
     original = capability.execute
@@ -86,8 +92,9 @@ def test_sdk_and_real_harness_preserve_whole_output_order_arguments_ids_and_phas
     assert service.run("Echo the test values") == "Done"
     assert implementation.values == ["one", "two"] and len(journal.records) == 2
     replayed = bodies[1]["input"]
-    assert replayed[2:2 + len(output)] == output
-    results = replayed[2 + len(output):]
+    start = next(i for i, item in enumerate(replayed) if item.get("id") == output[0]["id"])
+    assert replayed[start:start + len(output)] == output
+    results = replayed[start + len(output):]
     assert [item["call_id"] for item in results] == ["call_one", "call_two"]
     assert [json.loads(item["output"])["output"]["echo"] for item in results] == ["one", "two"]
     assert all(body["store"] is False and "previous_response_id" not in body for body in bodies)
@@ -126,7 +133,8 @@ def test_reasoning_continuations_keep_existing_permission_behavior(monkeypatch, 
     capability = EchoCapability()
     definition = definition_for(capability)
     output = [reasoning(), function(definition, {"value": "hello"})]
-    engine, _, bodies, _ = scripted_sdk(monkeypatch, [response(output=output), response(id="resp_done", output=[message("Done")])])
+    engine, _, bodies, _ = scripted_sdk(monkeypatch, [response(output=output),
+        response(id="resp_done", output=[message("Done")]), review_payload()])
     requester = (lambda manager: lambda record: manager.resolve(record.approval_id, ApprovalStatus.APPROVED)) if approved else None
     service, _, implementation, journal, _ = service_for(engine, tmp_path, capability=capability,
         decision=decision, approval_requester_factory=requester)
@@ -137,7 +145,9 @@ def test_reasoning_continuations_keep_existing_permission_behavior(monkeypatch, 
         assert len(bodies) == 1 and implementation.values == []
     else:
         assert service.run("Echo") == "Done"
-        assert bodies[1]["input"][2:4] == output
+        replayed = bodies[1]["input"]
+        start = next(i for i, item in enumerate(replayed) if item.get("id") == output[0]["id"])
+        assert replayed[start:start + len(output)] == output
         result = json.loads(bodies[1]["input"][-1]["output"])
         assert result["success"] is (decision != PermissionDecision.DENY)
         assert implementation.values == (["hello"] if decision != PermissionDecision.DENY else [])
