@@ -1,5 +1,21 @@
 # Git layout and baseline hygiene
 
+## Interrupted-operation recovery, 11 October 2026
+
+`codex/operation-review-recovery` starts from local main `3ec1c1f`. It replaces
+the global conversation lock with operation-level guards and exposes explicit
+human review of uncertain outcomes. Chat and permitted reads remain available;
+further changes retain their review and approval requirements. Necessary
+qualification passed 195 distinct checks, including actual Qt interaction,
+scrolling, native edits and encrypted profile recovery. One older configuration
+fixture also fails on unchanged main and is recorded separately. See
+[the contract and qualification](operation-review-recovery.md). Preserve
+content-free evidence under `state/backups/operation-review-recovery-20261011/`
+and prior main at `archive/2026-10-11/main-before-operation-review-recovery`.
+Commit, fast-forward local main and remove only the merged feature branch.
+Preserve configuration, historical refs, other worktrees and remote branches;
+no publication.
+
 ## Persistent shell sessions, 11 October 2026
 
 `codex/persistent-shell-sessions` starts from local main `f35d4a5`. It adds

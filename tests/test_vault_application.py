@@ -584,6 +584,49 @@ def test_cached_preferences_documents_and_crash_recovery_are_revoked(profile):
     assert docs._cache == {}
 
 
+def test_operation_review_is_encrypted_durable_and_closed_on_profile_lock(profile, qt, tmp_path):
+    from app.ui.main_window import MainWindow
+    from tests.test_agent_runtime import build_runtime
+    from tests.test_operation_review import uncertain
+    session, vault = profile
+    runtime, model, _, _, _ = build_runtime(tmp_path, [])
+    journal = CapabilityCrashJournal(session.path("state/capability_journal_v1.json"))
+    runtime.executor.journal = journal
+    uncertain(journal, tmp_path)
+    service = ConversationService(model, ConversationStore(session.path("state/conversation_v1/conversation.json")),
+        agent_runtime=runtime, portable_root=tmp_path, skill_registry=VaultSkillRegistry(session))
+    session.register(stop=service.stop_for_profile, drain=service.drain_for_profile, clear=service.clear_for_profile)
+    window = MainWindow(service, "test")
+    window.bind_profile(session)
+    window.show()
+    window._show_operation_review()
+    dialog = window._operation_review_dialog
+    try:
+        dialog.confirm.setChecked(True)
+        dialog.accept()
+        assert not journal.get("interrupted-call").review_required
+        uncertain(journal, tmp_path, call_id="pending-after-review")
+        window._refresh_operation_review()
+        window._show_operation_review()
+        dialog = window._operation_review_dialog
+        assert "pending-after-review" in dialog.details.toPlainText()
+        session.lock()
+        assert not dialog.isVisible() and dialog.details.toPlainText() == ""
+        assert not window.isVisible() and window.operation_review_label.text() == ""
+        with pytest.raises(VaultLocked):
+            journal.records
+        vault.unlock(PASSWORD)
+        reopened = ProfileSession(vault)
+        try:
+            restored = CapabilityCrashJournal(reopened.path("state/capability_journal_v1.json"))
+            assert not restored.get("interrupted-call").review_required
+            assert restored.get("pending-after-review").review_required
+        finally:
+            reopened.lock()
+    finally:
+        window.close()
+
+
 def test_window_and_viewer_drop_private_content_and_late_callbacks(profile, qt):
     from app.ui.main_window import MainWindow
     from app.ui.image_viewer import ImageViewer

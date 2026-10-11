@@ -29,6 +29,7 @@ from app.conversation.prompt import (
 from app.conversation.result_grounding import grounded_text_read_answer
 from app.conversation.diagnostics import record_route, record_turn
 from app.conversation.store import ConversationStore, TurnHistoryError
+from app.conversation.operation_review import InterruptedOperation, OperationReview
 from app.conversation.history_context import bind_history_runtime
 from app.conversation.skill_references import ConversationSkillReferences
 from app.conversation.local_documents import LocalDocuments, LocalDocumentCounter, with_local_document_guidance, with_local_image_guidance
@@ -643,6 +644,31 @@ class ConversationService:
     def set_approval_requester(self, requester) -> None:
         if self.agent_runtime is not None:
             self.agent_runtime.set_approval_requester(requester)
+
+    def operation_review(self) -> OperationReview:
+        if self.agent_runtime is None:
+            return OperationReview()
+        executor = self.agent_runtime.executor
+        return OperationReview(tuple(InterruptedOperation(record.call_id, record.session_id,
+            record.turn_id, record.capability, record.permission.value, record.updated_at_ms)
+            for record in executor.journal.review_required), executor.restart_required)
+
+    def acknowledge_operation_review(self, call_ids: tuple[str, ...]) -> None:
+        """Called only by explicit UI review, never by inference or session reset."""
+        if not self._run_lock.acquire(blocking=False):
+            raise RuntimeError("Finish or stop the current response before reviewing operations.")
+        try:
+            with self._cancellation_lock:
+                if self._closed:
+                    raise RuntimeError("The conversation is closed.")
+            if self.agent_runtime is None:
+                raise RuntimeError("Operation review is unavailable in this session.")
+            executor = self.agent_runtime.executor
+            if executor.restart_required:
+                raise RuntimeError("Restart O.R.S.I before reviewing the interrupted operations.")
+            executor.journal.acknowledge_unknown_outcomes(call_ids)
+        finally:
+            self._run_lock.release()
 
     def set_tool_approval_required(self, required: bool) -> None:
         if type(required) is not bool:

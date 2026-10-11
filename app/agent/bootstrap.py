@@ -78,7 +78,8 @@ def build_agent_runtime(
         journal_path if journal_path is not None else state_directory / "capability_journal_v1.json"
     )
     # Restore outcome evidence before applying any explicit retention/reset policy.
-    # AgentRuntime blocks turns before inference when the journal requires review.
+    # Uncertain outcomes pause further changes until explicit review; chat and
+    # permitted reads remain available to help inspect the interrupted operation.
     executor = JournaledCapabilityExecutor(CapabilityExecutor(), journal)
     return AgentRuntime(
         model=inference,

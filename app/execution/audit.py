@@ -365,25 +365,33 @@ class CapabilityCrashJournal:
             )
 
     def acknowledge_unknown_outcome(self, call_id: str) -> CallLifecycleRecord:
+        return self.acknowledge_unknown_outcomes((call_id,))[0]
+
+    def acknowledge_unknown_outcomes(self, call_ids: tuple[str, ...]) -> tuple[CallLifecycleRecord, ...]:
+        """Acknowledge exactly the user-reviewed snapshot in one durable transition."""
+        if (not isinstance(call_ids, tuple) or not call_ids
+                or not all(isinstance(value, str) for value in call_ids)
+                or len(set(call_ids)) != len(call_ids)):
+            raise ValueError("Review requires distinct recorded operation IDs.")
         with self._lock:
-            current = self._records.get(str(call_id))
-            if current is None:
-                raise LifecycleTransitionError("The capability call is not recorded in the crash journal.")
-            if current.state != CallLifecycleState.INTERRUPTED_UNKNOWN_OUTCOME:
-                raise LifecycleTransitionError("Only an unknown interrupted outcome can be acknowledged.")
-            if current.recovery_acknowledged_at_ms is not None:
-                return current
-            timestamp = max(self._timestamp(), current.updated_at_ms)
-            updated = _updated_record(
-                current,
-                updated_at_ms=timestamp,
-                transition_sequence=current.transition_sequence + 1,
-                recovery_acknowledged_at_ms=timestamp,
-            )
             proposed = dict(self._records)
-            proposed[current.call_id] = updated
-            self._commit_locked(proposed)
-            return updated
+            reviewed = []
+            for call_id in call_ids:
+                current = self._records.get(call_id)
+                if current is None:
+                    raise LifecycleTransitionError("The capability call is not recorded in the crash journal.")
+                if current.state != CallLifecycleState.INTERRUPTED_UNKNOWN_OUTCOME:
+                    raise LifecycleTransitionError("Only an unknown interrupted outcome can be acknowledged.")
+                if current.recovery_acknowledged_at_ms is None:
+                    timestamp = max(self._timestamp(), current.updated_at_ms)
+                    current = _updated_record(current, updated_at_ms=timestamp,
+                        transition_sequence=current.transition_sequence + 1,
+                        recovery_acknowledged_at_ms=timestamp)
+                proposed[call_id] = current
+                reviewed.append(current)
+            if proposed != self._records:
+                self._commit_locked(proposed)
+            return tuple(reviewed)
 
     def purge(
         self,
@@ -556,15 +564,29 @@ class JournaledCapabilityExecutor:
 
     @property
     def review_required(self) -> bool:
-        return self._persistence_failed or self.journal.review_required
+        return self._persistence_failed or bool(self.journal.review_required)
+
+    @property
+    def restart_required(self) -> bool:
+        return self._persistence_failed
+
+    def blocked_reason(self, permission: PermissionClass) -> str | None:
+        if self._persistence_failed:
+            return ("An operation's result could not be saved safely. Restart O.R.S.I, then use "
+                "Review interrupted operations. No operation was retried.")
+        if permission != PermissionClass.READ and self.journal.review_required:
+            return ("An earlier operation has an uncertain outcome. Use Review interrupted operations "
+                "before running commands or making changes. Chat and read-only checks remain available.")
+        return None
 
     def execute(
         self,
         prepared: PreparedCapabilityCall,
         authorization: PermissionAuthorization,
     ) -> CapabilityResult:
-        if self.review_required:
-            raise LifecycleTransitionError("A previous outcome requires review before more calls can run.")
+        reason = self.blocked_reason(prepared.request.permission)
+        if reason is not None:
+            raise LifecycleTransitionError(reason)
         self.journal.mark_running(prepared, authorization)
         try:
             result = self.executor.execute(prepared, authorization)

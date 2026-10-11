@@ -438,10 +438,6 @@ class AgentRuntime:
             raise TypeError("Activity observers must be callable when supplied.")
         if completion_review_observer is not None and not callable(completion_review_observer):
             raise TypeError("Completion-review observers must be callable when supplied.")
-        if self.executor.review_required:
-            return self._stopped(AgentRunStatus.INTERNAL_FAILURE,
-                "A previous write outcome requires review before another operation can run.",
-                steps=0, capability_calls=0, protocol_failures=0)
         if (
             not isinstance(required_calls, tuple)
             or not all(isinstance(call, ModelCapabilityCall) for call in required_calls)
@@ -1096,9 +1092,6 @@ class AgentRuntime:
         deadline_cancellation: _DeadlineCancellationToken,
         activity_observer: Callable[[str], None] | None = None,
     ) -> _CallOutcome:
-        if self.executor.review_required:
-            return _CallOutcome(stop_status=AgentRunStatus.INTERNAL_FAILURE,
-                stop_message="A previous write outcome requires review before another operation can run.")
         if call.capability not in advertised_names:
             return _CallOutcome(
                 result=failure_result(
@@ -1122,6 +1115,15 @@ class AgentRuntime:
                 stop_status=AgentRunStatus.INTERNAL_FAILURE,
                 stop_message="The capability registry failed unexpectedly.",
             )
+
+        # Gate changes before preparation: a stale patch may fail preparation,
+        # but it must still point to human review instead of starting retries.
+        blocked = self.executor.blocked_reason(capability.permission)
+        if blocked is not None:
+            # The new call never started. Uncertainty belongs to the old one.
+            return _CallOutcome(result=failure_result(internal_call_id, call.capability,
+                CapabilityFailure(code=CapabilityErrorCode.PERMISSION_DENIED, message=blocked)),
+                stop_status=AgentRunStatus.INTERNAL_FAILURE, stop_message=blocked)
 
         context = CapabilityContext(
             call_id=internal_call_id,

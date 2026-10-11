@@ -218,7 +218,7 @@ def test_history_write_gap_recovers_journal_success_and_never_replays_edit(tmp_p
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows approved host edit")
-def test_unknown_mutation_is_retained_and_blocks_next_turn_and_restart(tmp_path, monkeypatch):
+def test_unknown_mutation_is_retained_and_blocks_further_changes_across_restart(tmp_path, monkeypatch):
     import app.capabilities.filesystem_edit_text as editor
     target = tmp_path / "note.txt"
     target.write_bytes(b"old")
@@ -235,25 +235,26 @@ def test_unknown_mutation_is_retained_and_blocks_next_turn_and_restart(tmp_path,
         assert turn.settled_calls[0].result.error.code.value == "outcome_unknown"
         assert service.agent_runtime.executor.journal.review_required
         assert target.read_bytes() == b"new"
-        with pytest.raises(RuntimeError, match="review"):
+        with pytest.raises(RuntimeError, match="(?i)review"):
             service.run("Try the edit again")
-        assert len(service.inference.requests) == len(approvals) == 1
+        assert len(service.inference.requests) == 2 and len(approvals) == 1
+        assert service.store.turns()[1].settled_calls[0].result.error.code.value == "permission_denied"
         service.shutdown()
-        service, resumed_approvals = edit_service(tmp_path, [edit_call(target)])
+        service, resumed_approvals = edit_service(tmp_path, [edit_call(target), edit_call(target)])
         assert not service.inference.requests
         assert service.store.turns()[0].settled_calls[0].result.error.code.value == "outcome_unknown"
-        with pytest.raises(RuntimeError, match="review"):
+        with pytest.raises(RuntimeError, match="(?i)review"):
             service.run("Try the edit again")
-        assert not service.inference.requests and resumed_approvals == []
+        assert len(service.inference.requests) == 1 and resumed_approvals == []
         assert target.read_bytes() == b"new" and len(service.agent_runtime.executor.journal.records) == 1
         service.new_session(preserve_history=True)
         archives = list((service.store.path.parent / "archives").glob("*.json"))
         assert len(archives) == 1
         archived = json.loads(archives[0].read_text(encoding="utf-8"))
         assert archived["turns"][0]["settled_calls"][0]["result"]["error"]["code"] == "outcome_unknown"
-        with pytest.raises(RuntimeError, match="review"):
+        with pytest.raises(RuntimeError, match="(?i)review"):
             service.run("Try the edit after resetting the conversation")
-        assert not service.inference.requests and resumed_approvals == []
+        assert len(service.inference.requests) == 2 and resumed_approvals == []
         assert service.agent_runtime.executor.journal.review_required
     finally:
         service.shutdown()

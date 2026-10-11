@@ -57,6 +57,7 @@ from app.inference.engine import InferenceUnavailable
 from app.inference.attachments import AttachmentError
 from app.inference.completion import CompletionText
 from app.ui.approvals import create_inline_approval
+from app.ui.operation_review import OperationReviewDialog
 from app.ui.chat import ChatView
 from app.ui.context_window import ContextWindowBar
 from app.ui.status import ConversationStatus
@@ -342,6 +343,7 @@ class MainWindow(QMainWindow):
         _load_ui_font()
         del hostname
         self.service = service
+        self._operation_review_dialog = None
         self.setAcceptDrops(True)
         self.inference = inference
         self.startup_error = startup_error
@@ -437,6 +439,26 @@ class MainWindow(QMainWindow):
         root_layout.addWidget(content, 1)
 
         attachment_store = getattr(getattr(service, "store", None), "attachment_store", None)
+        self.operation_review_banner = QFrame(content)
+        self.operation_review_banner.setObjectName("operationReviewBanner")
+        review_layout = QHBoxLayout(self.operation_review_banner)
+        review_layout.setContentsMargins(24, 6, 24, 6)
+        self.operation_review_label = QLabel(self.operation_review_banner)
+        self.operation_review_label.setWordWrap(True)
+        self.operation_review_label.setTextFormat(Qt.TextFormat.PlainText)
+        review_layout.addWidget(self.operation_review_label, 1)
+        self.operation_review_button = QPushButton("Review interrupted operations", self.operation_review_banner)
+        self.operation_review_button.clicked.connect(self._show_operation_review)
+        review_layout.addWidget(self.operation_review_button)
+        self.operation_review_banner.setStyleSheet(
+            "QFrame#operationReviewBanner { background: #292d3c; } "
+            "QLabel { color: #f0c78b; } "
+            "QPushButton { background: #323747; color: #eeeeef; padding: 8px; "
+            "border: 1px solid #555b70; border-radius: 6px; } "
+            "QPushButton:hover { background: #41485b; } "
+            "QPushButton:disabled { color: #8c90a0; }")
+        self.operation_review_banner.hide()
+        content_layout.addWidget(self.operation_review_banner)
         self.chat = ChatView(attachment_store=attachment_store)
         self.chat.image_activated.connect(self._open_image_viewer)
         content_layout.addWidget(self.chat, 1)
@@ -627,6 +649,55 @@ class MainWindow(QMainWindow):
             self.chat.add_message("Agent", startup_error, True)
         elif self._agent_error():
             self.chat.add_message("Agent", self._agent_error(), True)
+        self._refresh_operation_review()
+
+    def _refresh_operation_review(self, *, busy=False):
+        if getattr(self, "_closing", False):
+            self.operation_review_banner.hide()
+            return
+        getter = getattr(self.service, "operation_review", None)
+        try:
+            snapshot = getter() if callable(getter) else None
+        except Exception:
+            log.warning("Operation review could not be refreshed.")
+            self.operation_review_label.setText("Operation review is unavailable. Restart O.R.S.I before making changes.")
+            self.operation_review_banner.show()
+            self.operation_review_button.setEnabled(False)
+            return
+        required = snapshot is not None and snapshot.required
+        self.operation_review_banner.setVisible(required)
+        self.operation_review_button.setEnabled(required and not busy and self.thread is None
+            and not self._settings_busy and not getattr(self, "_closing", False))
+        if required:
+            count = len(snapshot.operations)
+            summary = ("1 interrupted operation needs" if count == 1 else f"{count} interrupted operations need")
+            self.operation_review_label.setText(
+                "An operation could not be saved safely. Restart O.R.S.I before reviewing it."
+                if snapshot.restart_required else
+                f"{summary} review before further changes. "
+                "Chat and read-only checks remain available.")
+
+    def _show_operation_review(self):
+        if self.thread is not None or self._settings_busy or self._operation_review_dialog is not None:
+            return
+        try:
+            snapshot = self.service.operation_review()
+        except Exception:
+            self._refresh_operation_review()
+            return
+        if not snapshot.required:
+            self._refresh_operation_review()
+            return
+        dialog = OperationReviewDialog(self, self.service, snapshot)
+        self._operation_review_dialog = dialog
+
+        def finished():
+            self._operation_review_dialog = None
+            dialog.deleteLater()
+            self._refresh_operation_review()
+
+        dialog.finished.connect(finished)
+        dialog.open()
 
     def bind_profile(self, session):
         self._profile_session = session
@@ -657,6 +728,8 @@ class MainWindow(QMainWindow):
                     raise RuntimeError("Profile work is still stopping.")
 
     def _clear_profile_view(self):
+        self.operation_review_label.clear()
+        self.operation_review_banner.hide()
         self._preferences_store = None
         self.chat.clear_messages()
         self.input.clear()
@@ -949,6 +1022,7 @@ class MainWindow(QMainWindow):
         self.send.setEnabled(available)
         self.input.setEnabled(available)
         self.new_session_button.setEnabled(available and self.service is not None)
+        self._refresh_operation_review(busy=busy)
         self.model_selector.setEnabled(available and self.inference is not None)
         self._sync_local_model_selector()
         self._sync_cloud_model_selector()
@@ -1289,6 +1363,7 @@ class MainWindow(QMainWindow):
             self.close()
 
     def _set_busy(self, busy: bool) -> float | None:
+        self._refresh_operation_review(busy=busy)
         if self._image_viewer is not None:
             self._image_viewer.set_reply_available(not busy and self.service is not None)
         self._preview_active = busy
@@ -1372,6 +1447,7 @@ class MainWindow(QMainWindow):
         self._update_context_window()
         self.activity.set_activity(self._ready_status())
         self.input.setFocus()
+        self._refresh_operation_review()
 
     def _ready_status(self) -> str:
         if self._agent_error() and not self._agent_enabled():
@@ -1687,6 +1763,8 @@ class MainWindow(QMainWindow):
             self._attachment_picker.reject()
         if self._image_viewer is not None:
             self._image_viewer.reject()
+        if self._operation_review_dialog is not None:
+            self._operation_review_dialog.reject()
         self.attachment_tray.shutdown()
         self.notification_sound.shutdown()
         self.notifications.shutdown()
