@@ -11,6 +11,7 @@ from app.capabilities.contracts import (Capability, CapabilityContext, Capabilit
     CapabilityExecutionError, ExecutionIsolation, PermissionClass)
 from app.execution.windows_filesystem import file_identity, pinned_parent
 from app.security.write_policy import HostWritePolicy
+from app.capabilities.repair_diagnosis import RepairDiagnosis
 
 
 _MAX_TEXT_BYTES = 65_536
@@ -26,6 +27,8 @@ class FilesystemWriteTextArguments(BaseModel):
                      description="Exact UTF-8 text content that will become the entire file.")
     reversal_reason: str | None = Field(default=None, min_length=1, max_length=MAX_REVERSAL_REASON_CHARS,
         description="When the reversal guard requests reassessment, first receive a fresh complete source read, then explain here the unmet user requirement or observed defect requiring the rollback. Otherwise omit or use null. This does not bypass approval or the one-rollback limit.")
+    repair_diagnosis: RepairDiagnosis | None = Field(default=None,
+        description="After a failed project interaction/visual check, first read the relevant current source, then identify its receipt, failure, evidence-supported cause, proposed change and confirming observation here. Otherwise omit or use null. Does not bypass approvals, source or rollback protections.")
 
 
 class FilesystemWriteTextCapability(Capability[FilesystemWriteTextArguments]):

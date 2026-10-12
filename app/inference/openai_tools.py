@@ -224,12 +224,13 @@ def _reversal_history_definitions(definitions, expected):
     values = []
     for definition in definitions:
         calls = [call for call in expected if call.capability == definition.name]
-        if (definition.name in {"filesystem.edit_text", "filesystem.write_text"} and calls
-                and all("reversal_reason" not in call.arguments for call in calls)):
+        if definition.name in {"filesystem.edit_text", "filesystem.write_text"} and calls:
             schema = deepcopy(definition.input_schema)
-            # Only this newly optional field may be absent in old settled calls.
+            # Only these newly optional fields may be absent in old settled calls.
             # All original fields, IDs and argument values must still match.
-            schema.get("properties", {}).pop("reversal_reason", None)
+            for field in ('reversal_reason', 'repair_diagnosis'):
+                if all(field not in call.arguments for call in calls):
+                    schema.get("properties", {}).pop(field, None)
             definition = definition.model_copy(update={"input_schema": schema})
         values.append(definition)
     return tuple(values)

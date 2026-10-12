@@ -41,6 +41,7 @@ from app.agent.file_resolution import filename_disambiguation_feedback
 from app.agent.read_progress import ReadProgressTracker
 from app.agent.project_progress import ProjectProgressTracker
 from app.agent.edit_progress import EditProgressTracker
+from app.agent.repair_loop import RepairLoopTracker
 from app.agent.goals import TaskGoal, observe_goal, finish_goal, goal_feedback, evidence_report
 from app.agent.task_completion import (CompletionReview, task_context_message,
     completion_review_message, parse_completion_review, looks_like_completion_review, resume_answer_message)
@@ -501,6 +502,7 @@ class AgentRuntime:
         read_progress = ReadProgressTracker()
         project_progress = ProjectProgressTracker()
         edit_progress = EditProgressTracker()
+        repair_loop = RepairLoopTracker()
         used_call_ids: set[str] = set()
         advertised_names = {item.name for item in definitions}
         required_fingerprints = tuple(call_fingerprint(call) for call in required_calls)
@@ -931,6 +933,8 @@ class AgentRuntime:
             recovery_feedback: list[str] = []
             for call, internal_call_id in zip(calls, internal_call_ids, strict=True):
                 rejection = edit_progress.before(call, step=steps, assistant_text=response.assistant_text) if not linked.is_cancelled else None
+                if rejection is None and not linked.is_cancelled:
+                    rejection = repair_loop.before(call, step=steps)
                 if repeat_rejection is not None and not linked.is_cancelled:
                     outcome = _CallOutcome(result=failure_result(internal_call_id, call.capability, repeat_rejection))
                 elif rejection is not None:
@@ -1005,6 +1009,11 @@ class AgentRuntime:
                     project_receipts.setdefault(call_fingerprint(call), []).append(outcome.result.call_id)
                 read_progress.observe(call, outcome.result, repeated)
                 project_progress.observe(call, outcome.result, repeated)
+                diagnosis_feedback = repair_loop.observe(call, outcome.result, step=steps)
+                if diagnosis_feedback:
+                    recovery_feedback.append(diagnosis_feedback)
+                if rejection is not None and rejection.reason == 'inspection_diagnosis':
+                    recovery_feedback.append(rejection.message)
                 edit_observation = edit_progress.observe(call, outcome.result, step=steps)
                 if edit_observation.refresh_source:
                     project_progress.renew_source(call.arguments.get("path"), repeated)
