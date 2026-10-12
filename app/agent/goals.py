@@ -12,7 +12,6 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.capabilities.contracts import CapabilityErrorCode
 from app.settings.agent_limits import MAX_AGENT_CAPABILITY_CALLS
-from app.agent.verification_scope import VERIFICATION_SCOPE_GUIDANCE
 
 
 def path_key(path: str) -> str:
@@ -167,13 +166,9 @@ def goal_feedback(goal: TaskGoal) -> str:
     uncertain = sum(item.integrity_uncertain for item in goal.artifacts)
     review = f" {uncertain} saved revision(s) require review." if uncertain else ""
     return (
-        f"Current request goal {goal.goal_id}: {len(goal.artifacts)} text file(s) have settled save receipts; "
-        f"{checked} have a subsequent complete read matching the saved revision.{review} "
-        "These are file evidence, not proof that every requested change is implemented. "
-        "Compare the latest explicit user requirements with the settled work. Continue only for an identified "
-        "unmet requirement, or finish with changed files and remaining/unrun checks. "
-        + VERIFICATION_SCOPE_GUIDANCE +
-        "Respect approval and execution limits; report failed, stale and unrun checks explicitly. "
+        f"Goal {goal.goal_id}: {len(goal.artifacts)} saved file(s); {checked} matching complete rereads.{review} "
+        "File receipts prove source only. Continue for a named unmet requirement. Honor requested check scope and skips; "
+        "report failed/stale/unrun checks as unverified. Permissions and limits still apply. "
         + verification_report(goal)
     )
 

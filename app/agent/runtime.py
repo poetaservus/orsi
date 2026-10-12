@@ -677,7 +677,8 @@ class AgentRuntime:
                         partial_text=proposed_answer, steps=steps, capability_calls=capability_calls,
                         protocol_failures=protocol_failures)
                 transcript.append(completion_review_message(_goal[0],
-                    edit_progress.pending_recovery() or edit_progress.completion_blocker()))
+                    edit_progress.pending_recovery() or edit_progress.completion_blocker(),
+                    browser_inspection_available='project.inspect' in advertised_names))
                 continue
             provider_message_id = uuid4().hex
             assessment_text = (bool(_goal) and review_started and response.kind == ModelResponseKind.ASSISTANT_TEXT
@@ -737,7 +738,8 @@ class AgentRuntime:
                         recovery.consecutive_format_failures = 0
                         self._retain_response_text(transcript, response)
                         transcript.append(completion_review_message(_goal[0],
-                            edit_progress.pending_recovery() or edit_progress.completion_blocker()))
+                            edit_progress.pending_recovery() or edit_progress.completion_blocker(),
+                            browser_inspection_available='project.inspect' in advertised_names))
                     else:
                         try:
                             review = parse_completion_review(response.assistant_text, _goal[0].goal_id)
@@ -751,7 +753,8 @@ class AgentRuntime:
                                     partial_text=proposed_answer,
                                     steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
                             transcript.append(completion_review_message(_goal[0],
-                                edit_progress.pending_recovery() or edit_progress.completion_blocker()))
+                                edit_progress.pending_recovery() or edit_progress.completion_blocker(),
+                                browser_inspection_available='project.inspect' in advertised_names))
                             continue
                         recovery.consecutive_format_failures = 0
                         pending = edit_progress.pending_recovery()

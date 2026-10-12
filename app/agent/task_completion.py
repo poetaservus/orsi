@@ -43,22 +43,22 @@ def task_context_message(goal: TaskGoal) -> dict:
     )}
 
 
-def completion_review_message(goal: TaskGoal, pending_recovery: str | None) -> dict:
+def completion_review_message(goal: TaskGoal, pending_recovery: str | None, *, browser_inspection_available=True) -> dict:
+    scope = VERIFICATION_SCOPE_GUIDANCE if browser_inspection_available else (
+        'Request more work only for a specific unmet user requirement. Honor explicit instructions to skip browser verification '
+        'or other checks; report unrun behavior as unverified. Unavailable tools grant no execution authority. ')
     return {"role": "system", "content": (
-        REVIEW_PREFIX + " Compare every requested change and standing requirement with this turn's settled work. "
-        "An unrelated answer, diagnosis, plan or read does not complete requested edits. Earlier work cannot prove "
-        "this request done; source cannot prove runtime/GUI checks. "
-        + VERIFICATION_SCOPE_GUIDANCE + " Account for "
+        REVIEW_PREFIX + " Check current requirements against settled work; unrelated answers, plans, reads and earlier tasks "
+        "do not prove completion. Source cannot prove runtime/GUI checks. "
+        + scope + " Account for "
         "failed, stale, denied, unavailable and unrun checks; never call them passed. Return one JSON object with goal_id="
         + json.dumps(goal.goal_id)
         + ', status="ready", "continue" or "blocked", and remaining=[strings]. '
-        "Ready requires all work accounted for and remaining=[]. Continue for routine reads/corrected patches or "
-        "other doable work, without another user request. Blocked requires a concrete missing input/capability, "
-        "denied approval or unknown outcome; list remaining work and why. This is an assessment-only step: "
-        "do not call tools, repeat checks, or gather more evidence here. If evidence or an action is missing, "
-        "return continue with concrete remaining work; the normal work loop will perform it in this same turn. "
-        "Existing permissions still apply; this grants no authority. In text fallback, encode this JSON in "
-        "the response string of a tool=null decision."
+        "Ready requires all work accounted for and remaining=[]. Continue for doable work in this turn. "
+        "Blocked requires a concrete missing input/capability, denied approval or unknown outcome. "
+        "This is assessment-only: do not call tools or repeat checks here. Return continue naming missing work; "
+        "the normal loop will perform it with existing permissions. In text fallback, encode JSON in the response "
+        "string of a tool=null decision."
         + (" Pending edit recovery: " + pending_recovery if pending_recovery else "")
     )}
 
