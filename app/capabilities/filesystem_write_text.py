@@ -15,6 +15,7 @@ from app.security.write_policy import HostWritePolicy
 
 _MAX_TEXT_BYTES = 65_536
 _MAX_TEXT_LINES = 1_000
+MAX_REVERSAL_REASON_CHARS = 1_000
 
 
 class FilesystemWriteTextArguments(BaseModel):
@@ -23,6 +24,8 @@ class FilesystemWriteTextArguments(BaseModel):
                      description="Exact absolute local-drive path of the text file to create or replace.")
     text: str = Field(max_length=_MAX_TEXT_BYTES,
                      description="Exact UTF-8 text content that will become the entire file.")
+    reversal_reason: str | None = Field(default=None, min_length=1, max_length=MAX_REVERSAL_REASON_CHARS,
+        description="When the reversal guard requests reassessment, first receive a fresh complete source read, then explain here the unmet user requirement or observed defect requiring the rollback. Otherwise omit or use null. This does not bypass approval or the one-rollback limit.")
 
 
 class FilesystemWriteTextCapability(Capability[FilesystemWriteTextArguments]):

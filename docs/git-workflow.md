@@ -1,5 +1,21 @@
 # Git layout and baseline hygiene
 
+## Native cloud reversal recovery, 12 October 2026
+
+`codex/native-reversal-recovery` starts from local main `ce21a68`. It adds a
+bounded tool argument for rollback explanations, renews required source reads,
+permits one diagnosis into a new revision after a blocked second rollback,
+preserves existing cloud edit evidence, and keeps inspection from resetting
+an already visible scroll-driven section. The final full suite passed 3,453
+checks with 61 skips; the unchanged default-cloud three-prompt replay completed.
+See [the contract and qualification](native-reversal-recovery.md).
+Production prompts, routing, sampling, context policy, profiles and user settings
+remain unchanged. Content-free refs/worktrees are retained under
+`state/backups/native-reversal-20261012/`. After verification, preserve prior main
+at `archive/2026-10-12/main-before-native-reversal-recovery`, commit, fast-forward
+local main and remove only the merged feature branch. Preserve other worktrees,
+historical/unmerged tips and remote branches; no publication.
+
 ## Cloud inspection recovery and regression qualification, 12 October 2026
 
 `codex/cloud-recovery-and-regressions` starts from local main `c9dddd3`. It fixes

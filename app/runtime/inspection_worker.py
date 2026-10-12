@@ -119,7 +119,15 @@ def browser_inspection(spec):
                         else:
                             page.wait_for_timeout(timeout)
                     elif action == "in_view":
-                        locator.scroll_into_view_if_needed(timeout=timeout)
+                        locator.wait_for(state="visible", timeout=timeout)
+                        box = locator.bounding_box()
+                        # A partially visible scroll-driven section already meets
+                        # this check. Centering it would undo the requested scroll
+                        # and reset its animation before the screenshot.
+                        if not box or not (box["width"] > 0 and box["height"] > 0 and
+                                box["y"] < spec["height"] and box["y"] + box["height"] > 0 and
+                                box["x"] < spec["width"] and box["x"] + box["width"] > 0):
+                            locator.scroll_into_view_if_needed(timeout=timeout)
                         page.wait_for_timeout(250)  # Observe application scroll handlers after the move.
                         box = locator.bounding_box()
                         check["bounds"] = box

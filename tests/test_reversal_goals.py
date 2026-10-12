@@ -60,7 +60,72 @@ def test_one_fresh_read_explained_rollback_is_still_approved(tmp_path, make_serv
     assert outcome.goal.artifacts[0].source_check_call_id == outcome.settled_calls[-1].result.call_id
 
 
-@pytest.mark.parametrize("missing", ["read", "explanation", "same_batch_read"])
+@pytest.mark.parametrize("mode", ["local", "cloud"])
+@pytest.mark.parametrize("capability", ["filesystem.edit_text", "filesystem.write_text"])
+def test_tool_only_rollback_can_supply_reason_after_required_read_is_renewed(
+        tmp_path, make_service, mode, capability):
+    path = tmp_path / "App.tsx"
+    path.write_bytes(b"disabled")
+
+    def change(index, old, new, **arguments):
+        if capability == "filesystem.edit_text":
+            return edit(index, path, old, new, **arguments)
+        return call(index, capability, path=str(path), text=new, **arguments)
+
+    # Two reads of the settled revision consume its ordinary source-read allowance.
+    # The guard must make its required post-rejection read possible, then accept a
+    # native tool-only response's explanation without requiring separate narration.
+    service, _, approvals = make_service([read(1, path), change(2, "disabled", "broken"),
+        read(3, path), read(4, path), change(5, "broken", "disabled"), read(6, path),
+        change(7, "broken", "disabled", reversal_reason="The current animation is broken; restore its baseline before re-enabling it."),
+        change(8, "disabled", "enabled"), read(9, path),
+        ModelResponse.text("Re-enabled the animation; source checked, runtime checks unrun.")],
+        mode, write_enabled=capability == "filesystem.write_text")
+    service.run("great. currently the first section animation is disabled, can you re-enable it?\\")
+    outcome = service._turn_result
+    assert outcome.status == AgentRunStatus.COMPLETED
+    assert path.read_bytes() == b"enabled" and len(approvals) == 3
+    assert outcome.semantic_corrections == 1
+    assert outcome.settled_calls[4].result.metadata["edit_recovery"] == "revision_reversal"
+    assert outcome.settled_calls[5].result.success
+    assert outcome.settled_calls[6].result.success
+    assert "reversal_reason" in outcome.settled_calls[4].result.error.message
+
+
+def test_reversal_required_read_allowance_is_still_bounded(tmp_path, make_service):
+    path = tmp_path / "App.tsx"
+    path.write_bytes(b"old")
+    service, _, approvals = make_service([read(1, path), edit(2, path, "old", "new"),
+        read(3, path), read(4, path), edit(5, path, "new", "old"),
+        read(6, path), read(7, path), read(8, path)])
+    stopped_report(service, "Fix the animation.")
+    outcome = service._turn_result
+    assert outcome.status == AgentRunStatus.REPEATED_CALL
+    assert len(outcome.settled_calls) == 7 and outcome.settled_calls[-1].result.success
+    assert path.read_bytes() == b"new" and len(approvals) == 1
+
+
+def test_tool_only_rollback_reason_does_not_bypass_denied_approval(tmp_path, make_service):
+    path = tmp_path / "App.tsx"
+    path.write_bytes(b"old")
+    service, _, _ = make_service([read(1, path), edit(2, path, "old", "new"),
+        edit(3, path, "new", "old"), read(4, path),
+        edit(5, path, "new", "old", reversal_reason="Restore the baseline for the requested animation."),
+        ModelResponse.text("The rollback was denied; the first edit remains saved.")])
+    approvals = []
+
+    def approve(record):
+        approvals.append(record)
+        service.resolve_approval(record.approval_id, len(approvals) == 1)
+
+    service.set_approval_requester(approve)
+    answer = service.run("Fix the animation.")
+    assert "Task unfinished" in answer and service._turn_result.status == AgentRunStatus.INCOMPLETE
+    assert path.read_bytes() == b"new" and len(approvals) == 2
+    assert service._turn_result.settled_calls[-1].result.error.code.value == "permission_denied"
+
+
+@pytest.mark.parametrize("missing", ["read", "explanation", "same_batch_read", "blank_reason", "reason_without_read"])
 def test_reassessment_requires_new_complete_read_and_explanation(tmp_path, make_service, missing):
     path = tmp_path / "main.py"
     path.write_bytes(b"old")
@@ -69,6 +134,10 @@ def test_reassessment_requires_new_complete_read_and_explanation(tmp_path, make_
         responses.append(explained(edit(4, path, "new", "old")))
     elif missing == "explanation":
         responses.extend([read(4, path), edit(5, path, "new", "old")])
+    elif missing == "blank_reason":
+        responses.extend([read(4, path), edit(5, path, "new", "old", reversal_reason=" \n ")])
+    elif missing == "reason_without_read":
+        responses.append(edit(4, path, "new", "old", reversal_reason="Restore the baseline for the requested animation."))
     else:
         responses.append(ModelResponse.calls((read(4, path).capability_calls[0], edit(5, path, "new", "old").capability_calls[0]),
             assistant_text="Restore the original value for the unmet requirement."))
@@ -80,15 +149,54 @@ def test_reassessment_requires_new_complete_read_and_explanation(tmp_path, make_
     assert "Completion evidence:" in report
 
 
-def test_second_reversal_stops_before_execution_even_with_an_explanation(tmp_path, make_service):
+@pytest.mark.parametrize("tool_only", [False, True])
+def test_second_reversal_stops_before_execution_even_with_an_explanation(tmp_path, make_service, tool_only):
     path = tmp_path / "main.py"
     path.write_bytes(b"old")
+    def justified(index, old, new):
+        digest = {"expected_sha256": sha256(b"old").hexdigest()} if index == 9 else {}
+        return edit(index, path, old, new, **digest, reversal_reason="Restore the unmet requirement.") if tool_only else explained(edit(index, path, old, new, **digest))
     service, _, approvals = make_service([read(1, path), edit(2, path, "old", "new"),
-        edit(3, path, "new", "old"), read(4, path), explained(edit(5, path, "new", "old")),
-        read(6, path), explained(edit(7, path, "old", "new"))])
+        edit(3, path, "new", "old"), read(4, path), justified(5, "new", "old"),
+        read(6, path), justified(7, "old", "new"), read(8, path), justified(9, "old", "new")])
     stopped_report(service, "Fix main.py.")
     assert path.read_bytes() == b"old" and len(approvals) == 2
     assert service._turn_result.settled_calls[-1].result.metadata["edit_recovery"] == "revision_reversal_limit"
+
+
+@pytest.mark.parametrize("capability", ["filesystem.edit_text", "filesystem.write_text"])
+def test_blocked_second_rollback_can_be_diagnosed_into_a_novel_correction(tmp_path, make_service, capability):
+    path = tmp_path / "App.tsx"
+    path.write_bytes(b"disabled")
+
+    def change(index, old, new, **arguments):
+        return edit(index, path, old, new, **arguments) if capability == "filesystem.edit_text" else call(
+            index, capability, path=str(path), text=new, **arguments)
+
+    service, _, approvals = make_service([read(1, path), change(2, "disabled", "static"),
+        change(3, "static", "disabled"), read(4, path),
+        change(5, "static", "disabled", reversal_reason="The inspected result is static; restore the baseline before correcting its controller."),
+        change(6, "disabled", "static"), read(7, path), change(8, "disabled", "animated"),
+        read(9, path), ModelResponse.text("Enabled animation with a changing controller; source checked, execution unrun.")],
+        write_enabled=capability == "filesystem.write_text")
+    service.run("great. currently the first section animation is disabled, can you re-enable it?\\")
+    outcome = service._turn_result
+    assert outcome.status == AgentRunStatus.COMPLETED
+    assert path.read_bytes() == b"animated" and len(approvals) == 3
+    assert outcome.settled_calls[5].result.metadata["edit_recovery"] == "revision_cycle"
+    assert not outcome.settled_calls[5].result.success and outcome.settled_calls[7].result.success
+
+
+def test_cycle_diagnosis_requires_a_received_complete_read(tmp_path, make_service):
+    path = tmp_path / "App.tsx"
+    path.write_bytes(b"old")
+    service, _, approvals = make_service([read(1, path), edit(2, path, "old", "new"),
+        edit(3, path, "new", "old"), read(4, path), explained(edit(5, path, "new", "old")),
+        edit(6, path, "old", "new"), edit(7, path, "old", "corrected")])
+    stopped_report(service, "Fix the animation.")
+    assert service._turn_result.status == AgentRunStatus.REPEATED_CALL
+    assert path.read_bytes() == b"old" and len(approvals) == 2
+    assert "fresh complete source read" in service._turn_result.settled_calls[-1].result.error.message
 
 
 def test_whole_file_overwrite_cannot_bypass_reversal_guard(tmp_path, make_service):

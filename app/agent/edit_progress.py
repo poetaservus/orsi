@@ -9,7 +9,7 @@ import re
 from app.agent.feedback import canonical_json, edit_recovery_feedback
 from app.capabilities.contracts import CapabilityErrorCode, CapabilityExecutionError, CapabilityResult
 from app.capabilities.filesystem_edit_text import FilesystemEditTextArguments, plan_edit
-from app.capabilities.filesystem_write_text import FilesystemWriteTextArguments
+from app.capabilities.filesystem_write_text import FilesystemWriteTextArguments, MAX_REVERSAL_REASON_CHARS
 from app.inference.protocol import ModelCapabilityCall
 
 
@@ -64,6 +64,8 @@ class _Target:
     reversal_digest: str | None = None
     reversal_operation: str | None = None
     rollback_used: bool = False
+    cycle_warning: bool = False
+    cycle_step: int | None = None
     recovery_blocked: bool = False
     unresolved_mutation: bool = False
     mutation_blocked: bool = False
@@ -97,6 +99,10 @@ class EditProgressTracker:
         state = self._targets.get(_path(call.arguments.get("path")))
         if state is None:
             return None
+        if (state.cycle_step is not None and (state.read is None or state.source is None
+                or not state.read[2] or not state.cycle_step < state.read[3] < step or state.read[1] != state.digest)):
+            return EditRejection("revision_reversal_limit", "The edit task stopped before another return to earlier file revisions. "
+                "Cycle diagnosis requires a fresh complete source read received after the rejection and before a new correction.")
         if state.recovery and call.capability == "filesystem.edit_text":
             prior = f"Prior edit rejected: {state.error[:230]} "
             if state.read is None:
@@ -135,13 +141,33 @@ class EditProgressTracker:
                 return EditRejection("revision_reversal", "This change targets an earlier file revision. "
                     "No reversal was executed. Reassess the latest user goal against settled changes. "
                     "If a rollback is necessary, receive a fresh complete source read, then explain the unmet "
-                    "requirement or observed defect in assistant text with the revised call. Ordinary approval is still required. "
+                    "requirement or observed defect in the revised call's reversal_reason argument "
+                    "(or assistant text accompanying that call). Ordinary approval is still required. "
                     "Only one justified rollback is permitted in this turn; otherwise report remaining checks and stop.")
-            if (state.rollback_used or digest != state.reversal_digest or state.read is None or state.source is None
-                    or not state.read[2] or state.read[3] <= state.reversal_step or state.read[3] >= step
-                    or state.read[1] != state.digest or not isinstance(assistant_text, str) or not assistant_text.strip()):
+            reason = call.arguments.get("reversal_reason")
+            explained = (isinstance(reason, str) and 0 < len(reason) <= MAX_REVERSAL_REASON_CHARS and bool(reason.strip())
+                or isinstance(assistant_text, str) and bool(assistant_text.strip()))
+            if state.rollback_used:
+                if not state.cycle_warning:
+                    state.cycle_warning, state.cycle_step = True, step
+                    return EditRejection("revision_cycle", "This repeats a tried revision; no edit was executed. "
+                        "The one rollback was already used. Receive a fresh complete source read and inspect the relevant "
+                        "implementation and verification evidence to diagnose the unmet user goal. Submit a correction "
+                        "producing a new revision, or report unfinished work. This diagnosis allowance is available once; "
+                        "another return to an earlier revision stops the turn. Approval remains required.")
+                unmet = "The one permitted rollback was already used in this turn."
+            elif digest != state.reversal_digest:
+                unmet = "The revised call does not restore the revision identified for reassessment."
+            elif (state.read is None or state.source is None or not state.read[2]
+                    or state.read[3] <= state.reversal_step or state.read[3] >= step or state.read[1] != state.digest):
+                unmet = "A fresh complete source read must be received after the reversal rejection and before the retry."
+            elif not explained:
+                unmet = "The retry needs a nonblank reversal_reason (at most 1000 characters) or accompanying assistant explanation."
+            else:
+                unmet = None
+            if unmet:
                 return EditRejection("revision_reversal_limit", "The edit task stopped before another return to earlier file revisions. "
-                    "The bounded reversal reassessment did not establish a fresh-read explanation, or its rollback was already used.")
+                    + unmet)
         return None
 
     @staticmethod
@@ -221,8 +247,8 @@ class EditProgressTracker:
             reversal = result.metadata.get("edit_recovery")
             if reversal == "revision_reversal_limit":
                 return EditObservation(stop_message=result.error.message)
-            if reversal == "revision_reversal":
-                return EditObservation(feedback=result.error.message)
+            if reversal in {"revision_reversal", "revision_cycle"}:
+                return EditObservation(feedback=result.error.message, refresh_source=True)
             if call.capability != "filesystem.edit_text" or result.error.code != CapabilityErrorCode.INVALID_ARGUMENTS:
                 return EditObservation()
             state.failures += 1
@@ -248,6 +274,7 @@ class EditProgressTracker:
         state.unresolved_mutation = False
         state.mutation_blocked = False
         state.rejected = None
+        state.cycle_step = None
         if digest is not None:
             previous = state.digest or state.last_mutation_digest
             if digest != previous and (previous is not None or call.capability == "filesystem.edit_text"):

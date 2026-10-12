@@ -14,7 +14,7 @@ from app.capabilities.contracts import (
     ExecutionIsolation, PermissionClass,
 )
 from app.capabilities.filesystem_read_text import _contains_binary_control_text
-from app.capabilities.filesystem_write_text import atomic_write_text_file
+from app.capabilities.filesystem_write_text import MAX_REVERSAL_REASON_CHARS, atomic_write_text_file
 from app.execution.windows_filesystem import pinned_parent, read_file_snapshot
 from app.security.write_policy import HostWritePolicy
 
@@ -38,6 +38,8 @@ class FilesystemEditTextArguments(BaseModel):
                               description="Replace every non-overlapping match only when explicitly requested.")
     expected_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$",
                                         description="SHA-256 of the complete source bytes from a preceding read, when available. Never use an excerpt digest.")
+    reversal_reason: str | None = Field(default=None, min_length=1, max_length=MAX_REVERSAL_REASON_CHARS,
+        description="When the reversal guard requests reassessment, first receive a fresh complete source read, then explain here the unmet user requirement or observed defect requiring the rollback. Otherwise omit or use null. This does not bypass approval or the one-rollback limit.")
 
 
 @dataclass(frozen=True)

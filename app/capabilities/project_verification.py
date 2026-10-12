@@ -41,7 +41,8 @@ class ProjectVerificationArguments(BaseModel):
 
 class InspectionStep(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    action: Literal["click", "fill", "scroll", "visible", "text", "wait", "in_view", "model_loaded"]
+    action: Literal["click", "fill", "scroll", "visible", "text", "wait", "in_view", "model_loaded"] = Field(
+        description="in_view brings an offscreen target into view; if it already intersects the viewport, preserve the current scroll position. model_loaded checks model-viewer readiness. Neither establishes visual correctness; review the returned screenshot.")
     target: str = Field(default="", max_length=256, description="Browser CSS selector or unique desktop automation ID/exact accessible name. Empty scroll target means the page.")
     value: str = Field(default="", max_length=1000)
     amount: int = Field(default=500, ge=-10000, le=10000)

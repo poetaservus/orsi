@@ -91,6 +91,23 @@ def test_real_inspector_delivers_pixels_to_runtime_continuation(tmp_path):
     assert continuation[-1]["content"][-1]["image_url"]["url"].startswith("data:image/png;base64,")
 
 
+def test_in_view_preserves_a_scrolled_target_that_is_already_in_the_viewport(tmp_path):
+    state, args = fixture(tmp_path, wait=False)
+    (tmp_path / "index.html").write_text("""<style>
+        body {margin:0} #hero {height:800px;background:#f00} #next {height:1000px;background:#0f0}
+        </style><main id=hero>Scroll-driven animation</main><section id=next>Next section</section>""", encoding="utf-8")
+    args["server_arguments"] = ["-m", "http.server", args["url"].split(":")[-1].rstrip("/"), "--bind", "127.0.0.1"]
+    args["steps"] = [{"action": "scroll", "amount": 400}, {"action": "in_view", "target": "#hero"}]
+    tool = ProjectInspectCapability(state)
+    result = tool.invoke(args, approved(tool, args, context(tmp_path)))
+    assert result.success and result.output["passed"], result
+    output = result.output
+    assert output["checks"][0]["scroll"]["after"] == 400
+    assert output["layout"]["scrollTop"] == 400
+    assert output["capture_targets"][0]["bounds"]["y"] == -400
+    assert output["capture_targets"][0]["in_viewport"]
+
+
 @pytest.mark.parametrize("extra", [{"steps": [{"action": "wait", "timeout_ms": 15001}]},
     {"steps": [{"action": "in_view"}]}, {"steps": [{"action": "model_loaded"}]},
     {"kind": "desktop", "url": None, "pid": 1, "steps": [{"action": "wait"}]}])

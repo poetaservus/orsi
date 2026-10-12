@@ -21,7 +21,7 @@ def definition():
 def test_large_complete_write_call_uses_expanded_checked_in_luna_budget(monkeypatch):
     settings = load_cloud_config()
     text = "<article>synthetic fixture</article>\n" * 900
-    arguments = {"path": "C:/synthetic-fixture/index.html", "text": text}
+    arguments = {"path": "C:/synthetic-fixture/index.html", "text": text, "reversal_reason": None}
     payload = response(output=[function(definition(), arguments)],
                        usage={"input_tokens": 200, "output_tokens": 9000, "total_tokens": 9200})
     engine, client, bodies, factory = scripted_sdk(monkeypatch, [payload], engine_config=settings)

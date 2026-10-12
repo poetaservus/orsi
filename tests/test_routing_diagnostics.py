@@ -93,7 +93,7 @@ def test_settled_edit_then_unsupported_stream_never_replays_saved_work(make_engi
         service.resolve_approval(record.approval_id, True)
     service.set_approval_requester(approve)
     payloads.extend([events(response(output=[function(definition, {"path": str(target), "old_text": "old", "new_text": "new",
-        "replace_all": False, "expected_sha256": None})])),
+        "replace_all": False, "expected_sha256": None, "reversal_reason": None})])),
         [events()[0], {"type": "response.web_search_call.in_progress", "sequence_number": 1,
             "item_id": "PRIVATE-ITEM", "output_index": 0}]])
     try:
@@ -221,7 +221,8 @@ def test_sdk_envelope_and_invalid_tool_arguments_are_separate_domains(make_engin
     target.write_bytes(b"old\n")
     definition = next(d for d in runtime.registry.model_definitions() if d.name == "filesystem.edit_text")
     payloads.extend([events(response(output=[function(definition, {"path": str(target),
-        "old_text": "PRIVATE-MISSING", "new_text": "PRIVATE-PATCH", "replace_all": False, "expected_sha256": None})])),
+        "old_text": "PRIVATE-MISSING", "new_text": "PRIVATE-PATCH", "replace_all": False,
+        "expected_sha256": None, "reversal_reason": None})])),
         [events()[0], {"error": {"code": "server_error", "message": "PRIVATE-ERROR", "param": "PRIVATE-PARAM"}}]])
     try:
         with caplog.at_level(logging.INFO), pytest.raises(IncompleteResponseError):
