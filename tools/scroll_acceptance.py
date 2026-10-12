@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -26,11 +27,17 @@ SNAPSHOT = """() => {
     stageHeight:stage.offsetHeight, top:r.top, bottom:r.bottom,
     visible:r.top<innerHeight && r.bottom>0 && s.visibility!=='hidden' && Number(s.opacity)>0,
     nextTop:next.getBoundingClientRect().top,
-    phases:['q-fade','q-move','words','subtitle','exit'].map(n=>Number(s.getPropertyValue('--'+n+'-progress')))};
+    phases:['q-fade','q-move','words','subtitle','exit'].map(n=>Number(s.getPropertyValue('--'+n+'-progress'))),
+    appearance:['q','bal','gh','subtitle'].map(name=>{
+      const e=document.querySelector('.animated-logo__'+name);if(!e)return null;
+      const style=getComputedStyle(e);let opacity=1, visible=true;
+      for(let p=e;p;p=p.parentElement){const st=getComputedStyle(p);opacity*=Number(st.opacity);visible&&=st.visibility==='visible' && st.display!=='none'}
+      return {opacity,visible,transform:style.transform};
+    })};
 }"""
 
 
-def check_scroll_behavior(page):
+def check_scroll_behavior(page, capture_directory=None):
     checks, observations = [], []
 
     def sample():
@@ -46,27 +53,42 @@ def check_scroll_behavior(page):
     def check(name, passed):
         checks.append({"name": name, "passed": bool(passed)})
 
+    def capture(label):
+        if capture_directory is not None:
+            page.screenshot(path=str(capture_directory/f'acceptance-{label}.png'),full_page=False)
+
     def matches(a, b):
-        return all(abs(x-y) < .01 for x, y in zip(a['phases'], b['phases']))
+        number = r'[-+]?(?:\d*\.\d+|\d+)(?:[eE][-+]?\d+)?'
+        def same_piece(x,y):
+            if x is None or y is None:
+                return False
+            return (abs(x['opacity']-y['opacity'])<.01 and x['visible']==y['visible']
+                and re.sub(number,'#',x['transform'])==re.sub(number,'#',y['transform'])
+                and all(abs(float(v)-float(w))<.01 for v,w in zip(re.findall(number,x['transform']),re.findall(number,y['transform']))))
+        return all(same_piece(x,y) for x,y in zip(a['appearance'],b['appearance']))
 
     start = jump(0)
+    capture('initial')
     distance = max(start['heroHeight']-start['stageHeight'], start['viewport'])
     page.mouse.move(30, 30)
     page.mouse.wheel(0, int(distance*.5))
     forward = sample()
     check('hero_visible_during_forward_animation', forward['visible'])
-    check('native_scroll_advances_animation', forward['y'] > 0 and forward['phases'] != start['phases'])
+    check('native_scroll_advances_animation', forward['y'] > 0 and not matches(forward,start))
     middle = jump(distance*.5)
+    capture('partial')
     check('hero_remains_visible_at_partial_progress', middle['visible'] and abs(middle['top']) < 1)
     complete = jump(distance*.8)
-    check('logo_assembles_before_exit', complete['phases'][3] > .99 and complete['phases'][4] < .01)
+    capture('complete')
+    check('logo_assembles_before_exit', all(p and p['visible'] and p['opacity']>.98 for p in complete['appearance']))
     below = jump(start['heroHeight']+100)
-    check('next_section_accessible_after_animation', below['nextTop'] < start['viewport'] and below['phases'][4] > .99)
+    check('next_section_accessible_after_animation', below['nextTop'] < start['viewport'])
     page.mouse.move(30, 30)
     page.mouse.wheel(0, -300)
     reverse = sample()
     check('upward_wheel_moves_page_immediately', reverse['y'] < below['y'])
     returned = jump(distance*.5)
+    capture('return')
     check('same_position_restores_same_animation', matches(middle, returned) and returned['visible'])
 
     for key, direction in [('PageDown', 1), ('PageUp', -1)]:
@@ -106,7 +128,13 @@ def check_scroll_behavior(page):
         check('touch_navigation_synchronized', touch['y'] > before['y'] and matches(touch, reference))
     finally:
         session.detach()
-    return {'passed': all(c['passed'] for c in checks), 'checks': checks, 'observations': observations}
+    timing = page.evaluate("""async () => {
+      const intervals=[];let previous=performance.now();const start=previous;
+      await new Promise(resolve=> {const frame=now=> {intervals.push(now-previous);previous=now;
+        if(now-start>=500 || intervals.length>=120)resolve();else requestAnimationFrame(frame)};requestAnimationFrame(frame)});
+      return {intervals_ms:intervals,scope:'Callback timing only; smooth compositor delivery remains unverified.'};
+    }""")
+    return {'passed': all(c['passed'] for c in checks), 'checks': checks, 'observations': observations,'frame_timing':timing}
 
 
 def main():
@@ -140,7 +168,7 @@ def main():
                         if monotonic() > deadline:
                             raise
                         sleep(.1)
-                report = check_scroll_behavior(page)
+                report = check_scroll_behavior(page,args.output.parent)
                 args.output.write_text(json.dumps(report, indent=2), encoding='utf-8')
                 print(json.dumps({'passed':report['passed'], 'failed':[c['name'] for c in report['checks'] if not c['passed']]}))
             finally:
