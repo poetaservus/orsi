@@ -1,5 +1,19 @@
 # Git layout and baseline hygiene
 
+## Windows project command recovery, 12 October 2026
+
+`codex/project-command-recovery` starts from local main `053fbb6`. It resolves
+Windows npm build/preview commands to installed Node/npm-cli.js, exposes and
+binds that command to approval, and gives actionable executable recovery errors.
+See [the repair and qualification](project-command-recovery.md). All 140
+necessary checks passed, including real npm build/preview execution and the
+reported request through scripted runtime recovery. Full-suite and live model
+gates were not run by request. Preserve content-free refs/worktrees under
+`state/backups/project-command-recovery-20261012/` and prior main at
+`archive/2026-10-12/main-before-project-command-recovery`. Commit, fast-forward
+local main and remove only the merged feature branch. Preserve configuration,
+other worktrees, historical/unmerged tips and remote refs; no publication.
+
 ## Visual verification and useful rechecks, 12 October 2026
 
 `codex/visual-verification-recovery` starts from local main `3a79fdb`. It renews
