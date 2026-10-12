@@ -13,6 +13,7 @@ from pathlib import Path
 import subprocess
 import sys
 from time import monotonic, sleep
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -35,6 +36,12 @@ SNAPSHOT = """() => {
       return {opacity,visible,transform:style.transform};
     })};
 }"""
+
+
+def preview_reference_allowed(reference, origin):
+    value, approved = urlsplit(reference), urlsplit(origin)
+    return (value.scheme in {'http','ws'} and value.hostname == approved.hostname
+        and (value.port or 80) == (approved.port or 80) and not value.username and not value.password)
 
 
 def check_scroll_behavior(page, capture_directory=None):
@@ -158,6 +165,15 @@ def main():
                 args=['--disable-features=OverlayScrollbar'])
             try:
                 page = browser.new_page(viewport={'width':1440,'height':900})
+                page.context.route('**/*',lambda route: route.continue_()
+                    if preview_reference_allowed(route.request.url,args.url) else route.abort())
+                blocked_sockets = []
+                def websocket(route):
+                    if preview_reference_allowed(route.url,args.url):
+                        route.connect_to_server()
+                    else:
+                        blocked_sockets.append(route)
+                page.context.route_web_socket('**/*',websocket)
                 deadline = monotonic()+20
                 while True:
                     try:
@@ -168,6 +184,8 @@ def main():
                         if monotonic() > deadline:
                             raise
                         sleep(.1)
+                for route in blocked_sockets:
+                    route.close(code=1000,reason='Outside the isolated preview origin')
                 report = check_scroll_behavior(page,args.output.parent)
                 args.output.write_text(json.dumps(report, indent=2), encoding='utf-8')
                 print(json.dumps({'passed':report['passed'], 'failed':[c['name'] for c in report['checks'] if not c['passed']]}))

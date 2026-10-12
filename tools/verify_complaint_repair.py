@@ -56,6 +56,18 @@ def allowed_shell(arguments, project):
     return re.fullmatch(r'npm(?:\.cmd)? run (?:build|dev|preview)(?: -- --host 127\.0\.0\.1(?: --port [0-9]{1,5})?)?',command) is not None
 
 
+def remaining_owned_processes(identities, process_lookup):
+    """A reused PID is not an owned process left behind by this replay."""
+    remaining = []
+    for pid, created in identities:
+        try:
+            if process_lookup(pid).create_time() == created:
+                remaining.append(pid)
+        except OSError:
+            pass
+    return remaining
+
+
 def replay(frozen, folder, dependencies, key_file):
     from app.agent.bootstrap import build_agent_runtime
     from app.capabilities.contracts import CapabilityExecutionError, CapabilityErrorCode
@@ -134,7 +146,7 @@ def replay(frozen, folder, dependencies, key_file):
         service.resolve_approval(record.approval_id,allowed)
 
     service.set_approval_requester(approve)
-    owned_pids = set()
+    owned_identities = set()
     try:
         for index,prompt in enumerate(prompts(website),1):
             timer = Timer(600,service.cancel_current_task);timer.daemon=True;timer.start()
@@ -156,9 +168,6 @@ def replay(frozen, folder, dependencies, key_file):
                     if settled.call.capability == 'project.inspect':
                         summary['inspections'] += 1
                         summary['failed_inspections'] += output.get('passed') is not True
-                    for field in ('server_process_id','process_id','pid','preview_pid'):
-                        if isinstance(output.get(field),int):
-                            owned_pids.add(output[field])
             summary['turns'].append(turn)
             save()
             print(json.dumps({'attempt':folder.name,**turn,'requests':summary['requests']}),flush=True)
@@ -168,13 +177,24 @@ def replay(frozen, folder, dependencies, key_file):
     finally:
         sessions = runtime.registry.resolve('shell.run').sessions
         for session in sessions._sessions.values():
-            owned_pids.add(session._process.pid)
             try:
-                owned_pids.update(child.pid for child in psutil.Process(session._process.pid).children(recursive=True))
+                if session._process.poll() is not None:
+                    continue
+                process = psutil.Process(session._process.pid)
+                identity = (process.pid,process.create_time())
+                if session._process.poll() is not None:
+                    continue
+                owned_identities.add(identity)
+                owned_identities.update((p.pid,p.create_time()) for p in process.children(recursive=True))
             except psutil.Error:
                 pass
         service.shutdown();engine.close()
-        remaining = [pid for pid in owned_pids if psutil.pid_exists(pid)]
+        def process_lookup(pid):
+            try:
+                return psutil.Process(pid)
+            except psutil.Error as error:
+                raise OSError from error
+        remaining = remaining_owned_processes(owned_identities,process_lookup)
         summary['remaining_owned_process_count'] = len(remaining)
         summary['owned_resources_released'] = engine._runner is None and not remaining and all(
             s['owned_processes_released'] for s in sessions.list()['sessions'])
@@ -201,6 +221,8 @@ def main():
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--attempts',type=int,default=3,choices=range(1,6))
     args = parser.parse_args()
+    for name in ('frozen','dependencies','key_file','output'):
+        setattr(args,name,getattr(args,name).resolve())
     if not args.output.resolve().is_relative_to((ROOT/'state').resolve()):
         parser.error('Live output must stay under repository state.')
     logging.disable(logging.CRITICAL)
