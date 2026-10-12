@@ -33,8 +33,21 @@ def test_independent_oracle_only_requests_its_local_origin(reference, allowed):
 
 def test_live_cleanup_distinguishes_owned_process_from_pid_reuse():
     from types import SimpleNamespace
+    import psutil
+    def wait(timeout):
+        raise psutil.TimeoutExpired(timeout)
     def lookup(pid):
         if pid == 3:
             raise OSError('already exited')
-        return SimpleNamespace(create_time=lambda: {1:10,2:99}[pid])
-    assert remaining_owned_processes({(1,10),(2,20),(3,30)},lookup) == [1]
+        return SimpleNamespace(create_time=lambda: {1:10,2:99,4:40}[pid],
+            wait=wait if pid==1 else lambda timeout:0)
+    assert remaining_owned_processes({(1,10),(2,20),(3,30),(4,40)},lookup) == [1]
+
+
+def test_live_harness_allows_only_the_reviewed_readiness_probe_for_its_own_origin(tmp_path):
+    command = 'try { $response = Invoke-WebRequest -Uri \'http://127.0.0.1:12345/\' -UseBasicParsing -TimeoutSec 10; "HTTP $([int]$response.StatusCode)" } catch { Write-Error $_; exit 1 }'
+    arguments = dict(action='run',workdir=str(tmp_path),command=command)
+    assert allowed_shell(arguments,tmp_path,12345)
+    assert not allowed_shell(arguments,tmp_path,54321)
+    assert not allowed_shell({**arguments,'command':command+'; Write-Output extra'},tmp_path,12345)
+    assert not allowed_shell({**arguments,'command':command.replace('127.0.0.1','api.openai.com')},tmp_path,12345)

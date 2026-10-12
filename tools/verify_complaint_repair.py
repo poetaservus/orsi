@@ -47,23 +47,43 @@ def prompts(website):
         'great. currently the first section animation is disabled, can you re-enable it?\\']
 
 
-def allowed_shell(arguments, project):
+def allowed_shell(arguments, project, preview_port=None):
     if arguments.get('action') in {'list','status','stop'}:
         return True  # This runtime owns every session it can control.
     if Path(arguments.get('workdir','')).resolve() != project.resolve():
         return False
     command = arguments.get('command','').strip()
-    return re.fullmatch(r'npm(?:\.cmd)? run (?:build|dev|preview)(?: -- --host 127\.0\.0\.1(?: --port [0-9]{1,5})?)?',command) is not None
+    if re.fullmatch(r'npm(?:\.cmd)? run (?:build|dev|preview)(?: -- --host 127\.0\.0\.1(?: --port [0-9]{1,5})?)?',command):
+        return True
+    if preview_port is None:
+        return False
+    # Reviewed, read-only readiness probes for this exact disposable origin.
+    # Accept no arbitrary shell expression, URL, request body or output file.
+    url = f'http://127.0.0.1:{preview_port}/'
+    for parsing in ('','-UseBasicParsing '):
+        for seconds in (5,10):
+            prefix = f"try {{ $response = Invoke-WebRequest -Uri '{url}' {parsing}-TimeoutSec {seconds}; \"HTTP $([int]$response.StatusCode)\" }} catch {{ "
+            if command in {prefix+'Write-Error $_; exit 1 }',
+                    prefix+'"REQUEST FAILED: $($_.Exception.Message)"; exit 1 }'}:
+                return True
+    return False
 
 
 def remaining_owned_processes(identities, process_lookup):
     """A reused PID is not an owned process left behind by this replay."""
+    import psutil
     remaining = []
     for pid, created in identities:
         try:
-            if process_lookup(pid).create_time() == created:
-                remaining.append(pid)
-        except OSError:
+            process = process_lookup(pid)
+            if process.create_time() == created:
+                try:
+                    process.wait(timeout=0)
+                except psutil.TimeoutExpired:
+                    remaining.append(pid)
+        except psutil.AccessDenied:
+            remaining.append(pid)  # Unconfirmed cleanup cannot pass the gate.
+        except (OSError,psutil.NoSuchProcess):
             pass
     return remaining
 
@@ -138,7 +158,7 @@ def replay(frozen, folder, dependencies, key_file):
             allowed |= record.capability in {'project.verify','project.inspect'} and path == project.resolve()
             if record.capability == 'shell.run':
                 preview = record.approval_preview
-                allowed = allowed_shell(json.loads(preview[preview.index('{'):]),project)
+                allowed = allowed_shell(json.loads(preview[preview.index('{'):]),project,port)
         except (ValueError,TypeError,OSError):
             allowed = False
         summary['denied_approvals'] += not allowed
@@ -189,12 +209,7 @@ def replay(frozen, folder, dependencies, key_file):
             except psutil.Error:
                 pass
         service.shutdown();engine.close()
-        def process_lookup(pid):
-            try:
-                return psutil.Process(pid)
-            except psutil.Error as error:
-                raise OSError from error
-        remaining = remaining_owned_processes(owned_identities,process_lookup)
+        remaining = remaining_owned_processes(owned_identities,psutil.Process)
         summary['remaining_owned_process_count'] = len(remaining)
         summary['owned_resources_released'] = engine._runner is None and not remaining and all(
             s['owned_processes_released'] for s in sessions.list()['sessions'])
