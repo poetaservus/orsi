@@ -174,7 +174,8 @@ def responses_input(messages: Iterable[dict], definitions: Iterable[ModelCapabil
             raw_calls = [item for item in replay.items() if item["type"] == "function_call"]
             if raw_calls:
                 expected = tuple(ModelCapabilityCall.model_validate(call) for call in message.get("capability_calls", []))
-                response = normalize_responses_calls(raw_calls, _reversal_history_definitions(definitions, expected), CompletionMetadata())
+                response = normalize_responses_calls(_inspection_history_calls(raw_calls, definitions),
+                    _reversal_history_definitions(definitions, expected), CompletionMetadata())
                 if response.protocol_failure is not None or response.capability_calls != expected:
                     raise ValueError("OpenAI call evidence does not match its settled transcript.")
             elif "capability_calls" in message:
@@ -192,6 +193,30 @@ def responses_input(messages: Iterable[dict], definitions: Iterable[ModelCapabil
                     item_ids.add(item["id"])
         result.extend(segment)
     return result
+
+
+def _inspection_history_calls(raw_calls, definitions):
+    """Validate legacy steps using null default sentinels; replay original bytes.
+
+    Only the four newly optional checkpoint fields may be missing. Actual raw
+    evidence and all original arguments still have to match the settled calls.
+    Live response decoding remains strict.
+    """
+    names = {tool['name'] for tool, definition in zip(responses_function_tools(definitions), definitions)
+        if definition.name == 'project.inspect'}
+    values = deepcopy(raw_calls)
+    for item in values:
+        if item.get('name') not in names:
+            continue
+        try:
+            arguments = json.loads(item['arguments'])
+            for step in arguments.get('steps') or []:
+                for key in ('label', 'properties', 'reference', 'expectation'):
+                    step.setdefault(key, None)
+            item['arguments'] = json.dumps(arguments, ensure_ascii=False)
+        except (ValueError, TypeError, KeyError, AttributeError):
+            pass  # Ordinary strict decoding reports malformed evidence.
+    return values
 
 
 def _reversal_history_definitions(definitions, expected):
