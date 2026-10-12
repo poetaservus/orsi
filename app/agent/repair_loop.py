@@ -74,8 +74,8 @@ class RepairLoopTracker:
         project = os.path.normcase(os.path.abspath(project))
         checks = output.get('checks', [])
         failed = [c for c in checks if c.get('passed') is False]
-        if failed and all(c.get('failure_kind') in {'selector_error','target_not_found','checkpoint_reference_unavailable'} for c in failed):
-            return ('Inspection selector/target checks failed. Correct or verify the selector and readiness wait before retrying. '
+        if failed and all(c.get('failure_kind') in {'selector_error','target_not_found','checkpoint_reference_unavailable','observation_unavailable'} for c in failed):
+            return ('Inspection selector/target/capture checks failed. Correct or verify the selector and readiness wait before retrying. '
                 'A selector error alone does not justify an animation repair. Do not treat a corrected inspection as a source fix.')
         problems = output.get('problems', [])
         if output.get('passed') is False and (failed or problems):

@@ -81,7 +81,7 @@ def test_loading_only_pass_cannot_clear_an_unresolved_interaction(tmp_path):
     assert tracker.before(mutation,step=5) is None
 
 
-@pytest.mark.parametrize('kind', ['selector_error','target_not_found','checkpoint_reference_unavailable'])
+@pytest.mark.parametrize('kind', ['selector_error','target_not_found','checkpoint_reference_unavailable','observation_unavailable'])
 def test_selector_correction_does_not_require_or_authorize_a_source_repair(tmp_path, kind):
     tracker = RepairLoopTracker()
     failure = failed(tmp_path)

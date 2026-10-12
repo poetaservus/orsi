@@ -36,6 +36,14 @@ def checkpoint(label, **kwargs):
     return dict(action='checkpoint', label=label, target='#hero', **{'properties':['--progress','opacity','transform'], **kwargs})
 
 
+def test_attached_checkpoint_timeout_is_capture_failure_not_missing_target_or_defect():
+    from app.runtime.inspection_worker import _failure_kind
+    message = 'Locator.evaluate: Timeout 2000ms exceeded; locator resolved to visible SVG'
+    assert _failure_kind(message,'#hero',True) == 'observation_unavailable'
+    assert _failure_kind('Locator.element_handle: Timeout 2000ms exceeded','#absent') == 'target_not_found'
+    assert _failure_kind('Checkpoint interaction assertion failed','#hero',True) == 'interaction_assertion_failed'
+
+
 def test_one_session_delivers_initial_partial_complete_and_return_pixels(tmp_path):
     tool, result = inspection(tmp_path, [checkpoint('initial'), {'action':'scroll_to','amount':600},
         checkpoint('partial', expectation='visible'), {'action':'scroll_to','amount':1600},
@@ -63,6 +71,12 @@ def test_interaction_failure_is_distinct_from_selector_failure(tmp_path):
     assert not result.output['passed']
     assert result.output['checks'][2]['failure_kind'] == 'interaction_assertion_failed'
     assert result.output['checks'][3]['failure_kind'] == 'selector_error'
+
+
+def test_ambiguous_locator_is_selector_failure_for_actions_and_checkpoints(tmp_path):
+    _,result = inspection(tmp_path,[dict(action='visible',target='#hero,#next'),
+        dict(action='checkpoint',target='#hero,#next',label='ambiguous')])
+    assert [c['failure_kind'] for c in result.output['checks']] == ['selector_error','selector_error']
 
 
 def test_failed_reference_checkpoint_requires_inspection_correction(tmp_path):

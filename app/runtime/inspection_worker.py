@@ -34,6 +34,19 @@ def _checkpoint_assertion(current, reference, expectation):
         and all(abs(current["bounds"][key]-reference["bounds"][key]) <= 1 for key in ("x", "y", "width", "height")))
 
 
+def _failure_kind(message, target, checkpoint_attached=False):
+    message = message.lower()
+    if message.startswith('earlier checkpoint reference unavailable'):
+        return 'checkpoint_reference_unavailable'
+    if 'strict mode violation' in message or ('selector' in message and any(word in message for word in ('syntax','parsing'))):
+        return 'selector_error'
+    if checkpoint_attached and ('timeout' in message or message.startswith('checkpoint target detached')):
+        return 'observation_unavailable'
+    if 'timeout' in message and target:
+        return 'target_not_found'
+    return 'interaction_assertion_failed'
+
+
 def browser_inspection(spec):
     if spec.get("browser_directory"):
         os.environ["PLAYWRIGHT_BROWSERS_PATH"] = spec["browser_directory"]
@@ -142,6 +155,7 @@ def browser_inspection(spec):
 
             def observation(locator, properties):
                 return locator.evaluate("""(e, properties) => {
+                    if(!e.isConnected)throw new Error('Checkpoint target detached before observation; retry readiness.');
                     const r=e.getBoundingClientRect(), s=getComputedStyle(e);
                     let rendered=true;
                     for(let p=e;p;p=p.parentElement){const style=getComputedStyle(p);
@@ -156,13 +170,20 @@ def browser_inspection(spec):
             for step in spec["steps"]:
                 action, target = step["action"], step["target"]
                 check = {"action": action, "target": target, "passed": False}
+                checkpoint_attached = False
                 try:
                     locator = page.locator(target) if target else None
                     timeout = step.get("timeout_ms", 2000)
                     if action == "checkpoint":
-                        locator.wait_for(state="attached", timeout=timeout)
-                        current = {"label": step["label"], "target": target,
-                            **observation(locator, step["properties"])}
+                        # Resolve once. Locator.evaluate repeats selector polling
+                        # and can time out on a busy animation despite attachment.
+                        element = locator.element_handle(timeout=timeout)
+                        checkpoint_attached = True
+                        try:
+                            current = {"label": step["label"], "target": target,
+                                **observation(element, step["properties"])}
+                        finally:
+                            element.dispose()
                         path = str(Path(spec["screenshot"]).with_name(f"checkpoint-{len(checkpoints)}.png"))
                         capture(path)
                         current["screenshot_path"] = path
@@ -284,11 +305,7 @@ def browser_inspection(spec):
                     check["passed"] = True
                 except Exception as error:
                     check["error"] = str(error)[:300]
-                    message = str(error).lower()
-                    check["failure_kind"] = ("checkpoint_reference_unavailable" if message.startswith("earlier checkpoint reference unavailable")
-                        else "selector_error" if "selector" in message and ("syntax" in message or "parsing" in message or "strict mode" in message)
-                        else "target_not_found" if "timeout" in message and target
-                        else "interaction_assertion_failed")
+                    check["failure_kind"] = _failure_kind(str(error),target,checkpoint_attached)
                 checks.append(check)
             layout = page.evaluate("""() => {
                 const e=document.scrollingElement, all=[...document.querySelectorAll('*')], scan=all.slice(0,2000);

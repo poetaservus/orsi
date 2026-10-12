@@ -15,6 +15,8 @@ class RepairDiagnosis(RootModel[list[Annotated[str, Field(min_length=1, max_leng
 
     @model_validator(mode='after')
     def nonblank(self):
-        if len(self.root[0]) > 128 or any(not value.strip() for value in self.root):
+        if len(self.root[0]) > 128:
+            raise ValueError('First diagnosis string must be the exact failed call_id, at most 128 characters; put explanations in the remaining strings.')
+        if any(not value.strip() for value in self.root):
             raise ValueError('Repair diagnosis fields must be nonblank.')
         return self
