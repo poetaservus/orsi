@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.capabilities.contracts import CapabilityErrorCode
 from app.settings.agent_limits import MAX_AGENT_CAPABILITY_CALLS
+from app.agent.verification_scope import VERIFICATION_SCOPE_GUIDANCE
 
 
 def path_key(path: str) -> str:
@@ -27,6 +28,22 @@ class ArtifactEvidence(BaseModel):
     integrity_uncertain: bool = False
 
 
+class InteractionAssertionEvidence(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+    action: str = Field(max_length=32)
+    target: str = Field(max_length=256)
+    label: str = Field(default="", max_length=64)
+    passed: bool
+
+
+class VisualObservationEvidence(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+    label: str = Field(max_length=64)
+    screenshot_path: str = Field(max_length=32767)
+    screenshot_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    status: Literal["requires_review"] = "requires_review"
+
+
 class VerificationEvidence(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
     call_id: str = Field(min_length=1, max_length=128)
@@ -35,6 +52,10 @@ class VerificationEvidence(BaseModel):
     passed: bool
     stale: bool = False
     screenshot_path: str | None = None
+    command_passed: bool | None = None
+    interaction_assertions: tuple[InteractionAssertionEvidence, ...] = Field(default=(), max_length=12)
+    visual_observations: tuple[VisualObservationEvidence, ...] = Field(default=(), max_length=5)
+    frame_timing_captured: bool = False
 
 
 class TaskGoal(BaseModel):
@@ -69,9 +90,22 @@ def observe_goal(goal: TaskGoal, settled) -> TaskGoal:
         project = output.get("project_path") or call.arguments.get("project_path")
         kind = call.arguments.get("kind")
         if isinstance(project, str) and kind in {"build", "test", "browser", "desktop"}:
+            assertions, visuals = [], []
+            for check in output.get('checks', [])[:12] if output.get('evidence_version') == 2 else []:
+                if (check.get('action') in {'visible','text','in_view','model_loaded','scroll'} or
+                        check.get('action') == 'checkpoint' and check.get('expectation') != 'observe'):
+                    assertions.append(InteractionAssertionEvidence(action=check['action'],target=check.get('target',''),
+                        label=check.get('label',''),passed=check.get('passed') is True))
+            for observation in [*output.get('checkpoints', [])[:4], output] if output.get('evidence_version') == 2 else []:
+                if isinstance(observation.get('screenshot_path'),str):
+                    visuals.append(VisualObservationEvidence(label=observation.get('label','final'),
+                        screenshot_path=observation['screenshot_path'],screenshot_sha256=observation.get('screenshot_sha256')))
             item = VerificationEvidence(call_id=result.call_id, project_path=project, kind=kind,
                 passed=result.success and output.get("passed") is True,
-                screenshot_path=output.get("screenshot_path") if isinstance(output.get("screenshot_path"), str) else None)
+                screenshot_path=output.get("screenshot_path") if isinstance(output.get("screenshot_path"), str) else None,
+                command_passed=result.success and output.get('passed') is True if kind in {'build','test'} and output.get('evidence_version') == 2 else None,
+                interaction_assertions=tuple(assertions),visual_observations=tuple(visuals),
+                frame_timing_captured=output.get('evidence_version') == 2 and any(isinstance(c.get('frame_timing'),dict) for c in output.get('checks',[])[:12]))
             check = "runtime_execution" if call.capability == "project.verify" else "gui_validation"
             return goal.model_copy(update={"verification": (*goal.verification, item),
                 "unavailable_checks": tuple(value for value in goal.unavailable_checks if value != check) if result.success else goal.unavailable_checks})
@@ -138,7 +172,7 @@ def goal_feedback(goal: TaskGoal) -> str:
         "These are file evidence, not proof that every requested change is implemented. "
         "Compare the latest explicit user requirements with the settled work. Continue only for an identified "
         "unmet requirement, or finish with changed files and remaining/unrun checks. "
-        "Use advertised project.verify for the documented build and relevant tests, then project.inspect for UI changes. "
+        + VERIFICATION_SCOPE_GUIDANCE +
         "Respect approval and execution limits; report failed, stale and unrun checks explicitly. "
         + verification_report(goal)
     )
@@ -163,4 +197,8 @@ def verification_report(goal: TaskGoal) -> str:
         return "No project verification or inspection receipts for this request."
     return "Verification receipts (only the recorded scopes): " + "; ".join(
         f"{item.kind} {'stale' if item.stale else 'passed' if item.passed else 'failed or interrupted'} [{item.call_id}]"
+        + (f"; interaction assertions {sum(c.passed for c in item.interaction_assertions)}/{len(item.interaction_assertions)} passed"
+            if item.interaction_assertions else '')
+        + (f"; {len(item.visual_observations)} visual observations require review" if item.visual_observations else '')
+        + ('; frame timing captured (smooth rendering unverified)' if item.frame_timing_captured else '')
         for item in goal.verification) + ". Screenshots require visual review."

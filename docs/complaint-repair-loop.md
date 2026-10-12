@@ -54,3 +54,36 @@ neither run is reported as a passing qualification.
 Full-suite and repeated live repair qualification will be recorded below before
 integration. Accepted model profiles, sampling, routing and context policy stay
 unchanged. No remote publication is authorized by this change.
+
+## Diagnosis and useful progress
+
+An executed interaction or visual/runtime failure creates a project-scoped
+diagnosis requirement. Before editing again, a later complete source read must
+be received in an earlier model step. The edit/write tool's optional structured
+`repair_diagnosis` must identify the failure receipt, what failed, the
+evidence-supported suspected cause, proposed change, and confirming observation.
+This supports native tool-only responses and enforces structure/provenance,
+not the truth of a model's hypothesis. Existing exact-call approvals,
+redundant-edit protections, rollback and failure budgets remain authoritative.
+Selector errors direct inspection correction; unavailable previews direct
+startup recovery. Loading-only checks cannot clear a failed interaction scope.
+
+Read reassessment now follows settled project revisions, inspection scenarios
+and unresolved check identities. Each revision gets one initial reassessment
+and at most one newly exposed failure reassessment. Different screenshot bytes,
+measurement values, error text or scenarios alone cannot earn more reads.
+Proven edits still renew their necessary rechecks. Focused diagnosis, progress,
+rollback, strict cloud and completion qualification passed 158 checks.
+
+## Completion scope and evidence
+
+Review asks for further work only for a named unmet requirement and missing
+observation. Explicit skipped-browser instructions are respected and that
+behavior remains unverified. Generic loading/visibility cannot replace the
+requested interaction. Command results, interaction assertions, visual
+observations and frame-timing capture are recorded separately; pixels always
+remain pending visual review and callback timings do not certify smoothness.
+Versioned new receipt projections preserve exact legacy history reconstruction.
+Completion, durable verification, answer retention and scope qualification
+passed 112 checks. A too-long diagnosis rejection in its initial test run was
+corrected to the existing 500-character error bound; that run was not passing.

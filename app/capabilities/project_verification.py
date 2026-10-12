@@ -355,7 +355,8 @@ class ProjectVerifyCapability(_ProjectCapability):
     name = "project.verify"
     description = ("Run one explicitly approved project build or relevant test command with a 120-second deadline, "
         "48-KiB output limit and owned process cleanup. Use the project's documented build and selected tests; "
-        "this runs project code with account access, not a security sandbox. Follow UI changes with project.inspect. "
+        "this runs project code with account access, not a security sandbox. When browser checks are in the requested scope, "
+        "follow UI changes with project.inspect testing the reported interaction. Respect explicit instructions to skip checks. "
         "For Windows npm scripts, use executable='npm' and arguments=['run','build'] or ['test']; "
         "the tool resolves installed Node/npm-cli.js and shows the actual command for approval. "
         "A zero exit code proves only this command; failures/timeouts/unrun checks must be reported.")
@@ -366,7 +367,7 @@ class ProjectVerifyCapability(_ProjectCapability):
         command, _ = project_command(arguments.executable, arguments.arguments)
         result = run_worker(command,
             cwd=project, timeout=arguments.timeout_seconds, cancellation=context.cancellation)
-        return {"project_path": str(project), "kind": arguments.kind,
+        return {"project_path": str(project), "kind": arguments.kind, "evidence_version": 2,
             "passed": result["exit_code"] == 0 and result["stop_reason"] is None,
             "command": command, "content_is_untrusted": True, **result}
 
@@ -408,7 +409,7 @@ class ProjectInspectCapability(_ProjectCapability):
                 timeout=arguments.timeout_seconds, cancellation=context.cancellation,
                 job_memory_bytes=4 * 1024 * 1024 * 1024)
             if result["exit_code"] != 0 or result["stop_reason"] is not None:
-                return {"project_path": str(project), "kind": arguments.kind, "passed": False,
+                return {"project_path": str(project), "kind": arguments.kind, "passed": False, "evidence_version": 2,
                     "inspection_complete": False, "content_is_untrusted": True, **result}
             try:
                 observations = json.loads(result["output"])
@@ -434,7 +435,7 @@ class ProjectInspectCapability(_ProjectCapability):
             if total_bytes > MAX_INSPECTION_IMAGE_BYTES:
                 raise Error(Code.INVALID_OUTPUT, "Combined inspection screenshots exceed their transport bound.")
             return {"project_path": str(project), "kind": arguments.kind, "inspection_complete": True,
-                "content_is_untrusted": True, **observations, "owned_processes_released": True}
+                "content_is_untrusted": True, **observations, "owned_processes_released": True, "evidence_version": 2}
         finally:
             spec.unlink(missing_ok=True)
 
