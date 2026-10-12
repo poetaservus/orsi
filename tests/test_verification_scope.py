@@ -16,6 +16,14 @@ def test_review_names_scope_skip_behavior_specific_requirements_and_frame_limits
     assert completion_review_schema([message])['properties']['goal_id']['enum'] == ['turn-1']
 
 
+def test_summary_scope_reports_findings_without_requiring_unrequested_source_repairs():
+    goal = TaskGoal(goal_id='turn-1',objective='Inspect and summarize this project.')
+    for available in (False,True):
+        text = completion_review_message(goal,None,browser_inspection_available=available)['content']
+        assert 'inspection/summary requests, report' in text
+        assert 'only when requested' in text
+
+
 def inspection(output):
     return SettledCall(provider_message_id='response-1',
         call=ModelCapabilityCall(provider_call_id='call-1',capability='project.inspect',

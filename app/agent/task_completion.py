@@ -46,7 +46,8 @@ def task_context_message(goal: TaskGoal) -> dict:
 def completion_review_message(goal: TaskGoal, pending_recovery: str | None, *, browser_inspection_available=True) -> dict:
     scope = VERIFICATION_SCOPE_GUIDANCE if browser_inspection_available else (
         'Request more work only for a specific unmet user requirement. Honor explicit instructions to skip browser verification '
-        'or other checks; report unrun behavior as unverified. Unavailable tools grant no execution authority. ')
+        'or other checks; report unrun behavior as unverified. For inspection/summary requests, report defects; require repairs '
+        'only when requested. Unavailable tools grant no execution authority. ')
     return {"role": "system", "content": (
         REVIEW_PREFIX + " Check current requirements against settled work; unrelated answers, plans, reads and earlier tasks "
         "do not prove completion. Source cannot prove runtime/GUI checks. "

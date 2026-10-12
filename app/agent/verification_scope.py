@@ -2,6 +2,7 @@
 
 VERIFICATION_SCOPE_GUIDANCE = (
     'Request further work only for a specific unmet user requirement, naming the missing observation. '
+    'For inspection/summary requests, report observed defects; require source repairs only when requested. '
     'Honor explicit instructions to skip browser verification or other checks; report that scope as unverified '
     'without reopening it merely because a tool exists. Within the requested verification scope, use project.verify '
     'for the documented build/relevant tests and project.inspect for the reported UI interaction. '
