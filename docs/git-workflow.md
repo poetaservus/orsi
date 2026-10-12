@@ -1,5 +1,23 @@
 # Git layout and baseline hygiene
 
+## Complaint-driven repair qualification, 13 October 2026
+
+`codex/scroll-behavior-acceptance` starts from verified local main `aae279a`.
+It adds bounded checkpoint evidence, source-grounded repair diagnosis, revision
+and failed-check progress tracking, and completion review scoped to the user's
+request. See [the contract and qualification](complaint-repair-loop.md).
+Content-free refs and worktree inventory are retained under
+`state/backups/complaint-repair-20261012`; prior main is preserved at
+`archive/2026-10-12/main-before-complaint-repair`. Profiles, sampling, routing,
+context policy and user settings remain unchanged. The original later prompt
+is unavailable and its exact replay is separately skipped.
+Integration requires repeated independent live behavioral acceptance as well
+as deterministic checks. Final live qualification passed 0/3 replays. The final
+full suite recorded one unchanged installer cleanup failure; its 60-test group
+passed in isolation. Preserve the feature branch and verified main while
+the gates remain unmet. Once qualified, fast-forward local main and remove only its
+merged feature branch. Preserve other worktrees and remote branches; no publication.
+
 ## Native cloud reversal recovery, 12 October 2026
 
 `codex/native-reversal-recovery` starts from local main `ce21a68`. It adds a
