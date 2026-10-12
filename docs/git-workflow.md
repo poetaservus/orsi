@@ -1,5 +1,18 @@
 # Git layout and baseline hygiene
 
+## Composer model and reasoning selection, 13 October 2026
+
+`codex/composer-model-reasoning` starts from verified local main `aae279a`.
+It adds composer model/reasoning controls and a microphone placeholder,
+with per-model reasoning preferences in ignored or encrypted state. Effective
+API requests use the selection while preserving versioned profiles, prompts,
+tools, routing, and context limits. See [the change and checks](composer-reasoning.md).
+The necessary native run passed 246 tests. The full suite and live repair gates
+were not run by user request. Preserve prior main at
+`archive/2026-10-13/main-before-composer-reasoning`, commit, fast-forward local
+main and remove only this merged feature branch. Retain the unmerged
+`codex/scroll-behavior-acceptance` branch and other worktrees; no publication.
+
 ## Native cloud reversal recovery, 12 October 2026
 
 `codex/native-reversal-recovery` starts from local main `ce21a68`. It adds a

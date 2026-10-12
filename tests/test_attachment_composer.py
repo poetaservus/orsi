@@ -97,7 +97,7 @@ def test_plus_opens_single_file_picker_in_local_and_prepares_draft(windows, tmp_
     assert window._attachment_picker is None and window.attachment_tray.ready and window.attachment_tray.count == 1
     ref = window.attachment_tray.references[0]
     assert AttachmentProcessor(window.service.store.attachment_store).load(ref).text == "file contents"
-    assert window.composer.height() == 130 and not window.attachment_tray.isHidden()
+    assert window.composer.height() == 186 and not window.attachment_tray.isHidden()
     assert window.folder_placeholder.toolTip() == "Folder (placeholder)"
 
 
@@ -170,7 +170,7 @@ def test_remove_restores_compact_composer_and_allows_next_file(windows, tmp_path
     wait_for(lambda: not window.attachment_tray.is_processing)
     entry = next(iter(window.attachment_tray._entries.values()))
     entry["remove"].click()
-    assert window.attachment_tray.count == 0 and window.composer.height() == 54
+    assert window.attachment_tray.count == 0 and window.composer.height() == 110
     window.attachment_tray.add_paths([path])
     wait_for(lambda: not window.attachment_tray.is_processing)
     assert window.attachment_tray.count == 1
@@ -459,7 +459,7 @@ def test_new_session_clears_prepared_draft(windows, tmp_path):
     window.attachment_tray.add_paths([text_file(tmp_path)])
     wait_for(lambda: not window.attachment_tray.is_processing)
     window.create_new_session()
-    assert window.attachment_tray.count == 0 and window.composer.height() == 54
+    assert window.attachment_tray.count == 0 and window.composer.height() == 110
 
 
 def test_plain_text_paste_and_enter_keep_existing_behavior(windows):

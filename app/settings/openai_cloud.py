@@ -11,6 +11,7 @@ from app.settings.images import ImageGenerationSettings
 
 
 ReasoningEffort = Literal["none", "low", "medium", "high", "xhigh", "max"]
+REASONING_EFFORTS = ("none", "low", "medium", "high", "xhigh", "max")
 # Verified against the linked OpenAI model pages on 2026-10-04. These are
 # documented ceilings, not a claim of account access or live qualification.
 _MODEL_CONTRACTS = {
@@ -49,6 +50,10 @@ class OpenAIModelProfile(BaseModel):
     @property
     def effective_context_length(self) -> int:
         return min(self.context_length, self.max_input_tokens + self.max_output_tokens)
+
+    @property
+    def supported_reasoning_efforts(self) -> tuple[str, ...]:
+        return tuple(effort for effort in REASONING_EFFORTS if effort in _MODEL_CONTRACTS[self.id][2])
 
 
 class OpenAIRateLimits(BaseModel):
@@ -111,6 +116,12 @@ class OpenAIModelSelection(BaseModel):
     model: str
 
 
+class OpenAIReasoningSelection(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True, hide_input_in_errors=True)
+    schema_version: Literal[1] = 1
+    efforts: dict[str, ReasoningEffort] = Field(default_factory=dict)
+
+
 class OpenAIModelCatalog:
     def __getattribute__(self, name):
         if name == "current_id":
@@ -123,15 +134,43 @@ class OpenAIModelCatalog:
     def __init__(self, config: OpenAICloudConfig, selection_path: Path | None = None):
         self.config = config
         self._store = JsonStore(selection_path) if selection_path is not None else None
+        self._reasoning_store = JsonStore(selection_path.parent / "cloud_reasoning_selection_v1.json") if selection_path is not None else None
+        self._reasoning_efforts = {}
         self.current_id = config.default_model
         stored = self._store.load() if self._store is not None else None
         if stored is not None:
             self.current_id = OpenAIModelSelection.model_validate(stored).model
         config.profile(self.current_id)
+        if self._reasoning_store is not None:
+            saved = self._reasoning_store.load()
+            if saved is not None:
+                efforts = OpenAIReasoningSelection.model_validate(saved).efforts
+                for model_id, effort in efforts.items():
+                    self._profile_with_effort(model_id, effort)
+                self._reasoning_efforts = efforts
 
     @property
     def current_profile(self) -> OpenAIModelProfile:
-        return self.config.profile(self.current_id)
+        model_id = self.current_id
+        effort = self._reasoning_efforts.get(model_id)
+        return self.config.profile(model_id) if effort is None else self._profile_with_effort(model_id, effort)
+
+    def _profile_with_effort(self, model_id, effort):
+        profile = self.config.profile(model_id)
+        if effort == profile.reasoning_effort:
+            return profile
+        values = profile.model_dump()
+        values.update(reasoning_effort=effort, qualified=False)
+        if effort != "none":
+            values["temperature"] = None
+        return OpenAIModelProfile.model_validate(values)
+
+    def select_reasoning_effort(self, effort: str) -> None:
+        self._profile_with_effort(self.current_id, effort)
+        efforts = {**self._reasoning_efforts, self.current_id: effort}
+        if self._reasoning_store is not None:
+            self._reasoning_store.save(OpenAIReasoningSelection(efforts=efforts).model_dump())
+        self._reasoning_efforts = efforts
 
     def select(self, model_id: str) -> None:
         self.config.profile(model_id)

@@ -306,6 +306,17 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
             self._rate_pacer = OpenAIRatePacer(self._configured_rate_limits)
         self._close_runner(runner)
 
+    def select_reasoning_effort(self, effort: str) -> None:
+        with self._lock:
+            self._ensure_open()
+            previous = self.catalog.current_profile.reasoning_effort
+            self.catalog.select_reasoning_effort(effort)
+            if previous != self.catalog.current_profile.reasoning_effort:
+                self.context_revision += 1
+                self.last_request_metrics = None
+                self._attachment_counts.clear()
+                self.last_attachment_capacity = None
+
     @property
     def _client(self):
         return self._runner.client if self._runner is not None else None

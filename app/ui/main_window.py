@@ -73,7 +73,8 @@ from app.ui.image_viewer import ImageViewer
 from app.ui.motion import create_attachment_file_dialog
 from app.ui.composer import (
     ComposerFrame, MessageInput, COMPOSER_STYLE, composer_tools, configure_input, configure_send,
-    COMPOSER_WIDTH as _COMPOSER_WIDTH, COMPOSER_HEIGHT as _COMPOSER_HEIGHT,
+    composer_microphone, composer_selector, REASONING_LABELS,
+    COMPOSER_WIDTH as _COMPOSER_WIDTH, MESSAGE_COMPOSER_HEIGHT as _COMPOSER_HEIGHT,
 )
 from app.conversation.attachment_processing import SUPPORTED_FILE_FILTER
 
@@ -569,10 +570,9 @@ class MainWindow(QMainWindow):
         composer_row = QWidget(self._message_composer)
         composer_row.setFixedHeight(_COMPOSER_HEIGHT)
         message_layout.addWidget(composer_row)
-        composer_layout = QHBoxLayout(composer_row)
-        composer_layout.setContentsMargins(22, 7, 20, 7)
+        composer_layout = QVBoxLayout(composer_row)
+        composer_layout.setContentsMargins(18, 10, 16, 10)
         composer_layout.setSpacing(6)
-        composer_layout.setAlignment(Qt.AlignmentFlag.AlignBottom)
 
         self.composer_tools, self.add_placeholder, self.folder_placeholder = composer_tools(self._message_composer)
 
@@ -598,13 +598,29 @@ class MainWindow(QMainWindow):
         self.stop.setEnabled(False)
         self.stop.hide()
 
-        composer_layout.addWidget(self.composer_tools, 0, Qt.AlignmentFlag.AlignVCenter)
         input_layout = QHBoxLayout()
         input_layout.setContentsMargins(0, 0, 0, 0)
         input_layout.setSpacing(6)
         input_layout.addWidget(self.input, 1)
         composer_layout.addLayout(input_layout, 1)
-        composer_layout.addWidget(self.action_slot)
+        toolbar = QHBoxLayout()
+        toolbar.setContentsMargins(0, 0, 0, 0)
+        toolbar.setSpacing(4)
+        self.microphone_placeholder = composer_microphone(composer_row)
+        self.composer_model_selector = composer_selector(composer_row, "Model", 190)
+        self.composer_model_selector.setToolTip("Model for your next message")
+        self.composer_model_selector.view().setMinimumWidth(300)
+        self.reasoning_selector = composer_selector(composer_row, "Reasoning level", 120)
+        toolbar.addWidget(self.microphone_placeholder)
+        toolbar.addWidget(self.composer_tools)
+        toolbar.addWidget(self.composer_model_selector)
+        toolbar.addWidget(self.reasoning_selector)
+        toolbar.addStretch(1)
+        toolbar.addWidget(self.action_slot)
+        composer_layout.addLayout(toolbar)
+        self.composer_model_selector.currentIndexChanged.connect(self._select_composer_model)
+        self.reasoning_selector.currentIndexChanged.connect(self._select_composer_reasoning)
+        self._sync_composer_models()
         self.skill_picker = SkillPicker(self.input, self.composer,
                                         getattr(service, "skill_registry", None),
                                         input_layout=input_layout, send_button=self.send)
@@ -1388,6 +1404,7 @@ class MainWindow(QMainWindow):
         )
         self.skill_settings_page.set_available(not busy and not getattr(self, "_closing", False))
         self._sync_image_settings(busy=busy or self._settings_busy)
+        self._sync_composer_models(busy=busy or self._settings_busy)
         duration_seconds = self.chat.set_thinking(busy)
         self.activity.set_activity("" if busy else self._ready_status())
         return duration_seconds
@@ -1549,6 +1566,7 @@ class MainWindow(QMainWindow):
             )
 
             self.cloud_model_selector.setToolTip(self.cloud_model_details.text())
+        self._sync_composer_models()
 
     def _sync_image_settings(self, *, busy=False):
         cloud = getattr(self.inference, "cloud", self.inference)
@@ -1616,6 +1634,79 @@ class MainWindow(QMainWindow):
                 self.local_model_details.text() + "\n" + self.local_model_details.toolTip())
         else:
             self.local_model_details.setText("Local model selection is unavailable.")
+        self._sync_composer_models()
+
+    def _sync_composer_models(self, *, busy=None):
+        if not hasattr(self, "composer_model_selector"):
+            return
+        if busy is None:
+            busy = self.thread is not None or self._settings_busy
+        available = self.inference is not None and self.service is not None
+        mode = getattr(self.inference, "mode", "local")
+        local = getattr(self.inference, "model_catalog", None)
+        cloud = getattr(self.inference, "cloud_model_catalog", None)
+        selector = self.composer_model_selector
+        selector.blockSignals(True)
+        selector.clear()
+        for option in getattr(self.inference, "available_modes", ("local",)):
+            if option == "local":
+                models = getattr(local, "models", ())
+                for model in models:
+                    selector.addItem(model.name, "local:" + model.id)
+                if not models:
+                    selector.addItem("Local", "local:")
+            elif option == "cloud":
+                profiles = getattr(getattr(cloud, "config", None), "profiles", ())
+                for profile in profiles:
+                    label = {"gpt-6-luna": "GPT-6 Luna", "gpt-6.1-sol": "GPT-6.1 Sol"}.get(profile.id, profile.id)
+                    selector.addItem(label, "cloud:" + profile.id)
+                if not profiles:
+                    selector.addItem("Cloud", "cloud:")
+        current_id = getattr(cloud if mode == "cloud" else local, "current_id", None)
+        selector.setCurrentIndex(selector.findData(mode + ":" + (current_id or "")))
+        selector.setFixedWidth(min(220, max(110, selector.fontMetrics().horizontalAdvance(selector.currentText()) + 38)))
+        selector.blockSignals(False)
+        selector.setEnabled(available and not busy)
+        reason = self.reasoning_selector
+        reason.blockSignals(True)
+        reason.clear()
+        if cloud is not None and mode == "cloud":
+            profile = cloud.current_profile
+            for effort in profile.supported_reasoning_efforts:
+                reason.addItem(REASONING_LABELS[effort], effort)
+            reason.setCurrentIndex(reason.findData(profile.reasoning_effort))
+            reason.setToolTip("Reasoning level sent to the API for your next message")
+        else:
+            reason.addItem("Reasoning", None)
+            reason.setToolTip("Reasoning level is available for supported cloud models")
+        reason.blockSignals(False)
+        reason.setFixedWidth(max(100, reason.fontMetrics().horizontalAdvance(reason.currentText()) + 38))
+        reason.setEnabled(available and not busy and cloud is not None and mode == "cloud")
+
+    def _select_composer_model(self, index):
+        selected = self.composer_model_selector.itemData(index)
+        if self.thread is not None or self._settings_busy or self.service is None or not selected:
+            self._sync_composer_models()
+            return
+        mode, _, model_id = selected.partition(":")
+        if mode != self.inference.mode:
+            self.model_selector.setCurrentIndex(self.model_selector.findData(mode))
+        if mode == self.inference.mode and model_id:
+            selector = self.cloud_model_selector if mode == "cloud" else self.local_model_selector
+            selector.setCurrentIndex(selector.findData(model_id))
+        self._sync_composer_models()
+
+    def _select_composer_reasoning(self, index):
+        effort = self.reasoning_selector.itemData(index)
+        if self.thread is not None or self._settings_busy or self.service is None or effort is None:
+            self._sync_composer_models()
+            return
+        try:
+            self.service.select_cloud_reasoning(effort)
+        except (InferenceUnavailable, RuntimeError, ValueError, OSError):
+            self.chat.add_message("Agent", "Could not change reasoning. Your previous level is still active.", True)
+        self._sync_cloud_model_selector()
+        self._update_context_window()
 
     @Slot(int)
     def _select_local_model(self, index):

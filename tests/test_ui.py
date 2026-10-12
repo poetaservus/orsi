@@ -223,7 +223,7 @@ class UiTests(unittest.TestCase):
         self.assertEqual(window.chat._messages, [])
         self.assertEqual(window.context_window.bar.value(), 0)
         self.assertFalse(window.startup_greeting.isHidden())
-        self.assertEqual(window.composer.y(), (window._content.height() - 54) // 2)
+        self.assertEqual(window.composer.y(), (window._content.height() - 110) // 2)
         self.assertEqual(window.new_session_button.accessibleName(), "New session")
         self.assertEqual(window.settings_button.accessibleName(), "Settings")
         self.assertTrue(window.settings_button.isEnabled())
@@ -232,7 +232,7 @@ class UiTests(unittest.TestCase):
     def test_composer_preserves_large_multiline_pastes_and_shift_enter(self):
         self.app.setFont(QFont("Arial", 10))
         window = MainWindow(None, "TEST-HOST")
-        self.assertEqual(window.composer.height(), 54)
+        self.assertEqual(window.composer.height(), 110)
         self.assertEqual(window.input.height(), 41)
         self.assertEqual(window.send.size().width(), 34)
         self.assertEqual(window.send.pos().y(), 4)
@@ -277,8 +277,8 @@ class UiTests(unittest.TestCase):
 
         self.assertEqual(window.app_controls.height(), 28)
         self.assertEqual(window.composer.width(), 799)
-        self.assertEqual(window.composer.height(), 54)
-        self.assertEqual(window.composer.y(), (window._content.height() - 54) // 2)
+        self.assertEqual(window.composer.height(), 110)
+        self.assertEqual(window.composer.y(), (window._content.height() - 110) // 2)
         self.assertLessEqual(abs(window.composer.x() - 560), 1)
         self.assertLessEqual(
             abs(window._content.width() - window.composer.geometry().right() - 1 - 561),
@@ -348,8 +348,8 @@ class UiTests(unittest.TestCase):
         window.show()
         QApplication.processEvents()
 
-        intro_y = (window._content.height() - 54) // 2
-        normal_y = window._content.height() - 96
+        intro_y = (window._content.height() - 110) // 2
+        normal_y = window._content.height() - 152
         self.assertEqual(window.composer.y(), intro_y)
         self.assertTrue(window.startup_greeting.isVisible())
 

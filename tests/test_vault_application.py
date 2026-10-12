@@ -569,6 +569,9 @@ def test_cached_preferences_documents_and_crash_recovery_are_revoked(profile):
     images.select(ImageGenerationSettings(quality="low"))
     catalog = OpenAIModelCatalog(config(), session.path("state/cloud_model_selection_v1.json"))
     catalog.select("gpt-6.1-sol")
+    catalog.select_reasoning_effort("high")
+    reopened_catalog = OpenAIModelCatalog(config(), session.path("state/cloud_model_selection_v1.json"))
+    assert reopened_catalog.current_profile.reasoning_effort == "high"
     journal = CapabilityCrashJournal(session.path("state/capability_journal_v1.json"))
     assert journal.records == ()
     attachments = VaultAttachmentStore(session.path("state/attachments"))
@@ -577,7 +580,8 @@ def test_cached_preferences_documents_and_crash_recovery_are_revoked(profile):
     assert docs.load(ref).text == MARKER
     assert images.current.quality == "low" and catalog.current_id == "gpt-6.1-sol"
     session.lock()
-    for read in (lambda: images.current, lambda: catalog.current_id,
+    for read in (lambda: images.current, lambda: catalog.current_id, lambda: catalog.current_profile,
+                 lambda: reopened_catalog.current_profile,
                  lambda: journal.records, lambda: docs.load(ref)):
         with pytest.raises(VaultLocked):
             read()

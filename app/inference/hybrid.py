@@ -402,6 +402,20 @@ class HybridInferenceEngine(InferenceEngine):
             notice, self._notice = self._notice, None
         return notice
 
+    def select_cloud_reasoning(self, effort: str) -> None:
+        with self._lock:
+            if self._closed:
+                raise InferenceUnavailable("Inference is closed.")
+            if self._mode != "cloud":
+                raise InferenceUnavailable("Switch to Cloud before choosing a reasoning level.")
+            if self.cloud_model_catalog is None:
+                raise InferenceUnavailable("Cloud reasoning selection is unavailable.")
+            previous = self.cloud_model_catalog.current_profile.reasoning_effort
+            self.cloud.select_reasoning_effort(effort)
+            if previous != self.cloud_model_catalog.current_profile.reasoning_effort:
+                self.context_revision += 1
+        self.record_baseline()
+
     def cancel_current_request(self) -> None:
         with self._lock:
             if self._closed:

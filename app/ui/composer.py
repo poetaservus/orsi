@@ -4,10 +4,34 @@ from pathlib import Path
 from PySide6.QtCore import QEasingCurve, QRectF, QSize, Qt, Signal, QVariantAnimation
 from PySide6.QtGui import QColor, QIcon, QLinearGradient, QPainter, QPainterPath, QPalette
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QPushButton, QStyle, QStyleOptionButton, QTextEdit, QWidget
+from app.ui.inputs import ScrollSafeComboBox
 
 ASSETS = Path(__file__).with_name("assets")
 COMPOSER_WIDTH = 799
 COMPOSER_HEIGHT = 54
+MESSAGE_COMPOSER_HEIGHT = 110
+
+REASONING_LABELS = {"none": "None", "low": "Low", "medium": "Medium", "high": "High", "xhigh": "Extra High", "max": "Max"}
+
+
+def composer_selector(parent, name, width):
+    selector = ScrollSafeComboBox(parent)
+    selector.setObjectName("composerSelector")
+    selector.setAccessibleName(name)
+    selector.setFixedSize(width, 32)
+    return selector
+
+
+def composer_microphone(parent):
+    button = QPushButton(parent)
+    button.setObjectName("composerMicrophone")
+    button.setFixedSize(32, 32)
+    button.setIcon(QIcon(str(ASSETS / "microphone.svg")))
+    button.setIconSize(QSize(20, 20))
+    button.setAccessibleName("Microphone (coming soon)")
+    button.setToolTip("Microphone (coming soon)")
+    button.setEnabled(False)
+    return button
 
 
 class MessageInput(QTextEdit):
@@ -47,13 +71,13 @@ class ComposerFrame(QFrame):
         path = QPainterPath()
         path.addRoundedRect(rect, radius, radius)
         fill = QLinearGradient(rect.topLeft(), rect.bottomLeft())
-        fill.setColorAt(0., QColor("#41444d"))
-        fill.setColorAt(.45, QColor("#383b45"))
-        fill.setColorAt(1., QColor("#303340"))
-        painter.setPen(QColor(105, 109, 124, 190))
+        fill.setColorAt(0., QColor("#2c3036"))
+        fill.setColorAt(.45, QColor("#2a2e34"))
+        fill.setColorAt(1., QColor("#282c32"))
+        painter.setPen(QColor("#373c43"))
         painter.setBrush(fill)
         painter.drawPath(path)
-        painter.setPen(QColor(255, 255, 255, 26))
+        painter.setPen(QColor(255, 255, 255, 8))
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRoundedRect(rect.adjusted(2., 2., -2., -2.), max(1., radius - 2), max(1., radius - 2))
 
@@ -153,6 +177,18 @@ def configure_send(button):
 COMPOSER_STYLE = """
 QFrame#composer { background: transparent; border: none; border-radius: 27px; }
 QWidget#composerTools { background: transparent; border: none; }
+QPushButton#composerMicrophone { background: transparent; border: none; padding: 0; }
+QComboBox#composerSelector {
+    background: transparent; color: #dedee0; border: none; border-radius: 8px;
+    padding: 3px 8px; font-family: Saira; font-size: 13px;
+}
+QComboBox#composerSelector:hover { background: rgba(255, 255, 255, 14); }
+QComboBox#composerSelector:disabled { color: #777d8b; }
+QComboBox#composerSelector::drop-down { border: none; width: 18px; }
+QComboBox#composerSelector QAbstractItemView {
+    background: #292d36; color: #dedee0; border: 1px solid #4b505d;
+    selection-background-color: #414753; outline: none; padding: 4px;
+}
 QPushButton#composerAddPlaceholder, QPushButton#composerFolderPlaceholder {
     background: transparent; border: none; border-radius: 16px; padding: 0;
 }
@@ -171,3 +207,6 @@ QPushButton#sendButton:hover, QPushButton#stopButton:hover { background: #454852
 QPushButton#sendButton:pressed, QPushButton#stopButton:pressed { background: #2c2e35; }
 QPushButton#sendButton:disabled, QPushButton#stopButton:disabled { background: transparent; }
 """
+COMPOSER_STYLE += f'''QComboBox#composerSelector::down-arrow {{
+    image: url("{(ASSETS / 'chevron-down.svg').as_posix()}"); width: 10px; height: 6px;
+}}'''
