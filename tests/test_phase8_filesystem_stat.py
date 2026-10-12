@@ -106,11 +106,17 @@ def test_checked_in_config_enables_requested_read_capabilities(monkeypatch):
         "ORSI_ENABLE_FILESYSTEM_SEARCH",
         "ORSI_ENABLE_FILESYSTEM_MKDIR",
         "ORSI_ENABLE_FILESYSTEM_WRITE_TEXT",
+        "ORSI_ENABLE_FILESYSTEM_EDIT_TEXT",
         "ORSI_ENABLE_FILESYSTEM_COPY",
         "ORSI_ENABLE_FILESYSTEM_MOVE",
-            "ORSI_ENABLE_FILESYSTEM_TRASH",
-            "ORSI_ENABLE_APPLICATION_LAUNCH",
-            "ORSI_ENABLE_FULL_LOCAL_READ",
+        "ORSI_ENABLE_FILESYSTEM_TRASH",
+        "ORSI_ENABLE_APPLICATION_LAUNCH",
+        "ORSI_ENABLE_FULL_LOCAL_READ",
+        "ORSI_ENABLE_PROJECT_VERIFY",
+        "ORSI_ENABLE_PROJECT_INSPECT",
+        "ORSI_ENABLE_SHELL_RUN",
+        "ORSI_ENABLE_CONVERSATION_CONTEXT",
+        "ORSI_ENABLE_CONTEXT_RECOVERY",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -129,6 +135,7 @@ def test_checked_in_config_enables_requested_read_capabilities(monkeypatch):
         application_launch_enabled=True,
         project_verify_enabled=True,
         project_inspect_enabled=True,
+        shell_run_enabled=True,
         context_recovery_enabled=True,
         conversation_context_enabled=True,
         full_local_read_enabled=True,

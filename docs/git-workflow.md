@@ -1,5 +1,20 @@
 # Git layout and baseline hygiene
 
+## Cloud inspection recovery and regression qualification, 12 October 2026
+
+`codex/cloud-recovery-and-regressions` starts from local main `c9dddd3`. It fixes
+required recovery reads, bounded duplicate-check reassessment, concrete
+inspection errors, conflicting no-change feedback, preview memory limits and
+final viewport capture checks. See [the repair and qualification](cloud-recovery-and-regressions.md)
+for full-suite results, the unchanged default-cloud replay, visually reviewed
+captures and separately recorded skipped gates. Production prompts, routing,
+sampling, context policy, accepted profiles and user settings are preserved.
+Content-free refs/worktrees are retained under `state/backups/full-repair-20261012/`
+and prior main at `archive/2026-10-12/main-before-cloud-recovery-and-regressions`.
+After verification, commit, fast-forward local main and remove only the merged
+feature branch. Preserve other worktrees, historical/unmerged tips and remote
+branches; no publication.
+
 ## Windows project command recovery, 12 October 2026
 
 `codex/project-command-recovery` starts from local main `053fbb6`. It resolves

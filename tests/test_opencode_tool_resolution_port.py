@@ -96,6 +96,10 @@ class NativeScriptedModel(InferenceEngine):
         raise AssertionError("Native-capable tests must not use the text fallback.")
 
     def respond_with_capabilities(self, messages, capabilities):
+        from tests.fixtures.completion_reviews import ready_review_for
+        review = ready_review_for(messages)
+        if review is not None:
+            return review
         self.requests.append(deepcopy(messages))
         self.definitions.append(tuple(capabilities))
         return self.responses.pop(0)

@@ -91,6 +91,8 @@ def test_entry_point_always_closes_model_even_when_service_cleanup_fails(monkeyp
     owner_type, owners = profiles.ProfileApplication, []
     def owner_factory(*args, **kwargs):
         owner = owner_type(*args, **kwargs)
+        # This fixture exercises an allocated legacy composition, not first-run setup.
+        owner._legacy_selected = True
         owners.append(owner)
         return owner
     if failure == "window":
@@ -105,18 +107,25 @@ def test_entry_point_always_closes_model_even_when_service_cleanup_fails(monkeyp
     monkeypatch.setattr(entry, "PATHS", SimpleNamespace(ensure_directories=Mock(), root=tmp_path, state=tmp_path / "state"))
     monkeypatch.setattr(entry, "load_agent_feature_config", lambda: SimpleNamespace(full_local_read_enabled=False))
     monkeypatch.setattr(entry, "build_application", lambda **k: (service, {"hostname": "TEST"}, None, inference))
-    if failure:
-        with pytest.raises(RuntimeError, match=f"{failure} failed"):
-            entry.main()
-    else:
-        assert entry.main() == 0
-    inference.close.assert_called_once()
-    owners[0].shutdown()
-    assert inference.close.call_count == 2
-    application.removeEventFilter(owners[0])
-    if owners[0].window is not None:
-        owners[0].window.close()
-    owners[0].deleteLater()
+    try:
+        if failure:
+            with pytest.raises(RuntimeError, match=f"{failure} failed"):
+                entry.main()
+        else:
+            assert entry.main() == 0
+        inference.close.assert_called_once()
+        owners[0].shutdown()
+        assert inference.close.call_count == 2
+    finally:
+        # A failed assertion must not leave visible windows in later vault tests.
+        for owner in owners:
+            owner.shutdown()
+            application.removeEventFilter(owner)
+            application.aboutToQuit.disconnect(owner.shutdown)
+            if owner.window is not None:
+                owner.window.close()
+            owner.deleteLater()
+        application.processEvents()
     from app.ui.instance import DesktopInstance
     retry = DesktopInstance(tmp_path, application)
     try:

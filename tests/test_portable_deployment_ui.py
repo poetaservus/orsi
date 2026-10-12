@@ -1,10 +1,11 @@
 """Native deployment controls, pending preference flush and profile-lock cancellation."""
 from types import SimpleNamespace
+from time import monotonic, sleep
 
 import pytest
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QPushButton
+from PySide6.QtWidgets import QApplication, QPushButton, QStyle, QStyleOptionButton
 
 import app.ui.portable_deployment as ui
 from app.portable.deployment import PROFILE_FOLDER
@@ -27,11 +28,12 @@ def controller(qt, source):
 
 
 def wait_until(qt, condition):
-    for _ in range(300):
+    deadline = monotonic() + 10
+    while monotonic() < deadline:
         qt.processEvents()
         if condition():
             return
-        QTest.qWait(10)
+        sleep(.01)  # Deployment performs Python work on its own thread.
     pytest.fail("Deployment did not finish within the bounded wait")
 
 
@@ -84,7 +86,12 @@ def test_fresh_choice_does_not_export_profile(qt, controller, monkeypatch):
     target = controller.manager.application_root.parent / "fresh from controls"
     try:
         dialog.show()
-        QTest.mouseClick(dialog.fresh, Qt.MouseButton.LeftButton)
+        qt.processEvents()
+        option = QStyleOptionButton()
+        option.initFrom(dialog.fresh)
+        option.text = dialog.fresh.text()
+        indicator = dialog.fresh.style().subElementRect(QStyle.SubElement.SE_RadioButtonIndicator, option, dialog.fresh)
+        QTest.mouseClick(dialog.fresh, Qt.MouseButton.LeftButton, pos=indicator.center())
         assert dialog.fresh.isChecked() and not dialog.current.isChecked()
         dialog.location.setText(str(target))
         dialog.start_button.click()

@@ -159,6 +159,28 @@ def test_real_browser_inspection_catches_references_scroll_and_interactions(tmp_
         pass
 
 
+def test_browser_captures_the_final_section_after_navigating_from_intro(tmp_path):
+    pytest.importorskip("playwright")
+    state = Path(__file__).resolve().parents[1] / "state"
+    if not (state / "playwright").is_dir():
+        pytest.skip("Local Playwright browser is not installed.")
+    (tmp_path / "index.html").write_text(
+        '<style>body{margin:0}section{height:100vh}</style>'
+        '<section id="intro">Intro</section><section id="affected">Affected model section</section>', encoding="utf-8")
+    port = free_port()
+    tool = ProjectInspectCapability(state)
+    args = {"project_path": str(tmp_path), "kind": "browser", "url": f"http://127.0.0.1:{port}/",
+        "server_executable": str(Path(sys.executable).resolve()),
+        "server_arguments": ["-m", "http.server", str(port), "--bind", "127.0.0.1"],
+        "steps": [{"action": "in_view", "target": "#intro"},
+            {"action": "scroll", "amount": 800}, {"action": "in_view", "target": "#affected"}]}
+    result = tool.invoke(args, approved(tool, args, context(tmp_path)))
+    assert result.success and result.output["passed"], result
+    assert [target["target"] for target in result.output["capture_targets"]] == ["#affected"]
+    assert result.output["capture_targets"][0]["in_viewport"]
+    assert result.output["layout"]["scrollTop"] == 800 and result.output["owned_processes_released"]
+
+
 def test_browser_waits_for_slow_preview_without_corrupting_observations(tmp_path):
     pytest.importorskip("playwright")
     state = Path(__file__).resolve().parents[1] / "state"

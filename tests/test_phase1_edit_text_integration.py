@@ -269,7 +269,7 @@ def test_unverified_edit_blocks_retry_and_restart(service, tmp_path, monkeypatch
     assert journal.review_required
     assert journal.records[0].state == CallLifecycleState.INTERRUPTED_UNKNOWN_OUTCOME
     assert CapabilityCrashJournal(service.portable_root / "state" / "capability_journal_v1.json").review_required
-    with pytest.raises(RuntimeError, match="review"):
+    with pytest.raises(RuntimeError, match="(?i)review"):
         service.run("Edit again")
 
 

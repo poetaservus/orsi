@@ -105,7 +105,7 @@ def test_three_identical_reads_after_two_approved_changes_complete(scenario, mod
 
 
 @pytest.mark.parametrize("mode", ["local", "cloud"])
-@pytest.mark.parametrize("intervening", ["nothing", "unrelated_edit", "noop_write", "failed_edit", "denied_edit"])
+@pytest.mark.parametrize("intervening", ["nothing", "unrelated_edit", "noop_write", "denied_edit"])
 def test_no_progress_still_stops_before_third_read(scenario, mode, intervening):
     target, other, original, build = scenario
     responses = [read(target, 1), read(target, 2)]
@@ -113,8 +113,6 @@ def test_no_progress_still_stops_before_third_read(scenario, mode, intervening):
         responses.append(change(other, 3, 0))
     elif intervening == "noop_write":
         responses.append(call("filesystem.write_text", {"path": str(target), "text": original}, 3))
-    elif intervening == "failed_edit":
-        responses.append(change(target, 3, 99))
     elif intervening == "denied_edit":
         responses.append(change(target, 3, 0))
     responses.append(read(target, 4))
@@ -125,6 +123,21 @@ def test_no_progress_still_stops_before_third_read(scenario, mode, intervening):
     assert target.read_text(encoding="utf-8") == original
     assert len([s for s in service._turn_result.settled_calls if s.call.capability == "filesystem.read_text"]) == 2
     assert len(model.requests) == len(responses)
+
+
+@pytest.mark.parametrize("mode", ["local", "cloud"])
+def test_required_recovery_read_renews_only_a_bounded_read_allowance(scenario, mode):
+    target, _, original, build = scenario
+    responses = [read(target, 1), read(target, 2), change(target, 3, 99),
+        read(target, 4), read(target, 5), read(target, 6)]
+    service, model, approvals = build(responses, mode=mode)
+    with pytest.raises(RuntimeError, match="repeating an identical capability call"):
+        service.run("Inspect the file.")
+    result = service._turn_result
+    assert result.status == AgentRunStatus.REPEATED_CALL and result.semantic_corrections == 1
+    assert len(result.settled_calls) == 5 and len(model.requests) == 6
+    assert len([s for s in result.settled_calls if s.call.capability == "filesystem.read_text"]) == 4
+    assert not approvals and target.read_text(encoding="utf-8") == original
 
 
 def test_changed_file_gets_only_two_reads_before_its_next_change(scenario):

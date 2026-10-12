@@ -41,6 +41,10 @@ class DeterministicFindModel(InferenceEngine):
         return self.conversation_response
 
     def respond_with_capabilities(self, messages, capabilities):
+        from tests.fixtures.completion_reviews import ready_review_for
+        review = ready_review_for(messages)
+        if review is not None:
+            return review
         self.capability_requests.append(messages)
         latest = messages[-1]
         if latest.get("role") == "capability":
@@ -87,6 +91,10 @@ class DeterministicFindModel(InferenceEngine):
 
 class ReluctantThereListingModel(DeterministicFindModel):
     def respond_with_capabilities(self, messages, capabilities):
+        from tests.fixtures.completion_reviews import ready_review_for
+        review = ready_review_for(messages)
+        if review is not None:
+            return review
         latest_user = next(
             message["content"]
             for message in reversed(messages)
@@ -107,6 +115,10 @@ class PathClarifyingReadModel(InferenceEngine):
         raise AssertionError("Agent mode must use the native capability boundary.")
 
     def respond_with_capabilities(self, messages, capabilities):
+        from tests.fixtures.completion_reviews import ready_review_for
+        review = ready_review_for(messages)
+        if review is not None:
+            return review
         del capabilities
         self.requests.append(messages)
         return ModelResponse.text(
@@ -126,6 +138,10 @@ class DirectExtensionlessReadModel(InferenceEngine):
         raise AssertionError("Agent mode must use the native capability boundary.")
 
     def respond_with_capabilities(self, messages, capabilities):
+        from tests.fixtures.completion_reviews import ready_review_for
+        review = ready_review_for(messages)
+        if review is not None:
+            return review
         del capabilities
         self.requests.append(messages)
         latest = messages[-1]
@@ -182,6 +198,10 @@ class ReluctantFilenameDisambiguationModel(InferenceEngine):
         raise AssertionError("Agent mode must use the native capability boundary.")
 
     def respond_with_capabilities(self, messages, capabilities):
+        from tests.fixtures.completion_reviews import ready_review_for
+        review = ready_review_for(messages)
+        if review is not None:
+            return review
         del capabilities
         self.requests.append(messages)
         latest = messages[-1]

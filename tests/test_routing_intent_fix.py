@@ -75,7 +75,11 @@ def test_coding_service_preserves_sources_and_file_catalog(native_sdk, tmp_path,
         body = bodies[-1]
         assert body.get('tool_choice') != {'type': 'image_generation'}
         assert all(tool['type'] != 'image_generation' for tool in body['tools'])
-        assert len(body['tools']) == len(service.agent_capabilities) == 12
+        expected = {"application.launch", "conversation.read_turn", "project.verify", "project.inspect", "shell.run"}
+        expected.update(f"filesystem.{name}" for name in (
+            "stat", "find", "list", "read_text", "search", "mkdir", "write_text", "edit_text", "copy", "move", "trash"))
+        assert set(service.agent_capabilities) == expected
+        assert len(body['tools']) == len(expected) == 16
         names = [tool['name'] for tool in body['tools']]
         assert any('read_text' in name for name in names)
         assert any('edit_text' in name for name in names)

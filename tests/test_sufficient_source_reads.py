@@ -183,6 +183,10 @@ class GroundedEditModel(InferenceEngine):
                 if self.missing:
                     arguments["old_text"] = excerpt.replace("sum(values) - 1", "sum(values) - 2")
                     self.missing = False
+        elif not latest["result"]["success"]:
+            # A rejected patch requires current source before another attempt.
+            tool, arguments = "filesystem.read_text", {"path": str(self.target),
+                "max_bytes": 65536, "max_lines": 1000}
         else:
             return ModelResponse.text("Source inspection finished.")
         return ModelResponse.calls((ModelCapabilityCall(provider_call_id=f"source-{self.counter}",

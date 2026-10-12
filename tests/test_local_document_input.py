@@ -42,6 +42,10 @@ class DocumentRecorder(LocalDocumentInputs, InferenceEngine):
         return "Document reply"
 
     def respond_with_capabilities(self, messages, capabilities):
+        from tests.fixtures.completion_reviews import ready_review_for
+        review = ready_review_for(messages)
+        if review is not None:
+            return review
         native_chat_messages(messages, capabilities)
         self.requests.append((deepcopy(messages), tuple(capabilities)))
         return next(self.responses, ModelResponse.text("Document reply"))

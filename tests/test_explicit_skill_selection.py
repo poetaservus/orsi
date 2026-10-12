@@ -48,7 +48,7 @@ def test_default_never_routes_follow_ups_but_preserves_history_and_explicit_atta
         last_backend = local if inference.mode == "local" else cloud
         messages, tools = last_backend.answer_requests[-1]
         assert "\nACTIVE SKILL\n" not in messages[0]["content"]
-        assert messages[1:] == [
+        assert [m for m in messages if m["role"] in {"user", "assistant"}] == [
             {"role": "user", "content": initial},
             {"role": "assistant", "content": "reply"},
             {"role": "user", "content": selected},

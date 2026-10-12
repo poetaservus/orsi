@@ -1,6 +1,7 @@
 """Keyboard/mouse composition and real worker handoff with synthetic inference."""
 import os
 import json
+from time import monotonic, sleep
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
@@ -50,11 +51,12 @@ def type_command(ui, query=""):
 
 
 def wait_finished(ui):
-    for _ in range(200):
+    deadline = monotonic() + 10
+    while monotonic() < deadline:
         QApplication.processEvents()
         if ui.thread is None:
             return
-        QTest.qWait(10)
+        sleep(.01)  # Release the GIL so the synthetic Python worker can run.
     pytest.fail("Synthetic conversation worker did not finish")
 
 

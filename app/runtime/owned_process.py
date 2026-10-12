@@ -168,7 +168,8 @@ class OwnedProcess:
                         self.returncode = code if code is not None else 1
 
 
-def start_owned_process(command, *, cwd, env, stdout=None, stderr=None, windows_command_line=None):
+def start_owned_process(command, *, cwd, env, stdout=None, stderr=None, windows_command_line=None,
+                        job_memory_bytes=1024 * 1024 * 1024):
     """Start hidden, with only explicit standard handles inherited (Windows 10+).
 
     stdout/stderr are optional file descriptors, otherwise discarded. Ownership failure never falls back to
@@ -178,6 +179,8 @@ def start_owned_process(command, *, cwd, env, stdout=None, stderr=None, windows_
     """
     if os.name != "nt":
         raise ProcessOwnershipError("Local server ownership requires Windows 10 or later.")
+    if type(job_memory_bytes) is not int or not 1024 * 1024 * 1024 <= job_memory_bytes <= 4 * 1024 * 1024 * 1024:
+        raise ProcessOwnershipError("Owned process memory must stay within its trusted bounded allowance.")
     launch_line = subprocess.list2cmdline(command) if windows_command_line is None else windows_command_line
     if not isinstance(launch_line, str) or "\0" in launch_line or len(launch_line.encode("utf-16-le")) // 2 >= 32767:
         raise ProcessOwnershipError("The Windows command line exceeds its valid bounds.")
@@ -190,7 +193,7 @@ def start_owned_process(command, *, cwd, env, stdout=None, stderr=None, windows_
     limits = _ExtendedLimits()
     limits.basic.flags = 0x2000 | 0x200 | 0x8  # KILL_ON_JOB_CLOSE | JOB_MEMORY | ACTIVE_PROCESS
     limits.basic.active_limit = 16
-    limits.job_memory = 1024 * 1024 * 1024
+    limits.job_memory = job_memory_bytes
     attributes = None
     initialized = False
     descriptors = []

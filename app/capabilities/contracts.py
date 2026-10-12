@@ -136,10 +136,13 @@ class Capability(ABC, Generic[ArgumentsT]):
             raise CapabilityArgumentError(
                 CapabilityFailure(
                     code=CapabilityErrorCode.INVALID_ARGUMENTS,
-                    message="The capability arguments did not match the required schema.",
+                    message=self.argument_error_message(details),
                     details=details,
                 )
             ) from exc
+
+    def argument_error_message(self, details: list[dict[str, Any]]) -> str:
+        return "The capability arguments did not match the required schema."
 
     def permission_resource(
         self,

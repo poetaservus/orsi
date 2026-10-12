@@ -100,6 +100,10 @@ class ScriptedListModel(InferenceEngine):
         return response.assistant_text
 
     def respond_with_capabilities(self, messages, capabilities):
+        from tests.fixtures.completion_reviews import ready_review_for
+        review = ready_review_for(messages)
+        if review is not None:
+            return review
         self.requests.append(deepcopy(messages))
         self.definitions.append(tuple(capabilities))
         names = [item.name for item in capabilities]
@@ -119,6 +123,10 @@ class PaginatingListModel(InferenceEngine):
         raise AssertionError("Agent mode must use the native capability boundary.")
 
     def respond_with_capabilities(self, messages, capabilities):
+        from tests.fixtures.completion_reviews import ready_review_for
+        review = ready_review_for(messages)
+        if review is not None:
+            return review
         assert [item.name for item in capabilities] == [
             "filesystem.list",
             "filesystem.stat",

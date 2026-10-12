@@ -28,6 +28,10 @@ class PlannerCopyModel(InferenceEngine):
         return "Conversation only."
 
     def respond_with_capabilities(self, messages, capabilities):
+        from tests.fixtures.completion_reviews import ready_review_for
+        review = ready_review_for(messages)
+        if review is not None:
+            return review
         latest = messages[-1]
         if latest.get("role") == "capability":
             return ModelResponse.text(_render_result(latest["result"]))
@@ -235,6 +239,10 @@ def test_metadata_turn_keeps_copy_visible_without_executing_it(service):
     seen = []
 
     def read_model(messages, capabilities):
+        from tests.fixtures.completion_reviews import ready_review_for
+        review = ready_review_for(messages)
+        if review is not None:
+            return review
         seen.extend(item.name for item in capabilities)
         return ModelResponse(kind=ModelResponseKind.ASSISTANT_TEXT, assistant_text="Which file?")
 
@@ -284,7 +292,7 @@ def test_unverified_copy_blocks_retry_and_survives_restart(service, tmp_path, mo
     journal = service.agent_runtime.executor.journal
     assert journal.review_required
     assert journal.records[0].state == CallLifecycleState.INTERRUPTED_UNKNOWN_OUTCOME
-    with pytest.raises(RuntimeError, match="review"):
+    with pytest.raises(RuntimeError, match="(?i)review"):
         service.run(f'copy "{source}" to "{tmp_path / "blocked.txt"}"')
     assert not (tmp_path / "blocked.txt").exists()
     recovered = CapabilityCrashJournal(service.portable_root / "state" / "capability_journal_v1.json")

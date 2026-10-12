@@ -919,6 +919,7 @@ def test_agent_runtime_is_connected_only_through_the_startup_feature_gate():
         "application_launch_enabled": True,
         "project_verify_enabled": True,
         "project_inspect_enabled": True,
+        "shell_run_enabled": True,
         "conversation_context_enabled": True,
         "context_recovery_enabled": True,
         "full_local_read_enabled": True,

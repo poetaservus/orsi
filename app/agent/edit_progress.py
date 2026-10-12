@@ -43,6 +43,7 @@ class EditRejection:
 class EditObservation:
     stop_message: str | None = None
     feedback: str | None = None
+    refresh_source: bool = False
 
 
 @dataclass
@@ -82,10 +83,12 @@ class EditProgressTracker:
             "Receive the read before planning its patch. Continue in this turn within existing limits and approvals.")
 
     def completion_blocker(self) -> str | None:
-        if any(state.unresolved_mutation and (state.recovery_blocked or state.mutation_blocked)
-                and not self._already_present(state) for state in self._targets.values()):
-            return ("The requested edit remains undone because approval was denied or its source is unavailable. "
-                "Resolve the reported tool failure before completing this request.")
+        for state in self._targets.values():
+            if (state.unresolved_mutation and (state.recovery_blocked or state.mutation_blocked)
+                    and not self._already_present(state)):
+                return ("The requested edit remains undone. " + (state.error[:230] or
+                    "Approval was denied or its source is unavailable.") +
+                    " Resolve the reported tool failure before completing this request.")
         return None
 
     def before(self, call: ModelCapabilityCall, *, step: int, assistant_text: str | None = None) -> EditRejection | None:
@@ -205,6 +208,7 @@ class EditProgressTracker:
             return EditObservation(feedback=edit_recovery_feedback(already_present=self._already_present(state))) \
                 if state.recovery else EditObservation()
         if not result.success:
+            state.error = result.error.message
             if result.error.code in {CapabilityErrorCode.PERMISSION_DENIED, CapabilityErrorCode.OUTCOME_UNKNOWN}:
                 state.recovery_blocked = True
                 state.mutation_blocked = True
@@ -233,7 +237,8 @@ class EditProgressTracker:
             # once the model has received it; do not force a redundant read.
             if state.failures >= _FAILED_EDITS_PER_TARGET:
                 return EditObservation(stop_message="The edit task stopped after three rejected edits to the same target.")
-            return EditObservation(feedback=edit_recovery_feedback()) if state.recovery else EditObservation()
+            return EditObservation(feedback=edit_recovery_feedback(already_present=self._already_present(state)),
+                refresh_source="edit_recovery" not in result.metadata) if state.recovery else EditObservation()
 
         digest = _digest(output.get("sha256"))
         predicted = self._predict(state, call)

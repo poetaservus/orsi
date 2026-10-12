@@ -27,6 +27,10 @@ class PlannerMkdirModel(InferenceEngine):
         return "Conversation only."
 
     def respond_with_capabilities(self, messages, capabilities):
+        from tests.fixtures.completion_reviews import ready_review_for
+        review = ready_review_for(messages)
+        if review is not None:
+            return review
         latest = messages[-1]
         if latest.get("role") == "capability":
             return ModelResponse.text(_render_result(latest["result"]))
@@ -119,6 +123,10 @@ class NaturalLanguageMkdirPlanner(InferenceEngine):
         return "Conversation only."
 
     def respond_with_capabilities(self, messages, capabilities):
+        from tests.fixtures.completion_reviews import ready_review_for
+        review = ready_review_for(messages)
+        if review is not None:
+            return review
         self.requests.append(messages)
         latest = messages[-1]
         if latest.get("role") == "capability":
@@ -440,7 +448,7 @@ def test_unverified_creation_blocks_retry_and_survives_restart(service, tmp_path
     journal = service.agent_runtime.executor.journal
     assert journal.review_required
     assert journal.records[0].state == CallLifecycleState.INTERRUPTED_UNKNOWN_OUTCOME
-    with pytest.raises(RuntimeError, match="review"):
+    with pytest.raises(RuntimeError, match="(?i)review"):
         service.run(f"mkdir {tmp_path / 'must-not-retry'}")
     assert not (tmp_path / "must-not-retry").exists()
     recovered = CapabilityCrashJournal(service.portable_root / "state" / "capability_journal_v1.json")
@@ -458,6 +466,10 @@ def test_metadata_turn_keeps_mkdir_visible_without_executing_it(service):
     seen = []
 
     def read_model(messages, capabilities):
+        from tests.fixtures.completion_reviews import ready_review_for
+        review = ready_review_for(messages)
+        if review is not None:
+            return review
         seen.extend(item.name for item in capabilities)
         return ModelResponse(kind=ModelResponseKind.ASSISTANT_TEXT, assistant_text="Which file?")
 
@@ -485,7 +497,7 @@ def test_result_persistence_failure_blocks_live_session_and_restart(service, tmp
     with pytest.raises(RuntimeError, match="(?i)review"):
         service.run(f"mkdir {target}")
     assert target.is_dir() and executor.review_required
-    with pytest.raises(RuntimeError, match="review"):
+    with pytest.raises(RuntimeError, match="(?i)review"):
         service.run(f"mkdir {tmp_path / 'blocked'}")
     assert not (tmp_path / "blocked").exists()
     recovered = CapabilityCrashJournal(service.portable_root / "state" / "capability_journal_v1.json")

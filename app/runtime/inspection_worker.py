@@ -184,12 +184,11 @@ def browser_inspection(spec):
             }""")
             if layout["previewError"]:
                 problem("preview_error", layout["previewError"])
-            # Re-check requested sections at capture time: a subsequent action or
-            # late intro handler may have moved an earlier target out of view.
+            # The final viewport target is the capture subject. Earlier targets
+            # can intentionally leave view while navigating through the intro.
             capture_targets = []
-            for step in spec["steps"]:
-                if step["action"] != "in_view":
-                    continue
+            final_targets = [step for step in spec["steps"] if step["action"] == "in_view"][-1:]
+            for step in final_targets:
                 try:
                     box = page.locator(step["target"]).bounding_box()
                 except BrowserError:

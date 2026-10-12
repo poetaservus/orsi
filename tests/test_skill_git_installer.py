@@ -268,6 +268,13 @@ def test_owned_git_command_stops_descendants_on_all_exit_paths(tmp_path, monkeyp
     def start(_command, **kwargs):
         process = real_start([sys.executable, "-c", code], **kwargs)
         spawned.append(process)
+        if stop == "timeout":
+            # Test descendant cleanup after timeout, not Python startup speed.
+            setup_deadline = monotonic() + 5
+            while not report.exists() and process.poll() is None and monotonic() < setup_deadline:
+                sleep(0.01)
+            assert report.exists(), "The timeout fixture did not start its child within bounded setup."
+            runner.deadline = monotonic() + 1
         return process
     monkeypatch.setattr(ownership, "start_owned_process", start)
     def cancel_after_started():
@@ -282,8 +289,7 @@ def test_owned_git_command_stops_descendants_on_all_exit_paths(tmp_path, monkeyp
         with module._workspace() as workspace:
             empty = workspace / "empty"
             empty.mkdir()
-            runner = module._Git(GIT, workspace, empty, source.token,
-                                 monotonic() + (1.0 if stop == "timeout" else 10))
+            runner = module._Git(GIT, workspace, empty, source.token, monotonic() + 10)
             expected = {"timeout": Code.TIMED_OUT, "cancel": Code.CANCELLED,
                         "output": Code.DOWNLOAD_LIMIT, "failure": Code.DOWNLOAD_FAILED}[stop]
             reject(expected, lambda: runner.run(["unused"], 0))

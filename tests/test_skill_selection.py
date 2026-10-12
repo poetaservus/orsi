@@ -42,6 +42,10 @@ class Recorder(InferenceEngine):
         return "reply"
 
     def respond_with_capabilities(self, messages, capabilities):
+        from tests.fixtures.completion_reviews import ready_review_for
+        review = ready_review_for(messages)
+        if review is not None:
+            return review
         self.answer_requests.append((deepcopy(messages), tuple(capabilities)))
         return next(self.agent_responses, ModelResponse.text("reply"))
 

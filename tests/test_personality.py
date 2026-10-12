@@ -37,7 +37,9 @@ class RequestRecorder(InferenceEngine):
 
 @pytest.mark.parametrize("mode", ["chat", "conversation", "agent", "compact"])
 def test_personality_survives_request_selection_without_changing_catalog_or_user_text(tmp_path, mode):
-    model = RequestRecorder(2000 if mode == "compact" else 16384)
+    # Leave room for the task context and completion assessment while still
+    # forcing the compact system prompt (asserted below).
+    model = RequestRecorder(2250 if mode == "compact" else 16384)
     runtime = None
     if mode != "chat":
         runtime = build_agent_runtime(model, config=AgentFeatureConfig(filesystem_stat_enabled=True),

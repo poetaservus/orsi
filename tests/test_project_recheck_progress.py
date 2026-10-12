@@ -47,6 +47,24 @@ def test_only_proven_changes_in_the_checked_project_renew_checks(tmp_path, tool,
     assert (fingerprint not in repeated) is changed
 
 
+def test_new_visual_evidence_renews_only_project_reads_once(tmp_path):
+    tracker, repeated = ProjectProgressTracker(), {}
+    project = tmp_path / "project"
+    read = observe(tracker, repeated, "filesystem.read_text", {"path": str(project / "App.tsx")},
+        {"path": str(project / "App.tsx"), "sha256": "1" * 64})
+    other = observe(tracker, repeated, "filesystem.read_text", {"path": str(tmp_path / "other.tsx")},
+        {"path": str(tmp_path / "other.tsx"), "sha256": "1" * 64})
+    check_args = {"project_path": str(project)}
+    check = observe(tracker, repeated, "project.inspect", check_args, {"project_path": str(project)})
+    repeated.update({read: 2, other: 2, check: 2})
+    snapshot = {"project_path": str(project), "inspection_complete": True, "screenshot_sha256": "2" * 64}
+    observe(tracker, repeated, "project.inspect", check_args, snapshot)
+    assert read not in repeated and repeated[other] == repeated[check] == 2
+    repeated[read] = 2
+    observe(tracker, repeated, "project.inspect", check_args, snapshot)
+    assert repeated[read] == 2  # Identical screenshots cannot reset a stalled loop.
+
+
 @pytest.mark.parametrize("tool", ["project.verify", "project.inspect"])
 @pytest.mark.parametrize("stalled", [False, True])
 def test_guard_renews_checks_after_edits_through_the_runtime(tmp_path, monkeypatch, tool, stalled):
@@ -67,7 +85,7 @@ def test_guard_renews_checks_after_edits_through_the_runtime(tmp_path, monkeypat
         edit(4, path, "version 1", "version 2"),
         call(5, tool, project_path=str(tmp_path), **arguments)]
     if stalled:
-        responses.extend(call(i, tool, project_path=str(tmp_path), **arguments) for i in (6, 7))
+        responses.extend(call(i, tool, project_path=str(tmp_path), **arguments) for i in (6, 7, 8))
     else:
         responses.append(ModelResponse.text("Done"))
     model = RoomyScriptedModel(responses)
@@ -81,6 +99,9 @@ def test_guard_renews_checks_after_edits_through_the_runtime(tmp_path, monkeypat
     result = runtime.run([{"role": "user", "content": "Fix and recheck the project after each change."}],
         session_id="session", turn_id="turn", portable_root=portable, allowed_read_roots=(tmp_path,), host_access_policy=policy)
     assert result.status == (AgentRunStatus.REPEATED_CALL if stalled else AgentRunStatus.COMPLETED), result
-    assert result.capability_calls == (7 if stalled else 5)
-    assert len(result.settled_calls) == (6 if stalled else 5)
+    assert result.capability_calls == (8 if stalled else 5)
+    assert len(result.settled_calls) == (7 if stalled else 5)
+    if stalled:
+        assert result.settled_calls[-1].result.error.code.value == "call_replayed"
+        assert len(result.settled_calls[-1].result.error.details[0]["prior_receipt_ids"]) == 2
     assert path.read_text() == "version 2"

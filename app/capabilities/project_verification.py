@@ -5,6 +5,7 @@ import hashlib
 from io import BytesIO
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import sys
@@ -53,8 +54,10 @@ class ProjectInspectionArguments(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     project_path: str = Field(min_length=1, max_length=32767)
     kind: Literal["browser", "desktop"]
-    url: str | None = Field(default=None, max_length=2048)
-    pid: int | None = Field(default=None, ge=1)
+    url: str | None = Field(default=None, max_length=2048,
+        description="Browser only: required unauthenticated HTTP URL on localhost, 127.0.0.1 or ::1. Use null for desktop.")
+    pid: int | None = Field(default=None, ge=1,
+        description="Desktop only: existing project process ID. Must be null for browser inspection.")
     steps: list[InspectionStep] = Field(default_factory=list, max_length=12)
     width: int = Field(default=1280, ge=320, le=1920)
     height: int = Field(default=800, ge=240, le=1080)
@@ -87,6 +90,44 @@ def local_origin(url: str) -> tuple[str, str, int]:
     if value.scheme != "http" or value.hostname not in {"127.0.0.1", "localhost", "::1"} or value.username or value.password:
         raise ValueError("Only unauthenticated local loopback HTTP previews are supported.")
     return value.scheme, value.hostname, value.port or 80
+
+
+def inspection_argument_error(details) -> str:
+    """Expose schema constraints without echoing submitted values or unknown keys."""
+    fields = set(ProjectInspectionArguments.model_fields) | set(InspectionStep.model_fields)
+    rules = {
+        "missing": "required field is missing",
+        "extra_forbidden": "unexpected field; use the advertised schema",
+        "literal_error": "use one of the advertised choices",
+        "int_type": "must be an integer",
+        "string_type": "must be text",
+        "list_type": "must be a list",
+        "model_type": "must be an object",
+    }
+    cross_field = {
+        "Browser inspection requires a loopback HTTP URL and no PID.",
+        "Only unauthenticated local loopback HTTP previews are supported.",
+        "Desktop inspection requires an existing project process PID and no URL/server.",
+        "Readiness and viewport actions are browser-only.",
+        "Viewport and model checks require an exact selector.",
+        "Server arguments require a server executable.",
+        "Server arguments exceed their bounds.",
+    }
+    hints = []
+    for detail in details[:3]:
+        location = detail.get("location", [])
+        label = ".".join(part if part in fields or part.isdecimal() and len(part) <= 5
+            else "field" for part in location) or "arguments"
+        message = detail.get("message", "")
+        reason = rules.get(detail.get("type"), "does not match the advertised schema")
+        if (re.fullmatch(r"Input should be (?:greater|less) than(?: or equal to)? -?[0-9]+", message)
+                or re.fullmatch(r"String should have (?:at most|at least) [0-9]+ characters", message)
+                or re.fullmatch(r"List should have at most [0-9]+ items after validation, not [0-9]+", message)):
+            reason = message
+        elif message.removeprefix("Value error, ") in cross_field:
+            reason = message.removeprefix("Value error, ")
+        hints.append(f"{label}: {reason}")
+    return ("Invalid inspection arguments. " + "; ".join(hints))[:500]
 
 
 def _file_identity(path: Path) -> tuple:
@@ -167,7 +208,8 @@ def worker_environment() -> dict[str, str]:
     return values
 
 
-def run_worker(command: list[str], *, cwd: Path, timeout: int, cancellation, limit=48 * 1024, windows_command_line=None) -> dict:
+def run_worker(command: list[str], *, cwd: Path, timeout: int, cancellation, limit=48 * 1024, windows_command_line=None,
+               job_memory_bytes=1024 * 1024 * 1024) -> dict:
     """Drain capped pipe output; atomically own and release all worker descendants."""
     read_fd, write_fd = os.pipe()
     data, exceeded, finished = bytearray(), Event(), Event()
@@ -186,7 +228,7 @@ def run_worker(command: list[str], *, cwd: Path, timeout: int, cancellation, lim
     try:
         cancellation.raise_if_cancelled()
         process = start_owned_process(command, cwd=cwd, env=worker_environment(), stdout=write_fd, stderr=write_fd,
-            windows_command_line=windows_command_line)
+            windows_command_line=windows_command_line, job_memory_bytes=job_memory_bytes)
         os.close(write_fd)
         write_fd = None
         deadline = monotonic() + timeout
@@ -289,6 +331,9 @@ class ProjectVerifyCapability(_ProjectCapability):
 
 
 class ProjectInspectCapability(_ProjectCapability):
+    def argument_error_message(self, details):
+        return inspection_argument_error(details)
+
     name = "project.inspect"
     description = ("After building/testing, inspect a local browser preview or a project desktop process. "
         "Runs up to 12 approved interaction/readiness checks, captures a screenshot and bounded layout/control evidence. "
@@ -316,7 +361,8 @@ class ProjectInspectCapability(_ProjectCapability):
         worker = Path(__file__).resolve().parents[1] / "runtime" / "inspection_worker.py"
         try:
             result = run_worker([sys.executable, str(worker), str(spec)], cwd=Path(__file__).resolve().parents[2],
-                timeout=arguments.timeout_seconds, cancellation=context.cancellation)
+                timeout=arguments.timeout_seconds, cancellation=context.cancellation,
+                job_memory_bytes=4 * 1024 * 1024 * 1024)
             if result["exit_code"] != 0 or result["stop_reason"] is not None:
                 return {"project_path": str(project), "kind": arguments.kind, "passed": False,
                     "inspection_complete": False, "content_is_untrusted": True, **result}

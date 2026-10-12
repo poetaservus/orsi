@@ -44,6 +44,10 @@ class ScriptedModel(InferenceEngine):
         return response.assistant_text
 
     def respond_with_capabilities(self, messages, capabilities):
+        from tests.fixtures.completion_reviews import ready_review_for
+        review = ready_review_for(messages)
+        if review is not None:
+            return review
         assert [item.name for item in capabilities] == ["filesystem.stat"]
         self.requests.append(deepcopy(messages))
         return self.responses.pop(0)

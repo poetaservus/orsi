@@ -44,6 +44,10 @@ class PackageModel(Recorder):
         return self.chat_answer
 
     def respond_with_capabilities(self, messages, capabilities):
+        from tests.fixtures.completion_reviews import ready_review_for
+        review = ready_review_for(messages)
+        if review is not None:
+            return review
         definitions = tuple(capabilities)
         self.requests.append((deepcopy(messages), definitions))
         action = next(self.actions, ModelResponse.text("reply"))
@@ -374,9 +378,17 @@ def test_local_text_fallback_can_request_reference_with_same_inventory(tmp_path)
     from app.inference.protocol import ModelProtocolFailureCode
     class FallbackModel(PackageModel):
         def respond_with_capabilities(self, messages, capabilities):
+            from tests.fixtures.completion_reviews import ready_review_for
+            review = ready_review_for(messages)
+            if review is not None:
+                return review
             self.requests.append((deepcopy(messages), tuple(capabilities)))
             return ModelResponse.failure(ModelProtocolFailureCode.UNSUPPORTED_CAPABILITY_CALLS, "No native calls")
         def respond(self, messages):
+            from tests.fixtures.completion_reviews import ready_review_for
+            review = ready_review_for(messages)
+            if review is not None:
+                return json.dumps({"tool": None, "arguments": {}, "response": review.assistant_text})
             self.requests.append((deepcopy(messages), ()))
             system = next(m["content"] for m in messages if "\nACTIVE SKILL\n" in m["content"])
             refs = skill_payload([{"role": "system", "content": system}])["references"]

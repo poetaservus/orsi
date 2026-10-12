@@ -496,6 +496,8 @@ class AgentRuntime:
         capability_calls = 0
         protocol_failures = 0
         repeated: dict[str, int] = {}
+        project_repeat_recovery_used = False
+        project_receipts: dict[str, list[str]] = {}
         read_progress = ReadProgressTracker()
         project_progress = ProjectProgressTracker()
         edit_progress = EditProgressTracker()
@@ -888,9 +890,20 @@ class AgentRuntime:
                     protocol_failures=protocol_failures,
                 )
             staged_repeated = dict(repeated)
+            repeat_rejection = None
             for fingerprint in fingerprints:
                 staged_repeated[fingerprint] = staged_repeated.get(fingerprint, 0) + 1
                 if staged_repeated[fingerprint] > self.limits.max_identical_calls:
+                    if (not project_repeat_recovery_used and len(calls) == 1
+                            and calls[0].capability in {"project.verify", "project.inspect"}):
+                        project_repeat_recovery_used = True
+                        repeat_rejection = CapabilityFailure(code=CapabilityErrorCode.CALL_REPLAYED,
+                            message="This exact project check has already been attempted twice without a settled project change. "
+                            "No new process was started. Use its recorded receipts and screenshots to diagnose the result, "
+                            "complete the task, or choose a changed check for a concrete unmet requirement. "
+                            "Another identical request will stop this turn.",
+                            details=[{"prior_receipt_ids": project_receipts.get(fingerprint, [])[-2:]}])
+                        continue
                     return self._stopped(
                         AgentRunStatus.REPEATED_CALL,
                         "The agent stopped after repeating an identical capability call.",
@@ -918,7 +931,9 @@ class AgentRuntime:
             recovery_feedback: list[str] = []
             for call, internal_call_id in zip(calls, internal_call_ids, strict=True):
                 rejection = edit_progress.before(call, step=steps, assistant_text=response.assistant_text) if not linked.is_cancelled else None
-                if rejection is not None:
+                if repeat_rejection is not None and not linked.is_cancelled:
+                    outcome = _CallOutcome(result=failure_result(internal_call_id, call.capability, repeat_rejection))
+                elif rejection is not None:
                     blocked = failure_result(internal_call_id, call.capability,
                         CapabilityFailure(code=CapabilityErrorCode.INVALID_ARGUMENTS, message=rejection.message))
                     outcome = _CallOutcome(result=blocked.model_copy(update={"metadata": {
@@ -986,9 +1001,13 @@ class AgentRuntime:
                         protocol_failures=protocol_failures,
                     )
                 results.append(outcome.result)
+                if call.capability in {"project.verify", "project.inspect"} and repeat_rejection is None:
+                    project_receipts.setdefault(call_fingerprint(call), []).append(outcome.result.call_id)
                 read_progress.observe(call, outcome.result, repeated)
                 project_progress.observe(call, outcome.result, repeated)
                 edit_observation = edit_progress.observe(call, outcome.result, step=steps)
+                if edit_observation.refresh_source:
+                    project_progress.renew_source(call.arguments.get("path"), repeated)
                 if edit_observation.feedback is not None:
                     recovery_feedback.append(edit_observation.feedback)
                 if outcome.result.error is not None and outcome.result.error.code in {

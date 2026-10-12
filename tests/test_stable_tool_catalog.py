@@ -29,6 +29,10 @@ class ConfirmationModel(InferenceEngine):
         raise AssertionError("Use the structured tool boundary")
 
     def respond_with_capabilities(self, messages, capabilities):
+        from tests.fixtures.completion_reviews import ready_review_for
+        review = ready_review_for(messages)
+        if review is not None:
+            return review
         self.requests.append((messages, tuple(c.name for c in capabilities)))
         latest_user = next(m["content"] for m in reversed(messages) if m["role"] == "user")
         if messages[-1]["role"] == "capability" and not messages[-1]["result"]["success"]:
