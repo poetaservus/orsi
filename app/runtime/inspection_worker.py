@@ -21,12 +21,13 @@ def _checkpoint_assertion(current, reference, expectation):
     if expectation == "observe":
         return True
     if expectation == "visible":
-        return current["in_viewport"] and current["properties"].get("visibility") != "hidden" and current["properties"].get("opacity") != "0"
+        return current["in_viewport"] and current["rendered"]
     if expectation == "scroll_up":
         return current["scroll"]["y"] < reference["scroll"]["y"]
     if expectation == "scroll_down":
         return current["scroll"]["y"] > reference["scroll"]["y"]
     return (current["target"] == reference["target"]
+        and current["rendered"] == reference["rendered"] and current["in_viewport"] == reference["in_viewport"]
         and current["properties"].keys() == reference["properties"].keys()
         and all(_same_style(value, reference["properties"][key]) for key, value in current["properties"].items())
         and all(abs(current["scroll"][key]-reference["scroll"][key]) <= 1 for key in ("x", "y"))
@@ -142,8 +143,12 @@ def browser_inspection(spec):
             def observation(locator, properties):
                 return locator.evaluate("""(e, properties) => {
                     const r=e.getBoundingClientRect(), s=getComputedStyle(e);
+                    let rendered=true;
+                    for(let p=e;p;p=p.parentElement){const style=getComputedStyle(p);
+                        if(style.visibility!=='visible' || style.display==='none' || Number(style.opacity)===0 || style.contentVisibility==='hidden')rendered=false;}
                     return {scroll:{x:scrollX,y:scrollY,targetTop:e.scrollTop},
                         bounds:{x:r.x,y:r.y,width:r.width,height:r.height},
+                        rendered,
                         in_viewport:r.width>0 && r.height>0 && r.top<innerHeight && r.bottom>0 && r.left<innerWidth && r.right>0,
                         properties:Object.fromEntries(properties.map(p=>[p,s.getPropertyValue(p).slice(0,256)]))};
                 }""", properties)
@@ -165,6 +170,8 @@ def browser_inspection(spec):
                         reference = next((c for c in checkpoints[:-1] if c["label"] == step["reference"]), None)
                         check["label"] = step["label"]
                         check["expectation"] = step["expectation"]
+                        if step["reference"] and reference is None:
+                            raise LookupError("Earlier checkpoint reference unavailable; correct its failed selector/check before comparison.")
                         if not _checkpoint_assertion(current, reference, step["expectation"]):
                             raise ValueError("Checkpoint interaction assertion failed; compare the recorded scroll, bounds and properties.")
                     elif action == "key":
@@ -202,16 +209,21 @@ def browser_inspection(spec):
                         if step["amount"]:
                             page.mouse.move(spec["width"]//2, spec["height"]//2)
                             page.mouse.wheel(0, step["amount"])
-                        check["frame_timing"] = page.evaluate("""async duration => {
-                            const samples=[], start=performance.now(); let previous=start;
+                        check["frame_timing"] = page.evaluate("""async spec => {
+                            const target=spec.target ? document.querySelector(spec.target) : null;
+                            const read=()=>target ? Object.fromEntries(spec.properties.map(p=>[p,getComputedStyle(target).getPropertyValue(p).slice(0,256)])) : {};
+                            const first_state=read(), samples=[], start=performance.now();
+                            let previous=start, previousState=JSON.stringify(first_state);
                             await new Promise(resolve=> {const frame=now=> {
-                                samples.push({interval_ms:now-previous,scroll_y:scrollY});previous=now;
-                                if(now-start>=duration || samples.length>=120) resolve();else requestAnimationFrame(frame);
+                                const state=JSON.stringify(read());
+                                samples.push({interval_ms:now-previous,scroll_y:scrollY,state_changed:state!==previousState});
+                                previous=now;previousState=state;
+                                if(now-start>=spec.duration || samples.length>=120) resolve();else requestAnimationFrame(frame);
                             };requestAnimationFrame(frame)});
-                            return {samples, duration_ms:performance.now()-start,
+                            return {samples,first_state,last_state:read(),duration_ms:performance.now()-start,
                                 long_intervals:samples.filter(s=>s.interval_ms>34).length,
                                 scope:'Animation-frame callback timing and scroll positions; not proof of compositor frame delivery or visual smoothness.'};
-                        }""", timeout)
+                        }""", {"duration":timeout,"target":target,"properties":step["properties"]})
                     elif action == "wait":
                         if locator:
                             locator.wait_for(state=step.get("state", "visible"), timeout=timeout)
@@ -273,7 +285,8 @@ def browser_inspection(spec):
                 except Exception as error:
                     check["error"] = str(error)[:300]
                     message = str(error).lower()
-                    check["failure_kind"] = ("selector_error" if "selector" in message and ("syntax" in message or "parsing" in message or "strict mode" in message)
+                    check["failure_kind"] = ("checkpoint_reference_unavailable" if message.startswith("earlier checkpoint reference unavailable")
+                        else "selector_error" if "selector" in message and ("syntax" in message or "parsing" in message or "strict mode" in message)
                         else "target_not_found" if "timeout" in message and target
                         else "interaction_assertion_failed")
                 checks.append(check)

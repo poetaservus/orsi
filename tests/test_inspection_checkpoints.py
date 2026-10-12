@@ -11,7 +11,7 @@ from tests.test_filesystem_read_text import context
 from tests.test_project_verification import approved, free_port
 
 
-def inspection(tmp_path, steps):
+def inspection(tmp_path, steps, *, hidden_parent=False):
     pytest.importorskip('playwright')
     state = Path(__file__).resolve().parents[1] / 'state'
     if not (state/'playwright').is_dir():
@@ -20,7 +20,8 @@ def inspection(tmp_path, steps):
         body{margin:0} #runway{height:2400px} #hero{position:sticky;top:0;height:800px;background:red}
         #next{height:1000px;background:green}</style><div id=runway><div id=hero>Hero</div></div><div id=next>Next</div>
         <script>addEventListener('scroll',()=>document.querySelector('#hero').style.setProperty('--progress',scrollY/1600));
-        document.querySelector('#hero').style.setProperty('--progress',0);</script>''', encoding='utf-8')
+        document.querySelector('#hero').style.setProperty('--progress',0);</script>'''
+        + ('<style>#runway{opacity:0}</style>' if hidden_parent else ''), encoding='utf-8')
     port = free_port()
     args = dict(project_path=str(tmp_path), kind='browser', url=f'http://127.0.0.1:{port}/', steps=steps,
         server_executable=str(Path(sys.executable).resolve()),
@@ -64,15 +65,31 @@ def test_interaction_failure_is_distinct_from_selector_failure(tmp_path):
     assert result.output['checks'][3]['failure_kind'] == 'selector_error'
 
 
+def test_failed_reference_checkpoint_requires_inspection_correction(tmp_path):
+    missing = checkpoint('missing');missing['target']='#absent';missing['timeout_ms']=1
+    _, result = inspection(tmp_path,[missing,checkpoint('return',reference='missing',expectation='same_state')])
+    assert result.output['checks'][0]['failure_kind'] == 'target_not_found'
+    assert result.output['checks'][1]['failure_kind'] == 'checkpoint_reference_unavailable'
+
+
+def test_visibility_assertion_checks_ancestors_even_with_custom_properties_only(tmp_path):
+    _, result = inspection(tmp_path,[checkpoint('hidden',expectation='visible',properties=['--progress'])],hidden_parent=True)
+    assert result.output['checkpoints'][0]['in_viewport']
+    assert not result.output['checkpoints'][0]['rendered']
+    assert not result.output['checks'][0]['passed']
+
+
 @pytest.mark.parametrize('action', ['key','touch'])
 def test_native_navigation_and_bounded_frame_timing(tmp_path, action):
     _, result = inspection(tmp_path, [checkpoint('before'),
         {'action':action, **({'value':'PageDown'} if action=='key' else {'amount':350})},
         checkpoint('after', reference='before', expectation='scroll_down'),
-        {'action':'frame_timing', 'timeout_ms':300,'amount':100}])
+        {'action':'frame_timing', 'timeout_ms':300,'amount':100,'target':'#hero','properties':['--progress']}])
     assert result.output['passed'], result.output
     timing = result.output['checks'][-1]['frame_timing']
     assert 1 <= len(timing['samples']) <= 120
+    assert '--progress' in timing['first_state'] and '--progress' in timing['last_state']
+    assert all(isinstance(frame['state_changed'],bool) for frame in timing['samples'])
     assert 'not proof' in timing['scope']
 
 
