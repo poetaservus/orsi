@@ -42,7 +42,7 @@ class FilesystemEditTextArguments(BaseModel):
     reversal_reason: str | None = Field(default=None, min_length=1, max_length=MAX_REVERSAL_REASON_CHARS,
         description="When the reversal guard requests reassessment, first receive a fresh complete source read, then explain here the unmet user requirement or observed defect requiring the rollback. Otherwise omit or use null. This does not bypass approval or the one-rollback limit.")
     repair_diagnosis: RepairDiagnosis | None = Field(default=None,
-        description="After a failed project interaction/visual check, first read the relevant current source, then identify its receipt, failure, evidence-supported cause, proposed change and confirming observation here. Otherwise omit or use null. Does not bypass approvals, source or rollback protections.")
+        description="After a failed interaction/visual check and a fresh source read, supply five strings in order: [evidence_receipt, failure, evidence-supported suspected_cause, proposed_change, confirming_observation]. Otherwise null. Existing approvals and rollback limits apply.")
 
 
 @dataclass(frozen=True)

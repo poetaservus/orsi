@@ -13,10 +13,35 @@ def request(tool, **arguments):
 
 
 def diagnosis(receipt='inspection-1'):
-    return dict(evidence_receipt=receipt, failure='Returning to the partial position changes opacity.',
-        suspected_cause='The current source accumulates wheel delta separately from actual scroll.',
-        proposed_change='Compute progress from current geometry.',
-        confirming_observation='The return checkpoint matches partial scroll, bounds and opacity.')
+    return [receipt, 'Returning to the partial position changes opacity.',
+        'The current source accumulates wheel delta separately from actual scroll.',
+        'Compute progress from current geometry.',
+        'The return checkpoint matches partial scroll, bounds and opacity.']
+
+
+@pytest.mark.parametrize('value', [[], ['receipt']*4, ['receipt']*6,
+    ['receipt','','cause','change','observation'], ['r'*129,'failure','cause','change','observation'],
+    ['receipt','failure','cause','change',1]])
+def test_compact_diagnosis_keeps_each_part_and_its_position_strict(value):
+    from app.capabilities.repair_diagnosis import RepairDiagnosis
+    with pytest.raises(ValueError):
+        RepairDiagnosis.model_validate(value)
+
+
+def test_native_cloud_wire_delivers_the_five_part_diagnosis_without_narration():
+    from app.capabilities.filesystem_edit_text import FilesystemEditTextArguments
+    from app.inference.openai_backend import normalize_tool_response
+    from app.inference.protocol import ModelCapabilityDefinition, ModelResponseKind
+    from tests.test_openai_phase1 import response
+    from tests.test_openai_tools import function
+    definition = ModelCapabilityDefinition(name='filesystem.edit_text',description='Edit',
+        input_schema=FilesystemEditTextArguments.model_json_schema())
+    wire = {key:None for key in definition.input_schema['properties']}
+    wire.update(path='C:/project/App.tsx',old_text='old',new_text='new',repair_diagnosis=diagnosis())
+    result = normalize_tool_response(response(output=[function(definition,wire)]),(definition,))
+    assert result.kind == ModelResponseKind.CAPABILITY_CALLS
+    parsed = FilesystemEditTextArguments.model_validate(result.capability_calls[0].arguments)
+    assert parsed.repair_diagnosis.evidence_receipt == 'inspection-1'
 
 
 def failed(project, **overrides):
@@ -56,7 +81,7 @@ def test_loading_only_pass_cannot_clear_an_unresolved_interaction(tmp_path):
     assert tracker.before(mutation,step=5) is None
 
 
-@pytest.mark.parametrize('kind', ['selector_error','target_not_found'])
+@pytest.mark.parametrize('kind', ['selector_error','target_not_found','checkpoint_reference_unavailable'])
 def test_selector_correction_does_not_require_or_authorize_a_source_repair(tmp_path, kind):
     tracker = RepairLoopTracker()
     failure = failed(tmp_path)

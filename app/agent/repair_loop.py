@@ -41,8 +41,8 @@ class RepairLoopTracker:
             if diagnosis is None or diagnosis.evidence_receipt != failure['receipt'] or not fresh:
                 return EditRejection('inspection_diagnosis',
                     f"No edit executed after failed inspection {failure['receipt']}. Receive a complete current source read "
-                    'after that check and before the retry. Supply repair_diagnosis naming this evidence_receipt, '
-                    'the failure, evidence-supported suspected_cause, proposed_change and confirming_observation. '
+                    'after that check and before the retry. Supply repair_diagnosis as five strings in order: '
+                    '[evidence_receipt, failure, evidence-supported suspected_cause, proposed_change, confirming_observation]. '
                     'Existing approval, redundant-edit and rollback limits still apply.')
         return None
 
@@ -51,7 +51,8 @@ class RepairLoopTracker:
         return (f"Project check {failure['receipt']} found {failure['kind']}. "
             'Before another source repair, identify what failed, the current receipt/source evidence supporting '
             'the suspected cause, which change addresses it, and which observation would confirm or disprove it. '
-            'Use the repair_diagnosis argument on the edit/write call. Preserve existing approval and rollback limits.')
+            'Use repair_diagnosis=[evidence_receipt, failure, suspected_cause, proposed_change, confirming_observation] '
+            'on the edit/write call. Preserve existing approval and rollback limits.')
 
     def observe(self, call, result, *, step):
         output = result.output if isinstance(result.output, dict) else {}
@@ -73,7 +74,7 @@ class RepairLoopTracker:
         project = os.path.normcase(os.path.abspath(project))
         checks = output.get('checks', [])
         failed = [c for c in checks if c.get('passed') is False]
-        if failed and all(c.get('failure_kind') in {'selector_error','target_not_found'} for c in failed):
+        if failed and all(c.get('failure_kind') in {'selector_error','target_not_found','checkpoint_reference_unavailable'} for c in failed):
             return ('Inspection selector/target checks failed. Correct or verify the selector and readiness wait before retrying. '
                 'A selector error alone does not justify an animation repair. Do not treat a corrected inspection as a source fix.')
         problems = output.get('problems', [])
