@@ -24,6 +24,7 @@ from app.conversation.capability_routing import select_turn_capabilities
 from app.conversation.prompt import (
     AGENT_CONVERSATION_SYSTEM_PROMPT,
     SYSTEM_PROMPT,
+    CORE_INSTRUCTIONS,
     compact_agent_system_prompt,
 )
 from app.conversation.result_grounding import grounded_text_read_answer
@@ -456,7 +457,8 @@ class ConversationService:
                         current["attachments"] = [r.model_dump(mode="json") for r in references]
                     answer = self.inference.generate_images([
                         {"role": "system", "content": with_response_language(
-                            self.personality_settings.current.guidance, self.response_language_settings.current_code)},
+                            with_personality(CORE_INSTRUCTIONS, self.personality_settings.current),
+                            self.response_language_settings.current_code)},
                         current])
                     generated = CompletionText(answer)
                     if generated.generated_images and not generated.completion.incomplete:

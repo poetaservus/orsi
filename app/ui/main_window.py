@@ -820,8 +820,9 @@ class MainWindow(QMainWindow):
         self.personality_hint.setText(
             "Saved personality could not be loaded. Original is active; your saved preference is preserved."
             if available and settings.load_error else
-            "Choom 1.0.0 · Dry cyberpunk humor and street slang." if selected == "choom-v1.0.0" else
-            "Original · Calm, precise and quietly confident.")
+            " · ".join(filter(None, (
+                settings.current.name + (" " + settings.current.version if settings.current.version else ""),
+                settings.current.description))) if available else "")
 
     def _select_personality(self, index):
         requested = self.personality_selector.itemData(index)

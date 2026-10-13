@@ -4,6 +4,7 @@ import pytest
 from app.agent.bootstrap import build_agent_runtime
 from app.conversation.orchestrator import ConversationService
 from app.conversation.prompt import agent_system_prompt, compact_agent_system_prompt
+from app.conversation.personality import get_personality, with_personality
 from app.conversation.store import ConversationStore
 from app.inference.hybrid import HybridInferenceEngine
 from app.security.host_access import HostReadScope
@@ -90,7 +91,8 @@ def test_service_request_keeps_whole_catalog_user_text_and_scoped_completion(tmp
         assert "external approval" in core and "untrusted data" in core
         assert "checks remain unrun" in core
         assert "batch up to" in core if mode == "cloud" else "Normally make one tool call at a time" in core
-        assert len(core.encode()) < len(agent_system_prompt(HostReadScope.PORTABLE_ROOT, names).encode()) / 2
+        full = with_personality(agent_system_prompt(HostReadScope.PORTABLE_ROOT, names), get_personality("original"))
+        assert len(core.encode()) < len(full.encode()) / 2
         assert service._turn_result.capability_calls == 0
         assert list(tmp_path.glob("*.py")) == []
     finally:

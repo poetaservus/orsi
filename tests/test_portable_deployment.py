@@ -46,9 +46,11 @@ def source(tmp_path):
     icon = root / "app/ui/assets/orsi.ico"
     icon.parent.mkdir(parents=True)
     icon.write_bytes((Path(__file__).resolve().parents[1] / "app/ui/assets/orsi.ico").read_bytes())
-    personality = root / "app/conversation/personalities/choom-v1.0.0.txt"
-    personality.parent.mkdir(parents=True)
-    personality.write_bytes((Path(__file__).resolve().parents[1] / "app/conversation/personalities/choom-v1.0.0.txt").read_bytes())
+    directory = root / "app/conversation/personalities"
+    directory.mkdir(parents=True)
+    for personality in (Path(__file__).resolve().parents[1] / "app/conversation/personalities").glob("*.md"):
+        (directory / personality.name).write_bytes(personality.read_bytes())
+    (directory / "friendly.md").write_text("---\nname: Friendly\n---\nSpeak warmly.")
     return root
 
 
@@ -77,7 +79,7 @@ def test_complete_encrypted_profile_opens_independently_after_relocation(manager
     root = manager.locator.root
     vault = manager.vault()
     PersonalitySettings(JsonStore(manager.session.storage_path("state/personality_selection_v1.json")),
-                        session=manager.session).select("choom-v1.0.0")
+                        session=manager.session).select("choom")
     ResponseLanguageSettings(JsonStore(manager.session.storage_path("state/response_language_v1.json")),
                              session=manager.session).select("hu")
     writes = [RecordWrite(name, PRIVATE + name.encode()) for name in
@@ -108,11 +110,13 @@ def test_complete_encrypted_profile_opens_independently_after_relocation(manager
     copied.unlock(new_password)
     try:
         assert PersonalitySettings(JsonStore(copied.session.storage_path("state/personality_selection_v1.json")),
-                                   session=copied.session).current_id == "choom-v1.0.0"
+                                   session=copied.session).current_id == "choom"
         assert ResponseLanguageSettings(JsonStore(copied.session.storage_path("state/response_language_v1.json")),
                                         session=copied.session).current_code == "hu"
-        assert (moved / "app/conversation/personalities/choom-v1.0.0.txt").read_bytes() == (
-            manager.application_root / "app/conversation/personalities/choom-v1.0.0.txt").read_bytes()
+        assert (moved / "app/conversation/personalities/choom.md").read_bytes() == (
+            manager.application_root / "app/conversation/personalities/choom.md").read_bytes()
+        from app.conversation.personality import discover_personalities
+        assert {p.id for p in discover_personalities(moved / "app/conversation/personalities")} == {"original", "choom", "friendly"}
         assert copied.vault()._catalog["backups"] == source_catalog["backups"]
         for domain in Domain:
             assert copied.vault().list_paths(domain=domain) == vault.list_paths(domain=domain)
@@ -137,7 +141,7 @@ def test_plain_profile_keeps_files_skills_and_preferences(source):
     manager.create(source / "profiles/plain", encrypted=False)
     JsonStore(manager.session.storage_path("state/ui_preferences_v1.json")).save({"greeting_message": PRIVATE.decode()})
     PersonalitySettings(JsonStore(manager.session.storage_path("state/personality_selection_v1.json")),
-                        session=manager.session).select("choom-v1.0.0")
+                        session=manager.session).select("choom")
     for name in ("skills/example/SKILL.md", "documents/report.txt", "documents/.lease"):
         path = manager.session.storage_path(name)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -152,7 +156,7 @@ def test_plain_profile_keeps_files_skills_and_preferences(source):
             assert copied.session.storage_path("skills/example/SKILL.md").read_bytes() == PRIVATE
             assert JsonStore(copied.session.storage_path("state/ui_preferences_v1.json")).load()["greeting_message"] == PRIVATE.decode()
             assert PersonalitySettings(JsonStore(copied.session.storage_path("state/personality_selection_v1.json")),
-                                       session=copied.session).current_id == "choom-v1.0.0"
+                                       session=copied.session).current_id == "choom"
             assert not copied.encrypted and manager.active
         finally:
             copied.lock()
@@ -176,8 +180,8 @@ def test_fresh_node_has_no_profile_or_instance_state(manager, models):
     assert not (result.destination / "runtime/python/Scripts").exists()
     assert (result.destination / "runtime/python/Lib/site-packages/vendor/LICENSE").exists()
     assert (result.destination / "app/ui/assets/orsi.ico").read_bytes() == (manager.application_root / "app/ui/assets/orsi.ico").read_bytes()
-    assert (result.destination / "app/conversation/personalities/choom-v1.0.0.txt").read_bytes() == (
-        manager.application_root / "app/conversation/personalities/choom-v1.0.0.txt").read_bytes()
+    assert (result.destination / "app/conversation/personalities/choom.md").read_bytes() == (
+        manager.application_root / "app/conversation/personalities/choom.md").read_bytes()
     assert (result.destination / "models/model.gguf").exists() == models
     assert (result.destination / "models/mmproj-model.gguf").exists() == models
     assert (result.destination / "runtime/llama-server/ggml.dll").exists() == models

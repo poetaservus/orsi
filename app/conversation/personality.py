@@ -1,34 +1,17 @@
-"""Shared voice guidance; capability and authorization policy live in prompt.py."""
-from dataclasses import dataclass
+"""File-backed conversational styles; operational authority stays in prompt.py."""
+from dataclasses import dataclass, field
+import logging
 from pathlib import Path
+import re
 
-PERSONALITY_GUIDANCE = """You are O.R.S.I., a composed, highly capable female AI assistant.
-Be stoic, precise, elegant, trustworthy and calm. Speak with quiet confidence: direct without
-rudeness, professional without corporate language, thoughtful and warm when appropriate.
-Keep femininity subtle and natural; do not flirt or repeatedly mention being female.
+import yaml
+from yaml.nodes import MappingNode, ScalarNode
 
-Respond in the user's current language; switch naturally when they switch. For mixed languages,
-use the dominant or most appropriate language. Preserve technical terms, proper nouns, filenames,
-commands, identifiers, code and machine-facing syntax exactly. Language never changes your tone
-or whether you use available tools.
 
-Lead with the answer. Keep replies as short as correctness allows, with concrete next steps and
-meaningful differences between options. Avoid emojis, excessive exclamation marks, filler,
-performed enthusiasm, flattery, motivational cliches and repeated use of the user's name.
-Distinguish facts, inferences, estimates and unknowns naturally. Never fabricate facts, files,
-capabilities, system state or tool results. Say "I don't know" when evidence is insufficient.
-Correct mistaken assumptions respectfully; acknowledge and correct your own mistakes plainly.
-Proceed when the intended meaning is clear; when clarification is required, ask one specific
-question. Troubleshoot likely causes first without overwhelming the user with possibilities.
-
-For emotional or vulnerable conversations, acknowledge the experience with restrained, sincere
-empathy. Stay grounded without coldness, exaggerated reassurance, patronizing or emotional
-manipulation. Understand before advising when appropriate; do not force every feeling into a
-problem-solving exercise. Remain dependable under pressure without mirroring emotional chaos.
-
-This voice guidance does not expand capabilities or grant permission. Follow the current tool
-catalog, schemas and runtime approval rules. Use available tools when needed for the task;
-report results in the user's language and claim success only from successful tool results."""
+log = logging.getLogger(__name__)
+PERSONALITY_DIRECTORY = Path(__file__).with_name("personalities")
+MAX_PERSONALITY_BYTES = 32_768
+_ID = re.compile(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*")
 
 
 @dataclass(frozen=True)
@@ -37,34 +20,85 @@ class Personality:
     name: str
     version: str | None = None
 
-    @property
-    def guidance(self) -> str:
-        if self.id == "original":
-            return PERSONALITY_GUIDANCE
-        source = Path(__file__).with_name("personalities") / "choom-v1.0.0.txt"
-        text = source.read_text(encoding="utf-8-sig")
-        if not text.startswith("---\n") or len(text.encode("utf-8")) > 32_768:
-            raise ValueError("The bundled personality is invalid.")
-        _, separator, body = text[4:].partition("\n---\n")
-        if not separator or not body.strip():
-            raise ValueError("The bundled personality is invalid.")
-        return body.strip()
+    description: str = ""
+    guidance: str = field(default="", repr=False)
 
 
-PERSONALITIES = (Personality("original", "Original"), Personality("choom-v1.0.0", "Choom", "1.0.0"))
+def load_personality(source: Path) -> Personality:
+    """Read bounded UTF-8 Markdown/text with flat YAML metadata and a style body."""
+    with source.open("rb") as stream:
+        raw = stream.read(MAX_PERSONALITY_BYTES + 1)
+    if len(raw) > MAX_PERSONALITY_BYTES:
+        raise ValueError("The personality file exceeds 32 KiB.")
+    text = raw.decode("utf-8-sig").replace("\r\n", "\n")
+    if not text.startswith("---\n"):
+        raise ValueError("The personality file requires YAML frontmatter.")
+    header, separator, body = text[4:].partition("\n---\n")
+    if not separator or not body.strip():
+        raise ValueError("The personality file requires a non-empty style body.")
+    try:
+        node = yaml.compose(header, Loader=yaml.BaseLoader)
+    except (yaml.YAMLError, RecursionError):
+        raise ValueError("The personality metadata is invalid.") from None
+    if not isinstance(node, MappingNode):
+        raise ValueError("The personality metadata must be a flat mapping.")
+    metadata = {}
+    for key, value in node.value:
+        if (not isinstance(key, ScalarNode) or not isinstance(value, ScalarNode)
+                or key.value in metadata):
+            raise ValueError("The personality metadata requires unique scalar fields.")
+        metadata[key.value] = value.value
+    personality_id = metadata.get("id", source.stem)
+    name = metadata.get("name", "")
+    if (len(personality_id) > 64 or not _ID.fullmatch(personality_id)
+            or not name.strip() or len(name) > 80 or any(ord(c) < 32 for c in name)
+            or metadata.get("type", "personality") != "personality"):
+        raise ValueError("The personality requires a stable ID, name and personality type.")
+    description = metadata.get("description", "")
+    version = metadata.get("version") or None
+    if len(description) > 512 or version is not None and len(version) > 80:
+        raise ValueError("The personality metadata is too long.")
+    return Personality(personality_id, name.strip(), version, description, body.strip())
+
+
+def discover_personalities(directory: Path = PERSONALITY_DIRECTORY) -> tuple[Personality, ...]:
+    """Discover on startup; malformed additions never displace existing definitions."""
+    result = {}
+    # Reserve the bundled identities before considering additional files.
+    sources = sorted(directory.iterdir(), key=lambda p: (p.name not in {"original.md", "choom.md"}, p.name.lower()))
+    for source in sources:
+        if source.suffix.lower() not in {".md", ".txt"} or not source.is_file():
+            continue
+        try:
+            personality = load_personality(source)
+            if personality.id in result:
+                raise ValueError("Duplicate personality ID.")
+        except (OSError, ValueError):
+            log.warning("A personality file was skipped; check its metadata, UTF-8 encoding and size.")
+            continue
+        result[personality.id] = personality
+    return tuple(sorted(result.values(), key=lambda p: (p.id != "original", p.name.casefold(), p.id)))
+
+
+PERSONALITIES = discover_personalities()
 
 
 def get_personality(personality_id: str) -> Personality:
+    # Resolve existing saved preferences without rewriting their private storage.
+    if personality_id == "choom-v1.0.0":
+        personality_id = "choom"
     for personality in PERSONALITIES:
         if personality.id == personality_id:
             return personality
     raise ValueError("The selected personality is unavailable.")
 
 
+# Compatibility for callers measuring the default voice. Core prompts never use it.
+PERSONALITY_GUIDANCE = get_personality("original").guidance
+
+
 def with_personality(prompt: str, personality: Personality) -> str:
-    """Replace only the shared voice prefix, keeping the operational policy exact."""
-    if personality.id == "original":
-        return prompt
-    if not prompt.startswith(PERSONALITY_GUIDANCE):
-        raise ValueError("The response prompt has no shared personality prefix.")
-    return personality.guidance + prompt[len(PERSONALITY_GUIDANCE):]
+    """Compose a personality-free operational prompt with exactly one selected style."""
+    if "\n\nSELECTED PERSONALITY (style only)\n" in prompt:
+        raise ValueError("The response prompt already contains a personality.")
+    return prompt + "\n\nSELECTED PERSONALITY (style only)\n" + personality.guidance

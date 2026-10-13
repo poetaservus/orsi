@@ -156,6 +156,7 @@ class SettingsPanel(QFrame):
         for personality in PERSONALITIES:
             window.personality_selector.addItem(personality.name, personality.id)
         window.personality_hint = QLabel()
+        window.personality_hint.setTextFormat(Qt.TextFormat.PlainText)
         window.personality_hint.setObjectName("settingsDescription")
         window.personality_hint.setWordWrap(True)
         self._row(general, "Personality", "O.R.S.I.'s voice · Remembered for this profile",

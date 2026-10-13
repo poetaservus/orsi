@@ -1,5 +1,59 @@
 # Git layout and baseline hygiene
 
+## File-based personalities and Choom v2, 13 October 2026
+
+`codex/personality-core-files` starts from clean local main `8d5e33d`.
+Core prompts now own operational, security, tool-use and approval guidance;
+one selected file supplies the conversational voice. Original is file-backed,
+the supplied Choom 2.0.0 source is retained unchanged, and additional Markdown
+or text personalities are discovered on restart without code registration.
+Legacy Choom IDs resolve without rewriting private settings. Model profiles,
+sampling, routing, tool schemas, runtime permissions, language selection and
+history handling are preserved. See [the architecture and authoring guide](personality-files.md).
+
+The affected native run passed **378 checks**, and the final switching/file
+checks passed **26 checks**, with no failures, errors or skips. These runs
+overlap. An earlier restricted run's three Windows lease denials are sandbox
+limitations, not product failures. An initial new oversized-input test lacked
+a bounded pytest case ID and exceeded Windows' environment-value limit; its
+test ID was corrected, with production behavior unchanged.
+The first full native run passed 3,711 checks and 15 subtests, skipped 61 and
+failed four in 765.84 seconds. Three failures exposed excessive prompt overhead
+at the default full-catalog model limit and a large-read workflow. Redundant
+wording was reduced without changing model/context limits, schemas or acceptance
+requests; all **96** targeted admission, read and personality checks pass. The
+fourth failure was the unchanged paged-reader revision-timestamp check, which
+also passes in that isolated group. That first full run remains recorded as
+failing in `state/personality-core-full.xml`/`.log`. The second native full
+regression rerun passed 3,714 checks and 15 subtests, skipped 61 and failed only
+that same unchanged revision-timestamp check in 771.94 seconds. Loading main's
+reader and test source in memory reproduced it **26/30** times on synthetic
+files. The fixture now advances the changed file's timestamp explicitly;
+production reader/security behavior and test acceptance assertions are unchanged.
+After the timestamp fixture correction, the third full run passed 3,714 checks
+and 15 subtests, skipped 61 and failed one unchanged skill-discovery directory
+rename with native Windows access denied in 752.78 seconds. Its unchanged
+discovery/loader group passes **85 checks**, with two host symlink skips, in
+isolation; no skill-runtime or corresponding test code was changed. Earlier
+full runs remain recorded as failing. The fourth full run passed 3,714 checks
+and 15 subtests, skipped 61 and failed the unchanged vision-cache identity
+fixture in 735.68 seconds. Main's checker/test source reproduces its same-size,
+same-timestamp write failure **11/30** times. That fixture now explicitly advances
+its changed file's timestamp too; model/projector verification is unchanged.
+All **95** combined image, reader, personality and default-admission checks pass
+after both fixture corrections. The final native full suite passed **3,715
+checks and 15 subtests**, with **61 skips**, no failures/errors, in **736.15
+seconds**. Results are retained in ignored
+`state/personality-core-final-regression.xml`/`.log`, using repository-local
+temporary storage. Earlier full failures remain recorded separately.
+Paid live API and real-model style-quality gates are separately unrun.
+
+Content-free refs/worktree inventory is retained under ignored
+`state/backups/personality-core-20261013/`. Prior main is preserved at
+`archive/2026-10-13/main-before-personality-core`. Commit this bounded
+change, fast-forward main and remove only its merged feature branch. Other
+worktrees, historical/unmerged tips and all remote refs remain intact.
+
 ## Response languages, 13 October 2026
 
 `codex/response-language` starts from local main `410d45d`, then fast-forwards to

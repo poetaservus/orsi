@@ -41,7 +41,7 @@ def test_catalog_options_render_explicit_policy_and_complete_runtime_notices(lan
         assert image_notice(language.code, 2) not in {"✓", ""}
 
 
-@pytest.mark.parametrize("voice", ["original", "choom-v1.0.0"])
+@pytest.mark.parametrize("voice", ["original", "choom"])
 @pytest.mark.parametrize("code", ["auto", "hu", "nl", "uk", "el"])
 @pytest.mark.parametrize("agent", [False, True])
 def test_real_requests_preserve_skill_guidance_catalog_and_unicode_user_text(tmp_path, voice, code, agent):

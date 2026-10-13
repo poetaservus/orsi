@@ -10,6 +10,7 @@ import pytest
 from app.agent.bootstrap import build_agent_runtime
 from app.conversation.orchestrator import ConversationService
 from app.conversation.prompt import SYSTEM_PROMPT
+from app.conversation.personality import get_personality, with_personality
 from app.conversation.response_language import with_response_language
 from app.conversation.store import ConversationStore
 from app.inference.engine import InferenceEngine
@@ -178,7 +179,7 @@ def test_skill_survives_multiple_turns_once_per_request_and_new_session_clears(t
         service.new_session(preserve_history=True)
         assert service.active_skill is None
         service.run("Fresh task")
-        assert model.requests[-1][0][0]["content"] == with_response_language(SYSTEM_PROMPT, "auto")
+        assert model.requests[-1][0][0]["content"] == with_response_language(with_personality(SYSTEM_PROMPT, get_personality("original")), "auto")
         assert len(model.requests[-1][0]) == 2
     finally:
         service.shutdown()
@@ -192,7 +193,7 @@ def test_activation_is_not_restored_from_durable_conversation(tmp_path):
     reopened = ConversationService(model, ConversationStore(tmp_path / "chat.json"), skill_registry=service.skill_registry)
     try:
         assert reopened.active_skill is None
-        assert reopened._model_messages()[0]["content"] == with_response_language(SYSTEM_PROMPT, "auto")
+        assert reopened._model_messages()[0]["content"] == with_response_language(with_personality(SYSTEM_PROMPT, get_personality("original")), "auto")
     finally:
         reopened.shutdown()
 
@@ -213,7 +214,7 @@ def test_catalog_reload_updates_selected_skill_and_withholds_rejected_body(tmp_p
         assert len(model.requests) == 1
         service.run("/skill")
         service.run("Continue normally")
-        assert model.requests[-1][0][0]["content"] == with_response_language(SYSTEM_PROMPT, "auto")
+        assert model.requests[-1][0][0]["content"] == with_response_language(with_personality(SYSTEM_PROMPT, get_personality("original")), "auto")
     finally:
         service.shutdown()
 
@@ -377,7 +378,7 @@ def test_unactivated_catalog_leaves_exact_existing_prompt_and_no_selection(tmp_p
     try:
         service.run("Use style for this ordinary request")
         assert service.active_skill is None
-        assert model.requests[-1][0] == [{"role": "system", "content": with_response_language(SYSTEM_PROMPT, "auto")},
+        assert model.requests[-1][0] == [{"role": "system", "content": with_response_language(with_personality(SYSTEM_PROMPT, get_personality("original")), "auto")},
                                       {"role": "user", "content": "Use style for this ordinary request"}]
         assert with_active_skill(SYSTEM_PROMPT, None) == SYSTEM_PROMPT
     finally:

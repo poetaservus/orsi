@@ -1,5 +1,9 @@
 # Profile-level personality selection
 
+This is the historical v1 selection and qualification record. See
+[file-based personalities and Choom v2](personality-files.md) for the current
+architecture and instructions for adding voices.
+
 This bounded change starts from main `1315375` on `codex/profile-personalities`
 at the user's request.
 

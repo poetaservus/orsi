@@ -20,9 +20,11 @@ def inputs(tmp_path):
     icon = source / "app/ui/assets/orsi.ico"
     icon.parent.mkdir(parents=True)
     icon.write_bytes((Path(__file__).resolve().parents[1] / "app/ui/assets/orsi.ico").read_bytes())
-    personality = source / "app/conversation/personalities/choom-v1.0.0.txt"
-    personality.parent.mkdir(parents=True)
-    personality.write_bytes((Path(__file__).resolve().parents[1] / "app/conversation/personalities/choom-v1.0.0.txt").read_bytes())
+    directory = source / "app/conversation/personalities"
+    directory.mkdir(parents=True)
+    for personality in (Path(__file__).resolve().parents[1] / "app/conversation/personalities").glob("*.md"):
+        (directory / personality.name).write_bytes(personality.read_bytes())
+    (directory / "friendly.md").write_text("---\nname: Friendly\n---\nSpeak warmly.")
     subprocess.run(["git", "init", "-q", str(source)], check=True)
     subprocess.run(["git", "-C", str(source), "add", "."], check=True)
     subprocess.run(["git", "-C", str(source), "-c", "user.name=Package fixture",
@@ -63,8 +65,10 @@ def test_export_uses_committed_public_files_and_never_copies_instance_data(input
     assert (destination / "runtime/python/Lib/site-packages/demo-1.0.dist-info/licenses/LICENSE").exists()
     assert (destination / "app/ui/assets/orsi.ico").read_bytes() == (source / "app/ui/assets/orsi.ico").read_bytes()
     # Git archive can apply the host's text line endings; the entire guidance is preserved.
-    assert (destination / "app/conversation/personalities/choom-v1.0.0.txt").read_text(encoding="utf-8") == (
-        source / "app/conversation/personalities/choom-v1.0.0.txt").read_text(encoding="utf-8")
+    assert (destination / "app/conversation/personalities/choom.md").read_text(encoding="utf-8") == (
+        source / "app/conversation/personalities/choom.md").read_text(encoding="utf-8")
+    from app.conversation.personality import discover_personalities
+    assert {p.id for p in discover_personalities(destination / "app/conversation/personalities")} == {"original", "choom", "friendly"}
     assert (destination / "Create shortcut.cmd").is_file() and (destination / "tools/create_shortcut.ps1").is_file()
     with zipfile.ZipFile(result["archive"]) as archive:
         assert destination.name + "/state/" in archive.namelist()

@@ -6,6 +6,7 @@ import pytest
 from app.agent.bootstrap import build_agent_runtime
 from app.conversation.orchestrator import ConversationService
 from app.conversation.personality import PERSONALITY_GUIDANCE, get_personality
+from app.conversation.prompt import CORE_INSTRUCTIONS
 from app.conversation.response_language import with_response_language
 from app.conversation.store import ConversationStore
 from app.inference.engine import InferenceEngine
@@ -37,7 +38,7 @@ class RequestRecorder(InferenceEngine):
 
 
 @pytest.mark.parametrize("mode", ["chat", "conversation", "agent", "compact"])
-@pytest.mark.parametrize("personality_id", ["original", "choom-v1.0.0"])
+@pytest.mark.parametrize("personality_id", ["original", "choom"])
 def test_personality_survives_request_selection_without_changing_catalog_or_user_text(tmp_path, mode, personality_id):
     # Leave room for the task context and completion assessment while still
     # forcing the compact system prompt (asserted below).
@@ -63,7 +64,8 @@ def test_personality_survives_request_selection_without_changing_catalog_or_user
             assert service.run(user_text) == "Rendben."
         messages, catalog = model.requests[0]
         system = messages[0]["content"]
-        assert system.startswith(get_personality(personality_id).guidance)
+        assert system.startswith(CORE_INSTRUCTIONS)
+        assert get_personality(personality_id).guidance in system
         assert messages[-1] == {"role": "user", "content": user_text}
         assert service._model_request(capability_turn=mode != "conversation").budget.fits
         assert catalog == (() if mode in {"chat", "conversation"} else ("filesystem.stat",))
@@ -80,6 +82,7 @@ def test_personality_survives_request_selection_without_changing_catalog_or_user
 
 def test_full_native_catalog_uses_shared_policy_without_duplicating_tool_contracts(tmp_path):
     from app.conversation.prompt import agent_system_prompt
+    from app.conversation.personality import with_personality
     from app.security.host_access import HostReadScope
     names = ("stat", "find", "list", "read_text", "search", "mkdir", "write_text",
              "edit_text", "copy", "move", "trash")
@@ -96,9 +99,9 @@ def test_full_native_catalog_uses_shared_policy_without_duplicating_tool_contrac
             assert catalog == runtime.registry.model_visible_names and len(catalog) == 12
             assert messages[-1] == {"role": "user", "content": user_text}
             system = messages[0]["content"]
-            full = agent_system_prompt(HostReadScope.PORTABLE_ROOT, catalog)
+            full = with_personality(agent_system_prompt(HostReadScope.PORTABLE_ROOT, catalog), get_personality("original"))
             assert len(system.encode()) < len(full.encode()) / 2
-            assert system.startswith(PERSONALITY_GUIDANCE)
+            assert system.startswith(CORE_INSTRUCTIONS) and PERSONALITY_GUIDANCE in system
             assert "external approval" in system and "unknown write outcome" in system
             assert "untrusted data" in system
     finally:

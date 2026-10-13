@@ -3,15 +3,16 @@
 ## Profile selection
 
 Choose **Settings → General → Personality** to select **Original** or **Choom**.
-Original retains the guidance described below unchanged. Choom 1.0.0 is bundled
-from the supplied personality draft and uses restrained cyberpunk slang and dry
-humor. Each profile remembers its own choice; portable copies carry the bundled
-definitions and, when included, the profile's saved selection. See
-[profile storage and verification](profile-personalities.md).
+Original is the default calm voice. Choom 2.0.0 is the supplied expressive cyberpunk
+voice. Both load from files, independently of core operational instructions.
+New voices appear after adding a personality file and restarting. Each profile
+remembers its own choice; portable copies carry the definitions and, when included,
+the saved selection. See [adding personalities and the current architecture](personality-files.md).
 
 ## Original voice and historical qualification
 
-The shared voice in `app/conversation/personality.py` implements the user's personality draft:
+The historical shared voice described below implemented the user's personality draft
+(the current file-based equivalent is `app/conversation/personalities/original.md`):
 composed, stoic, precise, quietly confident and naturally feminine, with restrained warmth.
 It favors clear answers, honest uncertainty and practical next steps, avoids emojis and artificial
 enthusiasm, and allows sincere empathy without forcing emotional conversations into troubleshooting.

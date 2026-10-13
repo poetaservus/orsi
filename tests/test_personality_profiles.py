@@ -28,9 +28,11 @@ from tests.test_vault_controls import PASSWORD
     agent_system_prompt(HostReadScope.PORTABLE_ROOT, ("filesystem.stat",)),
     compact_agent_system_prompt(HostReadScope.PORTABLE_ROOT, ("filesystem.stat",))])
 def test_personality_changes_only_voice_and_preserves_operational_policy(prompt):
-    assert with_personality(prompt, get_personality("original")) == prompt
-    changed = with_personality(prompt, get_personality("choom-v1.0.0"))
-    assert changed.removeprefix(get_personality("choom-v1.0.0").guidance) == prompt.removeprefix(PERSONALITY_GUIDANCE)
+    assert "Be stoic" not in prompt and "SELECTED PERSONALITY" not in prompt
+    original = with_personality(prompt, get_personality("original"))
+    changed = with_personality(prompt, get_personality("choom"))
+    assert original.removesuffix(PERSONALITY_GUIDANCE) == changed.removesuffix(get_personality("choom").guidance)
+    assert changed.startswith(prompt) and "Be stoic" not in changed
 
 
 def test_new_chat_restart_and_failed_save_preserve_choice_history_and_preferences(tmp_path, monkeypatch):
@@ -45,7 +47,7 @@ def test_new_chat_restart_and_failed_save_preserve_choice_history_and_preference
     try:
         service.run("Synthetic baseline")
         history = service.store.messages()
-        service.select_personality("choom-v1.0.0")
+        service.select_personality("choom")
         assert service.store.messages() == history
         assert ui.path.read_bytes() == previous_ui
         saved = path.read_bytes()
@@ -53,11 +55,11 @@ def test_new_chat_restart_and_failed_save_preserve_choice_history_and_preference
             patch.setattr(settings._store, "save", Mock(side_effect=OSError("synthetic private error")))
             with pytest.raises(OSError):
                 service.select_personality("original")
-        assert settings.current_id == "choom-v1.0.0" and path.read_bytes() == saved
+        assert settings.current_id == "choom" and path.read_bytes() == saved
         service.new_session()
-        assert settings.current_id == "choom-v1.0.0"
+        assert settings.current_id == "choom"
         service.run("Synthetic next chat")
-        assert service.inference.requests[-1][0][0]["content"].startswith(get_personality("choom-v1.0.0").guidance)
+        assert get_personality("choom").guidance in service.inference.requests[-1][0][0]["content"]
         service._run_lock.acquire()
         try:
             with pytest.raises(RuntimeError, match="current response"):
@@ -71,7 +73,7 @@ def test_new_chat_restart_and_failed_save_preserve_choice_history_and_preference
     with pytest.raises(RuntimeError, match="closed"):
         service.select_personality("original")
     restored = PersonalitySettings(JsonStore(path))
-    assert restored.current_id == "choom-v1.0.0"
+    assert restored.current_id == "choom"
     restored.select("original")
     assert PersonalitySettings(JsonStore(path)).current.guidance == PERSONALITY_GUIDANCE
 
@@ -82,7 +84,7 @@ def test_two_profiles_remember_independent_choices_and_revoke_old_settings(tmp_p
     first, second = tmp_path / "profiles/one", tmp_path / "profiles/two"
     owner.create(first, encrypted=encrypted, password=PASSWORD if encrypted else b"")
     old = PersonalitySettings(JsonStore(owner.session.storage_path("state/personality_selection_v1.json")), session=owner.session)
-    old.select("choom-v1.0.0")
+    old.select("choom")
     owner.create(second, encrypted=encrypted, password=PASSWORD if encrypted else b"")
     try:
         assert old._id is None
@@ -92,13 +94,13 @@ def test_two_profiles_remember_independent_choices_and_revoke_old_settings(tmp_p
         assert other.current_id == "original"
         owner.select(first, encrypted=encrypted, password=PASSWORD if encrypted else None)
         restored = PersonalitySettings(JsonStore(owner.session.storage_path("state/personality_selection_v1.json")), session=owner.session)
-        assert restored.current_id == "choom-v1.0.0"
+        assert restored.current_id == "choom"
         assert not (tmp_path / "state/personality_selection_v1.json").exists()
         if encrypted:
             owner.lock()  # Release the real exclusive Windows lease before inspecting ciphertext.
             for path in first.rglob("*"):
                 if path.is_file():
-                    assert b"choom-v1.0.0" not in path.read_bytes()
+                    assert b"choom" not in path.read_bytes()
     finally:
         owner.lock()
 
@@ -107,7 +109,7 @@ def test_larger_personality_is_counted_and_never_expands_actual_context_limit(tm
     model = RequestRecorder(1024)
     service = ConversationService(model, ConversationStore(tmp_path / "conversation.json"))
     try:
-        service.select_personality("choom-v1.0.0")
+        service.select_personality("choom")
         with pytest.raises(RuntimeError, match="context window"):
             service.run("Synthetic tiny-context request")
         assert model.context_length == 1024 and model.requests == []
@@ -123,7 +125,7 @@ def test_invalid_saved_preferences_keep_original_chat_and_preserve_bytes(tmp_pat
     settings = PersonalitySettings(JsonStore(path))
     assert settings.current_id == "original" and settings.load_error
     with pytest.raises(ValueError, match="preserved"):
-        settings.select("choom-v1.0.0")
+        settings.select("choom")
     assert path.read_bytes() == payload
 
 
@@ -152,14 +154,14 @@ def test_general_control_changes_real_request_and_restores_failed_selection(tmp_
         window.input.setPlainText("Keep unsent draft")
         selector.setFocus()
         QTest.keyClick(selector, Qt.Key.Key_Down)
-        assert settings.current_id == "choom-v1.0.0"
+        assert settings.current_id == "choom"
         assert window.input.toPlainText() == "Keep unsent draft" and ui.path.read_bytes() == before
         service.run("Synthetic style request")
-        assert service.inference.requests[-1][0][0]["content"].startswith(get_personality("choom-v1.0.0").guidance)
+        assert get_personality("choom").guidance in service.inference.requests[-1][0][0]["content"]
         with monkeypatch.context() as patch:
             patch.setattr(settings._store, "save", Mock(side_effect=OSError("synthetic private error")))
             selector.setCurrentIndex(selector.findData("original"))
-        assert selector.currentData() == settings.current_id == "choom-v1.0.0"
+        assert selector.currentData() == settings.current_id == "choom"
         assert "synthetic private error" not in window.chat._messages[-1]._content
         window._set_busy(True)
         assert not selector.isEnabled()
@@ -167,7 +169,7 @@ def test_general_control_changes_real_request_and_restores_failed_selection(tmp_
         assert selector.isEnabled()
         selector.setCurrentIndex(selector.findData("original"))
         service.run("Synthetic original request")
-        assert service.inference.requests[-1][0][0]["content"].startswith(PERSONALITY_GUIDANCE)
+        assert PERSONALITY_GUIDANCE in service.inference.requests[-1][0][0]["content"]
     finally:
         window.close()
         app.processEvents()
@@ -178,10 +180,10 @@ def test_selected_personality_reaches_openai_request_without_changing_model_prof
     service, hybrid, cloud, client, requests = make_service(monkeypatch, tmp_path)
     configuration = cloud.config.model_dump_json()
     try:
-        service.select_personality("choom-v1.0.0")
+        service.select_personality("choom")
         service.run("Synthetic cloud personality request")
         body = json.loads(requests[-1].content)
-        assert body["input"][0]["content"].startswith(get_personality("choom-v1.0.0").guidance)
+        assert get_personality("choom").guidance in body["input"][0]["content"]
         assert body["reasoning"] == {"effort": "none"}
         assert body["max_output_tokens"] == 4096 and body["temperature"] == .1
         assert cloud.config.model_dump_json() == configuration
@@ -202,7 +204,7 @@ def test_profile_lock_clears_the_selected_personality_from_the_view(tmp_path):
     window = MainWindow(service, "SYNTHETIC", preferences_store=JsonStore(session.storage_path("state/ui_preferences_v1.json")))
     window.bind_profile(session)
     try:
-        window.personality_selector.setCurrentIndex(window.personality_selector.findData("choom-v1.0.0"))
+        window.personality_selector.setCurrentIndex(window.personality_selector.findData("choom"))
         assert window.personality_selector.currentText() == "Choom"
         owner.lock()
         assert window.personality_selector.currentIndex() == -1

@@ -2,6 +2,7 @@
 import base64
 from copy import deepcopy
 import json
+import os
 from threading import Event, RLock
 from types import SimpleNamespace
 
@@ -299,7 +300,10 @@ def test_vision_identity_rejects_missing_replaced_or_wrong_projector(tmp_path, m
     monkeypatch.setattr('app.settings.local_models.read_model_metadata',lambda path: {'general.architecture':'qwen3vl','qwen3vl.embedding_length':2560} if path==model else {'general.type':'mmproj','clip.projector_type':'qwen3vl_merger','clip.has_vision_encoder':True,'clip.vision.projection_dim':128})
     with pytest.raises(ValueError,match='incompatible'):verify_vision_pair(cfg)
     monkeypatch.setattr('app.settings.local_models.read_model_metadata',metadata)
+    previous = proj.stat()
     proj.write_bytes(b'x')
+    # Establish a new cache identity even when both writes share a Windows tick.
+    os.utime(proj, ns=(previous.st_atime_ns, previous.st_mtime_ns + 1_000_000_000))
     with pytest.raises(ValueError,match='identity'):verify_vision_pair(cfg)
     proj.unlink()
     with pytest.raises(ValueError,match='missing'):verify_vision_pair(cfg)

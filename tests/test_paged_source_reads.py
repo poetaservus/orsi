@@ -1,6 +1,7 @@
 from copy import deepcopy
 import hashlib
 import json
+import os
 
 import pytest
 
@@ -55,7 +56,11 @@ def test_changed_revision_requires_restart_and_offsets_require_revision(tmp_path
     tool = FilesystemReadTextCapability()
     first = tool.invoke({"path": str(path), "max_bytes": 3}, context(tmp_path)).output
     assert not tool.invoke({"path": str(path), "offset": 3}, context(tmp_path)).success
+    previous = path.stat()
     path.write_bytes(b"ABCDEF")
+    # Same-size writes can share a Windows clock tick; establish a changed
+    # metadata revision explicitly instead of relying on scheduling delay.
+    os.utime(path, ns=(previous.st_atime_ns, previous.st_mtime_ns + 1_000_000_000))
     stale = tool.invoke(first["next_read"], context(tmp_path))
     assert not stale.success and "revision changed" in stale.error.message
     assert tool.invoke({"path": str(path)}, context(tmp_path)).output["sha256"] == hashlib.sha256(b"ABCDEF").hexdigest()

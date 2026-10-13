@@ -19,7 +19,7 @@ from app.vault.types import VaultError
 PUBLIC_FILES = ("ORSI.cmd", "THIRD_PARTY_NOTICES.md", "pyproject.toml", "requirements.txt",
                 "config/agent.json", "config/cloud.json", "config/model.json",
                 "tools/verify_openai_runtime.py", "Create shortcut.cmd", "tools/create_shortcut.ps1")
-APP_SUFFIXES = {".py", ".png", ".ico", ".svg", ".ogg", ".ttf", ".txt"}
+APP_SUFFIXES = {".py", ".png", ".ico", ".svg", ".ogg", ".ttf", ".txt", ".md"}
 PYTHON_PATHS = ["python312.zip", ".", "Lib\\site-packages", "..\\..", "import site"]
 PROFILE_FOLDER = "profiles/current"
 MANIFEST = NODE_MANIFEST

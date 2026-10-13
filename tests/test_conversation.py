@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from app.conversation.prompt import SYSTEM_PROMPT
+from app.conversation.personality import get_personality, with_personality
 from app.conversation.response_language import with_response_language
 from app.conversation.orchestrator import ConversationService
 from app.conversation.store import ConversationStore
@@ -76,7 +77,7 @@ def test_conversation_is_text_only_and_persists(tmp_path: Path):
 
     assert service.run("Hello") == "Hello back"
     sent = inference.calls[0]
-    assert sent[0] == {"role": "system", "content": with_response_language(SYSTEM_PROMPT, "auto")}
+    assert sent[0] == {"role": "system", "content": with_response_language(with_personality(SYSTEM_PROMPT, get_personality("original")), "auto")}
     assert sent[1:] == [{"role": "user", "content": "Hello"}]
     assert all(set(message) == {"role", "content"} for message in sent)
 
@@ -143,7 +144,7 @@ def test_empty_startup_sessions_do_not_accumulate_archives(tmp_path):
 def test_history_uses_token_budget_and_saturates_context_meter(tmp_path: Path):
     class ExactCharacterTokenizer(RecordingInference):
         # Leave a fixed history allowance regardless of the production prompt length.
-        context_length = len(with_response_language(SYSTEM_PROMPT, "auto")) + 1000
+        context_length = len(with_response_language(with_personality(SYSTEM_PROMPT, get_personality("original")), "auto")) + 1000
         max_response_tokens = 200
 
         @staticmethod
