@@ -162,6 +162,8 @@ class BottomGlassPane(QWidget):
         self.setAutoFillBackground(False)
         self._backdrop_surface = None
         self._chat_view = None
+        self._reuse_blur = False
+        self._transition_blur = None
 
     def set_backdrop_widgets(self, surface: QWidget, chat_view: ChatView) -> None:
         self._backdrop_surface = surface
@@ -169,6 +171,13 @@ class BottomGlassPane(QWidget):
 
     def backdrop_widgets(self) -> tuple[QWidget | None, ChatView | None]:
         return self._backdrop_surface, self._chat_view
+
+    def reuse_transition_blur(self, enabled: bool) -> None:
+        # Question handoffs have a settled transcript. Reuse only while the
+        # composer moves; scrolling/painting outside that transition stays live.
+        self._reuse_blur = enabled
+        self._transition_blur = None
+        self.update()
 
     def paintEvent(self, event) -> None:  # noqa: N802 - Qt API name
         del event
@@ -221,18 +230,30 @@ class BottomGlassPane(QWidget):
             overlap.height(),
         )
         blur_bounds = QRect(QPoint(0, 0), chat_content.size())
+        # Composer clearance is empty layout space. Keep enough padding for
+        # blur spill, but don't snapshot and blur that growing blank area.
+        blur_bounds.setBottom(min(blur_bounds.bottom(),
+            chat_content.layout().contentsRect().bottom() + _BOTTOM_GLASS_BLUR_PADDING))
         expanded_source = chat_source.adjusted(
             -_BOTTOM_GLASS_BLUR_PADDING,
             -_BOTTOM_GLASS_BLUR_PADDING,
             _BOTTOM_GLASS_BLUR_PADDING,
             _BOTTOM_GLASS_BLUR_PADDING,
         ).intersected(blur_bounds)
-        blurred_fragment = self._soften(chat_content.grab(expanded_source))
-        fragment_offset = chat_source.topLeft() - expanded_source.topLeft()
-        chat_fragment = blurred_fragment.copy(QRect(fragment_offset, chat_source.size()))
-        text_painter = QPainter(backdrop)
-        text_painter.drawPixmap(target_rect.topLeft(), chat_fragment)
-        text_painter.end()
+        if not expanded_source.isEmpty():
+            key = (expanded_source, chat_content.width(), chat_content.devicePixelRatioF())
+            cached = self._transition_blur
+            if cached is not None and cached[0] == key:
+                blurred_fragment = cached[1]
+            else:
+                blurred_fragment = self._soften(chat_content.grab(expanded_source))
+                if self._reuse_blur:
+                    self._transition_blur = (key, blurred_fragment)
+            fragment_offset = chat_source.topLeft() - expanded_source.topLeft()
+            text_painter = QPainter(backdrop)
+            text_painter.setClipRect(target_rect)
+            text_painter.drawPixmap(target_rect.topLeft() - fragment_offset, blurred_fragment)
+            text_painter.end()
         return self._feather_top(backdrop)
 
     @staticmethod
@@ -1402,6 +1423,7 @@ class MainWindow(QMainWindow):
         self.questions_back.hide()
         height = self._question_height()
         self._question_panel.setMinimumHeight(height)
+        self._question_panel.reveal_effect.setEnabled(True)
         self._question_panel.reveal_effect.setOpacity(0.)
         self._composer_stack.setCurrentWidget(self._question_panel)
         self.composer.setProperty("questions", True)
@@ -1496,6 +1518,7 @@ class MainWindow(QMainWindow):
             self.input.setFocus()
 
     def _animate_composer_height(self, height: int, *, animated: bool = True, reveal=None) -> None:
+        self.bottom_glass.reuse_transition_blur(False)
         if self._approval_transition is not None:
             self._approval_transition.stop()
             self._approval_transition.deleteLater()
@@ -1512,6 +1535,7 @@ class MainWindow(QMainWindow):
             if self._question_panel is not None:
                 self._question_panel.setMinimumHeight(0)
                 self._question_panel.reveal_effect.setOpacity(1.)
+                self._question_panel.reveal_effect.setEnabled(False)
 
         if (not animated or not self.isVisible() or getattr(self, "_closing", False)
                 or self.composer.height() == height):
@@ -1537,12 +1561,15 @@ class MainWindow(QMainWindow):
 
         def finish() -> None:
             self._approval_transition = None
+            self.bottom_glass.reuse_transition_blur(False)
             finish_reveal()
             resize(height)
             transition.deleteLater()
 
         transition.finished.connect(finish)
         self._approval_transition = transition
+        self.bottom_glass.reuse_transition_blur(
+            self._question_panel is not None and self._approval_panel is None and self.thread is None)
         self._position_overlays()
         transition.start()
 

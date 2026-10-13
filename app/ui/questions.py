@@ -124,6 +124,7 @@ class QuestionComposer(QFrame):
         self.reveal_effect = QGraphicsOpacityEffect(self)
         self.setGraphicsEffect(self.reveal_effect)
         self.reveal_effect.setOpacity(1.)
+        self.reveal_effect.setEnabled(False)
         self.setObjectName("questionComposer")
         self.setStyleSheet(QUESTION_STYLE)
         layout = QVBoxLayout(self)
@@ -222,7 +223,7 @@ QFrame#questionComposer QLabel { border: none; font-size: 12px; }
 QLabel#questionsHeader, QLabel#questionTitle { font-weight: 600; }
 QLabel#questionHint { color: #a8adb6; font-size: 10px; }
 QFrame#questionDivider { background: #373c43; border: none; }
-QFrame#questionComposer QRadioButton, QFrame#questionComposer QCheckBox { spacing: 9px; min-height: 22px; }
+QFrame#questionComposer QRadioButton, QFrame#questionComposer QCheckBox { spacing: 9px; min-height: 22px; border: none; outline: none; }
 QFrame#questionComposer QRadioButton::indicator, QFrame#questionComposer QCheckBox::indicator {
     width: 14px; height: 14px; border: 1px solid #626b7a; background: #282c32;
 }
@@ -245,7 +246,6 @@ QFrame#questionComposer QPushButton:hover { background: #454852; }
 QFrame#questionComposer QPushButton:pressed { background: #2c2e35; }
 QFrame#questionComposer QPushButton#questionsSend { background: #373c43; min-width: 55px; }
 QFrame#questionComposer QPushButton:disabled { color: #777a80; }
-QFrame#questionComposer QRadioButton:focus, QFrame#questionComposer QCheckBox:focus,
 QFrame#questionComposer QPushButton:focus, QFrame#questionComposer QComboBox:focus,
 QFrame#questionComposer QLineEdit:focus, QFrame#questionComposer QPlainTextEdit:focus { border: 1px solid #b6bac3; }
 """

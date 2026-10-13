@@ -10,6 +10,12 @@ The outer surface uses the regular composer's gray gradient, border and rounded
 outline. Fields and controls use its existing gray palette. Expansion shares
 the approval panel's 240 ms cubic easing, with a coordinated content fade and
 natural-height layout so fields don't squeeze while the composer grows.
+Choice rows have no focus outline; mouse and keyboard selection still use the
+native controls. The opacity effect runs only during the reveal. The bottom
+glass excludes empty composer clearance from its blur and reuses the same
+transcript fragment during a settled questionnaire transition. That temporary
+cache is discarded on completion, interruption or resize; ordinary scrolling
+and streaming keep live painting.
 
 Answer in chat and Back to questions retain selections and the ordinary draft.
 Ctrl+Enter submits valid answers; Enter in a text field adds a newline. Send

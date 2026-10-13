@@ -1,5 +1,41 @@
 # Git layout and baseline hygiene
 
+## Question choice and transition polish, 13 October 2026
+
+`codex/question-composer-polish` starts from clean local main `a82485f`.
+Radio/checkbox rows no longer gain a white focus rectangle; native keyboard
+focus and selection remain available. Profiling identified repeated bottom-glass
+snapshot/blur work, especially growing empty composer clearance, as the main
+transition cost. The blur now excludes that empty space and temporarily reuses
+an unchanged transcript fragment during settled questionnaire transitions.
+The content opacity effect is disabled after the reveal. Existing timing,
+easing, per-frame transcript clearance, approvals and inference behavior remain.
+
+The essential native run passed **57 checks** with no failures/errors/skips in
+**15.93 seconds**, using repository-local temporary/cache storage. Results are
+retained in ignored `state/question-polish-final.xml`. Checks cover forms,
+keyboard/mouse selection, height/fade geometry, cache reuse/release, interrupted
+transitions and resize, plus the existing inline approval lifecycle. Focused
+radio and checkbox screenshots were visually inspected. Initial new assertions
+needed queued Qt layout/focus updates and a click on the actual checkbox
+indicator; those fixture failures remain in the earlier XML runs. Production
+acceptance requests were unchanged. Full-suite and live-model/API checks were
+not run under the user's essential-test scope.
+
+A synthetic 40-message, 64-frame rendering probe measured median frame work
+at **11.70 ms before / 4.54 ms after**, and 95th percentile **15.52 / 7.43 ms**.
+Blur calls fell from **64 to 14**. These are local rendering measurements,
+not a live frame-rate guarantee. Backdrop output was pixel-identical to the
+starting implementation at six collapsed/expanded and scroll positions.
+Content-free measurements are retained under ignored
+`state/question-polish-profile/`.
+
+Ref/worktree inventories are preserved under ignored
+`state/backups/question-composer-polish-20261013/`; prior main is retained at
+`archive/2026-10-13/main-before-question-composer-polish`. After verification,
+commit, fast-forward local main and remove only the merged feature branch.
+Other worktrees, historical/unmerged tips and remote refs remain unchanged.
+
 ## Questionnaire presentation and composer motion, 13 October 2026
 
 `codex/question-composer-presentation` starts from clean local main `13ac8d3`.

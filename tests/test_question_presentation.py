@@ -5,6 +5,8 @@ import os
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
+from PySide6.QtCore import QPoint, Qt
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
 from app.conversation.orchestrator import ConversationService
@@ -12,6 +14,7 @@ from app.conversation.questions import QuestionBatch, present_questions, questio
 from app.conversation.store import ConversationStore
 from app.inference.completion import CompletionText
 from app.ui.main_window import MainWindow
+from app.ui.questions import QuestionComposer
 from tests.test_attachment_composer import wait_for
 from tests.test_questions import Replies
 
@@ -140,6 +143,7 @@ def test_question_transition_grows_and_fades_without_squeezing_inputs(app, tmp_p
         target = window._question_height()
         assert animation is not None and window.composer.height() == start
         assert panel.reveal_effect.opacity() == 0.
+        assert panel.reveal_effect.isEnabled()
         animation.setCurrentTime(120)
         assert start < window.composer.height() < target
         assert 0. < panel.reveal_effect.opacity() < 1.
@@ -147,6 +151,20 @@ def test_question_transition_grows_and_fades_without_squeezing_inputs(app, tmp_p
         assert window.composer.geometry().bottom() == window._content.height() - 43
         animation.setCurrentTime(animation.duration())
         assert window.composer.height() == target and panel.reveal_effect.opacity() == 1.
+        assert not panel.reveal_effect.isEnabled()
+        # Keep keyboard focus and selection while visually inspecting both kinds
+        # of focused choice without the former full-row white border.
+        window.activateWindow()
+        app.processEvents()
+        radio = panel.fields["simulation"].buttons[0]
+        radio.setFocus()
+        app.processEvents()
+        QTest.keyClick(radio, Qt.Key.Key_Space)
+        assert radio.isChecked() and radio.hasFocus()
+        window.grab().save(str(tmp_path / "question-radio-focused.png"))
+        checkbox = panel.fields["interactions"].buttons[0]
+        QTest.mouseClick(checkbox, Qt.MouseButton.LeftButton, pos=QPoint(8, checkbox.height() // 2))
+        assert checkbox.isChecked() and checkbox.hasFocus()
         window.grab().save(str(tmp_path / "question-composer-themed.png"))
         window._answer_in_chat()
         animation = window._approval_transition
@@ -158,4 +176,59 @@ def test_question_transition_grows_and_fades_without_squeezing_inputs(app, tmp_p
     finally:
         window.close()
         service.shutdown()
+        app.processEvents()
+
+
+def test_transition_reuses_blur_then_returns_to_live_transcript_painting(app, tmp_path, monkeypatch):
+    window = MainWindow(None, "SYNTHETIC")
+    window.resize(1200, 820)
+    window.show()
+    window._leave_intro_mode()
+    if window._intro_transition is not None:
+        window._intro_transition.setCurrentTime(window._intro_transition.duration())
+    for _ in range(12):
+        window.chat.add_message("Agent", "Synthetic transcript for transition rendering.\n" * 10)
+    app.processEvents()
+    panel = window._question_panel = QuestionComposer(batch(), window.composer)
+    window._composer_stack.addWidget(panel)
+    app.processEvents()
+    sizes = []
+    original = window.bottom_glass._soften
+
+    def soften(pixmap):
+        sizes.append(pixmap.size())
+        return original(pixmap)
+
+    monkeypatch.setattr(window.bottom_glass, "_soften", soften)
+    try:
+        window._show_questions()
+        animation = window._approval_transition
+        animation.pause()
+        animation.setCurrentTime(160)
+        app.processEvents()
+        app.processEvents()
+        glass = window.bottom_glass
+        cached = glass._blurred_backdrop().toImage()
+        count = len(sizes)
+        assert glass._transition_blur is not None
+        assert glass._blurred_backdrop().toImage() == cached and len(sizes) == count
+        # Blank composer clearance must not be included in the expensive blur.
+        assert sizes[-1].height() < glass.height()
+        animation.setCurrentTime(animation.duration())
+        app.processEvents()
+        assert not glass._reuse_blur and glass._transition_blur is None
+        count = len(sizes)
+        glass._blurred_backdrop()
+        glass._blurred_backdrop()
+        assert len(sizes) == count + 2
+        # A return followed by a resize cancels both the animation and its cache.
+        window._answer_in_chat()
+        window._approval_transition.setCurrentTime(100)
+        window._show_questions()
+        window.resize(850, 650)
+        assert window._approval_transition is None and glass._transition_blur is None
+        assert not glass._reuse_blur and not panel.reveal_effect.isEnabled()
+        assert window.composer.geometry().bottom() == window._content.height() - 43
+    finally:
+        window.close()
         app.processEvents()
