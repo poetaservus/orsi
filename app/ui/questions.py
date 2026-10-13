@@ -228,7 +228,7 @@ QFrame#questionComposer QRadioButton::indicator, QFrame#questionComposer QCheckB
     width: 14px; height: 14px; border: 1px solid #626b7a; background: #282c32;
 }
 QFrame#questionComposer QRadioButton::indicator { border-radius: 8px; }
-QFrame#questionComposer QRadioButton::indicator:checked { background: #eeeeef; border: 3px solid #85888c; border-radius: 10px; }
+QFrame#questionComposer QRadioButton::indicator:checked { background: #eeeeef; border-color: #85888c; }
 QFrame#questionComposer QCheckBox::indicator { border-radius: 3px; }
 QFrame#questionComposer QCheckBox::indicator:checked { background: #eeeeef; border-color: #eeeeef; }
 QFrame#questionComposer QPlainTextEdit, QFrame#questionComposer QLineEdit, QFrame#questionComposer QComboBox {

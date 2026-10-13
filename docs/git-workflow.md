@@ -1,5 +1,24 @@
 # Git layout and baseline hygiene
 
+## Stable selected question choices, 13 October 2026
+
+`codex/question-choice-stability` starts from clean local main `a1804d4`.
+The selected radio indicator previously changed its border from one to three
+pixels, growing from 16 to 20 pixels and moving its top/label. A one-line style
+change keeps the inherited dimensions, border width and radius; selection only
+changes colors. Synthetic Qt measurements confirm identical row, indicator and
+text geometry for all four choices and keyboard selection. Essential existing
+question/presentation checks passed **41 tests** in **10.42 seconds**; native
+results are retained in ignored `state/question-choice-stability-tests.xml`.
+The integrated focused-radio screenshot was visually inspected. Full-suite and
+live-model/API checks were not run under the user's essential-test scope.
+Measurements and ref/worktree inventories are retained under ignored
+`state/question-choice-stability/` and
+`state/backups/question-choice-stability-20261013/`. Prior main is preserved at
+`archive/2026-10-13/main-before-question-choice-stability`. Commit, fast-forward
+local main and remove only the merged feature branch; other worktrees and
+historical/unmerged/remote refs remain unchanged.
+
 ## Question choice and transition polish, 13 October 2026
 
 `codex/question-composer-polish` starts from clean local main `a82485f`.
