@@ -37,6 +37,7 @@ from app.conversation.language_messages import notice, progress_notice, image_no
 from app.conversation.diagnostics import record_route, record_turn
 from app.conversation.store import ConversationStore, TurnHistoryError
 from app.conversation.questions import present_questions, question_preview
+from app.conversation.question_projection import project_questions, projection_candidate
 from app.conversation.operation_review import InterruptedOperation, OperationReview
 from app.conversation.history_context import bind_history_runtime
 from app.conversation.skill_references import ConversationSkillReferences
@@ -305,6 +306,7 @@ class ConversationService:
         source = CancellationSource()
         turn_id = None
         answer = None
+        self._question_projection_allowed = True
         previous_explicit_skill = self._active_skill_name
         previous_automatic_skill = self._automatic_skill
         message_skill = None
@@ -481,6 +483,14 @@ class ConversationService:
             else:
                 answer = self._run_agent_turn(text, source, activity, observe_review)
             answer = present_questions(answer, allow_forms=self._turn_result.status == AgentRunStatus.COMPLETED)
+            if (self._turn_result.status == AgentRunStatus.COMPLETED and not image_turn
+                    and self._question_projection_allowed and answer.question_batch is None
+                    and projection_candidate(answer)):
+                if callable(preview_setter):
+                    preview_setter(None)  # Internal form JSON must never stream into chat.
+                report_activity(activity, "Preparing questions…")
+                batch = project_questions(self.inference, request=text, answer=str(answer), cancellation=source.token)
+                answer = CompletionText(answer, question_batch=batch)
             report_activity(activity, "Saving the conversation…")
             self.store.finish_turn(turn_id, self._turn_result, answer)
             self._agent_history = self._stored_agent_history()
@@ -700,6 +710,7 @@ class ConversationService:
                                                    display_requested=display_requested)
         if grounded_answer is not None:
             answer = grounded_answer
+            self._question_projection_allowed = False  # Literal source display is never an interview.
         return CompletionText(answer, result.completion, result.completion_history)
 
     def set_approval_requester(self, requester) -> None:

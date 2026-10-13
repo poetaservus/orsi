@@ -1,5 +1,35 @@
 # Git layout and baseline hygiene
 
+## Plain-text question handoffs, 13 October 2026
+
+`codex/plain-question-handoff` starts from clean local main `b814390`. The
+reported Luna reply asked what a sand-simulation prompt should request, but
+omitted the optional question fence. The initial scripted UI checks assumed
+that fence was present. A bounded, tool-free presentation fallback now extracts
+actual clarification questions from plain replies, verifies their provenance,
+and attaches existing form metadata. The original reply, task review and
+receipts stay intact; no choices are invented. Valid fenced forms still use
+the original path without another request. See [the fallback contract](question-composer.md).
+
+The user retained the essential-test scope. Final native checks passed **78
+tests**, with no failures/errors/skips, in **22.94 seconds**. Results are in
+ignored `state/plain-question-qualified.xml`. They include the exact reported
+reply through the Luna Medium SDK over a synthetic streaming transport, settled
+visible input fields and subsequent answer submission, plain local/cloud
+handoffs, faithful/multilingual extraction, unavailable/invalid output,
+cancellation/timeouts, and existing forms, approvals, streaming and default
+context checks. The rendered reproduction was visually inspected. The first
+new test run had one incorrect fixture import (19 passed, one failed), corrected
+without changing production behavior. An intermediate 77-test run and isolated
+settled-render check also passed and overlap the final run. Full-suite and live
+provider/model reliability checks remain separately unrun.
+
+Content-free Git inventories are retained under ignored
+`state/backups/plain-question-handoff-20261013/`. Prior main is preserved at
+`archive/2026-10-13/main-before-plain-question-handoff`. After verification,
+commit, fast-forward local main and remove only the merged feature branch.
+Other worktrees, historical/unmerged tips and remote refs remain unchanged.
+
 ## Interactive question composer, 13 October 2026
 
 `codex/question-composer` starts from clean local main `67e1259`. Clarification

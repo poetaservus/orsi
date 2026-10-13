@@ -21,7 +21,8 @@ panel and decision, with existing runtime checks.
 The operational core briefly describes a final `orsi_questions` JSON fence.
 The assistant asks readable questions before that fence, providing a fallback
 when the model doesn't support the format or produces invalid metadata. There
-are no new tools, provider-specific function schemas or additional model calls.
+are no new tools or provider-specific function schemas. Valid question blocks
+need no additional model calls.
 Local Python/native adapters, compatible cloud APIs and OpenAI Responses use
 their existing text channels. Personality and language instructions keep their
 existing precedence. Repeated operational wording in the compact native prompt
@@ -49,6 +50,27 @@ histories without it still load. Provider replay is retained unchanged; its
 readable question projection isn't duplicated in subsequent Responses history.
 No metadata is interpreted from user messages or tool output.
 
+## Plain-text clarification fallback
+
+Some live replies omit the optional fence even when they ask a real question.
+After a completed reply with visible question punctuation or an explicit request
+for input, `app/conversation/question_projection.py` can make one isolated,
+tool-free presentation request through the current inference adapter. It extracts
+only actual unanswered clarification/interview questions. Question titles and
+option labels must occur in the visible original reply; no invented questions
+or choices are accepted. Without explicit choices the form uses text input.
+Ordinary numbered instructions alone do not cause a presentation request.
+
+Code/blockquote examples and grounded literal file display are excluded. Internal
+extraction JSON never streams into chat, history or provider replay. The original
+reply, completion review and tool receipts stay unchanged; only optional form
+metadata is added. The request has a 16 KiB input limit, existing context
+admission, a 20-second deadline, cancellation and no retry. Missing/invalid
+metadata, provider failure, context overflow or a safely stopped timeout keep
+the original reply and regular composer available. An adapter that cannot stop
+is not silently reused. No model, sampling, routing, tool schema, approval or
+completion-review policy changes are needed for this fallback.
+
 The UI binds a pending form to its conversation and assistant turn. A latest
 unanswered form restores when that active conversation is loaded. Submitted or
 superseded forms, earlier messages and other sessions cannot become active;
@@ -66,7 +88,12 @@ output, local/cloud reviewed handoffs with Original and Choom, and real adapter
 request serialization over synthetic transports. Existing approval, streaming,
 conversation/attachment, personality/coding-policy and default-context checks
 are included. Synthetic Qt rendering was visually inspected. Paid/live API,
-real-model format reliability and the full suite are separately unrun.
+real-model format reliability and the full suite are separately unrun. A
+follow-up regression reproduces the user's exact sand-simulation question with
+no special fence, including the Luna Medium SDK streaming path over a synthetic
+transport, visible settled form and answer submission. Plain local/cloud
+handoffs, provenance, multilingual choices, exclusions, failure and cancellation
+are covered separately. See the latest counts in `docs/git-workflow.md`.
 
 The first new test collection exposed unescaped JSON braces in the existing
 prompt template; guidance now describes the JSON fields without literal braces.
