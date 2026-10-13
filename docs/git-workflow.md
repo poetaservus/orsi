@@ -1,5 +1,40 @@
 # Git layout and baseline hygiene
 
+## Interactive question composer, 13 October 2026
+
+`codex/question-composer` starts from clean local main `67e1259`. Clarification
+handoffs can now replace the composer with a mixed native question form,
+including radio buttons, dropdowns, checkboxes and text. Answer-in-chat retains
+the form; existing drafts/attachments/skill selection survive form submission,
+and unadmitted answers remain available for retry. Optional history metadata
+binds pending forms to their conversation/turn. Tools, runtime permissions,
+provider APIs, model profiles, sampling and context limits are unchanged. See
+[the contract, lifecycle and verification scope](question-composer.md).
+
+The user requested efficient scope and essential tests only. The final native
+run passed **136 checks**, with no failures/errors/skips, in **26.34 seconds**,
+using repository-local temporary/cache storage. Results are retained under
+ignored `state/question-composer-qualified.xml`; the preceding affected
+provider-history round-trip recheck passed **53 checks**, overlapping this run.
+The new checks cover all four inference adapter families using synthetic
+transports and local/cloud reviewed handoffs with Original and Choom; live
+model/API format reliability and the full suite are separately unrun. Synthetic
+Qt rendering was visually inspected.
+
+Earlier collection/streaming-assertion errors and default-context failures
+remain recorded in their separate XML runs. The two tight default-context
+failures also reproduce against the starting main prompt in memory; numeric
+evidence is in `state/question-context-baseline/summary.json`. Redundant compact
+prompt wording already covered by the core was condensed while adding the
+question format. Unchanged default-context acceptance checks now pass; no
+sampling, schemas, routing or limits were adjusted.
+
+Content-free ref/worktree inventories are retained under ignored
+`state/backups/question-composer-20261013/`. Prior main is preserved at
+`archive/2026-10-13/main-before-question-composer`. After verification, commit,
+fast-forward local main and remove only this merged feature branch. Other
+worktrees, historical/unmerged tips and remote refs remain unchanged.
+
 ## Clarification handoff, 13 October 2026
 
 `codex/prompter-question-handoff` starts from clean local main `8246fc9`.

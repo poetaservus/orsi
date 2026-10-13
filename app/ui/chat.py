@@ -523,6 +523,10 @@ class ChatView(QScrollArea):
         scrolling.started.connect(self._begin_smooth_scroll)
         scrolling.finished.connect(self._refresh_follow_tail_from_position)
 
+    def set_composer_clearance(self, height: int) -> None:
+        margins = self._layout.contentsMargins()
+        self._layout.setContentsMargins(margins.left(), margins.top(), margins.right(), max(170, height))
+
     def add_message(
         self,
         sender: str,

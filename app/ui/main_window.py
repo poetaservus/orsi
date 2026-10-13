@@ -57,6 +57,7 @@ from app.inference.engine import InferenceUnavailable
 from app.inference.attachments import AttachmentError
 from app.inference.completion import CompletionText
 from app.ui.approvals import create_inline_approval
+from app.ui.questions import QuestionComposer
 from app.ui.operation_review import OperationReviewDialog
 from app.ui.chat import ChatView
 from app.ui.context_window import ContextWindowBar
@@ -370,6 +371,9 @@ class MainWindow(QMainWindow):
         self._active_user_message_band = None
         self._approval_panel = None
         self._approval_transition = None
+        self._question_panel = None
+        self._question_key = None
+        self._question_submission = False
         self.approval_requested.connect(self._show_approval, Qt.ConnectionType.QueuedConnection)
         bind_approval = getattr(service, "set_approval_requester", None)
         if callable(bind_approval):
@@ -561,6 +565,11 @@ class MainWindow(QMainWindow):
         message_layout = QVBoxLayout(self._message_composer)
         message_layout.setContentsMargins(0, 0, 0, 0)
         message_layout.setSpacing(0)
+        self.questions_back = QPushButton("Back to questions", self._message_composer)
+        self.questions_back.setFixedHeight(28)
+        self.questions_back.hide()
+        self.questions_back.clicked.connect(self._show_questions)
+        message_layout.addWidget(self.questions_back)
         store = getattr(getattr(service, "store", None), "attachment_store", None)
         self.attachment_tray = AttachmentTray(store, lambda: getattr(self.inference, "mode", "local"), self._message_composer)
         message_layout.addWidget(self.attachment_tray)
@@ -667,6 +676,7 @@ class MainWindow(QMainWindow):
         elif self._agent_error():
             self.chat.add_message("Agent", self._agent_error(), True)
         self._refresh_operation_review()
+        self._sync_question_form()
 
     def _refresh_operation_review(self, *, busy=False):
         if getattr(self, "_closing", False):
@@ -745,6 +755,7 @@ class MainWindow(QMainWindow):
                     raise RuntimeError("Profile work is still stopping.")
 
     def _clear_profile_view(self):
+        self._clear_question_form()
         self.operation_review_label.clear()
         self.operation_review_banner.hide()
         self._preferences_store = None
@@ -774,6 +785,8 @@ class MainWindow(QMainWindow):
 
     def resizeEvent(self, event) -> None:  # noqa: N802 - Qt API name
         super().resizeEvent(event)
+        if getattr(self, "_question_panel", None) is not None and self._questions_visible():
+            self._animate_composer_height(self._question_height(), animated=False)
         self._position_overlays()
 
     def showEvent(self, event) -> None:  # noqa: N802
@@ -1116,6 +1129,10 @@ class MainWindow(QMainWindow):
         available = not busy and self.thread is None and not getattr(self, "_closing", False)
         self.send.setEnabled(available)
         self.input.setEnabled(available)
+        if self._question_panel is not None:
+            self._question_panel.setEnabled(available)
+            self._question_panel.refresh()
+        self.questions_back.setEnabled(available)
         self.new_session_button.setEnabled(available and self.service is not None)
         self._refresh_operation_review(busy=busy)
         self.model_selector.setEnabled(available and self.inference is not None)
@@ -1191,13 +1208,15 @@ class MainWindow(QMainWindow):
             self._attachment_idle()
 
     def _message_composer_height(self):
-        return _COMPOSER_HEIGHT + (76 if self.attachment_tray.count else 0) + (26 if not self.attachment_hint.isHidden() else 0)
+        return (_COMPOSER_HEIGHT + (76 if self.attachment_tray.count else 0)
+                + (26 if not self.attachment_hint.isHidden() else 0)
+                + (28 if not self.questions_back.isHidden() else 0))
 
     def _refresh_attachment_composer(self):
         if not self.attachment_tray.count:
             self.attachment_hint.hide()
         height = self._message_composer_height()
-        if self._approval_panel is None and self.composer.height() != height:
+        if self._approval_panel is None and not self._questions_visible() and self.composer.height() != height:
             self._animate_composer_height(height, animated=False)
 
     def _attachment_notice(self, text):
@@ -1205,7 +1224,7 @@ class MainWindow(QMainWindow):
         self.attachment_hint.setText(self.attachment_hint.fontMetrics().elidedText(
             text, Qt.TextElideMode.ElideRight, max(150, self.composer.width() - 44)))
         self.attachment_hint.show()
-        if self._approval_panel is None:
+        if self._approval_panel is None and not self._questions_visible():
             self._animate_composer_height(self._message_composer_height(), animated=False)
 
     def _attachment_idle(self):
@@ -1242,14 +1261,19 @@ class MainWindow(QMainWindow):
             self.skill_picker.clear_selection()
         self._update_context_window()
 
-    def submit(self) -> None:
-        if self.thread is None and self.skill_picker.accept_current():
+    def submit(self, *, question_answer=None) -> None:
+        form_answer = question_answer is not None
+        if form_answer and (self._question_panel is None or self._latest_questions()[0] != self._question_key):
+            self._sync_question_form()
             return
-        message = self.input.toPlainText().strip()
-        attachments = self.attachment_tray.references
-        if (not message and not self.attachment_tray.count) or self.thread is not None or self._settings_busy:
+        if not form_answer and self.thread is None and self.skill_picker.accept_current():
             return
-        if self.attachment_tray.count:
+        message = question_answer if form_answer else self.input.toPlainText().strip()
+        attachments = () if form_answer else self.attachment_tray.references
+        attachment_count = 0 if form_answer else self.attachment_tray.count
+        if (not message and not attachment_count) or self.thread is not None or self._settings_busy or self._approval_panel is not None:
+            return
+        if attachment_count:
             if not self.attachment_tray.ready:
                 self._attachment_notice("Wait for preparation, remove failed attachments, or keep only one attachment in local mode.")
                 return
@@ -1271,22 +1295,26 @@ class MainWindow(QMainWindow):
         if self.inference is not None and self.inference.mode == "cloud" and not self._ensure_cloud_ready():
             return
 
-        skill_name = self.skill_picker.selected_name
-        self._image_request_draft = (self.input.toPlainText(), attachments)
+        skill_name = None if form_answer else self.skill_picker.selected_name
+        self._question_submission = form_answer
+        self._image_request_draft = None if form_answer else (self.input.toPlainText(), attachments)
         check_image = getattr(self.service, "will_generate_images", None)
         self._image_in_flight = bool(callable(check_image) and
             check_image(message, attachments=attachments, skill_name=skill_name))
         self._image_stopping = False
-        self._submitted_draft = (self.input.toPlainText(), skill_name) if attachments else None
-        self.skill_picker.clear_selection()
-        self.input.clear()
+        self._submitted_draft = (self.input.toPlainText(), skill_name) if not form_answer and (
+            attachments or self._question_panel is not None) else None
+        if not form_answer:
+            self.skill_picker.clear_selection()
+            self.input.clear()
         self._leave_intro_mode()
         self._active_user_message_band = self.chat.add_message("User", message, attachments=attachments)
-        if not attachments or getattr(self.service, 'supports_admission_reporting', False) is not True:
+        if not form_answer and (not attachments or getattr(self.service, 'supports_admission_reporting', False) is not True):
             self.attachment_tray.clear()
         self._set_busy(True)
         self.thread = QThread()
-        self.worker = ConversationWorker(self.service, message, skill_name=skill_name, attachments=attachments)
+        self.worker = ConversationWorker(self.service, message, skill_name=skill_name, attachments=attachments,
+                                         report_admission=self._question_panel is not None)
         self.worker.moveToThread(self.thread)
         self.thread.started.connect(self.worker.run)
         self.worker.finished.connect(self._worker_succeeded)
@@ -1303,11 +1331,18 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def _attachment_admitted(self):
+        self._clear_question_form()
+        if self._question_submission:
+            return  # The ordinary draft, attachments and skill belong to a later message.
         self._submitted_draft = None
         self.attachment_tray.clear()
 
     @Slot()
     def _restore_attachment_draft(self):
+        if self._question_submission:
+            self.chat.remove_message(self._active_user_message_band)
+            self._active_user_message_band = None
+            return  # The form and its values have never been cleared.
         submitted = getattr(self, '_submitted_draft', None)
         if submitted is None or getattr(self, '_closing', False):
             return
@@ -1318,6 +1353,92 @@ class MainWindow(QMainWindow):
         self.chat.remove_message(self._active_user_message_band)
         self._active_user_message_band = None
         self._submitted_draft = None
+
+    def _latest_questions(self):
+        store = getattr(self.service, "store", None)
+        history = getattr(store, "visible_messages", None)
+        messages = history() if callable(history) else []
+        latest = messages[-1] if messages else None
+        batch = getattr(latest, "question_batch", None)
+        if batch is None or latest.role != "assistant" or latest.stopped:
+            return None, None
+        return (store.session_id, latest.turn_id), batch
+
+    def _questions_visible(self):
+        return self._question_panel is not None and self._composer_stack.currentWidget() is self._question_panel
+
+    def _question_height(self):
+        available = min(520, self.composer.parentWidget().height() - 140)
+        return self._question_panel.desired_height(available)
+
+    def _sync_question_form(self):
+        key, batch = self._latest_questions()
+        if key == self._question_key:
+            return
+        self._clear_question_form()
+        if batch is not None:
+            self._question_key = key
+            self._question_panel = QuestionComposer(batch, self.composer)
+            self._question_panel.send_requested.connect(self._send_question_answers)
+            self._question_panel.chat_requested.connect(self._answer_in_chat)
+            self._composer_stack.addWidget(self._question_panel)
+            self._show_questions()
+
+    def _show_questions(self):
+        if self._question_panel is None or self._approval_panel is not None:
+            return
+        if self._intro_transition is not None:
+            self._intro_transition.stop()
+            self._intro_transition.deleteLater()
+            self._intro_transition = None
+        self._intro_active = False
+        self.startup_greeting.hide()
+        self.skill_picker.popup.hide()
+        self.questions_back.hide()
+        self._composer_stack.setCurrentWidget(self._question_panel)
+        self.composer.setProperty("questions", True)
+        self.composer.update()
+        self._animate_composer_height(self._question_height())
+        self._question_panel.setEnabled(self.thread is None and not self._settings_busy)
+        self._question_panel.refresh()
+        self._question_panel.setFocus()
+
+    def _answer_in_chat(self):
+        if self._approval_panel is not None or self.thread is not None:
+            return
+        self._composer_stack.setCurrentWidget(self._message_composer)
+        self.questions_back.show()
+        self.composer.setProperty("questions", False)
+        self.composer.update()
+        self._animate_composer_height(self._message_composer_height())
+        self.input.setFocus()
+
+    def _clear_question_form(self):
+        panel = self._question_panel
+        self._question_panel = None
+        self._question_key = None
+        if panel is None and self.questions_back.isHidden():
+            return
+        if panel is not None:
+            self._composer_stack.removeWidget(panel)
+            panel.hide()
+            panel.deleteLater()
+        self.questions_back.hide()
+        self.composer.setProperty("questions", False)
+        self.composer.update()
+        if self._approval_panel is None:
+            self._composer_stack.setCurrentWidget(self._message_composer)
+            self._animate_composer_height(self._message_composer_height())
+
+    def _send_question_answers(self):
+        if self._question_panel is None:
+            return
+        try:
+            answer = self._question_panel.answer_text()
+        except ValueError:
+            self._question_panel.refresh()
+            return
+        self.submit(question_answer=answer)
 
     @Slot(object)
     def _show_approval(self, record) -> None:
@@ -1330,6 +1451,8 @@ class MainWindow(QMainWindow):
         if panel is None:
             return
         self._approval_panel = panel
+        self.composer.setProperty("questions", False)
+        self.composer.update()
         # A fast tool call can arrive during the intro animation. Finish it before
         # expanding the composer so its old geometry cannot overwrite the review.
         if self._intro_transition is not None:
@@ -1359,6 +1482,8 @@ class MainWindow(QMainWindow):
             panel.hide()
         self._composer_stack.setCurrentWidget(self._message_composer)
         self._animate_composer_height(self._message_composer_height())
+        if self._question_panel is not None:
+            self._show_questions()
         if self.input.isEnabled():
             self.input.setFocus()
 
@@ -1370,6 +1495,7 @@ class MainWindow(QMainWindow):
 
         def resize(value: int) -> None:
             self.composer.setFixedHeight(value)
+            self.chat.set_composer_clearance(value + _COMPOSER_BOTTOM_MARGIN + 18)
             # Recompute the top edge on every frame, keeping the bottom anchored
             # and adapting to window resizes during the transition.
             self._position_overlays()
@@ -1455,7 +1581,10 @@ class MainWindow(QMainWindow):
         self.thread = None
         self.worker = None
         self._active_user_message_band = None
+        self._question_submission = False
         self._set_busy(False)
+        if not getattr(self, "_closing", False):
+            self._sync_question_form()
         if getattr(self, "_closing", False):
             self.close()
 
@@ -1469,6 +1598,10 @@ class MainWindow(QMainWindow):
         self.send.setVisible(not busy)
         self.stop.setVisible(busy)
         self.input.setEnabled(not busy and not self._settings_busy)
+        if self._question_panel is not None:
+            self._question_panel.setEnabled(not busy and self.thread is None and not self._settings_busy)
+            self._question_panel.refresh()
+        self.questions_back.setEnabled(not busy and not self._settings_busy)
         self.add_placeholder.setEnabled(not busy and self.attachment_tray.store is not None)
         self.attachment_tray.set_editable(not busy)
         self.model_selector.setEnabled(not busy and not self._settings_busy and self.inference is not None)
@@ -1539,6 +1672,7 @@ class MainWindow(QMainWindow):
             self.chat.add_message("Agent", str(exc), True)
             return
         self.chat.clear_messages()
+        self._clear_question_form()
         self.attachment_tray.clear()
         self.attachment_hint.hide()
         self.skill_picker.clear_selection()

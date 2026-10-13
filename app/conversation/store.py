@@ -15,6 +15,7 @@ from app.state.storage import JsonStore
 from app.conversation.attachments import AttachmentStore
 from app.inference.attachments import AttachmentReference, attachment_references
 from app.inference.completion import CompletionMetadata, CompletionText
+from app.conversation.questions import QuestionBatch, present_questions
 from app.agent.contracts import AgentRunResult, AgentRunStatus, SettledCall
 from app.agent.goals import TaskGoal, observe_goal, finish_goal
 from app.settings.agent_limits import MAX_AGENT_CAPABILITY_CALLS, MAX_AGENT_MODEL_REQUESTS
@@ -51,9 +52,12 @@ class ChatMessage(BaseModel):
     turn_id: str | None = None
     stopped: bool = False
     skill_name: str | None = Field(default=None, min_length=1)
+    question_batch: QuestionBatch | None = None
 
     @model_validator(mode="after")
     def validate_input(self):
+        if self.question_batch is not None and (self.role != "assistant" or self.stopped):
+            raise ValueError("Only completed assistant messages can carry question forms.")
         attachment_references(self.attachments)
         attachment_references(self.generated_images)
         if self.generated_images and (self.role != "assistant" or
@@ -323,8 +327,10 @@ class ConversationStore:
             turn.assistant_index = len(proposed.messages)
             value = answer if answer is not None else self._stopped_text(outcome)
             value = CompletionText(value, outcome.completion, outcome.completion_history)
+            value = present_questions(value, allow_forms=outcome.status == AgentRunStatus.COMPLETED)
             proposed.messages.append(ChatMessage(role="assistant", content=str(value), turn_id=turn_id,
                 generated_images=images,
+                question_batch=getattr(value, "question_batch", None),
                 stopped=outcome.status != AgentRunStatus.COMPLETED,
                 completion=outcome.completion if outcome.completion != CompletionMetadata() else None,
                 completion_history=list(outcome.completion_history) if outcome.completion_history else None))
@@ -417,9 +423,15 @@ class ConversationStore:
                             elif not replay.call_ids and replay.text.strip() and scope_valid:
                                 history.append({"role": "assistant", "content": replay.text,
                                                 REPLAY_KEY: replay.model_dump(mode="python")})
-                                if (response == turn.provider_responses[-1] and turn.assistant_index is not None
-                                        and self._conversation.messages[turn.assistant_index].content.strip() == replay.text.strip()):
-                                    replayed_assistants.add(turn.assistant_index)
+                                if response == turn.provider_responses[-1] and turn.assistant_index is not None:
+                                    saved = self._conversation.messages[turn.assistant_index]
+                                    projected = present_questions(replay.text) if saved.question_batch is not None else None
+                                    if (saved.content.strip() == replay.text.strip() or projected is not None
+                                            and projected.question_batch == saved.question_batch
+                                            and saved.content.strip() == projected.strip()):
+                                        # Keep the provider's immutable reasoning/text replay, but
+                                        # don't also replay its readable question projection.
+                                        replayed_assistants.add(turn.assistant_index)
                             else:
                                 for settled in paired:
                                     append_settled(settled)

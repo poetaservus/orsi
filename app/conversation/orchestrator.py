@@ -36,6 +36,7 @@ from app.conversation.language_detection import detect_language, reply_locale
 from app.conversation.language_messages import notice, progress_notice, image_notice
 from app.conversation.diagnostics import record_route, record_turn
 from app.conversation.store import ConversationStore, TurnHistoryError
+from app.conversation.questions import present_questions, question_preview
 from app.conversation.operation_review import InterruptedOperation, OperationReview
 from app.conversation.history_context import bind_history_runtime
 from app.conversation.skill_references import ConversationSkillReferences
@@ -319,7 +320,7 @@ class ConversationService:
 
         def publish_preview(value):
             if not reviewing_completion:
-                text_observer(value)
+                text_observer(question_preview(value))
 
         def publish_activity(value):
             report_activity(activity, progress_notice(locale, "Checking completion…" if reviewing_completion else value))
@@ -479,6 +480,7 @@ class ConversationService:
                     completion=value.completion, completion_history=value.completion_history)
             else:
                 answer = self._run_agent_turn(text, source, activity, observe_review)
+            answer = present_questions(answer, allow_forms=self._turn_result.status == AgentRunStatus.COMPLETED)
             report_activity(activity, "Saving the conversation…")
             self.store.finish_turn(turn_id, self._turn_result, answer)
             self._agent_history = self._stored_agent_history()

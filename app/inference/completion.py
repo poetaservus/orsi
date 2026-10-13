@@ -96,6 +96,9 @@ class CompletionMetadata(BaseModel):
             total_tokens=total))
 
 
+_QUESTION_UNSET = object()
+
+
 class CompletionText(str):
     """A string-compatible value with immutable completion metadata attached.
 
@@ -104,7 +107,7 @@ class CompletionText(str):
     """
     def __new__(cls, content: str, completion: CompletionMetadata | None = None,
                 history: tuple[CompletionMetadata, ...] | None = None, *, status_message: str | None = None,
-                openai_response=None, generated_images=None):
+                openai_response=None, generated_images=None, question_batch=_QUESTION_UNSET):
         value = super().__new__(cls, content)
         value.completion = completion or getattr(content, "completion", CompletionMetadata())
         value.completion_history = history if history is not None else getattr(
@@ -113,6 +116,7 @@ class CompletionText(str):
         value.openai_response = openai_response or getattr(content, "openai_response", None)
         value.generated_images = tuple(generated_images if generated_images is not None else
                                        getattr(content, "generated_images", ()))
+        value.question_batch = getattr(content, "question_batch", None) if question_batch is _QUESTION_UNSET else question_batch
         return value
 
     @property

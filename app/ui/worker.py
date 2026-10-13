@@ -5,6 +5,7 @@ import logging
 from PySide6.QtCore import QObject, Signal, Slot
 from app.inference.completion import CompletionText, IncompleteResponseError
 from app.inference.attachments import attachment_references
+from app.conversation.questions import present_questions
 
 
 log = logging.getLogger(__name__)
@@ -21,20 +22,21 @@ class ConversationWorker(QObject):
     admitted = Signal()
     draft_rejected = Signal()
 
-    def __init__(self, service, message: str, *, skill_name: str | None = None, attachments=()):
+    def __init__(self, service, message: str, *, skill_name: str | None = None, attachments=(), report_admission=False):
         super().__init__()
         self.service = service
         self.message = message
         self.skill_name = skill_name
         self.attachments = attachment_references(attachments)
         self._admitted = False
+        self._report_admission = report_admission
 
     def _mark_admitted(self):
         self._admitted = True
         self.admitted.emit()
 
     def _restore_unadmitted(self):
-        if self.attachments and not self._admitted and getattr(self.service, 'supports_admission_reporting', False) is True:
+        if (self.attachments or self._report_admission) and not self._admitted and getattr(self.service, 'supports_admission_reporting', False) is True:
             self.draft_rejected.emit()
 
     @Slot()
@@ -43,8 +45,8 @@ class ConversationWorker(QObject):
             kwargs = {}
             if self.attachments:
                 kwargs["attachments"] = self.attachments
-                if getattr(self.service, 'supports_admission_reporting', False) is True:
-                    kwargs['admission_observer'] = self._mark_admitted
+            if (self.attachments or self._report_admission) and getattr(self.service, 'supports_admission_reporting', False) is True:
+                kwargs['admission_observer'] = self._mark_admitted
             if self.skill_name is not None:
                 kwargs["skill_name"] = self.skill_name
             if getattr(self.service, "supports_text_streaming", False) is True:
@@ -62,8 +64,8 @@ class ConversationWorker(QObject):
             self.finished.emit(response)
         except IncompleteResponseError as exc:
             self._restore_unadmitted()
-            self.failed.emit(CompletionText(exc.partial_text or str(exc), exc.completion,
-                exc.completion_history, status_message=str(exc) if exc.partial_text else None))
+            self.failed.emit(present_questions(CompletionText(exc.partial_text or str(exc), exc.completion,
+                exc.completion_history, status_message=str(exc) if exc.partial_text else None), allow_forms=False))
         except Exception as exc:
             self._restore_unadmitted()
             log.exception("A conversation turn failed in the UI worker.")
