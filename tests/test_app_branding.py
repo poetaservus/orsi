@@ -26,6 +26,8 @@ def app():
 
 def test_all_icon_sizes_decode_with_transparency_and_original_proportions(app):
     icon = app_icon()
+    source = QImage(str(APP_ICON.with_name("bsw_o.png")))
+    assert not source.isNull() and source.hasAlphaChannel()
     assert not icon.isNull() and {s.width() for s in icon.availableSizes()} == set(SIZES)
     for side in SIZES:
         image = icon.pixmap(side, side).toImage()
@@ -35,8 +37,7 @@ def test_all_icon_sizes_decode_with_transparency_and_original_proportions(app):
         assert visible
         width = max(x for x,y in visible) - min(x for x,y in visible) + 1
         height = max(y for x,y in visible) - min(y for x,y in visible) + 1
-        assert abs(width / height - 780 / 694) < .2
-    assert QImage(str(APP_ICON.with_name("bsw_o.png"))).hasAlphaChannel()
+        assert abs(width / height - source.width() / source.height()) < .2
 
 
 def test_application_and_top_level_windows_share_logo(app):

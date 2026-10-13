@@ -1,7 +1,7 @@
 # Application logo and shortcuts
 
-The transparent `bsw_o.png` supplied by the user is already bundled at
-`app/ui/assets/bsw_o.png`. That original image remains unchanged. The derived
+The user's corrected 256 × 256 transparent `bsw_o.png` is bundled byte-for-byte at
+`app/ui/assets/bsw_o.png`. The supplied source is not altered. The derived
 `orsi.ico` contains 16, 20, 24, 32, 40, 48, 64, 128 and 256 pixel frames with
 transparent backgrounds, centered artwork and preserved proportions. Rebuild
 it with `runtime/python/python.exe tools/build_app_icon.py`; the tool uses the
@@ -75,3 +75,14 @@ other worktree attachments remain unchanged. Recovery evidence:
 calls, old distributed ZIP rebuild, physical-device qualification or remote
 publication ran. Integrate by local fast-forward and delete the merged feature
 branch.
+
+## Corrected source dimensions
+
+The replacement desktop PNG now supplies the existing shared application,
+window, loading, tray, notification and shortcut artwork. The ICO was rebuilt
+with the existing tool and all nine sizes were visually inspected. The existing
+proportion check now follows the bundled source dimensions rather than the old
+780 × 694 image. All 25 essential branding/notification checks pass. A real
+Windows banner with the new artwork received its show callback, and the matching
+desktop shortcut was refreshed with launch options preserved. Full-suite and
+live-model/API checks were not run; see the latest record in `docs/git-workflow.md`.

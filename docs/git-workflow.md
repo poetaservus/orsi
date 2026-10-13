@@ -1,5 +1,31 @@
 # Git layout and baseline hygiene
 
+## Corrected application icon dimensions
+
+`codex/icon-dimensions` starts from local main `1ff4abd`. The user's corrected
+256 × 256 desktop `bsw_o.png` replaces the bundled source byte-for-byte, and the
+existing builder regenerates all nine ICO sizes. App/window/loading, native tray,
+notification and shortcut paths already share these assets; runtime behavior
+does not change. The existing proportion assertion now follows the source size.
+
+All **25 essential branding/notification checks passed** in **7.72 seconds**, with
+no failures/errors/skips, using repository-local temporary/cache storage. Results
+are retained in ignored `state/icon-dimensions-essential.xml`. All sizes were
+visually inspected in `state/icon-dimensions/sizes.png`. Real Windows banner
+delivery accepted the new artwork with a show callback and released owned native
+resources; evidence is in `state/icon-dimensions/native-fixed.json`. The matching
+desktop shortcut was refreshed after backup, preserving target, arguments,
+working directory and description. Full-suite and live-model/API checks were
+not run under the user's essential-test scope.
+
+The pre-existing uncommitted `noti_1.ogg` edit remains byte-identical and is
+excluded from this commit. Its recoverable copy, the previous matching shortcut
+and ref/worktree inventories are preserved under ignored
+`state/backups/icon-dimensions-20261013/`. Prior main is retained at
+`archive/2026-10-13/main-before-icon-dimensions`. Commit, fast-forward local main
+and remove only the merged feature branch. Other worktrees, historical/unmerged
+tips and remote refs remain unchanged.
+
 ## Native notification delivery and audio completion, 13 October 2026
 
 `codex/notification-delivery-audio` starts from clean local main `36fa457`.
