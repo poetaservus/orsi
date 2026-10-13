@@ -1,5 +1,18 @@
 # Git layout and baseline hygiene
 
+## Responses reasoning-content compatibility, 13 October 2026
+
+`codex/responses-reasoning-compatibility` starts from main `f30a597`. It accepts
+the documented optional reasoning `content` field in private Responses replay
+evidence, preserving strict validation and existing runtime behavior. The live
+synthetic malformed-response reproducer passed after the fix; a live Luna
+Medium read/summary run also completed with source and history checks. All 264
+affected native deterministic checks passed. See [the fix and qualification](responses-reasoning-compatibility.md).
+The full suite was not run under the requested necessary-test scope. Preserve
+prior main at `archive/2026-10-13/main-before-responses-reasoning-compatibility`,
+commit, fast-forward local main and remove only this merged feature branch.
+Retain the earlier unmerged repair branch, other worktrees and remote refs.
+
 ## Saved repair-history compatibility, 13 October 2026
 
 `codex/history-evidence-compatibility` starts from composer main `766dba3`.

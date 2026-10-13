@@ -52,7 +52,7 @@ class OpenAIReplay(BaseModel):
                     raise ValueError
                 kind = item.get("type")
                 if kind == "reasoning":
-                    if not set(item).issubset({"type", "id", "status", "summary", "encrypted_content"}):
+                    if not set(item).issubset({"type", "id", "status", "summary", "content", "encrypted_content"}):
                         raise ValueError
                     if not isinstance(item.get("encrypted_content"), str) or not item["encrypted_content"]:
                         raise ValueError
@@ -60,6 +60,14 @@ class OpenAIReplay(BaseModel):
                     if not isinstance(summary, list) or any(not isinstance(part, dict)
                             or set(part) != {"type", "text"} or part["type"] != "summary_text"
                             or not isinstance(part["text"], str) for part in summary):
+                        raise ValueError
+                    # The SDK and live API return optional reasoning content,
+                    # including an empty array. Retain it unchanged for replay;
+                    # it is private provider evidence, never assistant text.
+                    content = item.get("content", [])
+                    if not isinstance(content, list) or any(not isinstance(part, dict)
+                            or set(part) != {"type", "text"} or part["type"] != "reasoning_text"
+                            or not isinstance(part["text"], str) for part in content):
                         raise ValueError
                 elif kind == "function_call":
                     if not set(item).issubset({"type", "id", "status", "call_id", "name", "arguments"}):

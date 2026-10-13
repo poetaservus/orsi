@@ -72,12 +72,15 @@ def service_for(engine, tmp_path, **runtime_args):
     return service, runtime, implementation, journal, manager
 
 
-def test_sdk_and_real_harness_preserve_whole_output_order_arguments_ids_and_phase(monkeypatch, tmp_path):
+def test_sdk_and_real_harness_preserve_whole_output_order_arguments_ids_and_phase(monkeypatch, tmp_path, caplog):
     capability = BatchEchoCapability()
     definition = definition_for(capability)
     output = [reasoning(), message("Working", "msg_commentary", "commentary"),
               function(definition, {"value": "one"}, call_id="call_one"),
               reasoning("rs_second"), function(definition, {"value": "two"}, call_id="call_two")]
+    # Current live Responses include this optional field even when it is empty.
+    output[0]["content"] = []
+    output[3]["content"] = [{"type": "reasoning_text", "text": "synthetic-private-reasoning"}]
     output[2]["arguments"] = ' { "value" : "one" } '
     engine, client, bodies, _ = scripted_sdk(monkeypatch, [response(output=output),
         response(id="resp_done", output=[reasoning("rs_done"), message("Done")]), review_payload()])
@@ -90,6 +93,7 @@ def test_sdk_and_real_harness_preserve_whole_output_order_arguments_ids_and_phas
         return original(arguments, context)
     monkeypatch.setattr(capability, "execute", execute)
     assert service.run("Echo the test values") == "Done"
+    assert "synthetic-private-reasoning" not in caplog.text
     assert implementation.values == ["one", "two"] and len(journal.records) == 2
     replayed = bodies[1]["input"]
     start = next(i for i, item in enumerate(replayed) if item.get("id") == output[0]["id"])
@@ -209,7 +213,8 @@ def test_crash_before_first_call_retains_evidence_without_replaying_tools(tmp_pa
     assert restored.begin_turn("new task") == "turn-2"
 
 
-@pytest.mark.parametrize("change", ["missing_encryption", "duplicate_item", "bad_type", "unfinished_item", "unknown_field", "invalid_json", "duplicate_json_key", "too_big"])
+@pytest.mark.parametrize("change", ["missing_encryption", "duplicate_item", "bad_type", "unfinished_item", "unknown_field", "invalid_json", "duplicate_json_key", "too_big",
+    "content_object", "content_string", "content_part_type", "content_part_text", "content_part_field"])
 def test_corrupt_or_unreplayable_evidence_is_rejected_without_content(change):
     output = [reasoning(), function()]
     kwargs = {}
@@ -229,9 +234,40 @@ def test_corrupt_or_unreplayable_evidence_is_rejected_without_content(change):
         kwargs["items_json"] = '[{"type":"reasoning","type":"private-input"}]'
     elif change == "too_big":
         kwargs["items_json"] = "private-input" + "x" * MAX_REPLAY_BYTES
+    elif change.startswith("content_"):
+        output[0]["content"] = {
+            "content_object": {"private-input": "invalid"},
+            "content_string": "private-input",
+            "content_part_type": [{"type": "output_text", "text": "private-input"}],
+            "content_part_text": [{"type": "reasoning_text", "text": {"private-input": "invalid"}}],
+            "content_part_field": [{"type": "reasoning_text", "text": "private-input", "extra": True}],
+        }[change]
     with pytest.raises(ValueError) as failure:
         OpenAIReplay(model="gpt-6-luna", response_id="resp", items_json=kwargs.get("items_json", json.dumps(output)))
     assert "private-input" not in str(failure.value) and "opaque-private" not in str(failure.value)
+
+
+@pytest.mark.parametrize("content", [[], [{"type": "reasoning_text", "text": "synthetic-private-reasoning"}]])
+def test_sdk_text_reasoning_content_is_replayed_without_display_or_logging(monkeypatch, caplog, content):
+    item = {**reasoning(), "content": content}
+    output = [item, message("Visible answer")]
+    engine, client, bodies, _ = scripted_sdk(monkeypatch, [response(output=output), response("Next answer")])
+    engine.select_reasoning_effort("medium")
+    try:
+        with caplog.at_level(logging.INFO):
+            result = engine.respond([{"role": "user", "content": "Synthetic reasoning request"}])
+        assert str(result) == "Visible answer"
+        assert result.openai_response.items() == output
+        assert "synthetic-private-reasoning" not in caplog.text
+        assert bodies[0]["reasoning"] == {"effort": "medium"}
+        assert "temperature" not in bodies[0]
+        engine.respond([{"role": "user", "content": "Synthetic reasoning request"},
+            {"role": "assistant", "content": str(result), REPLAY_KEY: result.openai_response.model_dump()},
+            {"role": "user", "content": "Synthetic next request"}])
+        assert bodies[1]["input"][1:3] == output
+    finally:
+        engine.close()
+    assert client.is_closed() and engine._runner is None
 
 
 def test_malformed_sdk_reasoning_fails_before_harness_execution(monkeypatch, tmp_path):
