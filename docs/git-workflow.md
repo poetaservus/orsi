@@ -1,5 +1,18 @@
 # Git layout and baseline hygiene
 
+## Complete integration and cleanup, 13 October 2026
+
+The user explicitly requested all new changes on main, Git cleanup and a push.
+`codex/integrate-and-clean` starts at main `189be24` and merges the remaining
+14-commit `codex/scroll-behavior-acceptance` branch, preserving main's working
+composer, history reader and Responses reasoning fix. See
+[integration, verification and cleanup](repository-integration.md).
+The older live scroll-repair failures remain historical failures; this explicit
+integration request does not reclassify those gates. Recovery tags preserve
+both tips and inactive archive branches. Other active worktrees and private
+runtime state remain intact. After verification, fast-forward main, remove the
+merged feature branches and push only main to origin without rewriting history.
+
 ## Responses reasoning-content compatibility, 13 October 2026
 
 `codex/responses-reasoning-compatibility` starts from main `f30a597`. It accepts
@@ -39,6 +52,24 @@ were not run by user request. Preserve prior main at
 `archive/2026-10-13/main-before-composer-reasoning`, commit, fast-forward local
 main and remove only this merged feature branch. Retain the unmerged
 `codex/scroll-behavior-acceptance` branch and other worktrees; no publication.
+
+## Complaint-driven repair qualification, 13 October 2026
+
+`codex/scroll-behavior-acceptance` starts from verified local main `aae279a`.
+It adds bounded checkpoint evidence, source-grounded repair diagnosis, revision
+and failed-check progress tracking, and completion review scoped to the user's
+request. See [the contract and qualification](complaint-repair-loop.md).
+Content-free refs and worktree inventory are retained under
+`state/backups/complaint-repair-20261012`; prior main is preserved at
+`archive/2026-10-12/main-before-complaint-repair`. Profiles, sampling, routing,
+context policy and user settings remain unchanged. The original later prompt
+is unavailable and its exact replay is separately skipped.
+Integration requires repeated independent live behavioral acceptance as well
+as deterministic checks. Final live qualification passed 0/3 replays. The final
+full suite recorded one unchanged installer cleanup failure; its 60-test group
+passed in isolation. Preserve the feature branch and verified main while
+the gates remain unmet. Once qualified, fast-forward local main and remove only its
+merged feature branch. Preserve other worktrees and remote branches; no publication.
 
 ## Native cloud reversal recovery, 12 October 2026
 

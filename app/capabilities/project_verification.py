@@ -22,6 +22,9 @@ from app.capabilities.contracts import (Capability, CapabilityErrorCode as Code,
 from app.runtime.owned_process import start_owned_process
 from app.security.path_policy import resolve_read_path
 
+MAX_INSPECTION_IMAGES = 5  # Four explicit checkpoints and the final viewport.
+MAX_INSPECTION_IMAGE_BYTES = 8 * 1024 * 1024
+
 
 class ProjectVerificationArguments(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
@@ -41,14 +44,39 @@ class ProjectVerificationArguments(BaseModel):
 
 class InspectionStep(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    action: Literal["click", "fill", "scroll", "visible", "text", "wait", "in_view", "model_loaded"] = Field(
-        description="in_view brings an offscreen target into view; if it already intersects the viewport, preserve the current scroll position. model_loaded checks model-viewer readiness. Neither establishes visual correctness; review the returned screenshot.")
+    action: Literal["click", "fill", "scroll", "visible", "text", "wait", "in_view", "model_loaded",
+        "checkpoint", "key", "touch", "scroll_to", "frame_timing"] = Field(
+        description="checkpoint captures current pixels, scroll position, target bounds and selected styles without moving the target. Use named initial/partial/completed/return checkpoints in one session. key and touch use native input; scroll_to sets an absolute scroll position. frame_timing samples bounded animation-frame intervals, not proof of smooth rendering. in_view only moves offscreen targets. Review pixels for visual correctness.")
     target: str = Field(default="", max_length=256, description="Browser CSS selector or unique desktop automation ID/exact accessible name. Empty scroll target means the page.")
     value: str = Field(default="", max_length=1000)
     amount: int = Field(default=500, ge=-10000, le=10000)
     state: Literal["visible", "hidden", "attached", "detached"] = "visible"
     timeout_ms: int = Field(default=2000, ge=1, le=15000,
         description="Bounded browser readiness wait. For wait with an empty target, wait this duration. Use wait/hidden for an intro, then in_view for the affected section.")
+    label: str = Field(default="", max_length=64, pattern=r"^[A-Za-z0-9_.-]*$",
+        description="Unique checkpoint name, such as initial, partial, complete or return.")
+    properties: list[str] = Field(default_factory=lambda: ["opacity", "transform", "visibility"], max_length=8,
+        description="Checkpoint/frame timing styles: opacity, transform, visibility, display, position, or CSS custom properties such as --words-progress.")
+    reference: str = Field(default="", max_length=64, pattern=r"^[A-Za-z0-9_.-]*$",
+        description="Earlier checkpoint label for same_state, scroll_up or scroll_down assertions.")
+    expectation: Literal["observe", "visible", "same_state", "scroll_up", "scroll_down"] = "observe"
+
+    @model_validator(mode="after")
+    def validate_observation(self):
+        if any(value not in {"opacity", "transform", "visibility", "display", "position"}
+                and re.fullmatch(r"--[A-Za-z0-9_-]{1,60}", value) is None for value in self.properties):
+            raise ValueError("Only selected computed properties and bounded CSS custom properties are supported.")
+        if self.action == "checkpoint" and (not self.target or not self.label):
+            raise ValueError("A checkpoint requires a selector and unique label.")
+        if self.action != "checkpoint" and (self.label or self.reference or self.expectation != "observe"):
+            raise ValueError("Checkpoint assertions require a checkpoint action.")
+        if self.expectation in {"same_state", "scroll_up", "scroll_down"} and not self.reference:
+            raise ValueError("Comparison assertions require an earlier checkpoint reference.")
+        if self.action == "key" and self.value not in {"ArrowDown", "ArrowUp", "PageDown", "PageUp", "Home", "End", "Space"}:
+            raise ValueError("Use a supported navigation key.")
+        if self.action == "frame_timing" and self.timeout_ms > 2000:
+            raise ValueError("Frame timing is bounded to 2000 milliseconds.")
+        return self
 
 
 class ProjectInspectionArguments(BaseModel):
@@ -77,6 +105,18 @@ class ProjectInspectionArguments(BaseModel):
             raise ValueError("Desktop inspection requires an existing project process PID and no URL/server.")
         if self.kind == "desktop" and any(step.action in {"wait", "in_view", "model_loaded"} for step in self.steps):
             raise ValueError("Readiness and viewport actions are browser-only.")
+        if self.kind == "desktop" and any(step.action in {"checkpoint", "key", "touch", "scroll_to", "frame_timing"} for step in self.steps):
+            raise ValueError("Checkpoint and navigation actions are browser-only.")
+        labels = set()
+        for step in self.steps:
+            if step.action == "checkpoint":
+                if step.label in labels or step.reference and step.reference not in labels:
+                    raise ValueError("Checkpoint labels must be unique and references must name an earlier checkpoint.")
+                labels.add(step.label)
+        if len(labels) >= MAX_INSPECTION_IMAGES:
+            raise ValueError("Inspection supports at most four checkpoints plus the final screenshot.")
+        if sum(step.action == "frame_timing" for step in self.steps) > 1:
+            raise ValueError("Inspection supports one bounded frame timing capture.")
         if any(step.action in {"in_view", "model_loaded"} and not step.target for step in self.steps):
             raise ValueError("Viewport and model checks require an exact selector.")
         if self.server_arguments and self.server_executable is None:
@@ -315,7 +355,8 @@ class ProjectVerifyCapability(_ProjectCapability):
     name = "project.verify"
     description = ("Run one explicitly approved project build or relevant test command with a 120-second deadline, "
         "48-KiB output limit and owned process cleanup. Use the project's documented build and selected tests; "
-        "this runs project code with account access, not a security sandbox. Follow UI changes with project.inspect. "
+        "this runs project code with account access, not a security sandbox. When browser checks are in the requested scope, "
+        "follow UI changes with project.inspect testing the reported interaction. Respect explicit instructions to skip checks. "
         "For Windows npm scripts, use executable='npm' and arguments=['run','build'] or ['test']; "
         "the tool resolves installed Node/npm-cli.js and shows the actual command for approval. "
         "A zero exit code proves only this command; failures/timeouts/unrun checks must be reported.")
@@ -326,7 +367,7 @@ class ProjectVerifyCapability(_ProjectCapability):
         command, _ = project_command(arguments.executable, arguments.arguments)
         result = run_worker(command,
             cwd=project, timeout=arguments.timeout_seconds, cancellation=context.cancellation)
-        return {"project_path": str(project), "kind": arguments.kind,
+        return {"project_path": str(project), "kind": arguments.kind, "evidence_version": 2,
             "passed": result["exit_code"] == 0 and result["stop_reason"] is None,
             "command": command, "content_is_untrusted": True, **result}
 
@@ -337,7 +378,10 @@ class ProjectInspectCapability(_ProjectCapability):
 
     name = "project.inspect"
     description = ("After building/testing, inspect a local browser preview or a project desktop process. "
-        "Runs up to 12 approved interaction/readiness checks, captures a screenshot and bounded layout/control evidence. "
+        "Runs up to 12 approved interactions/checks in one session, captures up to four named checkpoints and a final screenshot. "
+        "For scroll/animation complaints, capture initial, partial, complete and return states with relevant computed properties; "
+        "use checkpoint assertions to test visibility, immediate reverse scrolling and restoration at the same position. "
+        "Use native key/touch navigation and frame_timing for requested jerkiness investigations. "
         "Use wait (selector/state or a bounded delay) for intro completion, then in_view on the affected section. "
         "model_loaded checks model-viewer readiness; a loaded model still requires screenshot review for visual correctness. "
         "Browser inspection reports broken loaded references, console errors, overflow and actual scroll movement. "
@@ -365,7 +409,7 @@ class ProjectInspectCapability(_ProjectCapability):
                 timeout=arguments.timeout_seconds, cancellation=context.cancellation,
                 job_memory_bytes=4 * 1024 * 1024 * 1024)
             if result["exit_code"] != 0 or result["stop_reason"] is not None:
-                return {"project_path": str(project), "kind": arguments.kind, "passed": False,
+                return {"project_path": str(project), "kind": arguments.kind, "passed": False, "evidence_version": 2,
                     "inspection_complete": False, "content_is_untrusted": True, **result}
             try:
                 observations = json.loads(result["output"])
@@ -374,26 +418,43 @@ class ProjectInspectCapability(_ProjectCapability):
             except ValueError:
                 raise Error(Code.INVALID_OUTPUT, "Inspection did not return structured observations.") from None
             screenshot = folder / "screenshot.png"
+            checkpoints = observations.get("checkpoints", [])
+            if not isinstance(checkpoints, list) or len(checkpoints) >= MAX_INSPECTION_IMAGES:
+                raise Error(Code.INVALID_OUTPUT, "Inspection returned too many checkpoints.")
+            labels = {step.label: step.target for step in arguments.steps if step.action == "checkpoint"}
+            total_bytes, seen = 0, set()
+            for index, checkpoint in enumerate(checkpoints):
+                if (not isinstance(checkpoint, dict) or checkpoint.get("label") not in labels
+                        or checkpoint["label"] in seen or checkpoint.get("target") != labels[checkpoint["label"]]):
+                    raise Error(Code.INVALID_OUTPUT, "Inspection returned an unexpected checkpoint.")
+                seen.add(checkpoint["label"])
+                total_bytes += verify_screenshot(checkpoint, folder / f"checkpoint-{index}.png", arguments)
             if observations.get("screenshot_path") is not None:
-                if observations["screenshot_path"] != str(screenshot) or screenshot.is_symlink():
-                    raise Error(Code.INVALID_OUTPUT, "Inspection returned an unexpected screenshot.")
-                from PIL import Image
-                from app.inference.local_images import MAX_IMAGE_BYTES
-                with screenshot.open("rb") as stream:
-                    pixels = stream.read(MAX_IMAGE_BYTES + 1)
-                if len(pixels) > MAX_IMAGE_BYTES:
-                    raise Error(Code.INVALID_OUTPUT, "Inspection screenshot exceeds its transport bound.")
-                with Image.open(BytesIO(pixels)) as captured:
-                    if captured.format != "PNG" or not (0 < captured.width <= arguments.width and 0 < captured.height <= arguments.height):
-                        raise Error(Code.INVALID_OUTPUT, "Inspection screenshot exceeds its viewport bounds.")
-                    observations["screenshot_dimensions"] = [captured.width, captured.height]
-                    captured.verify()
-                observations["screenshot_sha256"] = hashlib.sha256(pixels).hexdigest()
+                total_bytes += verify_screenshot(observations, screenshot, arguments)
                 observations["visual_verification_status"] = "requires_review"
+            if total_bytes > MAX_INSPECTION_IMAGE_BYTES:
+                raise Error(Code.INVALID_OUTPUT, "Combined inspection screenshots exceed their transport bound.")
             return {"project_path": str(project), "kind": arguments.kind, "inspection_complete": True,
-                "content_is_untrusted": True, **observations, "owned_processes_released": True}
+                "content_is_untrusted": True, **observations, "owned_processes_released": True, "evidence_version": 2}
         finally:
             spec.unlink(missing_ok=True)
+
+
+def verify_screenshot(observation, expected, arguments):
+    if observation.get("screenshot_path") != str(expected) or expected.is_symlink():
+        raise Error(Code.INVALID_OUTPUT, "Inspection returned an unexpected screenshot.")
+    from PIL import Image
+    with expected.open("rb") as stream:
+        pixels = stream.read(MAX_INSPECTION_IMAGE_BYTES + 1)
+    if len(pixels) > MAX_INSPECTION_IMAGE_BYTES:
+        raise Error(Code.INVALID_OUTPUT, "Inspection screenshot exceeds its transport bound.")
+    with Image.open(BytesIO(pixels)) as captured:
+        if captured.format != "PNG" or not (0 < captured.width <= arguments.width and 0 < captured.height <= arguments.height):
+            raise Error(Code.INVALID_OUTPUT, "Inspection screenshot exceeds its viewport bounds.")
+        observation["screenshot_dimensions"] = [captured.width, captured.height]
+        captured.verify()
+    observation["screenshot_sha256"] = hashlib.sha256(pixels).hexdigest()
+    return len(pixels)
 
 
 def _process_created_at(pid: int | None) -> float | None:

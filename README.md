@@ -1,7 +1,7 @@
 # O.R.S.I
 
 O.R.S.I is a local-first Windows desktop assistant with a Qt GUI, local GGUF inference, optional
-OpenAI-compatible cloud inference, and a schema-driven capability system. Tool requests are
+OpenAI Responses cloud inference, and a schema-driven capability system. Tool requests are
 validated, authorized, journaled, and executed by application code; the model and GUI cannot bypass
 those boundaries.
 
@@ -10,15 +10,11 @@ The architectural guide is [ARCHITECTURE.md](ARCHITECTURE.md). Current milestone
 
 ## Run the current development build
 
-Use the current repository at:
-
-```text
-C:\Users\yaboy\Desktop\orsi_test
-```
-
-Launch [ORSI_TEST.cmd](ORSI_TEST.cmd) to exercise the feature-enabled development build. The
-portable runtime must already exist under `runtime/python`, and a compatible GGUF model must match
-`config/model.json`. [ORSI.cmd](ORSI.cmd) is the base portable launcher.
+Launch [ORSI_TEST.cmd](ORSI_TEST.cmd) from the checkout to exercise the feature-enabled
+development build. The portable runtime must already exist under `runtime/python`.
+Local inference requires a compatible GGUF model matching `config/model.json`;
+cloud inference requires a configured OpenAI connection.
+[ORSI.cmd](ORSI.cmd) is the base portable launcher.
 
 For development:
 
@@ -40,10 +36,17 @@ and [focused verification](docs/vault-phase4-verification.md). Physical SSD/mini
 and independent security qualification remain pending.
 
 - Ordinary local or cloud conversation with bounded context.
+- Composer model and cloud reasoning selectors apply to the next API request and save
+  preferences per model. The microphone is a placeholder. See [composer controls](docs/composer-reasoning.md).
 - `filesystem.stat`, `filesystem.find`, `filesystem.list`,
   `filesystem.read_text`, and bounded literal `filesystem.search`.
-- Approval-controlled `filesystem.mkdir`, `filesystem.write_text`,
+- Approval-controlled `filesystem.mkdir`, `filesystem.write_text`, `filesystem.edit_text`,
   `filesystem.copy`, `filesystem.move`, and Recycle-Bin `filesystem.trash`.
+- Approval-controlled `shell.run` for project commands and managed background sessions,
+  with output limits and owned-process cleanup. See [shell access](docs/general-shell-access.md)
+  and [persistent sessions](docs/persistent-shell-sessions.md).
+- `project.verify` and `project.inspect` for scoped build/test and browser evidence.
+  See [repair verification and its qualification history](docs/complaint-repair-loop.md).
 - Approval-controlled `application.launch` for explicitly allowlisted applications. The current
   implementation recognizes Blender and resolves only verified local executables.
 - Portable-root read scope by default, or configured full-local read on supported Windows drives.
@@ -57,10 +60,11 @@ and independent security qualification remain pending.
 - Instruction-only skills: validated local/public HTTPS Git installation, explicit or automatic
   selection, one lower-priority prompt section, and content-free diagnostics.
 
-O.R.S.I has no shell tool, arbitrary process execution, permanent-delete tool, clipboard/window
-automation, background indexing, or plugin loader. Network shares and device paths
-are denied. Writes to application/state, AppData, operating-system, recovery, installed-application,
-redirected, reparse, or ambiguous paths are denied.
+The structured filesystem tools deny network shares, device paths and writes to application/state,
+AppData, operating-system, recovery, installed-application, redirected, reparse or ambiguous paths.
+Approved shell commands run with the Windows account's access and are not an OS sandbox.
+There is no permanent-delete filesystem tool, general clipboard/window automation, background
+indexing or plugin loader.
 
 ## Skills
 
@@ -140,12 +144,12 @@ extension/stem variant after an extensionless file read misses. See
   Desktop keys come from the session prompt or an explicitly saved encrypted profile credential.
   Direct legacy backend integrations can still opt into their environment-key API. Requests use `store: false`;
   the SDK is the sole retry owner and `max_retries` is initially zero. Local remains the default
-  launch mode. Phase 1 supports text chat and skill selection. Neither profile is
-  live-qualified yet. Existing
-  OpenRouter adapter tests remain as compatibility coverage during the migration.
-  Phase 2 adds native tools and durable stateless response-item/encrypted-reasoning
-  replay. See [OpenAI cloud migration](docs/cloud-openai.md)
-  and [native tool verification](docs/cloud-openai-tools.md) for scope and results.
+  launch mode. Text chat, skill selection and native tools use durable stateless
+  response-item/encrypted-reasoning replay. Existing OpenRouter adapter tests remain
+  as compatibility coverage during the migration. See [OpenAI cloud migration](docs/cloud-openai.md),
+  [native tool verification](docs/cloud-openai-tools.md) and
+  [reasoning-response compatibility](docs/responses-reasoning-compatibility.md) for
+  scope and qualification results.
 
 Feature flags can be overridden with explicit `ORSI_ENABLE_...` environment variables. Full-local
 read authority follows the configured flag. Writes and application launches still require

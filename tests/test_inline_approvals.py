@@ -63,6 +63,7 @@ def ui():
                                          (Qt.Key.Key_Enter, True), (Qt.Key.Key_Escape, False)])
 def test_keyboard_review_is_inline_preserves_draft_and_resolves_once(ui, key, approved):
     app, window, service = ui
+    message_height = window.composer.height()
     window.input.setPlainText("Unsent draft")
     window._show_approval(record())
     app.processEvents()
@@ -80,7 +81,7 @@ def test_keyboard_review_is_inline_preserves_draft_and_resolves_once(ui, key, ap
     app.processEvents()
     assert service.decisions == [("one", approved)]
     settle_composer(window)
-    assert window._approval_panel is None and window.composer.height() == 54
+    assert window._approval_panel is None and window.composer.height() == message_height
     assert window.input.toPlainText() == "Unsent draft"
     assert window.input.hasFocus()
     assert window.chat._messages == []
@@ -88,10 +89,11 @@ def test_keyboard_review_is_inline_preserves_draft_and_resolves_once(ui, key, ap
 
 def test_animation_reverses_mid_growth_and_keeps_bottom_anchored_on_resize(ui):
     _, window, service = ui
+    message_height = window.composer.height()
     window._show_approval(record())
     window._approval_transition.setCurrentTime(100)
     growing_height = window.composer.height()
-    assert 54 < growing_height < 280
+    assert message_height < growing_height < 280
     assert window.composer.geometry().bottom() == window._content.height() - 43
     window.resize(760, 600)
     assert window.composer.geometry().bottom() == window._content.height() - 43
@@ -100,9 +102,9 @@ def test_animation_reverses_mid_growth_and_keeps_bottom_anchored_on_resize(ui):
     assert service.decisions == [("one", False)]
     assert window.composer.height() == growing_height
     window._approval_transition.setCurrentTime(100)
-    assert 54 < window.composer.height() < growing_height
+    assert message_height < window.composer.height() < growing_height
     settle_composer(window)
-    assert window.composer.height() == 54
+    assert window.composer.height() == message_height
 
 
 @pytest.mark.parametrize("approved", [True, False])
@@ -121,19 +123,20 @@ def test_shell_command_details_are_visible_and_can_be_approved_or_declined(ui, a
 
 def test_new_approval_reverses_retraction_without_old_animation_overwriting_it(ui):
     _, window, service = ui
+    message_height = window.composer.height()
     window._show_approval(record())
     settle_composer(window)
     window._approval_panel.finish(True)
-    window._approval_transition.setCurrentTime(140)
+    window._approval_transition.setCurrentTime(180)
     retracting_height = window.composer.height()
-    assert 54 < retracting_height < 154
+    assert message_height < retracting_height < 154
     window._show_approval(record(approval_id="two", capability="filesystem.mkdir", approval_preview=None))
     assert window.composer.height() == retracting_height
     settle_composer(window)
     assert window.composer.height() == 154 and window._approval_panel is not None
     assert service.decisions == [("one", True)]
     window.close()
-    assert window._approval_transition is None and window.composer.height() == 54
+    assert window._approval_transition is None and window.composer.height() == message_height
     assert service.decisions == [("one", True), ("two", False)]
 
 

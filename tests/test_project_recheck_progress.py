@@ -65,6 +65,39 @@ def test_new_visual_evidence_renews_only_project_reads_once(tmp_path):
     assert repeated[read] == 2  # Identical screenshots cannot reset a stalled loop.
 
 
+def test_flickering_pixels_and_changed_scenarios_cannot_sustain_diagnosis(tmp_path):
+    tracker, repeated = ProjectProgressTracker(), {}
+    path = str(tmp_path/'App.tsx')
+    read = observe(tracker,repeated,'filesystem.read_text',{'path':path},{'path':path,'sha256':'1'*64})
+    output = dict(project_path=str(tmp_path),inspection_complete=True,screenshot_sha256='2'*64,checks=[])
+    for index in range(12):
+        repeated[read] = 2
+        output['screenshot_sha256'] = f'{index+2:064x}'
+        observe(tracker,repeated,'project.inspect',{'project_path':str(tmp_path),'steps':[{'action':'wait','timeout_ms':index+1}]},output)
+        assert (read not in repeated) is (index==0)
+
+
+def test_one_new_failure_per_revision_allows_bounded_reassessment_and_edit_recheck(tmp_path):
+    tracker, repeated = ProjectProgressTracker(), {}
+    path = str(tmp_path/'App.tsx')
+    read = observe(tracker,repeated,'filesystem.read_text',{'path':path},{'path':path,'sha256':'1'*64})
+    args = {'project_path':str(tmp_path)}
+    output = dict(project_path=str(tmp_path),inspection_complete=True,screenshot_sha256='2'*64,checks=[])
+    check = observe(tracker,repeated,'project.inspect',args,output)
+    for label, renewed in [('return',True),('return',False),('touch',False)]:
+        repeated.update({read:2,check:2})
+        output['checks'] = [dict(action='checkpoint',target='#hero',label=label,passed=False,
+            failure_kind='interaction_assertion_failed',error='changing values do not matter')]
+        observe(tracker,repeated,'project.inspect',args,output)
+        assert (read not in repeated) is renewed
+        assert repeated[check] == 2
+    observe(tracker,repeated,'filesystem.edit_text',{'path':path},{'path':path,'sha256':'3'*64})
+    assert check not in repeated
+    repeated[read] = 2
+    observe(tracker,repeated,'project.inspect',args,output)
+    assert read not in repeated
+
+
 @pytest.mark.parametrize("tool", ["project.verify", "project.inspect"])
 @pytest.mark.parametrize("stalled", [False, True])
 def test_guard_renews_checks_after_edits_through_the_runtime(tmp_path, monkeypatch, tool, stalled):

@@ -17,6 +17,7 @@ from app.capabilities.filesystem_read_text import _contains_binary_control_text
 from app.capabilities.filesystem_write_text import MAX_REVERSAL_REASON_CHARS, atomic_write_text_file
 from app.execution.windows_filesystem import pinned_parent, read_file_snapshot
 from app.security.write_policy import HostWritePolicy
+from app.capabilities.repair_diagnosis import RepairDiagnosis
 
 
 MAX_FILE_BYTES = 1_048_576
@@ -40,6 +41,8 @@ class FilesystemEditTextArguments(BaseModel):
                                         description="SHA-256 of the complete source bytes from a preceding read, when available. Never use an excerpt digest.")
     reversal_reason: str | None = Field(default=None, min_length=1, max_length=MAX_REVERSAL_REASON_CHARS,
         description="When the reversal guard requests reassessment, first receive a fresh complete source read, then explain here the unmet user requirement or observed defect requiring the rollback. Otherwise omit or use null. This does not bypass approval or the one-rollback limit.")
+    repair_diagnosis: RepairDiagnosis | None = Field(default=None,
+        description="Post-inspection repair after source reread: five strings [exact failed call_id (<=128 chars), failure, source-supported cause, change, confirming check]; otherwise null. Guards still apply.")
 
 
 @dataclass(frozen=True)

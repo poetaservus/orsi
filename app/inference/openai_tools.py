@@ -174,7 +174,8 @@ def responses_input(messages: Iterable[dict], definitions: Iterable[ModelCapabil
             raw_calls = [item for item in replay.items() if item["type"] == "function_call"]
             if raw_calls:
                 expected = tuple(ModelCapabilityCall.model_validate(call) for call in message.get("capability_calls", []))
-                response = normalize_responses_calls(raw_calls, _reversal_history_definitions(definitions, expected), CompletionMetadata())
+                response = normalize_responses_calls(_inspection_history_calls(raw_calls, definitions),
+                    _reversal_history_definitions(definitions, expected), CompletionMetadata())
                 if response.protocol_failure is not None or response.capability_calls != expected:
                     raise ValueError("OpenAI call evidence does not match its settled transcript.")
             elif "capability_calls" in message:
@@ -194,17 +195,42 @@ def responses_input(messages: Iterable[dict], definitions: Iterable[ModelCapabil
     return result
 
 
+def _inspection_history_calls(raw_calls, definitions):
+    """Validate legacy steps using null default sentinels; replay original bytes.
+
+    Only the four newly optional checkpoint fields may be missing. Actual raw
+    evidence and all original arguments still have to match the settled calls.
+    Live response decoding remains strict.
+    """
+    names = {tool['name'] for tool, definition in zip(responses_function_tools(definitions), definitions)
+        if definition.name == 'project.inspect'}
+    values = deepcopy(raw_calls)
+    for item in values:
+        if item.get('name') not in names:
+            continue
+        try:
+            arguments = json.loads(item['arguments'])
+            for step in arguments.get('steps') or []:
+                for key in ('label', 'properties', 'reference', 'expectation'):
+                    step.setdefault(key, None)
+            item['arguments'] = json.dumps(arguments, ensure_ascii=False)
+        except (ValueError, TypeError, KeyError, AttributeError):
+            pass  # Ordinary strict decoding reports malformed evidence.
+    return values
+
+
 def _reversal_history_definitions(definitions, expected):
     """Validate pre-upgrade edit evidence without changing it or live schemas."""
     values = []
     for definition in definitions:
         calls = [call for call in expected if call.capability == definition.name]
-        if (definition.name in {"filesystem.edit_text", "filesystem.write_text"} and calls
-                and all("reversal_reason" not in call.arguments for call in calls)):
+        if definition.name in {"filesystem.edit_text", "filesystem.write_text"} and calls:
             schema = deepcopy(definition.input_schema)
-            # Only this newly optional field may be absent in old settled calls.
+            # Only these newly optional fields may be absent in old settled calls.
             # All original fields, IDs and argument values must still match.
-            schema.get("properties", {}).pop("reversal_reason", None)
+            for field in ('reversal_reason', 'repair_diagnosis'):
+                if all(field not in call.arguments for call in calls):
+                    schema.get("properties", {}).pop(field, None)
             definition = definition.model_copy(update={"input_schema": schema})
         values.append(definition)
     return tuple(values)

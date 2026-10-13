@@ -3,11 +3,48 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
 from time import monotonic, sleep
 from urllib.parse import urlsplit, urljoin
+
+
+def _same_style(left, right):
+    number = r"[-+]?(?:\d*\.\d+|\d+)(?:[eE][-+]?\d+)?"
+    return (re.sub(number, '#', left) == re.sub(number, '#', right)
+        and all(abs(float(a)-float(b)) <= .01 for a, b in zip(re.findall(number, left), re.findall(number, right))))
+
+
+def _checkpoint_assertion(current, reference, expectation):
+    if expectation == "observe":
+        return True
+    if expectation == "visible":
+        return current["in_viewport"] and current["rendered"]
+    if expectation == "scroll_up":
+        return current["scroll"]["y"] < reference["scroll"]["y"]
+    if expectation == "scroll_down":
+        return current["scroll"]["y"] > reference["scroll"]["y"]
+    return (current["target"] == reference["target"]
+        and current["rendered"] == reference["rendered"] and current["in_viewport"] == reference["in_viewport"]
+        and current["properties"].keys() == reference["properties"].keys()
+        and all(_same_style(value, reference["properties"][key]) for key, value in current["properties"].items())
+        and all(abs(current["scroll"][key]-reference["scroll"][key]) <= 1 for key in ("x", "y"))
+        and all(abs(current["bounds"][key]-reference["bounds"][key]) <= 1 for key in ("x", "y", "width", "height")))
+
+
+def _failure_kind(message, target, checkpoint_attached=False):
+    message = message.lower()
+    if message.startswith('earlier checkpoint reference unavailable'):
+        return 'checkpoint_reference_unavailable'
+    if 'strict mode violation' in message or ('selector' in message and any(word in message for word in ('syntax','parsing'))):
+        return 'selector_error'
+    if checkpoint_attached and ('timeout' in message or message.startswith('checkpoint target detached')):
+        return 'observation_unavailable'
+    if 'timeout' in message and target:
+        return 'target_not_found'
+    return 'interaction_assertion_failed'
 
 
 def browser_inspection(spec):
@@ -19,7 +56,8 @@ def browser_inspection(spec):
         server = subprocess.Popen([spec["server_executable"], *spec["server_arguments"]],
             cwd=spec["project_path"], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL, shell=False, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
-    problems, checks = [], []
+    problems, checks, checkpoints = [], [], []
+    image_bytes = 0
     def problem(kind, detail):
         if len(problems) < 24:
             problems.append({"kind": kind, "detail": str(detail)[:300]})
@@ -29,7 +67,7 @@ def browser_inspection(spec):
         return other.hostname == origin.hostname and (other.port or 80) == (origin.port or 80)
     with sync_playwright() as driver:
         browser = driver.chromium.launch(headless=True)
-        context = browser.new_context(viewport={"width": spec["width"], "height": spec["height"]},
+        context = browser.new_context(viewport={"width": spec["width"], "height": spec["height"]}, has_touch=True,
             service_workers="block", accept_downloads=False)
         try:
             # Routed HTTP responses otherwise appear outside the local address
@@ -107,13 +145,107 @@ def browser_inspection(spec):
             for socket in blocked_sockets:
                 socket.close(code=1000, reason="Outside the approved preview origin")
             blocked_sockets.clear()
+            def capture(path):
+                nonlocal image_bytes
+                pixels = page.screenshot(full_page=False, timeout=3000)
+                image_bytes += len(pixels)
+                if image_bytes > 8 * 1024 * 1024:
+                    raise ValueError("Combined inspection screenshots exceed 8 MiB.")
+                Path(path).write_bytes(pixels)
+
+            def observation(locator, properties):
+                return locator.evaluate("""(e, properties) => {
+                    if(!e.isConnected)throw new Error('Checkpoint target detached before observation; retry readiness.');
+                    const r=e.getBoundingClientRect(), s=getComputedStyle(e);
+                    let rendered=true;
+                    for(let p=e;p;p=p.parentElement){const style=getComputedStyle(p);
+                        if(style.visibility!=='visible' || style.display==='none' || Number(style.opacity)===0 || style.contentVisibility==='hidden')rendered=false;}
+                    return {scroll:{x:scrollX,y:scrollY,targetTop:e.scrollTop},
+                        bounds:{x:r.x,y:r.y,width:r.width,height:r.height},
+                        rendered,
+                        in_viewport:r.width>0 && r.height>0 && r.top<innerHeight && r.bottom>0 && r.left<innerWidth && r.right>0,
+                        properties:Object.fromEntries(properties.map(p=>[p,s.getPropertyValue(p).slice(0,256)]))};
+                }""", properties)
+
             for step in spec["steps"]:
                 action, target = step["action"], step["target"]
                 check = {"action": action, "target": target, "passed": False}
+                checkpoint_attached = False
                 try:
                     locator = page.locator(target) if target else None
                     timeout = step.get("timeout_ms", 2000)
-                    if action == "wait":
+                    if action == "checkpoint":
+                        # Resolve once. Locator.evaluate repeats selector polling
+                        # and can time out on a busy animation despite attachment.
+                        element = locator.element_handle(timeout=timeout)
+                        checkpoint_attached = True
+                        try:
+                            current = {"label": step["label"], "target": target,
+                                **observation(element, step["properties"])}
+                        finally:
+                            element.dispose()
+                        path = str(Path(spec["screenshot"]).with_name(f"checkpoint-{len(checkpoints)}.png"))
+                        capture(path)
+                        current["screenshot_path"] = path
+                        checkpoints.append(current)
+                        reference = next((c for c in checkpoints[:-1] if c["label"] == step["reference"]), None)
+                        check["label"] = step["label"]
+                        check["expectation"] = step["expectation"]
+                        if step["reference"] and reference is None:
+                            raise LookupError("Earlier checkpoint reference unavailable; correct its failed selector/check before comparison.")
+                        if not _checkpoint_assertion(current, reference, step["expectation"]):
+                            raise ValueError("Checkpoint interaction assertion failed; compare the recorded scroll, bounds and properties.")
+                    elif action == "key":
+                        if locator:
+                            locator.focus()
+                        before = page.evaluate("scrollY")
+                        page.keyboard.press(step["value"])
+                        page.wait_for_timeout(250)
+                        check["scroll"] = {"before": before, "after": page.evaluate("scrollY")}
+                    elif action == "touch":
+                        box = locator.bounding_box() if locator else None
+                        x = box["x"] + box["width"]/2 if box else spec["width"]/2
+                        start = min(spec["height"]-20, max(20, box["y"]+box["height"]/2 if box else spec["height"]*.75))
+                        end = min(spec["height"]-20, max(20, start-step["amount"]))
+                        before = page.evaluate("scrollY")
+                        session = context.new_cdp_session(page)
+                        try:
+                            session.send("Input.dispatchTouchEvent", {"type":"touchStart", "touchPoints":[{"x":x,"y":start}]})
+                            for index in range(1, 7):
+                                session.send("Input.dispatchTouchEvent", {"type":"touchMove", "touchPoints":[{"x":x,"y":start+(end-start)*index/6}]})
+                                page.wait_for_timeout(35)
+                            session.send("Input.dispatchTouchEvent", {"type":"touchEnd", "touchPoints":[]})
+                        finally:
+                            session.detach()
+                        page.wait_for_timeout(250)
+                        check["scroll"] = {"before": before, "after": page.evaluate("scrollY")}
+                    elif action == "scroll_to":
+                        if locator:
+                            locator.evaluate("(e,y)=>e.scrollTo({top:y,behavior:'instant'})", step["amount"])
+                        else:
+                            page.evaluate("y=>scrollTo({top:y,behavior:'instant'})", step["amount"])
+                        page.wait_for_timeout(200)
+                        check["scroll"] = {"requested": step["amount"], "after": locator.evaluate("e=>e.scrollTop") if locator else page.evaluate("scrollY")}
+                    elif action == "frame_timing":
+                        if step["amount"]:
+                            page.mouse.move(spec["width"]//2, spec["height"]//2)
+                            page.mouse.wheel(0, step["amount"])
+                        check["frame_timing"] = page.evaluate("""async spec => {
+                            const target=spec.target ? document.querySelector(spec.target) : null;
+                            const read=()=>target ? Object.fromEntries(spec.properties.map(p=>[p,getComputedStyle(target).getPropertyValue(p).slice(0,256)])) : {};
+                            const first_state=read(), samples=[], start=performance.now();
+                            let previous=start, previousState=JSON.stringify(first_state);
+                            await new Promise(resolve=> {const frame=now=> {
+                                const state=JSON.stringify(read());
+                                samples.push({interval_ms:now-previous,scroll_y:scrollY,state_changed:state!==previousState});
+                                previous=now;previousState=state;
+                                if(now-start>=spec.duration || samples.length>=120) resolve();else requestAnimationFrame(frame);
+                            };requestAnimationFrame(frame)});
+                            return {samples,first_state,last_state:read(),duration_ms:performance.now()-start,
+                                long_intervals:samples.filter(s=>s.interval_ms>34).length,
+                                scope:'Animation-frame callback timing and scroll positions; not proof of compositor frame delivery or visual smoothness.'};
+                        }""", {"duration":timeout,"target":target,"properties":step["properties"]})
+                    elif action == "wait":
                         if locator:
                             locator.wait_for(state=step.get("state", "visible"), timeout=timeout)
                         else:
@@ -173,6 +305,7 @@ def browser_inspection(spec):
                     check["passed"] = True
                 except Exception as error:
                     check["error"] = str(error)[:300]
+                    check["failure_kind"] = _failure_kind(str(error),target,checkpoint_attached)
                 checks.append(check)
             layout = page.evaluate("""() => {
                 const e=document.scrollingElement, all=[...document.querySelectorAll('*')], scan=all.slice(0,2000);
@@ -213,11 +346,12 @@ def browser_inspection(spec):
                 problem("broken_image", value)
             for value in layout["missingFragments"]:
                 problem("missing_fragment", value)
-            page.screenshot(path=spec["screenshot"], full_page=False, timeout=3000)
+            capture(spec["screenshot"])
             passed = not problems and all(item["passed"] for item in checks)
             return {"passed": passed, "verification_status": "passed" if passed else "failed", "url": page.url,
                 "title": page.title()[:200], "checks": checks, "problems": problems, "layout": layout,
                 "capture_targets": capture_targets,
+                "checkpoints": checkpoints,
                 "screenshot_path": spec["screenshot"], "preview_pid": server.pid if server is not None else None,
                 "retry_guidance": None if passed else (
                     "Inspection ran; these are failed checks, not an unavailable browser. "
