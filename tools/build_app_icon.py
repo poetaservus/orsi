@@ -56,4 +56,6 @@ def build(source, destination):
 
 if __name__ == "__main__":
     assets = Path(__file__).resolve().parents[1] / "app/ui/assets"
-    build(assets / "bsw_o.png", assets / "orsi.ico")
+    build(assets / "bsw_o.png", assets / "orsi-app.ico")
+    # Preserve the resource used by existing external launchers/shortcuts.
+    (assets / "orsi.ico").write_bytes((assets / "orsi-app.ico").read_bytes())

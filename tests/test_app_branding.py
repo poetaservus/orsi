@@ -125,7 +125,7 @@ def shortcut_inputs(tmp_path):
     (root / "ORSI.cmd").write_text("@exit /b 0\n")
     (root / "runtime/python").mkdir(parents=True)
     (root / "runtime/python/pythonw.exe").write_bytes(b"synthetic executable, never run")
-    (root / "app/ui/assets/orsi.ico").write_bytes(APP_ICON.read_bytes())
+    (root / "app/ui/assets" / APP_ICON.name).write_bytes(APP_ICON.read_bytes())
     return root, tmp_path / "O.R.S.I test.lnk"
 
 
@@ -144,7 +144,7 @@ def test_shortcut_icon_identity_and_custom_options_survive_refresh(shortcut_inpu
     link = read_shortcut(path)
     assert Path(link["target"]) == root / "runtime/python/pythonw.exe" and Path(link["working"]) == root
     assert link["arguments"] == "-m app.launcher"
-    assert link["icon"] == str(root / "app/ui/assets/orsi.ico") + ",0" and link["appid"] == APP_ID
+    assert link["icon"] == str(root / "app/ui/assets" / APP_ICON.name) + ",0" and link["appid"] == APP_ID
     change = powershell("""
 $s=(New-Object -ComObject WScript.Shell).CreateShortcut($env:ORSI_ICON_TEST_SHORTCUT)
 $s.Arguments='-m app.launcher synthetic custom option';$s.Description='Keep this custom description';$s.Save()

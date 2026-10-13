@@ -1,5 +1,35 @@
 # Git layout and baseline hygiene
 
+## Fresh taskbar icon resource, 14 October 2026
+
+`codex/taskbar-icon-resource` starts from local main `b31ea82`. The user still
+saw the older wide taskbar artwork after a targeted Windows cache refresh. Native
+inspection found square 16/32 pixel window icons, and no matching pinned link;
+the exact taskbar selection mechanism was not established. The app, native tray/
+notification backend and shortcut creator now use the fresh `orsi-app.ico`
+resource path. The existing builder also retains byte-identical `orsi.ico` for
+external launcher compatibility. Application identity and launch behavior stay
+unchanged; no global icon-cache deletion or Explorer restart is needed.
+
+All **25 focused branding/notification checks passed** in **5.65 seconds**, with
+no failures/errors/skips. Native Windows assigned the new resource a different
+image-list entry; all nine icon frames retain square artwork. The matching
+desktop shortcut now points to the new resource, preserving target, arguments,
+description and working directory. A real native notification received its show
+callback and released owned resources. The displayed taskbar button after the
+user reopens the app remains a separate visual check; it is not claimed passing
+from native icon measurements. Full-suite and live-model/API checks were not run
+under the essential-test scope.
+
+Evidence is retained in ignored `state/taskbar-icon-resource-tests.xml`,
+`state/taskbar-icon-investigation/resource-fix.json`, and
+`state/icon-dimensions/native-fixed.json`. Ref/worktree inventories, prior matching
+shortcut and the unrelated uncommitted sound edit are backed up under ignored
+`state/backups/taskbar-icon-resource-20261014/`. That sound edit is excluded from
+the commit. Prior main is preserved at
+`archive/2026-10-14/main-before-taskbar-icon-resource`. Commit, fast-forward local
+main and remove only the merged branch; other worktrees and remote refs stay intact.
+
 ## Corrected application icon dimensions
 
 `codex/icon-dimensions` starts from local main `1ff4abd`. The user's corrected

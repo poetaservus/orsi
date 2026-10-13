@@ -2,10 +2,15 @@
 
 The user's corrected 256 × 256 transparent `bsw_o.png` is bundled byte-for-byte at
 `app/ui/assets/bsw_o.png`. The supplied source is not altered. The derived
-`orsi.ico` contains 16, 20, 24, 32, 40, 48, 64, 128 and 256 pixel frames with
+`orsi-app.ico` contains 16, 20, 24, 32, 40, 48, 64, 128 and 256 pixel frames with
 transparent backgrounds, centered artwork and preserved proportions. Rebuild
 it with `runtime/python/python.exe tools/build_app_icon.py`; the tool uses the
 existing Qt image library and requires no new dependencies.
+The app and refreshed shortcuts use this new resource filename so Windows can
+load a fresh image-list entry after the old taskbar artwork persisted through
+cache refresh. `orsi.ico` remains an identical compatibility copy, rebuilt by
+the same command for existing external launchers. The application identity and
+shortcut launch options stay unchanged.
 
 `app/ui/branding.py` supplies the shared icon for the application, main window,
 loading windows and Qt tray fallback. Native Windows tray notifications load

@@ -8,7 +8,8 @@ from PySide6.QtGui import QIcon
 
 
 APP_ID = "ORSI.Desktop"
-APP_ICON = Path(__file__).with_name("assets") / "orsi.ico"
+# A new resource path prevents the taskbar from reusing the old logo's image.
+APP_ICON = Path(__file__).with_name("assets") / "orsi-app.ico"
 
 
 def app_icon():

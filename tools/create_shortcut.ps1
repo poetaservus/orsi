@@ -6,7 +6,7 @@ $ErrorActionPreference = 'Stop'
 $taskRoot = (Resolve-Path -LiteralPath $ApplicationRoot).Path
 $taskLauncher = Join-Path $taskRoot 'ORSI.cmd'
 $taskPython = Join-Path $taskRoot 'runtime\python\pythonw.exe'
-$taskIcon = Join-Path $taskRoot 'app\ui\assets\orsi.ico'
+$taskIcon = Join-Path $taskRoot 'app\ui\assets\orsi-app.ico'
 if (-not (Test-Path -LiteralPath $taskLauncher -PathType Leaf) -or -not (Test-Path -LiteralPath $taskPython -PathType Leaf) -or -not (Test-Path -LiteralPath $taskIcon -PathType Leaf)) {
     throw 'O.R.S.I launch files or icon are missing.'
 }
