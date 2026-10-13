@@ -52,6 +52,61 @@ def test_final_handoff_keeps_answer_visible_during_context_refresh(windows, monk
     assert not window._preview_active
 
 
+@pytest.mark.parametrize("mode", ["local", "cloud"])
+def test_clarification_handoff_unlocks_composer_and_retains_interview(tmp_path, monkeypatch, mode):
+    """Exercise the real UI handoff with scripted assessments, not model-quality claims."""
+    from PySide6.QtWidgets import QApplication
+    from app.agent.contracts import AgentRunStatus
+    from app.inference.protocol import ModelResponse
+    from app.ui.main_window import MainWindow
+    from tests.test_attachment_composer import wait_for
+    from tests.test_bounded_edit_recovery import RoomyScriptedModel
+    from tests.test_current_task_completion import review
+    from tests.test_skill_activation import make_service, skill_payload
+
+    app = QApplication.instance() or QApplication([])
+    request = "Refine a prompt for a portfolio website."
+    questions = ("Answer these questions and I will write one complete prompt in a code block.\n"
+        "1. What work should it showcase?\n2. Who is the audience?\n3. What style should it use?")
+    answers = "Photography, prospective clients, and a minimal monochrome style."
+    final = "```text\nCreate a minimal monochrome photography portfolio for prospective clients.\n```"
+    model = RoomyScriptedModel([ModelResponse.text(questions), review(),
+        ModelResponse.text(final), review(goal_id="turn-2")], auto_review=False)
+    model.mode = mode
+    service, _ = make_service(tmp_path, model=model, agent=True,
+        body="Ask three clarification questions first. After the user answers, write one complete fenced prompt.")
+    window = MainWindow(service, "fixture")
+    monkeypatch.setattr(window.notifications, "notify", lambda *_: None)
+    window.show()
+    try:
+        window.skill_picker.select_name("style")
+        window.input.setPlainText(request)
+        window.submit()
+        assert not window.input.isEnabled()
+        wait_for(lambda: window.thread is None)
+        assert window.input.isEnabled() and window.send.isEnabled()
+        assert service.store.visible_messages()[-1].content == questions
+        assert service._turn_result.status == AgentRunStatus.COMPLETED
+        assert not service._turn_result.completion.incomplete
+        assert skill_payload(model.requests[0])["name"] == "style"
+
+        window.input.setPlainText(answers)
+        window.submit()
+        wait_for(lambda: window.thread is None)
+        assert window.input.isEnabled() and window.send.isEnabled()
+        assert service.store.visible_messages()[-1].content == final
+        assert [m for m in model.requests[2] if m["role"] in {"user", "assistant"}] == [
+            {"role": "user", "content": request},
+            {"role": "assistant", "content": questions},
+            {"role": "user", "content": answers}]
+        assert len(model.requests) == 4 and len(window.chat._messages) == 4
+        assert all(turn.outcome.status == AgentRunStatus.COMPLETED for turn in service.store.turns())
+    finally:
+        window.close()
+        service.shutdown()
+        app.processEvents()
+
+
 def test_review_stream_preserves_preview_replay_and_next_turn(make_engine, tmp_path):
     import httpx
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")

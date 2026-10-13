@@ -1,5 +1,29 @@
 # Git layout and baseline hygiene
 
+## Clarification handoff, 13 October 2026
+
+`codex/prompter-question-handoff` starts from clean local main `8246fc9`.
+Completion review now accepts a required clarification as ready to return for
+the current assistant turn, allowing the user to answer before later workflow
+stages. Questions already answered or deferring doable work still require
+continuation; real capability failures, denied approvals and unknown outcomes
+retain their existing boundaries. Production changes only the review guidance.
+
+The user requested essential tests only. All **40** focused completion and
+streaming/UI checks pass natively, including scripted two-turn interview
+handoffs in local/cloud modes and existing unfinished-work/approval guards.
+The initial new UI assertions incorrectly assumed optional visible-message
+metadata was present; they now check the actual runtime outcome. That failed
+run is retained separately under ignored `state/prompter-handoff-essential.xml`;
+the passing run is `state/prompter-handoff-final.xml`. Scripted checks verify
+handoff and context retention, not live model assessment quality. Full-suite
+and live provider/model gates are separately unrun. User settings, installed
+skills, routing, schemas and model profiles are unchanged.
+
+Prior main is preserved at `archive/2026-10-13/main-before-prompter-handoff`.
+After verification, commit, fast-forward local main and remove only the merged
+feature branch. Other worktrees and remote refs remain unchanged.
+
 ## File-based personalities and Choom v2, 13 October 2026
 
 `codex/personality-core-files` starts from clean local main `8d5e33d`.

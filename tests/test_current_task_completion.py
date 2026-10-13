@@ -43,7 +43,8 @@ def test_new_request_displaces_old_cleanup_but_retains_standing_requirements(tmp
 
 
 @native
-@pytest.mark.parametrize("candidate", ["Cleanup complete.", "The bug is an off-by-one error.", "I will read and fix main.py."])
+@pytest.mark.parametrize("candidate", ["Cleanup complete.", "The bug is an off-by-one error.",
+    "I will read and fix main.py.", "Should I make the requested change in main.py?"])
 def test_unrelated_answer_diagnosis_or_plan_continues_without_new_user_turn(tmp_path, make_service, candidate):
     path = tmp_path / "main.py"
     path.write_text("old", encoding="utf-8")

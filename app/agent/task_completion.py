@@ -55,8 +55,12 @@ def completion_review_message(goal: TaskGoal, pending_recovery: str | None, *, b
         "failed, stale, denied, unavailable and unrun checks; never call them passed. Return one JSON object with goal_id="
         + json.dumps(goal.goal_id)
         + ', status="ready", "continue" or "blocked", and remaining=[strings]. '
-        "Ready requires all work accounted for and remaining=[]. Continue for doable work in this turn. "
-        "Blocked requires a concrete missing input/capability, denied approval or unknown outcome. "
+        "Ready requires this assistant turn's work accounted for and remaining=[]. If the user request or active "
+        "workflow requires clarification, concrete questions awaiting necessary user choices or information are "
+        "ready to return so the user can answer, even though later workflow stages remain. Unanswered clarification "
+        "alone requires neither continue nor blocked. Questions already answered, answerable with permitted tools, "
+        "or deferring doable requested work do not qualify; continue that work in this turn. "
+        "Blocked requires a concrete missing input/capability other than that clarification, denied approval or unknown outcome. "
         "This is assessment-only: do not call tools or repeat checks here. Return continue naming missing work; "
         "the normal loop will perform it with existing permissions. In text fallback, encode JSON in the response "
         "string of a tool=null decision."
