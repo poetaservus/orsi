@@ -73,10 +73,11 @@ from app.ui.image_viewer import ImageViewer
 from app.ui.motion import create_attachment_file_dialog
 from app.ui.composer import (
     ComposerFrame, MessageInput, COMPOSER_STYLE, composer_tools, configure_input, configure_send,
-    composer_microphone, composer_selector, REASONING_LABELS,
+    composer_microphone, composer_selector,
     COMPOSER_WIDTH as _COMPOSER_WIDTH, MESSAGE_COMPOSER_HEIGHT as _COMPOSER_HEIGHT,
 )
 from app.conversation.attachment_processing import SUPPORTED_FILE_FILTER
+from app.ui.reasoning import ReasoningSelector
 
 
 log = logging.getLogger(__name__)
@@ -610,16 +611,16 @@ class MainWindow(QMainWindow):
         self.composer_model_selector = composer_selector(composer_row, "Model", 190)
         self.composer_model_selector.setToolTip("Model for your next message")
         self.composer_model_selector.view().setMinimumWidth(300)
-        self.reasoning_selector = composer_selector(composer_row, "Reasoning level", 120)
-        toolbar.addWidget(self.microphone_placeholder)
+        self.reasoning_selector = ReasoningSelector(composer_row)
         toolbar.addWidget(self.composer_tools)
+        toolbar.addStretch(1)
         toolbar.addWidget(self.composer_model_selector)
         toolbar.addWidget(self.reasoning_selector)
-        toolbar.addStretch(1)
+        toolbar.addWidget(self.microphone_placeholder)
         toolbar.addWidget(self.action_slot)
         composer_layout.addLayout(toolbar)
         self.composer_model_selector.currentIndexChanged.connect(self._select_composer_model)
-        self.reasoning_selector.currentIndexChanged.connect(self._select_composer_reasoning)
+        self.reasoning_selector.effort_selected.connect(self._select_composer_reasoning)
         self._sync_composer_models()
         self.skill_picker = SkillPicker(self.input, self.composer,
                                         getattr(service, "skill_registry", None),
@@ -1668,19 +1669,13 @@ class MainWindow(QMainWindow):
         selector.blockSignals(False)
         selector.setEnabled(available and not busy)
         reason = self.reasoning_selector
-        reason.blockSignals(True)
-        reason.clear()
         if cloud is not None and mode == "cloud":
             profile = cloud.current_profile
-            for effort in profile.supported_reasoning_efforts:
-                reason.addItem(REASONING_LABELS[effort], effort)
-            reason.setCurrentIndex(reason.findData(profile.reasoning_effort))
+            reason.set_context(profile.supported_reasoning_efforts, profile.reasoning_effort, selector.currentText())
             reason.setToolTip("Reasoning level sent to the API for your next message")
         else:
-            reason.addItem("Reasoning", None)
+            reason.set_context((), None, selector.currentText())
             reason.setToolTip("Reasoning level is available for supported cloud models")
-        reason.blockSignals(False)
-        reason.setFixedWidth(max(100, reason.fontMetrics().horizontalAdvance(reason.currentText()) + 38))
         reason.setEnabled(available and not busy and cloud is not None and mode == "cloud")
 
     def _select_composer_model(self, index):
@@ -1696,8 +1691,7 @@ class MainWindow(QMainWindow):
             selector.setCurrentIndex(selector.findData(model_id))
         self._sync_composer_models()
 
-    def _select_composer_reasoning(self, index):
-        effort = self.reasoning_selector.itemData(index)
+    def _select_composer_reasoning(self, effort):
         if self.thread is not None or self._settings_busy or self.service is None or effort is None:
             self._sync_composer_models()
             return

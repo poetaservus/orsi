@@ -6,7 +6,8 @@ from unittest.mock import Mock
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtCore import QPoint, QRect
+from PySide6.QtCore import QPoint, QRect, Qt
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
 from app.inference.engine import InferenceUnavailable
@@ -85,20 +86,22 @@ def test_composer_changes_model_and_reasoning_for_next_api_request(monkeypatch, 
         app.processEvents()
         models, reasoning = window.composer_model_selector, window.reasoning_selector
         assert models.currentText() == 'GPT-6 Luna'
-        assert reasoning.currentData() == 'none'
+        assert reasoning.current_effort == 'none'
         assert not window.microphone_placeholder.isEnabled()
-        reasoning.setCurrentIndex(reasoning.findData('medium'))
+        reasoning.slider.setValue(cloud.catalog.current_profile.supported_reasoning_efforts.index('medium'))
         service.run('Synthetic composer request')
         assert json.loads(requests[-1].content)['reasoning'] == {'effort': 'medium'}
         models.setCurrentIndex(models.findData('cloud:gpt-6.1-sol'))
         assert cloud.active_model == 'gpt-6.1-sol'
-        assert reasoning.findData('none') == -1
-        reasoning.setCurrentIndex(reasoning.findData('xhigh'))
+        assert reasoning.slider.maximum() == len(cloud.catalog.current_profile.supported_reasoning_efforts) - 1
+        reasoning.slider.setValue(0)
+        assert reasoning.current_effort == 'low'
+        reasoning.slider.setValue(cloud.catalog.current_profile.supported_reasoning_efforts.index('xhigh'))
         service.run('Synthetic composer alternate model')
         body = json.loads(requests[-1].content)
         assert body['model'] == 'gpt-6.1-sol' and body['reasoning'] == {'effort': 'xhigh'}
         models.setCurrentIndex(models.findData('cloud:gpt-6-luna'))
-        assert reasoning.currentData() == 'medium'
+        assert reasoning.current_effort == 'medium'
         window._set_busy(True)
         assert not models.isEnabled() and not reasoning.isEnabled()
         window._set_busy(False)
@@ -107,9 +110,14 @@ def test_composer_changes_model_and_reasoning_for_next_api_request(monkeypatch, 
             rectangle = QRect(widget.mapTo(window.composer, QPoint()), widget.size())
             assert window.composer.rect().contains(rectangle)
             assert rectangle.top() > window.input.mapTo(window.composer, QPoint()).y()
+        ordered = (window.composer_tools, models, reasoning, window.microphone_placeholder, window.action_slot)
+        for left, right in zip(ordered, ordered[1:]):
+            assert left.mapTo(window.composer, QPoint(left.width(), 0)).x() < right.mapTo(window.composer, QPoint()).x()
+        assert window.microphone_placeholder.mapTo(window.composer, QPoint()).x() > window.composer.width() / 2
         monkeypatch.setattr(cloud.catalog._reasoning_store, 'save', Mock(side_effect=OSError('private-storage')))
-        reasoning.setCurrentIndex(reasoning.findData('high'))
-        assert reasoning.currentData() == 'medium'
+        reasoning.slider.setValue(cloud.catalog.current_profile.supported_reasoning_efforts.index('high'))
+        assert reasoning.current_effort == 'medium'
+        assert reasoning.level_label.text() == 'Medium'
         assert 'private-storage' not in window.chat._messages[-1]._content
         hybrid.set_mode('local')
         window._sync_cloud_model_selector()
@@ -117,6 +125,62 @@ def test_composer_changes_model_and_reasoning_for_next_api_request(monkeypatch, 
     finally:
         window.close()
         app.processEvents()
+
+
+@pytest.mark.parametrize('size', [(760, 600), (1280, 800)])
+def test_composer_popups_open_above_and_slider_commits_only_released_effort(monkeypatch, tmp_path, size):
+    app = QApplication.instance() or QApplication([])
+    service, hybrid, cloud, client, requests = make_service(monkeypatch, tmp_path)
+    window = MainWindow(service, 'SYNTHETIC-HOST', inference=hybrid)
+    try:
+        window.resize(*size)
+        window.show()
+        app.processEvents()
+        models, reasoning = window.composer_model_selector, window.reasoning_selector
+        models.showPopup()
+        app.processEvents()
+        model_popup = models.view().window()
+        assert model_popup.isVisible()
+        assert model_popup.frameGeometry().bottom() < models.mapToGlobal(QPoint()).y()
+        assert models.screen().availableGeometry().contains(model_popup.frameGeometry())
+        models.hidePopup()
+        QTest.mouseClick(reasoning, Qt.MouseButton.LeftButton)
+        app.processEvents()
+        assert reasoning.popup.isVisible()
+        assert reasoning.popup.frameGeometry().bottom() < reasoning.mapToGlobal(QPoint()).y()
+        assert reasoning.screen().availableGeometry().contains(reasoning.popup.frameGeometry())
+        assert reasoning.model_label.text() == 'GPT-6 Luna'
+        slider = reasoning.slider
+        end = QPoint(slider.width() - 15, slider.height() // 2)
+        QTest.mousePress(slider, Qt.MouseButton.LeftButton, pos=end)
+        assert reasoning.level_label.text() == 'Max'
+        assert cloud.catalog.current_profile.reasoning_effort == 'none'
+        QTest.keyClick(slider, Qt.Key.Key_Escape)
+        assert not reasoning.popup.isVisible()
+        assert reasoning.current_effort == 'none' and slider.value() == 0
+        QTest.mouseClick(reasoning, Qt.MouseButton.LeftButton)
+        QTest.mouseClick(slider, Qt.MouseButton.LeftButton, pos=end)
+        assert cloud.catalog.current_profile.reasoning_effort == 'max'
+        service.run('Synthetic slider request')
+        assert json.loads(requests[-1].content)['reasoning'] == {'effort': 'max'}
+        QTest.keyClick(slider, Qt.Key.Key_Home)
+        assert cloud.catalog.current_profile.reasoning_effort == 'none'
+        QTest.keyClick(slider, Qt.Key.Key_Right)
+        assert cloud.catalog.current_profile.reasoning_effort == 'low'
+        window._set_busy(True)
+        assert not reasoning.popup.isVisible() and not reasoning.isEnabled()
+        assert not models.isEnabled()
+        window._set_busy(False)
+        assert reasoning.isEnabled() and models.isEnabled()
+        QTest.mouseClick(reasoning, Qt.MouseButton.LeftButton)
+        assert reasoning.popup.isVisible()
+        window.resize(size[0] + 20, size[1] + 20)
+        app.processEvents()
+        assert not reasoning.popup.isVisible()
+    finally:
+        window.close()
+        app.processEvents()
+    assert client.is_closed() and cloud._runner is None
 
 
 @pytest.mark.parametrize('saved', [

@@ -1,5 +1,16 @@
 # Git layout and baseline hygiene
 
+## Composer effort slider, 13 October 2026
+
+`codex/composer-effort-slider` starts from clean main `f334762`. It moves model,
+reasoning and microphone controls beside Send, opens the model menu upward and
+replaces the reasoning dropdown with a model-aware slider popup. Existing API
+selection and private preferences are retained. See [the change and checks](composer-effort-slider.md).
+After native verification, preserve prior main at
+`archive/2026-10-13/main-before-composer-effort-slider`, commit, fast-forward
+local main and remove only the merged feature branch. Other worktrees and
+remote refs remain intact.
+
 ## Complete integration and cleanup, 13 October 2026
 
 The user explicitly requested all new changes on main, Git cleanup and a push.

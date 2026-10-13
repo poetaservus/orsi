@@ -1,7 +1,7 @@
 """Shared chat composer paint, controls and typography."""
 from pathlib import Path
 
-from PySide6.QtCore import QEasingCurve, QRectF, QSize, Qt, Signal, QVariantAnimation
+from PySide6.QtCore import QEasingCurve, QPoint, QRectF, QSize, Qt, Signal, QVariantAnimation
 from PySide6.QtGui import QColor, QIcon, QLinearGradient, QPainter, QPainterPath, QPalette
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QPushButton, QStyle, QStyleOptionButton, QTextEdit, QWidget
 from app.ui.inputs import ScrollSafeComboBox
@@ -15,11 +15,31 @@ REASONING_LABELS = {"none": "None", "low": "Low", "medium": "Medium", "high": "H
 
 
 def composer_selector(parent, name, width):
-    selector = ScrollSafeComboBox(parent)
+    selector = ComposerModelSelector(parent)
     selector.setObjectName("composerSelector")
     selector.setAccessibleName(name)
     selector.setFixedSize(width, 32)
     return selector
+
+
+class ComposerModelSelector(ScrollSafeComboBox):
+    """Keep the composer's model list above its trigger and within the screen."""
+
+    def showPopup(self):  # noqa: N802
+        super().showPopup()
+        popup = self.view().window()
+        popup.setObjectName("composerModelPopup")
+        popup.setStyleSheet("QFrame#composerModelPopup { background: #292d36; border: 1px solid #4b505d; }")
+        bounds = self.screen().availableGeometry()
+        anchor = self.mapToGlobal(QPoint(0, 0))
+        height = min(popup.height(), anchor.y() - bounds.top() - 6)
+        if height <= 0:
+            self.hidePopup()
+            return
+        width = min(bounds.width(), max(popup.width(), self.view().minimumWidth()))
+        popup.resize(width, height)
+        x = max(bounds.left(), min(anchor.x() + self.width() - width, bounds.right() - width + 1))
+        popup.move(x, anchor.y() - height - 6)
 
 
 def composer_microphone(parent):
@@ -178,6 +198,12 @@ COMPOSER_STYLE = """
 QFrame#composer { background: transparent; border: none; border-radius: 27px; }
 QWidget#composerTools { background: transparent; border: none; }
 QPushButton#composerMicrophone { background: transparent; border: none; padding: 0; }
+QPushButton#reasoningSelector {
+    background: transparent; color: #dedee0; border: none; border-radius: 14px;
+    padding: 3px 22px 3px 8px; font-family: Saira; font-size: 13px;
+}
+QPushButton#reasoningSelector:hover, QPushButton#reasoningSelector:focus { background: rgba(255, 255, 255, 14); }
+QPushButton#reasoningSelector:disabled { color: #777d8b; }
 QComboBox#composerSelector {
     background: transparent; color: #dedee0; border: none; border-radius: 8px;
     padding: 3px 8px; font-family: Saira; font-size: 13px;

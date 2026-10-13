@@ -1,9 +1,12 @@
 # Composer model and reasoning selection
 
-The chat composer now has a text row and a lower control row, with an inactive
-microphone placeholder at the left, existing attachment controls, model and
-reasoning selectors, and Send/Stop at the right. Existing settings selectors
-stay synchronized. The image viewer keeps its compact input layout.
+The chat composer has a text row and a lower control row, with attachment
+controls at the left and model, reasoning, inactive microphone and Send/Stop
+controls at the right. The model list opens upward. The reasoning control opens
+a stepped slider above the composer, with the selected level and model shown
+in its popup. See [the presentation update](composer-effort-slider.md).
+Existing settings selectors stay synchronized. The image viewer keeps its
+compact input layout.
 
 The model selector uses the configured cloud profiles and installed local
 models. Cloud reasoning choices are limited to each model's supported efforts.
