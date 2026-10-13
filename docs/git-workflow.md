@@ -1,5 +1,27 @@
 # Git layout and baseline hygiene
 
+## Main publication and final cleanup, 14 October 2026
+
+The user requested consolidation of all current work on main, publication to
+GitHub and immaculate Git hygiene. All feature tips were already included in
+main `51caff8`, which was fifteen commits ahead of origin. The bounded
+`codex/final-integration-20261014` branch includes the user's pending notification
+sound and corresponding regression-fixture maintenance. See the
+[integration and verification record](repository-integration-2026-10-14.md).
+
+Final full native verification passed **3,786 checks and 15 subtests**, with
+**61 optional/host skips**, no failures/errors, in **773.73 seconds**. Earlier
+fixture and Windows rename failures remain recorded separately. Acceptance
+requests, production inference policy and private settings remain unchanged.
+
+Preserve original refs and the sound in the verified ignored recovery bundle,
+retain pre-integration main as `archive/2026-10-14/main-before-final-integration`,
+convert inactive archive branches to identical recovery tags, and preserve the
+merged personality tip as `archive/2026-10-14/codex-profile-personalities` before
+removing its branch. After verification, commit, fast-forward local main, remove
+the merged integration branch and push only main without rewriting history.
+Other worktree attachments, HEADs, files and private runtime state remain intact.
+
 ## Fresh taskbar icon resource, 14 October 2026
 
 `codex/taskbar-icon-resource` starts from local main `b31ea82`. The user still

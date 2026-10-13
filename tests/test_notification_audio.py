@@ -120,8 +120,11 @@ def test_idle_recovery_can_be_cancelled_or_fail_without_reporting_completion(app
         audio.shutdown()
 
 
-@pytest.mark.parametrize("name", ["noti_1.ogg", "noti_2.ogg"])
-def test_real_ogg_decode_and_cache_can_be_cancelled_before_output(app, monkeypatch, name):
+# Source durations come from each Ogg stream's final granule / sample rate.
+@pytest.mark.parametrize("name,source_duration_us", [
+    ("noti_1.ogg", 1_290_317), ("noti_2.ogg", 3_259_615),
+])
+def test_real_ogg_decode_and_cache_can_be_cancelled_before_output(app, monkeypatch, name, source_duration_us):
     audio = NotificationAudio()
     errors = []
     audio.errorOccurred.connect(lambda: errors.append(True))
@@ -131,7 +134,7 @@ def test_real_ogg_decode_and_cache_can_be_cancelled_before_output(app, monkeypat
         wait_for(lambda: bool(audio.pcm) or errors)
         assert not errors
         assert audio.decoder is None and audio.sink is None
-        assert 3_000_000 < audio.format.durationForBytes(len(audio.pcm)) < 3_400_000
+        assert audio.format.durationForBytes(len(audio.pcm)) == pytest.approx(source_duration_us, abs=2_000)
         original = audio.pcm
         monkeypatch.setattr("app.ui.notification_audio.QAudioDecoder", Mock(side_effect=AssertionError("Unexpected decode")))
         audio.setSource(QUrl.fromLocalFile(str((SOUNDS / name).resolve())))

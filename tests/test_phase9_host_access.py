@@ -20,6 +20,7 @@ from app.security.host_access import (
     _windows_drive_type,
 )
 from app.conversation.orchestrator import ConversationService
+from app.conversation.question_projection import PROJECTION_PROMPT
 from app.conversation.store import ConversationStore
 from app.inference.engine import InferenceEngine
 from app.inference.protocol import ModelCapabilityCall, ModelResponse
@@ -39,6 +40,8 @@ class ScriptedModel(InferenceEngine):
 
     def respond(self, messages):
         self.text_requests.append(deepcopy(messages))
+        if messages[0] == {"role": "system", "content": PROJECTION_PROMPT}:
+            return "null"
         response = self.responses.pop(0)
         assert response.assistant_text is not None
         return response.assistant_text
@@ -278,7 +281,13 @@ def test_greeting_never_receives_filesystem_capabilities(tmp_path: Path):
     try:
         assert service.run("hey") == "Hey! How can I help?"
         assert model.requests
-        assert model.text_requests == []
+        assert len(model.text_requests) == 1
+        projection = model.text_requests[0]
+        assert projection[0] == {"role": "system", "content": PROJECTION_PROMPT}
+        assert len(projection) == 2 and projection[1]["role"] == "user"
+        assert json.loads(projection[1]["content"]) == {
+            "current_request": "hey", "assistant_reply": "Hey! How can I help?",
+        }
         assert runtime.executor.journal.records == ()
     finally:
         service.shutdown()
