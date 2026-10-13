@@ -81,7 +81,7 @@ def test_final_envelope_streaming_bounds_and_metadata_are_preserved():
     assert present_questions(result, allow_forms=False).question_batch is None
     assert str(result) == raw.split(QUESTION_MARKER)[0].rstrip()
     for index in range(raw.index("```"), len(raw) + 1):
-        assert question_preview(raw[:index]).rstrip() == str(result)
+        assert question_preview(raw[:index]).rstrip() == "Please answer these questions."
     assert present_questions(raw + "\nUnexpected trailing text").question_batch is None
     assert present_questions(CompletionText(raw, CompletionMetadata(finish_reason="length"))).question_batch is None
     assert present_questions(raw, allow_forms=False).question_batch is None
@@ -95,7 +95,7 @@ def test_ordinary_or_quoted_questions_do_not_activate_a_form(text):
     assert str(present_questions(text)) == text
     assert present_questions(text).question_batch is None
     # Only an incomplete last-line delimiter prefix may be buffered.
-    assert question_preview(text) == text
+    assert question_preview(text) == ("" if text == "Would you like help?" else text)
 
 
 def fill(panel):

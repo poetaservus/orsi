@@ -1,5 +1,34 @@
 # Git layout and baseline hygiene
 
+## Questionnaire presentation and composer motion, 13 October 2026
+
+`codex/question-composer-presentation` starts from clean local main `13ac8d3`.
+The reported normal `json` component fence is recognized and suppressed from
+chat/streaming. Form handoffs display only the introductory remark, keeping full
+questions in durable/model history and applying the same projection on restore.
+The questionnaire uses the regular composer gradient/palette/rounding and the
+approval animation's cubic timing, with a coordinated fade and natural-height
+layout. Inference prompts, routing, model profiles, sampling, context limits,
+tool schemas and approval authority are unchanged.
+
+Under the user's essential-test scope, the final native run passed **91 checks**
+with no failures/errors/skips in **14.08 seconds**. Results are retained in ignored
+`state/question-presentation-final.xml`. Checks include the reported control
+payload, per-character streaming boundaries, remark-only/question-only UI and
+restored history, ordinary JSON/quoted examples, animation midpoint/end geometry
+and input size, plus existing local/cloud forms, Luna synthetic SDK flow,
+approvals, cancellation and default-context acceptance. The themed form was
+visually inspected. Full-suite and live-model/API checks remain separately unrun.
+Earlier runs retain one normal-JSON closing-fence preview defect (fixed in the
+parser) and an existing preview assertion that expected duplicated question text
+(updated for the requested presentation); acceptance requests remain unchanged.
+
+Content-free ref/worktree inventories are retained under ignored
+`state/backups/question-presentation-20261013/`. Prior main is preserved at
+`archive/2026-10-13/main-before-question-presentation`. After verification,
+commit, fast-forward local main and remove only the merged feature branch.
+Other worktrees, historical/unmerged tips and remote refs remain unchanged.
+
 ## Plain-text question handoffs, 13 October 2026
 
 `codex/plain-question-handoff` starts from clean local main `b814390`. The

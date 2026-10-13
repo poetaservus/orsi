@@ -490,7 +490,7 @@ class ConversationService:
                     preview_setter(None)  # Internal form JSON must never stream into chat.
                 report_activity(activity, "Preparing questions…")
                 batch = project_questions(self.inference, request=text, answer=str(answer), cancellation=source.token)
-                answer = CompletionText(answer, question_batch=batch)
+                answer = present_questions(CompletionText(answer, question_batch=batch))
             report_activity(activity, "Saving the conversation…")
             self.store.finish_turn(turn_id, self._turn_result, answer)
             self._agent_history = self._stored_agent_history()

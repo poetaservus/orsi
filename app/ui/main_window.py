@@ -58,6 +58,7 @@ from app.inference.attachments import AttachmentError
 from app.inference.completion import CompletionText
 from app.ui.approvals import create_inline_approval
 from app.ui.questions import QuestionComposer
+from app.conversation.questions import question_chat_text
 from app.ui.operation_review import OperationReviewDialog
 from app.ui.chat import ChatView
 from app.ui.context_window import ContextWindowBar
@@ -664,6 +665,10 @@ class MainWindow(QMainWindow):
             for message in visible_history():
                 value = CompletionText(message.content, message.completion,
                     tuple(message.completion_history) if message.completion_history else None)
+                if message.role == "assistant":
+                    value = question_chat_text(value, getattr(message, "question_batch", None))
+                if not value and not getattr(message, "generated_images", ()):
+                    continue
                 self.chat.add_message("User" if message.role == "user" else "Agent", value, message.stopped,
                     skill_name=getattr(message, "skill_name", None), attachments=getattr(message, "attachments", ()),
                     images=getattr(message, "generated_images", ()))
@@ -1395,10 +1400,13 @@ class MainWindow(QMainWindow):
         self.startup_greeting.hide()
         self.skill_picker.popup.hide()
         self.questions_back.hide()
+        height = self._question_height()
+        self._question_panel.setMinimumHeight(height)
+        self._question_panel.reveal_effect.setOpacity(0.)
         self._composer_stack.setCurrentWidget(self._question_panel)
         self.composer.setProperty("questions", True)
         self.composer.update()
-        self._animate_composer_height(self._question_height())
+        self._animate_composer_height(height, reveal=self._question_panel.reveal_effect)
         self._question_panel.setEnabled(self.thread is None and not self._settings_busy)
         self._question_panel.refresh()
         self._question_panel.setFocus()
@@ -1487,7 +1495,7 @@ class MainWindow(QMainWindow):
         if self.input.isEnabled():
             self.input.setFocus()
 
-    def _animate_composer_height(self, height: int, *, animated: bool = True) -> None:
+    def _animate_composer_height(self, height: int, *, animated: bool = True, reveal=None) -> None:
         if self._approval_transition is not None:
             self._approval_transition.stop()
             self._approval_transition.deleteLater()
@@ -1500,8 +1508,14 @@ class MainWindow(QMainWindow):
             # and adapting to window resizes during the transition.
             self._position_overlays()
 
+        def finish_reveal():
+            if self._question_panel is not None:
+                self._question_panel.setMinimumHeight(0)
+                self._question_panel.reveal_effect.setOpacity(1.)
+
         if (not animated or not self.isVisible() or getattr(self, "_closing", False)
                 or self.composer.height() == height):
+            finish_reveal()
             resize(height)
             return
         animation = QVariantAnimation(self)
@@ -1510,16 +1524,27 @@ class MainWindow(QMainWindow):
         animation.setEndValue(height)
         animation.setEasingCurve(QEasingCurve.Type.InOutCubic)
         animation.valueChanged.connect(resize)
+        transition = animation
+        if reveal is not None:
+            transition = QParallelAnimationGroup(self)
+            transition.addAnimation(animation)
+            opacity = QPropertyAnimation(reveal, b"opacity", transition)
+            opacity.setDuration(_APPROVAL_TRANSITION_MS)
+            opacity.setStartValue(reveal.opacity())
+            opacity.setEndValue(1.)
+            opacity.setEasingCurve(QEasingCurve.Type.InOutCubic)
+            transition.addAnimation(opacity)
 
         def finish() -> None:
             self._approval_transition = None
+            finish_reveal()
             resize(height)
-            animation.deleteLater()
+            transition.deleteLater()
 
-        animation.finished.connect(finish)
-        self._approval_transition = animation
+        transition.finished.connect(finish)
+        self._approval_transition = transition
         self._position_overlays()
-        animation.start()
+        transition.start()
 
     @Slot(object)
     def _worker_succeeded(self, text: str) -> None:
@@ -1561,14 +1586,16 @@ class MainWindow(QMainWindow):
         # Context measurement can wait on inference. Keep the streamed answer
         # visible until the final bubble is ready to replace it in this slot.
         duration_seconds = self._set_busy(False)
-        self.chat.add_message(
-            "Agent",
-            text,
-            error,
-            duration_seconds=duration_seconds,
-            images=images,
-            generation_frame=generation_frame,
-        )
+        display = question_chat_text(text) if not error else CompletionText(text)
+        if display or images:
+            self.chat.add_message(
+                "Agent",
+                display,
+                error,
+                duration_seconds=duration_seconds,
+                images=images,
+                generation_frame=generation_frame,
+            )
         if notice:
             self.chat.add_message("Agent", notice)
         if not cancelled:

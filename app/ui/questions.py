@@ -5,7 +5,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QButtonGroup, QCheckBox, QFrame, QHBoxLayout, QLabel, QLineEdit,
-    QPlainTextEdit, QPushButton, QRadioButton, QScrollArea, QVBoxLayout, QWidget,
+    QPlainTextEdit, QPushButton, QRadioButton, QScrollArea, QVBoxLayout, QWidget, QGraphicsOpacityEffect,
 )
 
 from app.conversation.questions import Question, QuestionBatch, format_answers
@@ -121,6 +121,9 @@ class QuestionComposer(QFrame):
     def __init__(self, batch: QuestionBatch, parent=None):
         super().__init__(parent)
         self.batch = batch
+        self.reveal_effect = QGraphicsOpacityEffect(self)
+        self.setGraphicsEffect(self.reveal_effect)
+        self.reveal_effect.setOpacity(1.)
         self.setObjectName("questionComposer")
         self.setStyleSheet(QUESTION_STYLE)
         layout = QVBoxLayout(self)
@@ -214,32 +217,33 @@ class QuestionComposer(QFrame):
 
 
 QUESTION_STYLE = """
-QFrame#questionComposer, QFrame#questionComposer QWidget { background: transparent; color: #ededee; font-size: 12px; }
+QFrame#questionComposer, QFrame#questionComposer QWidget { background: transparent; color: #dedee0; font-size: 12px; }
 QFrame#questionComposer QLabel { border: none; font-size: 12px; }
 QLabel#questionsHeader, QLabel#questionTitle { font-weight: 600; }
-QLabel#questionHint { color: #a4a7ad; font-size: 10px; }
-QFrame#questionDivider { background: #242628; border: none; }
+QLabel#questionHint { color: #a8adb6; font-size: 10px; }
+QFrame#questionDivider { background: #373c43; border: none; }
 QFrame#questionComposer QRadioButton, QFrame#questionComposer QCheckBox { spacing: 9px; min-height: 22px; }
 QFrame#questionComposer QRadioButton::indicator, QFrame#questionComposer QCheckBox::indicator {
-    width: 14px; height: 14px; border: 1px solid #62656b; background: #090a0b;
+    width: 14px; height: 14px; border: 1px solid #626b7a; background: #282c32;
 }
 QFrame#questionComposer QRadioButton::indicator { border-radius: 8px; }
 QFrame#questionComposer QRadioButton::indicator:checked { background: #eeeeef; border: 3px solid #85888c; border-radius: 10px; }
 QFrame#questionComposer QCheckBox::indicator { border-radius: 3px; }
 QFrame#questionComposer QCheckBox::indicator:checked { background: #eeeeef; border-color: #eeeeef; }
 QFrame#questionComposer QPlainTextEdit, QFrame#questionComposer QLineEdit, QFrame#questionComposer QComboBox {
-    background: #090a0b; color: #ededee; border: 1px solid #393c41; border-radius: 7px; padding: 8px;
+    background: #292d36; color: #dedee0; border: 1px solid #4b505d; border-radius: 10px; padding: 8px;
 }
 QFrame#questionComposer QComboBox { border-radius: 18px; min-height: 20px; }
 QFrame#questionComposer QComboBox::drop-down { border: none; width: 28px; margin-right: 6px; }
-QFrame#questionComposer QComboBox QAbstractItemView { background: #17191c; selection-background-color: #3b3e44; }
+QFrame#questionComposer QComboBox QAbstractItemView { background: #292d36; selection-background-color: #414753; }
 QFrame#questionComposer QScrollBar:vertical { background: transparent; width: 5px; margin: 0; }
 QFrame#questionComposer QScrollBar::handle:vertical { background: #41444a; border-radius: 2px; min-height: 24px; }
 QFrame#questionComposer QScrollBar::add-line:vertical, QFrame#questionComposer QScrollBar::sub-line:vertical { height: 0; }
 QFrame#questionComposer QScrollBar::add-page:vertical, QFrame#questionComposer QScrollBar::sub-page:vertical { background: transparent; }
 QFrame#questionComposer QPushButton { background: transparent; border: none; padding: 7px 10px; border-radius: 14px; }
-QFrame#questionComposer QPushButton:hover { background: #303237; }
-QFrame#questionComposer QPushButton#questionsSend { background: #303237; min-width: 55px; }
+QFrame#questionComposer QPushButton:hover { background: #454852; }
+QFrame#questionComposer QPushButton:pressed { background: #2c2e35; }
+QFrame#questionComposer QPushButton#questionsSend { background: #373c43; min-width: 55px; }
 QFrame#questionComposer QPushButton:disabled { color: #777a80; }
 QFrame#questionComposer QRadioButton:focus, QFrame#questionComposer QCheckBox:focus,
 QFrame#questionComposer QPushButton:focus, QFrame#questionComposer QComboBox:focus,

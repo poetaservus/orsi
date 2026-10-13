@@ -75,34 +75,36 @@ class QuestionBatch(BaseModel):
         return "\n".join(lines)
 
 
-def _marker_position(text: str) -> int | None:
-    """Recognize only an unquoted top-level control fence, never nested code."""
-    fence = None
-    offset = 0
-    for line in text.splitlines(keepends=True):
-        value = line.rstrip("\r\n")
-        if fence is None and value == QUESTION_MARKER:
-            return offset
-        match = re.match(r"^ {0,3}(`{3,}|~{3,})(.*)$", value)
-        if match:
-            delimiter, tail = match.groups()
-            if fence is None:
-                fence = delimiter
-            elif delimiter[0] == fence[0] and len(delimiter) >= len(fence) and not tail.strip():
-                fence = None
-        offset += len(line)
-    return None
-
-
 def question_preview(text: str) -> str:
-    """Hide control metadata, including a partially streamed marker prefix."""
-    position = _marker_position(text)
-    if position is not None:
-        return text[:position].rstrip()
+    """Buffer potential control JSON; never stream a questionnaire's payload."""
+    for start, end, language, payload, complete in _fences(text):
+        if language == "orsi_questions" or language in {"json", ""} and (
+                not complete or _parse_batch(payload) is not None):
+            text = text[:start].rstrip()
+            break
     start = text.rfind("\n") + 1
     tail = text[start:]
-    if tail and QUESTION_MARKER.startswith(tail):
-        return text[:start].rstrip()
+    closing = any(complete and first <= start < end for first, end, _, _, complete in _fences(text))
+    if tail and not closing and any(marker.startswith(tail) for marker in (QUESTION_MARKER, "```json")):
+        text = text[:start].rstrip()
+    # A question list is held until the final handoff establishes its metadata.
+    # Ordinary lists are still rendered in full if the settled reply has no form.
+    protected = [(start, end) for start, end, *_ in _fences(text)]
+    for match in re.finditer(r"(?m)^\s*\d+[.)]\s+", text):
+        if not any(start <= match.start() < end for start, end in protected):
+            return text[:match.start()].rstrip()
+    words = ("what", "which", "who", "whose", "how", "where", "when", "why",
+             "can", "could", "would", "do", "does", "should", "will")
+    for match in re.finditer(r"(?im)(?:^|(?<=[.!])\s+)([A-Za-z]+)(?:\s|$)", text):
+        start = match.start(1)
+        if any(first <= start < end for first, end in protected):
+            continue
+        line_start = text.rfind("\n", 0, start) + 1
+        if text[line_start:start].lstrip().startswith(">"):
+            continue
+        word = match.group(1).lower()
+        if word in words or match.end() == len(text) and any(candidate.startswith(word) for candidate in words):
+            return text[:start].rstrip()
     return text
 
 
@@ -115,29 +117,104 @@ def _unique_object(pairs):
     return value
 
 
+def _fences(text):
+    """Top-level Markdown fences with byte-independent character offsets."""
+    opened = None
+    offset = 0
+    for line in text.splitlines(keepends=True):
+        match = re.match(r"^ {0,3}(`{3,}|~{3,})(.*?)[\r\n]*$", line)
+        if match:
+            delimiter, label = match.groups()
+            if opened is None:
+                opened = (offset, offset + len(line), delimiter, label.strip().lower())
+            elif delimiter[0] == opened[2][0] and len(delimiter) >= len(opened[2]) and not label.strip():
+                yield opened[0], offset + len(line), opened[3], text[opened[1]:offset].strip(), True
+                opened = None
+        offset += len(line)
+    if opened is not None:
+        yield opened[0], len(text), opened[3], text[opened[1]:].strip(), False
+
+
+def _parse_batch(payload):
+    try:
+        if len(payload.encode("utf-8")) <= MAX_QUESTION_BYTES:
+            json.loads(payload, object_pairs_hook=_unique_object)
+            return QuestionBatch.model_validate_json(payload)
+    except (ValueError, RecursionError, UnicodeError):
+        pass
+    return None
+
+
+def _looks_like_batch(payload):
+    try:
+        value = json.loads(payload, object_pairs_hook=_unique_object)
+        return isinstance(value, dict) and "version" in value and isinstance(value.get("questions"), list)
+    except (ValueError, RecursionError):
+        return False
+
+
+def _question_prose(text):
+    for start, end, *_ in reversed(list(_fences(text))):
+        text = text[:start] + text[end:]
+    text = "\n".join(line for line in text.splitlines() if not line.lstrip().startswith(">"))
+    text = re.sub(r"`+[^`]*`+", "", text)
+    return any(mark in text for mark in ("?", "？", "؟"))
+
+
 def present_questions(answer: str, *, allow_forms=True) -> CompletionText:
     """Project a completed response; malformed metadata leaves readable chat."""
     value = CompletionText(answer)
-    position = _marker_position(str(value))
-    if position is None:
-        return value if allow_forms and not value.completion.incomplete else CompletionText(value, question_batch=None)
-    readable = str(value)[:position].rstrip()
-    suffix = str(value)[position + len(QUESTION_MARKER):].strip()
-    batch = None
-    if allow_forms and not value.completion.incomplete and suffix.endswith("```"):
-        payload = suffix[:-3].strip()
-        if len(payload.encode("utf-8")) <= MAX_QUESTION_BYTES:
-            try:
-                json.loads(payload, object_pairs_hook=_unique_object)
-                # JSON-mode validation accepts JSON arrays as immutable tuples.
-                batch = QuestionBatch.model_validate_json(payload)
-            except (ValueError, RecursionError):
-                pass
+    batch = value.question_batch if allow_forms and not value.completion.incomplete else None
+    readable = str(value)
+    removed = False
+    for start, end, language, payload, complete in reversed(list(_fences(str(value)))):
+        parsed = _parse_batch(payload) if complete else None
+        dedicated = language == "orsi_questions"
+        generic = language in {"json", ""} and (
+            parsed is not None and _question_prose(str(value)[:start])
+            or batch is not None and _looks_like_batch(payload))
+        if dedicated or generic:
+            readable = readable[:start] + readable[end:]
+            removed = True
+            if allow_forms and not value.completion.incomplete and complete and not str(value)[end:].strip():
+                batch = parsed or batch
+    if not removed:
+        return CompletionText(value, question_batch=batch)
+    readable = readable.strip()
     return CompletionText(readable or (batch.readable() if batch else
         "Please answer in chat; the question form could not be displayed."),
         value.completion, value.completion_history, status_message=value.status_message,
         openai_response=value.openai_response, generated_images=value.generated_images,
         question_batch=batch)
+
+
+def question_chat_text(answer: str, batch: QuestionBatch | None = None) -> CompletionText:
+    """Only the introduction belongs in chat; full questions stay in history."""
+    batch = batch or getattr(answer, "question_batch", None)
+    if batch is None:
+        return CompletionText(answer)
+    value = present_questions(CompletionText(answer, question_batch=batch))
+    text = str(value)
+    starts = []
+    for question in batch.questions:
+        # The metadata title may omit choices following a dash in the prose.
+        title = question.title.rstrip(" ?？؟:")
+        pattern = r"\s+".join(re.escape(word) for word in title.split())
+        match = re.search(pattern, text, flags=re.IGNORECASE) if pattern else None
+        if match:
+            start = match.start()
+            line_start = text.rfind("\n", 0, start) + 1
+            if re.fullmatch(r"\s*(?:\d+[.)]|[-*])?\s*", text[line_start:start]):
+                start = line_start
+            starts.append(start)
+    for match in re.finditer(r"(?m)^\s*\d+[.)]\s+", text):
+        end = text.find("\n\n", match.end())
+        if _question_prose(text[match.start():end if end >= 0 else len(text)]):
+            starts.append(match.start())
+    remark = text[:min(starts)].rstrip() if starts else text
+    return CompletionText(remark, value.completion, value.completion_history,
+        status_message=value.status_message, openai_response=value.openai_response,
+        generated_images=value.generated_images, question_batch=batch)
 
 
 def format_answers(batch: QuestionBatch, answers: dict[str, tuple[str, ...]], additional: str = "") -> str:

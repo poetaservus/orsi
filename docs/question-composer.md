@@ -6,6 +6,10 @@ explicit dropdown questions use a dropdown; multiple-choice lists use
 checkboxes; open questions use multiline text. Additional information is
 optional. Required choices start empty. The composer grows upward, with a
 scrolling body and fixed header/footer; chat clearance follows its height.
+The outer surface uses the regular composer's gray gradient, border and rounded
+outline. Fields and controls use its existing gray palette. Expansion shares
+the approval panel's 240 ms cubic easing, with a coordinated content fade and
+natural-height layout so fields don't squeeze while the composer grows.
 
 Answer in chat and Back to questions retain selections and the ordinary draft.
 Ctrl+Enter submits valid answers; Enter in a text field adds a newline. Send
@@ -49,6 +53,23 @@ The service projects only the settled assistant response, then persists optional
 histories without it still load. Provider replay is retained unchanged; its
 readable question projection isn't duplicated in subsequent Responses history.
 No metadata is interpreted from user messages or tool output.
+
+## Chat presentation
+
+Only the introductory remark is displayed in the assistant bubble when a form
+is present. Questions and options live in the questionnaire. A question-only
+handoff needs no empty assistant bubble. The full readable questions remain in
+durable/model history so answering and recall still have their original context;
+restored UI history applies the same remark-only projection.
+
+The dedicated fence remains supported. A validated version/questions payload in
+a normal `json` (or unlabeled) fence is also recognized when preceded by actual
+question prose or accompanied by existing form metadata. Generic control data
+is removed from the readable message; ordinary JSON and quoted/nested examples
+are preserved. JSON fences are buffered while incomplete, and component payloads
+are suppressed from stream previews. Candidate question lists/interrogatives
+are held until the settled reply establishes whether they belong in a form;
+ordinary replies without form metadata still display their full final text.
 
 ## Plain-text clarification fallback
 
@@ -94,6 +115,11 @@ no special fence, including the Luna Medium SDK streaming path over a synthetic
 transport, visible settled form and answer submission. Plain local/cloud
 handoffs, provenance, multilingual choices, exclusions, failure and cancellation
 are covered separately. See the latest counts in `docs/git-workflow.md`.
+The presentation regression additionally covers the reported plain `json` fence,
+every streaming boundary, remark-only and question-only handoffs, restored
+history, ordinary JSON preservation, animation midpoint/final geometry,
+content opacity and natural input size. The updated themed form was rendered
+and visually inspected.
 
 The first new test collection exposed unescaped JSON braces in the existing
 prompt template; guidance now describes the JSON fields without literal braces.
