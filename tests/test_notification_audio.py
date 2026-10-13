@@ -5,8 +5,8 @@ from unittest.mock import Mock
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtCore import QByteArray, QUrl
-from PySide6.QtMultimedia import QAudioBuffer, QAudioFormat
+from PySide6.QtCore import QByteArray, QIODevice, QUrl
+from PySide6.QtMultimedia import QAudioBuffer, QAudioFormat, QtAudio
 from PySide6.QtWidgets import QApplication
 
 from app.ui.notification_audio import NotificationAudio, STARTUP_SILENCE_MS, playback_bytes
@@ -51,6 +51,71 @@ def test_decode_collects_first_and_last_buffer_without_trimming(app):
         audio._decoded(decoder)
         assert audio.pcm == first + last
         assert audio.sink is None  # Decode alone never starts output.
+    finally:
+        audio.shutdown()
+
+
+@pytest.mark.parametrize("position,processed_us", [(0, 0), (8820, 50_000), (17640, 50_000)],
+                         ids=["startup", "unread-half", "queued-but-unprocessed"])
+def test_idle_waits_for_all_audio_then_finishes_once(app, position, processed_us):
+    audio = NotificationAudio()
+    audio.format.setSampleRate(44100)
+    audio.format.setChannelCount(2)
+    audio.format.setSampleFormat(QAudioFormat.SampleFormat.Int16)
+    audio.buffer.setData(QByteArray(b"\0" * 17640))  # 100 ms of PCM.
+    audio.buffer.open(QIODevice.OpenModeFlag.ReadOnly)
+    audio.buffer.seek(position)
+    sink = Mock()
+    sink.processedUSecs.return_value = processed_us
+    audio.sink = sink
+    audio._output_timer.start()
+    finished, errors = Mock(), Mock()
+    audio.finished.connect(finished)
+    audio.errorOccurred.connect(errors)
+    try:
+        audio._state_changed(sink, QtAudio.State.IdleState)
+        finished.assert_not_called()
+        errors.assert_not_called()
+        sink.reset.assert_not_called()
+        assert audio.sink is sink and audio.buffer.isOpen() and audio._output_timer.isActive()
+        audio.buffer.seek(audio.buffer.size())
+        sink.processedUSecs.return_value = 100_000
+        audio._state_changed(sink, QtAudio.State.IdleState)
+        finished.assert_called_once()
+        sink.reset.assert_called_once()
+        assert audio.sink is None and not audio.buffer.isOpen() and not audio._output_timer.isActive()
+        audio._state_changed(sink, QtAudio.State.IdleState)  # Late callback.
+        finished.assert_called_once()
+    finally:
+        audio.shutdown()
+
+
+@pytest.mark.parametrize("failure", [False, True], ids=["cancel", "device-error"])
+def test_idle_recovery_can_be_cancelled_or_fail_without_reporting_completion(app, failure):
+    audio = NotificationAudio()
+    audio.buffer.setData(QByteArray(b"\0" * 4096))
+    audio.buffer.open(QIODevice.OpenModeFlag.ReadOnly)
+    audio.buffer.seek(2048)
+    sink = Mock()
+    audio.sink = sink
+    audio._output_timer.start()
+    finished, errors = Mock(), Mock()
+    audio.finished.connect(finished)
+    audio.errorOccurred.connect(errors)
+    try:
+        audio._state_changed(sink, QtAudio.State.IdleState)
+        if failure:
+            sink.error.return_value = QtAudio.Error.IOError
+            audio._state_changed(sink, QtAudio.State.StoppedState)
+            errors.assert_called_once()
+        else:
+            audio.stop()
+            errors.assert_not_called()
+        finished.assert_not_called()
+        sink.reset.assert_called_once()
+        assert audio.sink is None and not audio.buffer.isOpen() and not audio._output_timer.isActive()
+        audio._state_changed(sink, QtAudio.State.IdleState)
+        finished.assert_not_called()
     finally:
         audio.shutdown()
 

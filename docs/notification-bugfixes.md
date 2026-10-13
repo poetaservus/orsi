@@ -1,5 +1,28 @@
 # Notification corrections, 8 October 2026
 
+## Banner and audio completion follow-up, 13 October 2026
+
+Custom Windows notification artwork now sets `NIIF_LARGE_ICON` to match the
+default-size icon loaded by the backend. Without it, real Windows delivery
+returned error 1462 even though tray registration succeeded. The repaired
+backend receives the native balloon-show callback; stock-icon fallback,
+silent Windows delivery, quiet-time handling and resource ownership remain.
+
+Audio idle state can also mean a temporary underrun. Completion now requires
+both the finite source buffer to reach its end and the sink to process its
+entire duration, including the existing padding. Startup/partial idle states
+retain playback; cancellation, device errors and late callbacks retain their
+existing cleanup behavior. Foreground suppression, focus-return cancellation,
+preview, selected files, volume and user settings are unchanged.
+
+The 29 essential notification/audio checks pass. Real Windows banner delivery
+and muted playback of both bundled sounds, including a UI stall, also pass.
+These device checks prove processed samples and released resources, not acoustic
+output; the investigation did not reproduce the user's precise audible cutoff.
+See the latest evidence and limits in [the Git record](git-workflow.md).
+
+## Original correction
+
 The bounded `codex/notification-bugfixes` change starts from local main `696162a`.
 It addresses foreground sounds, clipped audio onset and notification settings
 controls that were not visible in the user's settings view.

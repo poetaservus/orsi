@@ -84,9 +84,9 @@ class WindowsNotifications(QWidget):
         data.uFlags = 0x10  # NIF_INFO
         data.szInfoTitle = title[:63]
         data.szInfo = message[:255]
-        # Custom artwork | NIIF_NOSOUND | NIIF_RESPECT_QUIET_TIME. Qt's tray
-        # showMessage API cannot suppress the extra Windows notification sound.
-        data.dwInfoFlags = (0x04 if self._owns_icon else 0x01) | 0x10 | 0x80
+        # NIIF_USER | NIIF_LARGE_ICON matches the default-size custom artwork.
+        # NIIF_NOSOUND suppresses the extra system chime; honor quiet time too.
+        data.dwInfoFlags = (0x04 | 0x20 if self._owns_icon else 0x01) | 0x10 | 0x80
         if self._owns_icon:
             data.hBalloonIcon = self.icon
         return bool(self.shell.Shell_NotifyIconW(1, ctypes.byref(data)))

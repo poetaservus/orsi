@@ -1,5 +1,39 @@
 # Git layout and baseline hygiene
 
+## Native notification delivery and audio completion, 13 October 2026
+
+`codex/notification-delivery-audio` starts from clean local main `36fa457`.
+The default-size custom icon now uses `NIIF_LARGE_ICON`, fixing real Windows
+banner rejection with error 1462. Audio idle states only complete a stream after
+all source bytes are read and the full duration is processed; temporary underruns
+preserve playback. Existing focus/foreground rules, settings, files, volume,
+event timing and inference behavior remain. See [the follow-up contract](notification-bugfixes.md).
+
+The final native essential run passed **29 tests**, with no failures/errors/skips,
+in **6.32 seconds**, using repository-local temporary/cache storage. Results are
+retained in ignored `state/notification-fix-essential.xml`. New regressions cover
+startup/half-read/queued-but-unprocessed idle states, eventual single completion,
+cancellation, device failure, stale callbacks and custom/stock icon ownership.
+Before production changes, six new cases failed on the starting implementation
+and seven existing cases passed; that expected failing baseline is retained in
+`state/notification-fix-before.xml`.
+
+The production backend, without diagnostic flag overrides, now receives a real
+Windows banner-show callback with no native errors and releases its tray/icon resources. Real audio
+output at zero volume processed both padded sounds fully (3.487 and 3.559 seconds),
+including an injected 600 ms UI stall, and released owned sinks without errors.
+Content-free diagnostics are retained in ignored
+`state/notification-investigation/native-fixed.json` and `muted-fixed.json`.
+This verifies samples/device completion, not acoustic output; the precise audible
+cutoff was not reproduced during investigation. Full-suite and live-model/API
+checks were not run under the user's essential-test scope.
+
+Ref/worktree inventories are retained under ignored
+`state/backups/notification-delivery-audio-20261013/`; prior main is preserved at
+`archive/2026-10-13/main-before-notification-delivery-audio`. Commit, fast-forward
+local main and remove only the merged feature branch. Other worktrees,
+historical/unmerged tips, remote refs and private user settings remain unchanged.
+
 ## Stable selected question choices, 13 October 2026
 
 `codex/question-choice-stability` starts from clean local main `a1804d4`.

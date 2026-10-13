@@ -296,7 +296,8 @@ def test_click_restores_window_and_focuses_approval(app):
 
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows notification ABI")
-def test_native_delivery_suppresses_system_chime_click_and_cleanup(app, monkeypatch):
+@pytest.mark.parametrize("custom_icon", [True, False], ids=["custom-artwork", "stock-fallback"])
+def test_native_delivery_suppresses_system_chime_click_and_cleanup(app, monkeypatch, custom_icon):
     from ctypes import wintypes
     from app.ui.windows_notifications import NotifyIconData, WindowsNotifications
     calls = []
@@ -305,7 +306,7 @@ def test_native_delivery_suppresses_system_chime_click_and_cleanup(app, monkeypa
         calls.append((operation, data))
         return True
     shell = SimpleNamespace(Shell_NotifyIconW=Mock(side_effect=send))
-    user = SimpleNamespace(LoadImageW=Mock(return_value=123), LoadIconW=Mock(return_value=456),
+    user = SimpleNamespace(LoadImageW=Mock(return_value=123 if custom_icon else 0), LoadIconW=Mock(return_value=456),
         DestroyIcon=Mock(return_value=True), RegisterWindowMessageW=Mock(return_value=999))
     window = MainWindow(None, "test")
     monkeypatch.setattr(ctypes, "WinDLL", lambda name, **kw: shell if name == "shell32" else user)
@@ -315,8 +316,12 @@ def test_native_delivery_suppresses_system_chime_click_and_cleanup(app, monkeypa
         assert backend.show_message(*EVENTS["approval"])
         assert [operation for operation, _ in calls] == [0, 4, 1]
         data = calls[-1][1]
-        assert calls[0][1].hIcon == 123
-        assert data.dwInfoFlags & 0x04 and data.hBalloonIcon == 123
+        assert calls[0][1].hIcon == (123 if custom_icon else 456)
+        if custom_icon:
+            assert data.dwInfoFlags & 0x04 and data.hBalloonIcon == 123
+            assert data.dwInfoFlags & 0x20  # NIIF_LARGE_ICON matches LoadImage's default size.
+        else:
+            assert data.dwInfoFlags & 0x0f == 0x01 and not data.hBalloonIcon
         assert data.dwInfoFlags & 0x10  # NIIF_NOSOUND
         assert data.dwInfoFlags & 0x80
         assert data.szInfoTitle == EVENTS["approval"][0]
@@ -332,11 +337,15 @@ def test_native_delivery_suppresses_system_chime_click_and_cleanup(app, monkeypa
         assert [operation for operation, _ in calls][-2:] == [0, 4]
         backend.shutdown()
         assert calls[-1][0] == 2
-        user.DestroyIcon.assert_called_once_with(123)
-        user.LoadIconW.assert_not_called()
+        if custom_icon:
+            user.DestroyIcon.assert_called_once_with(123)
+            user.LoadIconW.assert_not_called()
+        else:
+            user.DestroyIcon.assert_not_called()
+            user.LoadIconW.assert_called_once()
         count = len(calls)
         backend.shutdown()
-        user.DestroyIcon.assert_called_once_with(123)
+        assert user.DestroyIcon.call_count == int(custom_icon)
         assert not backend.show_message(*EVENTS["response"])
         assert len(calls) == count
     finally:

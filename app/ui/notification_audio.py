@@ -118,7 +118,11 @@ class NotificationAudio(QObject):
         if self.sink is not sink:
             return
         if state == QtAudio.State.IdleState:
-            # Idle means the finite PCM stream has drained, including its tail.
+            # Idle can be a temporary underrun. Keep the stream alive until all
+            # source bytes have been read and processed, including the tail.
+            if (not self.buffer.atEnd()
+                    or sink.processedUSecs() < self.format.durationForBytes(self.buffer.size())):
+                return
             self.stop()
             self.finished.emit()
         elif state == QtAudio.State.StoppedState and sink.error() != QtAudio.Error.NoError:
