@@ -1,5 +1,20 @@
 # Git layout and baseline hygiene
 
+## Profile-level personalities, 13 October 2026
+
+`codex/profile-personalities` starts from main `1315375`. General settings now
+select Original or the supplied Choom 1.0.0 voice, with per-profile durable
+selection and bundled portable definitions. Original guidance, operational
+policy, accepted model profiles and existing user settings are preserved. See
+[the storage, packaging and checks](profile-personalities.md).
+Prior main is preserved at `archive/2026-10-13/main-before-profile-personalities`.
+All 310 affected checks pass. Two full runs recorded separate unchanged runtime
+timing and Windows Git installer cleanup failures; all 92 corresponding checks
+pass in isolation. Preserve the committed feature branch and verified main
+`1315375` while the full regression gate remains unmet. After qualification,
+fast-forward main and remove only the merged feature branch. Other worktrees
+and remote refs remain intact.
+
 ## Composer effort slider, 13 October 2026
 
 `codex/composer-effort-slider` starts from clean main `f334762`. It moves model,

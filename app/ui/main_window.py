@@ -78,6 +78,7 @@ from app.ui.composer import (
 )
 from app.conversation.attachment_processing import SUPPORTED_FILE_FILTER
 from app.ui.reasoning import ReasoningSelector
+from app.settings.personality import PersonalitySettings
 
 
 log = logging.getLogger(__name__)
@@ -751,6 +752,11 @@ class MainWindow(QMainWindow):
         self.chat.clear_messages()
         self.input.clear()
         self.greeting_input.clear()
+        self.personality_selector.blockSignals(True)
+        self.personality_selector.setCurrentIndex(-1)
+        self.personality_selector.blockSignals(False)
+        self.personality_selector.setEnabled(False)
+        self.personality_hint.clear()
         self.startup_greeting.clear()
         self._greeting_message = ""
         self._image_request_draft = None
@@ -790,6 +796,40 @@ class MainWindow(QMainWindow):
         } and event.type() == QEvent.Type.Resize:
             self._position_overlays()
         return super().eventFilter(watched, event)
+
+    def _sync_personality_selector(self, *, busy=None):
+        settings = getattr(self.service, "personality_settings", None)
+        available = isinstance(settings, PersonalitySettings)
+        selected = "original"
+        if available:
+            try:
+                selected = settings.current_id
+            except Exception:
+                available = False
+        self.personality_selector.blockSignals(True)
+        self.personality_selector.setCurrentIndex(self.personality_selector.findData(selected))
+        self.personality_selector.blockSignals(False)
+        if busy is None:
+            busy = self.thread is not None or self._settings_busy
+        self.personality_selector.setEnabled(bool(available and not busy and not settings.load_error
+                                                  and not getattr(self, "_closing", False)))
+        self.personality_hint.setText(
+            "Saved personality could not be loaded. Original is active; your saved preference is preserved."
+            if available and settings.load_error else
+            "Choom 1.0.0 · Dry cyberpunk humor and street slang." if selected == "choom-v1.0.0" else
+            "Original · Calm, precise and quietly confident.")
+
+    def _select_personality(self, index):
+        requested = self.personality_selector.itemData(index)
+        if self.thread is not None or self._settings_busy or self.service is None or not requested:
+            self._sync_personality_selector()
+            return
+        try:
+            self.service.select_personality(requested)
+        except Exception:
+            self.chat.add_message("Agent", "Could not change personality. Your previous choice is still active.", True)
+        self._sync_personality_selector()
+        self._update_context_window()
 
     def _load_tool_approval_required(self) -> bool:
         try:
@@ -1041,6 +1081,7 @@ class MainWindow(QMainWindow):
         self.new_session_button.setEnabled(available and self.service is not None)
         self._refresh_operation_review(busy=busy)
         self.model_selector.setEnabled(available and self.inference is not None)
+        self._sync_personality_selector(busy=not available)
         self._sync_local_model_selector()
         self._sync_cloud_model_selector()
 
@@ -1406,6 +1447,7 @@ class MainWindow(QMainWindow):
         self.skill_settings_page.set_available(not busy and not getattr(self, "_closing", False))
         self._sync_image_settings(busy=busy or self._settings_busy)
         self._sync_composer_models(busy=busy or self._settings_busy)
+        self._sync_personality_selector(busy=busy or self._settings_busy)
         duration_seconds = self.chat.set_thinking(busy)
         self.activity.set_activity("" if busy else self._ready_status())
         return duration_seconds

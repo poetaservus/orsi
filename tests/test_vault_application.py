@@ -475,6 +475,9 @@ def test_actual_startup_uses_profile_state_and_never_environment_or_legacy_prefe
     import app.startup as startup
     from tests.test_openai_phase1 import config
     session, vault = profile
+    from app.settings.personality import PersonalitySettings
+    from app.conversation.personality import get_personality
+    PersonalitySettings(JsonStore(session.storage_path("state/personality_selection_v1.json")), session=session).select("choom-v1.0.0")
     host_state = tmp_path / "legacy-state"; host_state.mkdir()
     (host_state / "ui_preferences_v1.json").write_text(json.dumps({"legacy": MARKER}))
     app_root = tmp_path / "application"; app_root.mkdir()
@@ -498,6 +501,8 @@ def test_actual_startup_uses_profile_state_and_never_environment_or_legacy_prefe
         service, _, error, inference = startup.build_application(
             profile_session=session, agent_config_override=startup.AgentFeatureConfig())
         assert error is None and service is not None and not inference.cloud_has_api_key
+        assert service.personality_settings.current_id == "choom-v1.0.0"
+        assert service._model_request().messages[0]["content"].startswith(get_personality("choom-v1.0.0").guidance)
         assert isinstance(service.skill_registry, VaultSkillRegistry)
         assert isinstance(service.store.attachment_store, VaultAttachmentStore)
         assert JsonStore(session.path("state/ui_preferences_v1.json")).load() is None
@@ -509,6 +514,7 @@ def test_actual_startup_uses_profile_state_and_never_environment_or_legacy_prefe
         assert MARKER.encode() not in vault.read("diagnostics/events_v1.json")
         session.lock()
         assert inference.cloud.closed and service._agent_history == []
+        assert service.personality_settings._id is None
         with pytest.raises(VaultLocked):
             service.store.visible_messages()
         with pytest.raises(RuntimeError):

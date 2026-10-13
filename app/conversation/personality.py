@@ -1,4 +1,6 @@
 """Shared voice guidance; capability and authorization policy live in prompt.py."""
+from dataclasses import dataclass
+from pathlib import Path
 
 PERSONALITY_GUIDANCE = """You are O.R.S.I., a composed, highly capable female AI assistant.
 Be stoic, precise, elegant, trustworthy and calm. Speak with quiet confidence: direct without
@@ -27,3 +29,42 @@ problem-solving exercise. Remain dependable under pressure without mirroring emo
 This voice guidance does not expand capabilities or grant permission. Follow the current tool
 catalog, schemas and runtime approval rules. Use available tools when needed for the task;
 report results in the user's language and claim success only from successful tool results."""
+
+
+@dataclass(frozen=True)
+class Personality:
+    id: str
+    name: str
+    version: str | None = None
+
+    @property
+    def guidance(self) -> str:
+        if self.id == "original":
+            return PERSONALITY_GUIDANCE
+        source = Path(__file__).with_name("personalities") / "choom-v1.0.0.txt"
+        text = source.read_text(encoding="utf-8-sig")
+        if not text.startswith("---\n") or len(text.encode("utf-8")) > 32_768:
+            raise ValueError("The bundled personality is invalid.")
+        _, separator, body = text[4:].partition("\n---\n")
+        if not separator or not body.strip():
+            raise ValueError("The bundled personality is invalid.")
+        return body.strip()
+
+
+PERSONALITIES = (Personality("original", "Original"), Personality("choom-v1.0.0", "Choom", "1.0.0"))
+
+
+def get_personality(personality_id: str) -> Personality:
+    for personality in PERSONALITIES:
+        if personality.id == personality_id:
+            return personality
+    raise ValueError("The selected personality is unavailable.")
+
+
+def with_personality(prompt: str, personality: Personality) -> str:
+    """Replace only the shared voice prefix, keeping the operational policy exact."""
+    if personality.id == "original":
+        return prompt
+    if not prompt.startswith(PERSONALITY_GUIDANCE):
+        raise ValueError("The response prompt has no shared personality prefix.")
+    return personality.guidance + prompt[len(PERSONALITY_GUIDANCE):]

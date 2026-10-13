@@ -27,6 +27,8 @@ from app.conversation.prompt import (
     compact_agent_system_prompt,
 )
 from app.conversation.result_grounding import grounded_text_read_answer
+from app.conversation.personality import with_personality
+from app.settings.personality import PersonalitySettings
 from app.conversation.diagnostics import record_route, record_turn
 from app.conversation.store import ConversationStore, TurnHistoryError
 from app.conversation.operation_review import InterruptedOperation, OperationReview
@@ -81,6 +83,7 @@ class ConversationService:
         skill_registry: SkillRegistry | None = None,
         automatic_skills_enabled: bool = False,
         skill_references_enabled: bool = True,
+        personality_settings: PersonalitySettings | None = None,
     ):
         if type(automatic_skills_enabled) is not bool:
             raise TypeError("Automatic skill selection must be an explicit boolean.")
@@ -99,6 +102,9 @@ class ConversationService:
             raise TypeError("Conversation host access must be a HostAccessPolicy.")
 
         self.inference = inference
+        if personality_settings is not None and not isinstance(personality_settings, PersonalitySettings):
+            raise TypeError("Conversation personalities require PersonalitySettings.")
+        self.personality_settings = personality_settings if personality_settings is not None else PersonalitySettings()
         self.store = store
         self._documents = LocalDocuments(store.attachment_store)
         attachment_setter = getattr(inference, "set_attachment_store", None)
@@ -772,6 +778,18 @@ class ConversationService:
         finally:
             self._run_lock.release()
 
+    def select_personality(self, personality_id: str) -> None:
+        if not self._run_lock.acquire(blocking=False):
+            raise RuntimeError("Finish or stop the current response before changing personality.")
+        try:
+            with self._cancellation_lock:
+                if self._closed:
+                    raise RuntimeError("The conversation is closed.")
+            self.personality_settings.select(personality_id)
+            self._context_measurement = None
+        finally:
+            self._run_lock.release()
+
     def shutdown(self) -> None:
         with self._cancellation_lock:
             if self._closed:
@@ -792,8 +810,11 @@ class ConversationService:
                     close()
             finally:
                 close = getattr(self.agent_runtime, "shutdown", None)
-                if callable(close):
-                    close()
+                try:
+                    if callable(close):
+                        close()
+                finally:
+                    self.personality_settings.close()
 
     def stop_for_profile(self):
         with self._cancellation_lock:
@@ -811,6 +832,7 @@ class ConversationService:
 
     def clear_for_profile(self):
         with self._run_lock:
+            self.personality_settings.close()
             self._documents.clear()
             self._references.reset()
             self._reference_runtime = None
@@ -952,7 +974,7 @@ class ConversationService:
             record_skill_event("activation_error", method="explicit", injected=False, error_code="missing_skill")
             raise SkillActivationError(SkillActivationErrorCode.MISSING_SKILL,
                                        "Active skill is unavailable. Select another skill or use /skill to clear it.")
-        core_prompt = prompt
+        core_prompt = with_personality(prompt, self.personality_settings.current)
         if has_attachments(history) and getattr(self.inference, "supports_native_attachment_tools", False) is True:
             from app.conversation.cloud_attachments import CLOUD_ATTACHMENT_GUIDANCE
             core_prompt += CLOUD_ATTACHMENT_GUIDANCE

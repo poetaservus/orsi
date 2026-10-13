@@ -1,5 +1,16 @@
 # O.R.S.I. personality
 
+## Profile selection
+
+Choose **Settings → General → Personality** to select **Original** or **Choom**.
+Original retains the guidance described below unchanged. Choom 1.0.0 is bundled
+from the supplied personality draft and uses restrained cyberpunk slang and dry
+humor. Each profile remembers its own choice; portable copies carry the bundled
+definitions and, when included, the profile's saved selection. See
+[profile storage and verification](profile-personalities.md).
+
+## Original voice and historical qualification
+
 The shared voice in `app/conversation/personality.py` implements the user's personality draft:
 composed, stoic, precise, quietly confident and naturally feminine, with restrained warmth.
 It favors clear answers, honest uncertainty and practical next steps, avoids emojis and artificial

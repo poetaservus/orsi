@@ -36,6 +36,9 @@ and [focused verification](docs/vault-phase4-verification.md). Physical SSD/mini
 and independent security qualification remain pending.
 
 - Ordinary local or cloud conversation with bounded context.
+- **Settings → General → Personality** chooses Original or Choom, remembered
+  separately for each profile and included in portable copies. See
+  [personality selection](docs/profile-personalities.md).
 - Composer model and cloud reasoning selectors apply to the next API request and save
   preferences per model. The microphone is a placeholder. See [composer controls](docs/composer-reasoning.md).
 - `filesystem.stat`, `filesystem.find`, `filesystem.list`,

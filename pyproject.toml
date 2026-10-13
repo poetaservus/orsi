@@ -34,4 +34,5 @@ addopts = "-q"
 include = ["app*"]
 
 [tool.setuptools.package-data]
+"app.conversation" = ["personalities/*.txt"]
 "app.ui" = ["assets/sounds/*.ogg", "assets/*.svg", "assets/*.png", "assets/fonts/*"]

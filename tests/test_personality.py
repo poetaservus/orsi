@@ -5,7 +5,7 @@ import pytest
 
 from app.agent.bootstrap import build_agent_runtime
 from app.conversation.orchestrator import ConversationService
-from app.conversation.personality import PERSONALITY_GUIDANCE
+from app.conversation.personality import PERSONALITY_GUIDANCE, get_personality
 from app.conversation.store import ConversationStore
 from app.inference.engine import InferenceEngine
 from app.inference.protocol import ModelResponse
@@ -36,10 +36,14 @@ class RequestRecorder(InferenceEngine):
 
 
 @pytest.mark.parametrize("mode", ["chat", "conversation", "agent", "compact"])
-def test_personality_survives_request_selection_without_changing_catalog_or_user_text(tmp_path, mode):
+@pytest.mark.parametrize("personality_id", ["original", "choom-v1.0.0"])
+def test_personality_survives_request_selection_without_changing_catalog_or_user_text(tmp_path, mode, personality_id):
     # Leave room for the task context and completion assessment while still
     # forcing the compact system prompt (asserted below).
-    model = RequestRecorder(2250 if mode == "compact" else 16384)
+    # Preserve the same synthetic task/review headroom for each voice; production
+    # model context limits remain untouched and admission counts the whole prompt.
+    extra_voice_tokens = ceil(max(0, len(get_personality(personality_id).guidance) - len(PERSONALITY_GUIDANCE)) / 4)
+    model = RequestRecorder(2250 + extra_voice_tokens if mode == "compact" else 16384)
     runtime = None
     if mode != "chat":
         runtime = build_agent_runtime(model, config=AgentFeatureConfig(filesystem_stat_enabled=True),
@@ -48,6 +52,7 @@ def test_personality_survives_request_selection_without_changing_catalog_or_user
         agent_runtime=runtime, portable_root=tmp_path)
     user_text = "Szia. A fájl neve report.json; ne módosítsd."
     try:
+        service.select_personality(personality_id)
         if mode == "conversation":
             service.store.append("user", user_text)
             request = service._model_request(capability_turn=False)
@@ -56,7 +61,7 @@ def test_personality_survives_request_selection_without_changing_catalog_or_user
             assert service.run(user_text) == "Rendben."
         messages, catalog = model.requests[0]
         system = messages[0]["content"]
-        assert system.startswith(PERSONALITY_GUIDANCE)
+        assert system.startswith(get_personality(personality_id).guidance)
         assert messages[-1] == {"role": "user", "content": user_text}
         assert service._model_request(capability_turn=mode != "conversation").budget.fits
         assert catalog == (() if mode in {"chat", "conversation"} else ("filesystem.stat",))

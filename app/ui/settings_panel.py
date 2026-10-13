@@ -11,6 +11,7 @@ from app.ui.skill_settings import SkillSettingsPage
 from app.ui.image_settings import ImageSettingsPage
 from app.ui.notification_settings import NotificationSoundControl, NotificationSwitch
 from app.ui.inputs import ScrollSafeComboBox
+from app.conversation.personality import PERSONALITIES
 
 
 class SettingsPanel(QFrame):
@@ -149,6 +150,18 @@ class SettingsPanel(QFrame):
         window.greeting_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         greeting_layout.addWidget(window.greeting_input)
         general.addWidget(greeting_row)
+        window.personality_selector = ScrollSafeComboBox()
+        window.personality_selector.setAccessibleName("Personality")
+        for personality in PERSONALITIES:
+            window.personality_selector.addItem(personality.name, personality.id)
+        window.personality_hint = QLabel()
+        window.personality_hint.setObjectName("settingsDescription")
+        window.personality_hint.setWordWrap(True)
+        self._row(general, "Personality", "O.R.S.I.'s voice · Remembered for this profile",
+                  window.personality_selector)
+        general.addWidget(window.personality_hint)
+        window.personality_selector.currentIndexChanged.connect(window._select_personality)
+        window._sync_personality_selector()
         window.response_language_selector = self._placeholder("Response Language")
         self._row(general, "Response Language", "Preferred reply language · Coming soon",
                   window.response_language_selector)
