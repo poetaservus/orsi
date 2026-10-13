@@ -97,6 +97,10 @@ def test_overlay_blurs_only_chat_and_uses_shared_centered_composer(viewer):
     assert abs(window.composer.geometry().center().x() - window.rect().center().x()) <= 1
     assert window.composer.y() > window.canvas.geometry().bottom()
     assert window.prompt.height() == 41 and window.send.size().width() == 34
+    centers = [widget.mapTo(window.composer, widget.rect().center()).y()
+               for widget in (window.tools, window.prompt, window.action_slot)]
+    assert max(centers) - min(centers) <= 1
+    assert window.send.geometry() == window.action_slot.rect()
     assert window.prompt.placeholderText() == 'Ask O.R.S.I.'
     frame = window.grab().toImage()
     # Chat is dimmed; the foreground image stays saturated and sharp.

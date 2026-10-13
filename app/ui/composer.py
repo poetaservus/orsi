@@ -1,15 +1,16 @@
 """Shared chat composer paint, controls and typography."""
 from pathlib import Path
 
-from PySide6.QtCore import QEasingCurve, QPoint, QRectF, QSize, Qt, Signal, QVariantAnimation
+from PySide6.QtCore import QEasingCurve, QEvent, QPoint, QRect, QRectF, QSize, Qt, Signal, QVariantAnimation
 from PySide6.QtGui import QColor, QIcon, QLinearGradient, QPainter, QPainterPath, QPalette
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QPushButton, QStyle, QStyleOptionButton, QTextEdit, QWidget
+from PySide6.QtWidgets import QApplication, QFrame, QHBoxLayout, QPushButton, QStyle, QStyleOptionButton, QTextEdit, QWidget
 from app.ui.inputs import ScrollSafeComboBox
 
 ASSETS = Path(__file__).with_name("assets")
 COMPOSER_WIDTH = 799
 COMPOSER_HEIGHT = 54
 MESSAGE_COMPOSER_HEIGHT = 110
+COMPOSER_CONTROL_SIZE = 34
 
 REASONING_LABELS = {"none": "None", "low": "Low", "medium": "Medium", "high": "High", "xhigh": "Extra High", "max": "Max"}
 
@@ -18,36 +19,64 @@ def composer_selector(parent, name, width):
     selector = ComposerModelSelector(parent)
     selector.setObjectName("composerSelector")
     selector.setAccessibleName(name)
-    selector.setFixedSize(width, 32)
+    selector.setFixedSize(width, COMPOSER_CONTROL_SIZE)
     return selector
 
 
 class ComposerModelSelector(ScrollSafeComboBox):
     """Keep the composer's model list above its trigger and within the screen."""
 
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._placing_popup = False
+        self._model_popup = None
+
     def showPopup(self):  # noqa: N802
-        super().showPopup()
         popup = self.view().window()
+        self._model_popup = popup
         popup.setObjectName("composerModelPopup")
         popup.setStyleSheet("QFrame#composerModelPopup { background: #292d36; border: 1px solid #4b505d; }")
+        popup.installEventFilter(self)
+        if self.mapToGlobal(QPoint()).y() <= self.screen().availableGeometry().top() + 6:
+            return
+        # Qt's scroll effect captures its default placement before the Show event.
+        # Suppress it only while opening this menu; other controls retain their effects.
+        animate = QApplication.isEffectEnabled(Qt.UIEffect.UI_AnimateCombo)
+        QApplication.setEffectEnabled(Qt.UIEffect.UI_AnimateCombo, False)
+        try:
+            super().showPopup()
+        finally:
+            QApplication.setEffectEnabled(Qt.UIEffect.UI_AnimateCombo, animate)
+
+    def eventFilter(self, watched, event):  # noqa: N802
+        if watched is getattr(self, "_model_popup", None) and not self._placing_popup:
+            if event.type() == QEvent.Type.Show or (
+                watched.isVisible() and event.type() in (QEvent.Type.Move, QEvent.Type.Resize)
+            ):
+                self._position_popup(watched)
+        return super().eventFilter(watched, event)
+
+    def _position_popup(self, popup):
         bounds = self.screen().availableGeometry()
         anchor = self.mapToGlobal(QPoint(0, 0))
         height = min(popup.height(), anchor.y() - bounds.top() - 6)
         if height <= 0:
-            self.hidePopup()
             return
         width = min(bounds.width(), max(popup.width(), self.view().minimumWidth()))
-        popup.resize(width, height)
         x = max(bounds.left(), min(anchor.x() + self.width() - width, bounds.right() - width + 1))
-        popup.move(x, anchor.y() - height - 6)
+        self._placing_popup = True
+        try:
+            popup.setGeometry(QRect(x, anchor.y() - height - 6, width, height))
+        finally:
+            self._placing_popup = False
 
 
 def composer_microphone(parent):
     button = QPushButton(parent)
     button.setObjectName("composerMicrophone")
-    button.setFixedSize(32, 32)
+    button.setFixedSize(COMPOSER_CONTROL_SIZE, COMPOSER_CONTROL_SIZE)
     button.setIcon(QIcon(str(ASSETS / "microphone.svg")))
-    button.setIconSize(QSize(20, 20))
+    button.setIconSize(QSize(22, 22))
     button.setAccessibleName("Microphone (coming soon)")
     button.setToolTip("Microphone (coming soon)")
     button.setEnabled(False)
@@ -150,9 +179,10 @@ class ComposerToolButton(QPushButton):
 def composer_tools(parent):
     tools = QWidget(parent)
     tools.setObjectName("composerTools")
+    tools.setFixedHeight(COMPOSER_CONTROL_SIZE)
     layout = QHBoxLayout(tools)
     layout.setContentsMargins(0, 0, 0, 0)
-    layout.setSpacing(2)
+    layout.setSpacing(4)
     buttons = []
     for name, asset, description in (
         ("composerAddPlaceholder", "plus.svg", "Attach images or files"),
@@ -160,9 +190,9 @@ def composer_tools(parent):
     ):
         button = ComposerToolButton(tools) if asset == "plus.svg" else QPushButton(tools)
         button.setObjectName(name)
-        button.setFixedSize(32, 32)
+        button.setFixedSize(COMPOSER_CONTROL_SIZE, COMPOSER_CONTROL_SIZE)
         button.setIcon(QIcon(str(ASSETS / asset)))
-        button.setIconSize(QSize(28, 28))
+        button.setIconSize(QSize(24, 24))
         button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         button.setToolTip(description)
         button.setAccessibleName(description)
@@ -186,9 +216,9 @@ def configure_input(input):
 
 def configure_send(button):
     button.setObjectName("sendButton")
-    button.setFixedSize(34, 34)
-    button.setIcon(QIcon(str(ASSETS / "input_button_cropped.png")))
-    button.setIconSize(QSize(27, 27))
+    button.setFixedSize(COMPOSER_CONTROL_SIZE, COMPOSER_CONTROL_SIZE)
+    button.setIcon(QIcon(str(ASSETS / "send.svg")))
+    button.setIconSize(QSize(28, 28))
     button.setToolTip("Send")
     button.setAccessibleName("Send")
     button.setAutoDefault(False)
@@ -199,13 +229,13 @@ QFrame#composer { background: transparent; border: none; border-radius: 27px; }
 QWidget#composerTools { background: transparent; border: none; }
 QPushButton#composerMicrophone { background: transparent; border: none; padding: 0; }
 QPushButton#reasoningSelector {
-    background: transparent; color: #dedee0; border: none; border-radius: 14px;
+    background: transparent; color: #dedee0; border: none; border-radius: 17px;
     padding: 3px 22px 3px 8px; font-family: Saira; font-size: 13px;
 }
 QPushButton#reasoningSelector:hover, QPushButton#reasoningSelector:focus { background: rgba(255, 255, 255, 14); }
 QPushButton#reasoningSelector:disabled { color: #777d8b; }
 QComboBox#composerSelector {
-    background: transparent; color: #dedee0; border: none; border-radius: 8px;
+    background: transparent; color: #dedee0; border: none; border-radius: 17px;
     padding: 3px 8px; font-family: Saira; font-size: 13px;
 }
 QComboBox#composerSelector:hover { background: rgba(255, 255, 255, 14); }
@@ -216,7 +246,7 @@ QComboBox#composerSelector QAbstractItemView {
     selection-background-color: #414753; outline: none; padding: 4px;
 }
 QPushButton#composerAddPlaceholder, QPushButton#composerFolderPlaceholder {
-    background: transparent; border: none; border-radius: 16px; padding: 0;
+    background: transparent; border: none; border-radius: 17px; padding: 0;
 }
 QPushButton#composerAddPlaceholder:hover, QPushButton#composerFolderPlaceholder:hover { background: rgba(255, 255, 255, 14); }
 QPushButton#composerAddPlaceholder:pressed, QPushButton#composerFolderPlaceholder:pressed { background: rgba(255, 255, 255, 8); }
@@ -234,5 +264,5 @@ QPushButton#sendButton:pressed, QPushButton#stopButton:pressed { background: #2c
 QPushButton#sendButton:disabled, QPushButton#stopButton:disabled { background: transparent; }
 """
 COMPOSER_STYLE += f'''QComboBox#composerSelector::down-arrow {{
-    image: url("{(ASSETS / 'chevron-down.svg').as_posix()}"); width: 10px; height: 6px;
+    image: url("{(ASSETS / 'chevron-up.svg').as_posix()}"); width: 10px; height: 6px;
 }}'''

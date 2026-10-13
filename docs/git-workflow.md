@@ -11,6 +11,18 @@ After native verification, preserve prior main at
 local main and remove only the merged feature branch. Other worktrees and
 remote refs remain intact.
 
+## Composer alignment and popup polish, 13 October 2026
+
+`codex/composer-menu-polish` starts from local main `1315375`. It aligns the
+composer icons and controls and positions the model list before its first
+visible frame. All 58 relevant UI checks passed; the user explicitly excluded
+the full suite for this presentation change. See [the fix and checks](composer-menu-polish.md).
+Preserve prior main at `archive/2026-10-13/main-before-composer-menu-polish`,
+commit, fast-forward local main and remove only the merged UI branch. Bring
+updated main back into the preserved `codex/profile-personalities` branch and
+leave that branch active. Its earlier qualification record remains unchanged.
+Other worktrees and remote refs remain intact.
+
 ## Complete integration and cleanup, 13 October 2026
 
 The user explicitly requested all new changes on main, Git cleanup and a push.

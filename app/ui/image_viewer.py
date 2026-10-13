@@ -8,7 +8,7 @@ from PySide6.QtWidgets import (
 
 from app.inference.attachments import attachment_references
 from app.ui.composer import (
-    ASSETS, COMPOSER_HEIGHT, COMPOSER_WIDTH, COMPOSER_STYLE, ComposerFrame,
+    ASSETS, COMPOSER_HEIGHT, COMPOSER_WIDTH, COMPOSER_CONTROL_SIZE, COMPOSER_STYLE, ComposerFrame,
     MessageInput, composer_tools, configure_input, configure_send,
 )
 from app.ui.message_images import MessageImageLoader
@@ -201,15 +201,14 @@ class ImageViewer(QDialog):
         self.prompt.insertPlainText("Edit this image: ")
         self.prompt.setAccessibleName("New prompt with this image")
         self.action_slot = QWidget()
-        self.action_slot.setFixedSize(34, 37)
+        self.action_slot.setFixedSize(COMPOSER_CONTROL_SIZE, COMPOSER_CONTROL_SIZE)
         self.send = QPushButton(self.action_slot)
         configure_send(self.send)
-        self.send.move(0, 4)
         self.send.setAccessibleName("Send prompt with image")
         self.send.setToolTip("Send with image · Enter (Shift+Enter for a new line)")
         composer.addWidget(self.tools, 0, Qt.AlignmentFlag.AlignVCenter)
         composer.addWidget(self.prompt, 1)
-        composer.addWidget(self.action_slot)
+        composer.addWidget(self.action_slot, 0, Qt.AlignmentFlag.AlignVCenter)
         composer_row = QHBoxLayout()
         composer_row.addStretch(1)
         composer_row.addWidget(self.composer, 10)

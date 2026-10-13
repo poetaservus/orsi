@@ -3,7 +3,7 @@ from PySide6.QtCore import QEvent, QPoint, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath
 from PySide6.QtWidgets import QFrame, QLabel, QPushButton, QSlider, QVBoxLayout
 
-from app.ui.composer import ASSETS, REASONING_LABELS
+from app.ui.composer import ASSETS, COMPOSER_CONTROL_SIZE, REASONING_LABELS
 
 
 class EffortSlider(QSlider):
@@ -100,7 +100,7 @@ class ReasoningSelector(QPushButton):
         super().__init__(parent)
         self.setObjectName("reasoningSelector")
         self.setAccessibleName("Reasoning level")
-        self.setFixedHeight(32)
+        self.setFixedHeight(COMPOSER_CONTROL_SIZE)
         self._efforts = ()
         self.current_effort = None
         self._chevron = QIcon(str(ASSETS / "chevron-up.svg"))
