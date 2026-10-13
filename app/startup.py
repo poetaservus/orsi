@@ -27,6 +27,7 @@ from app.settings.local_models import LocalModelCatalog
 from app.settings.paths import PATHS
 from app.settings.openai_cloud import OpenAICloudConfig
 from app.settings.personality import PersonalitySettings
+from app.settings.response_language import ResponseLanguageSettings
 from app.infrastructure.baseline import BaselineRecorder
 from app.runtime.skills import SkillRegistry
 from app.state.storage import JsonStore
@@ -271,6 +272,8 @@ def build_application(
                 agent_error=agent_error,
                 personality_settings=PersonalitySettings(
                     JsonStore(state / "personality_selection_v1.json"), session=profile_session),
+                response_language_settings=ResponseLanguageSettings(
+                    JsonStore(state / "response_language_v1.json"), session=profile_session),
             )
             # Every launch starts empty; archive prior turns and their image references.
             service.new_session(preserve_history=True)

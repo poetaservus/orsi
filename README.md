@@ -39,6 +39,10 @@ and independent security qualification remain pending.
 - **Settings → General → Personality** chooses Original or Choom, remembered
   separately for each profile and included in portable copies. See
   [personality selection](docs/profile-personalities.md).
+- **Settings → General → Response Language** defaults to Auto, following the
+  language of your request, or remembers one of 45 language choices per profile.
+  Explicit output-language requests take precedence. Tools and skills retain
+  their original names and protocols. See [response languages](docs/response-language.md).
 - Composer model and cloud reasoning selectors apply to the next API request and save
   preferences per model. The microphone is a placeholder. See [composer controls](docs/composer-reasoning.md).
 - `filesystem.stat`, `filesystem.find`, `filesystem.list`,

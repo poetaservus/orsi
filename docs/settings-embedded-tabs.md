@@ -1,5 +1,8 @@
 # Larger settings with embedded tabs, 8 October 2026
 
+Later update, 13 October: [Response Language](response-language.md) is implemented
+with Auto and profile-scoped choices. The list below records the original tabs.
+
 GUI-only change from local main `009510e` on `codex/settings-embedded-tabs`.
 The settings panel grows from 886 × 611 to a preferred 1120 × 740 logical
 pixels, with 34-pixel title, 20-pixel navigation/section headings, 18-pixel

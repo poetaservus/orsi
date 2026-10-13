@@ -11,6 +11,7 @@ from app.portable.deployment import (DeploymentError, MANIFEST, PROFILE_FOLDER, 
 from app.runtime.cancellation import CancellationSource, TaskCancelled
 from app.state.storage import JsonStore
 from app.settings.personality import PersonalitySettings
+from app.settings.response_language import ResponseLanguageSettings
 from app.vault.profiles import ProfileManager
 from app.vault.types import Domain, RecordWrite
 from tests.test_vault_controls import PASSWORD
@@ -77,6 +78,8 @@ def test_complete_encrypted_profile_opens_independently_after_relocation(manager
     vault = manager.vault()
     PersonalitySettings(JsonStore(manager.session.storage_path("state/personality_selection_v1.json")),
                         session=manager.session).select("choom-v1.0.0")
+    ResponseLanguageSettings(JsonStore(manager.session.storage_path("state/response_language_v1.json")),
+                             session=manager.session).select("hu")
     writes = [RecordWrite(name, PRIVATE + name.encode()) for name in
               ("state/ui_preferences_v1.json", "skills/package.json", "documents/report.txt",
                "state/conversation_v1/history.json", "setup/custom.json", "images/saved.png")]
@@ -106,6 +109,8 @@ def test_complete_encrypted_profile_opens_independently_after_relocation(manager
     try:
         assert PersonalitySettings(JsonStore(copied.session.storage_path("state/personality_selection_v1.json")),
                                    session=copied.session).current_id == "choom-v1.0.0"
+        assert ResponseLanguageSettings(JsonStore(copied.session.storage_path("state/response_language_v1.json")),
+                                        session=copied.session).current_code == "hu"
         assert (moved / "app/conversation/personalities/choom-v1.0.0.txt").read_bytes() == (
             manager.application_root / "app/conversation/personalities/choom-v1.0.0.txt").read_bytes()
         assert copied.vault()._catalog["backups"] == source_catalog["backups"]

@@ -12,6 +12,7 @@ from app.ui.image_settings import ImageSettingsPage
 from app.ui.notification_settings import NotificationSoundControl, NotificationSwitch
 from app.ui.inputs import ScrollSafeComboBox
 from app.conversation.personality import PERSONALITIES
+from app.conversation.response_language import RESPONSE_LANGUAGES
 
 
 class SettingsPanel(QFrame):
@@ -162,9 +163,21 @@ class SettingsPanel(QFrame):
         general.addWidget(window.personality_hint)
         window.personality_selector.currentIndexChanged.connect(window._select_personality)
         window._sync_personality_selector()
-        window.response_language_selector = self._placeholder("Response Language")
-        self._row(general, "Response Language", "Preferred reply language · Coming soon",
+        window.response_language_selector = ScrollSafeComboBox()
+        window.response_language_selector.setAccessibleName("Response Language")
+        window.response_language_selector.setAccessibleDescription(
+            "Auto follows the language of your request. A selected language applies from the next response.")
+        window.response_language_selector.setToolTip(window.response_language_selector.accessibleDescription())
+        for language in RESPONSE_LANGUAGES:
+            window.response_language_selector.addItem(language.label, language.code)
+        self._row(general, "Response Language", "Auto follows your request · Remembered for this profile",
                   window.response_language_selector)
+        window.response_language_hint = QLabel()
+        window.response_language_hint.setObjectName("settingsDescription")
+        window.response_language_hint.setWordWrap(True)
+        general.addWidget(window.response_language_hint)
+        window.response_language_selector.currentIndexChanged.connect(window._select_response_language)
+        window._sync_response_language_selector()
         window.tool_approval_toggle = NotificationSwitch(self)
         window.tool_approval_toggle.setAccessibleName("Tool execution approval")
         window.tool_approval_toggle.setAccessibleDescription(

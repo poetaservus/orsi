@@ -47,6 +47,12 @@ $portablePython = Join-Path $pythonRoot "python.exe"
 if ($LASTEXITCODE -ne 0) { throw "pip bootstrap failed with exit code $LASTEXITCODE." }
 
 Write-Host "Installing O.R.S.I dependencies inside the portable folder..."
+# langid ships a source distribution. Embedded Python cannot import pip's isolated
+# build environment; use fixed build helpers in the application-local runtime.
+& $portablePython -m pip install --disable-pip-version-check --no-cache-dir setuptools==80.9.0 wheel==0.45.1
+if ($LASTEXITCODE -ne 0) { throw "Language detector build prerequisites failed." }
+& $portablePython -m pip install --disable-pip-version-check --no-cache-dir --no-build-isolation langid==1.1.6
+if ($LASTEXITCODE -ne 0) { throw "Offline language detector installation failed." }
 & $portablePython -m pip install --disable-pip-version-check --no-cache-dir -r (Join-Path $projectRoot "requirements.txt")
 if ($LASTEXITCODE -ne 0) { throw "Base dependency installation failed with exit code $LASTEXITCODE." }
 

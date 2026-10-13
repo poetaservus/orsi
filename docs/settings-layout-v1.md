@@ -1,5 +1,9 @@
 # Settings layout v1, 8 October 2026
 
+Later update, 13 October: [Response Language](response-language.md) is implemented
+with Auto and profile-scoped choices. Placeholder statements below describe the
+original layout change.
+
 This bounded GUI change starts from local main `9553722` on
 `codex/settings-layout-v1`. The supplied settings mockup defines the presentation:
 centered blue-grey panel, General/Skills/Image Generation navigation, close control,

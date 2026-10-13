@@ -1,5 +1,30 @@
 # Git layout and baseline hygiene
 
+## Response languages, 13 October 2026
+
+`codex/response-language` starts from local main `410d45d`, then fast-forwards to
+the existing committed personality tip `099b4b0` to retain the active launcher's
+features. General settings now offer Auto and 45 profile-scoped reply languages,
+with shared prompt policy and bounded multilingual presentation recovery. See
+[the behavior, storage and verification](response-language.md). Accepted model
+profiles, sampling, production context limits, tool schemas and existing user
+settings are preserved.
+
+The final affected run passed 387 checks; the recovery/UI/source-scope recheck
+passed 170 checks and five subtests. Final full native regression passed **3,689
+checks and 15 subtests**, with **61 optional skips**, no failures/errors, in
+575.43 seconds. The earlier five full-run failures and their fixture/baseline
+diagnosis remain recorded; live API/model language-quality gates are separately
+skipped. This passing full run qualifies the combined personality/composer tree
+as well as the language change without rewriting the earlier qualification record.
+
+Content-free refs/worktrees are preserved under ignored
+`state/backups/response-language-20261013/`; prior main is retained at
+`archive/2026-10-13/main-before-response-language`. Commit the bounded change,
+fast-forward local main and remove only the merged response-language branch.
+Retain the prior personality branch as a recovery tip. Other worktrees and all
+remote refs remain intact; no publication is part of this task.
+
 ## Profile-level personalities, 13 October 2026
 
 `codex/profile-personalities` starts from main `1315375`. General settings now

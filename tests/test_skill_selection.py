@@ -10,6 +10,7 @@ import pytest
 from app.agent.bootstrap import build_agent_runtime
 from app.conversation.orchestrator import ConversationService
 from app.conversation.prompt import SYSTEM_PROMPT
+from app.conversation.response_language import with_response_language
 from app.conversation.store import ConversationStore
 from app.inference.completion import CompletionMetadata, CompletionText, TokenUsage
 from app.inference.engine import InferenceEngine
@@ -263,7 +264,7 @@ def test_empty_registry_skips_selector_without_changing_normal_prompt(tmp_path):
     try:
         assert service.run("Hello") == "reply"
         assert service.skill_selection.reason == "empty_catalog" and not model.router_requests
-        assert model.answer_requests[-1][0][0]["content"] == SYSTEM_PROMPT
+        assert model.answer_requests[-1][0][0]["content"] == with_response_language(SYSTEM_PROMPT, "auto")
     finally:
         service.shutdown()
 
@@ -333,7 +334,7 @@ def test_disabled_selection_preserves_prompt_and_explicit_api_still_works(tmp_pa
     try:
         service.run("Redesign this React landing page.")
         assert not model.router_requests and service.skill_selection.reason == "disabled"
-        assert model.answer_requests[-1][0][0]["content"] == SYSTEM_PROMPT
+        assert model.answer_requests[-1][0][0]["content"] == with_response_language(SYSTEM_PROMPT, "auto")
         service.activate_skill("design-taste-frontend")
         service.run("Redesign this React landing page.")
         assert not model.router_requests and service.active_skill is not None
@@ -349,7 +350,7 @@ def test_selector_failure_keeps_normal_conversation_and_is_not_logged(tmp_path, 
     try:
         assert service.run("Hello") == "reply"
         assert service.active_skill is None
-        assert model.answer_requests[-1][0][0]["content"] == SYSTEM_PROMPT
+        assert model.answer_requests[-1][0][0]["content"] == with_response_language(SYSTEM_PROMPT, "auto")
         assert "PRIVATE-CONTENT" not in caplog.text
     finally:
         service.shutdown()
@@ -366,7 +367,7 @@ def test_automatic_oversized_body_is_dropped_without_displacing_user(tmp_path):
         user = "Redesign this React landing page."
         assert service.run(user) == "reply"
         assert service.active_skill is None and service.skill_selection.reason == "skill_context_limit"
-        assert model.answer_requests[-1][0][0]["content"] == SYSTEM_PROMPT
+        assert model.answer_requests[-1][0][0]["content"] == with_response_language(SYSTEM_PROMPT, "auto")
         assert model.answer_requests[-1][0][-1]["content"] == user
     finally:
         service.shutdown()

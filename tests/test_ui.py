@@ -235,7 +235,8 @@ class UiTests(unittest.TestCase):
         self.assertEqual(window.composer.height(), 110)
         self.assertEqual(window.input.height(), 41)
         self.assertEqual(window.send.size().width(), 34)
-        self.assertEqual(window.send.pos().y(), 4)
+        # The integrated composer alignment uses the full 34-pixel control row.
+        self.assertEqual(window.send.pos().y(), 0)
         self.assertEqual(window.input.font().family(), "Saira")
         self.assertEqual(window.input.font().weight(), 400)
         self.assertEqual(

@@ -27,9 +27,8 @@ def filename_disambiguation_feedback(
         return None
     if _feedback_already_sent(transcript):
         return None
-    latest_user = _latest_user_text(transcript).casefold()
-    if re.search(r"\b(?:read|show|explain|summari[sz]e|fix)\b", latest_user) is None:
-        return None
+    # The pending failed native lookup/read establishes scope and intent. User
+    # language is irrelevant; current-turn evidence below retains the boundary.
     pending = _pending_disambiguation(transcript)
     if pending is None:
         return None
@@ -277,7 +276,7 @@ def _filename_keys(name: str) -> set[str]:
 
 
 def _loose_filename(name: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "", name.casefold())
+    return "".join(character for character in name.casefold() if character.isalnum())
 
 
 def _same_path(left: Any, right: Any) -> bool:

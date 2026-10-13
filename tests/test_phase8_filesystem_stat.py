@@ -18,6 +18,7 @@ from app.settings.agent import (
 from app.agent.runtime import AgentRuntime
 from app.execution.audit import CallLifecycleState
 from app.conversation.prompt import AGENT_SYSTEM_PROMPT, SYSTEM_PROMPT
+from app.conversation.response_language import with_response_language
 from app.conversation.orchestrator import ConversationService
 from app.conversation.store import ConversationStore
 from app.inference.engine import InferenceEngine, InferenceUnavailable
@@ -349,7 +350,7 @@ def test_chat_only_fallback_keeps_plain_prompt_and_boundary(tmp_path: Path):
 
     assert not service.agent_enabled
     assert service.run("hello") == "plain reply"
-    assert model.messages[0] == {"role": "system", "content": SYSTEM_PROMPT}
+    assert model.messages[0] == {"role": "system", "content": with_response_language(SYSTEM_PROMPT, "auto")}
     assert all(set(message) == {"role", "content"} for message in model.messages)
 
 

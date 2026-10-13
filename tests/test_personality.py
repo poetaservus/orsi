@@ -6,6 +6,7 @@ import pytest
 from app.agent.bootstrap import build_agent_runtime
 from app.conversation.orchestrator import ConversationService
 from app.conversation.personality import PERSONALITY_GUIDANCE, get_personality
+from app.conversation.response_language import with_response_language
 from app.conversation.store import ConversationStore
 from app.inference.engine import InferenceEngine
 from app.inference.protocol import ModelResponse
@@ -43,7 +44,8 @@ def test_personality_survives_request_selection_without_changing_catalog_or_user
     # Preserve the same synthetic task/review headroom for each voice; production
     # model context limits remain untouched and admission counts the whole prompt.
     extra_voice_tokens = ceil(max(0, len(get_personality(personality_id).guidance) - len(PERSONALITY_GUIDANCE)) / 4)
-    model = RequestRecorder(2250 + extra_voice_tokens if mode == "compact" else 16384)
+    language_tokens = ceil(len(with_response_language("", "auto")) / 4)
+    model = RequestRecorder(2250 + extra_voice_tokens + language_tokens if mode == "compact" else 16384)
     runtime = None
     if mode != "chat":
         runtime = build_agent_runtime(model, config=AgentFeatureConfig(filesystem_stat_enabled=True),

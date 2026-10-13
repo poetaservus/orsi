@@ -1,11 +1,13 @@
 """Read/edit/read workflows progress without relaxing no-progress loop stops."""
 import os
+from math import ceil
 
 import pytest
 
 from app.agent.bootstrap import build_agent_runtime
 from app.agent.contracts import AgentRunStatus
 from app.conversation.orchestrator import ConversationService
+from app.conversation.response_language import with_response_language
 from app.conversation.store import ConversationStore
 from app.inference.hybrid import HybridInferenceEngine
 from app.inference.protocol import ModelCapabilityCall, ModelResponse
@@ -52,6 +54,9 @@ def scenario(tmp_path):
 
     def build(responses, mode="local", approve=True):
         backend = ScriptedModel(responses)
+        # Keep the original scenario's task/result headroom while counting the
+        # new mandatory language policy. No production model limit is changed.
+        backend.context_length += ceil(len(with_response_language("", "auto")) / 4)
         inference = HybridInferenceEngine(local=backend if mode == "local" else None,
             cloud=backend if mode == "cloud" else None, default_mode=mode, fallback_to_local=False)
         runtime = build_agent_runtime(inference, config=AgentFeatureConfig(

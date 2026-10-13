@@ -29,6 +29,10 @@ from app.conversation.prompt import (
 from app.conversation.result_grounding import grounded_text_read_answer
 from app.conversation.personality import with_personality
 from app.settings.personality import PersonalitySettings
+from app.settings.response_language import ResponseLanguageSettings
+from app.conversation.response_language import with_response_language
+from app.conversation.language_detection import detect_language, reply_locale
+from app.conversation.language_messages import notice, progress_notice, image_notice
 from app.conversation.diagnostics import record_route, record_turn
 from app.conversation.store import ConversationStore, TurnHistoryError
 from app.conversation.operation_review import InterruptedOperation, OperationReview
@@ -84,6 +88,7 @@ class ConversationService:
         automatic_skills_enabled: bool = False,
         skill_references_enabled: bool = True,
         personality_settings: PersonalitySettings | None = None,
+        response_language_settings: ResponseLanguageSettings | None = None,
     ):
         if type(automatic_skills_enabled) is not bool:
             raise TypeError("Automatic skill selection must be an explicit boolean.")
@@ -105,6 +110,10 @@ class ConversationService:
         if personality_settings is not None and not isinstance(personality_settings, PersonalitySettings):
             raise TypeError("Conversation personalities require PersonalitySettings.")
         self.personality_settings = personality_settings if personality_settings is not None else PersonalitySettings()
+        if response_language_settings is not None and not isinstance(response_language_settings, ResponseLanguageSettings):
+            raise TypeError("Conversation response languages require ResponseLanguageSettings.")
+        self.response_language_settings = (response_language_settings if response_language_settings is not None
+                                           else ResponseLanguageSettings())
         self.store = store
         self._documents = LocalDocuments(store.attachment_store)
         attachment_setter = getattr(inference, "set_attachment_store", None)
@@ -312,18 +321,39 @@ class ConversationService:
                 text_observer(value)
 
         def publish_activity(value):
-            report_activity(activity, "Checking completion…" if reviewing_completion else value)
+            report_activity(activity, progress_notice(locale, "Checking completion…" if reviewing_completion else value))
 
         cancellation_setter = getattr(self.inference, "set_request_cancellation", None)
         cancellation_attached = False
         activity_setter = getattr(self.inference, "set_activity_observer", None)
         activity_attached = False
+        locale = "en"
         try:
             with self._cancellation_lock:
                 if self._closed:
                     raise RuntimeError("The conversation is closed.")
                 self._cancellation = source
+            locale = reply_locale(self.response_language_settings.current_code, text, self.store.messages())
+            original_activity = activity
+            activity = lambda value: report_activity(original_activity, progress_notice(locale, value))
             decision = self.image_route_decision(text, attachments=submitted_references, skill_name=skill_name)
+            input_language = detect_language(text)
+            if (input_language is not None and input_language != "en"
+                    and getattr(self.inference, "supports_image_generation", False) is True
+                    and not text.lstrip().startswith(("/image ", "/skill"))):
+                from app.conversation.image_followup import image_route
+                from app.conversation.turn_presentation import latest_visual_sources, select_visual_intent
+                # No auxiliary model request may precede verification of newly
+                # submitted sources. The resolved route is admitted again below.
+                self._admit_attachments(submitted_references, source.token, verify=True)
+                messages = self.store.visible_messages()
+                implicit = latest_visual_sources(messages)
+                previous = next((message.content for message in reversed(messages) if message.role == "user"), "")
+                intent = select_visual_intent(self.inference, text,
+                    has_source=bool(any(ref.kind == "image" for ref in submitted_references) or implicit),
+                    skill_name=decision.skill_name, previous_request=previous, cancellation=source.token)
+                decision = image_route(text, attachments=submitted_references, messages=messages,
+                    skill_name=decision.skill_name, intent=intent, implicit_sources=implicit)
             record_route(log, decision, submitted_count=len(submitted_references),
                 skill_scope="message" if skill_name is not None else "session" if self._active_skill_name is not None else "none")
             references = decision.references
@@ -354,10 +384,10 @@ class ConversationService:
                     self._automatic_skill = None
                     self.skill_selection = SkillSelection()
                     self._context_measurement = None
-                    return "Skill deactivated."
+                    return notice(locale, "skill_off")
                 skill = self._activate_skill_locked(command[1])
                 label = skill.name if len(skill.name) <= 128 else skill.name[:125] + "..."
-                return "Skill activated: " + json.dumps(label, ensure_ascii=True) + "."
+                return notice(locale, "skill_on", name=json.dumps(label, ensure_ascii=True))
             if self._history_persistence_failed:
                 raise TurnHistoryError("A settled turn could not be retained safely. Review its outcomes before retrying.")
             prepare_inputs = getattr(self.inference, "prepare_attachment_context", None)
@@ -424,7 +454,15 @@ class ConversationService:
                     current = {"role": "user", "content": text.removeprefix("/image ")}
                     if references:
                         current["attachments"] = [r.model_dump(mode="json") for r in references]
-                    answer = self.inference.generate_images([current])
+                    answer = self.inference.generate_images([
+                        {"role": "system", "content": with_response_language(
+                            self.personality_settings.current.guidance, self.response_language_settings.current_code)},
+                        current])
+                    generated = CompletionText(answer)
+                    if generated.generated_images and not generated.completion.incomplete:
+                        answer = CompletionText(image_notice(locale, len(generated.generated_images)),
+                            generated.completion, generated.completion_history,
+                            generated_images=generated.generated_images, openai_response=generated.openai_response)
                     source.token.raise_if_cancelled()
                 else:
                     answer = self._run_chat_turn(source, activity)
@@ -642,7 +680,20 @@ class ConversationService:
             raise RuntimeError(result.message or "The bounded agent run did not complete.")
 
         answer = result.assistant_text.strip()
-        grounded_answer = grounded_text_read_answer(text, answer, turn_results)
+        locale = reply_locale(self.response_language_settings.current_code, text, self.store.messages())
+        display_requested = None
+        if detect_language(text) not in {None, "en"} and any(
+                call.capability == "filesystem.read_text" and outcome.success
+                and isinstance((outcome.output or {}).get("text"), str)
+                and (not (outcome.output or {}).get("text") or (outcome.output or {}).get("text") not in answer)
+                for call, outcome in turn_results):
+            from app.conversation.turn_presentation import select_verbatim_display
+            observer = getattr(self.inference, "set_text_observer", None)
+            if callable(observer):
+                observer(None)  # Internal selector JSON must never stream into the chat.
+            display_requested = select_verbatim_display(self.inference, text, cancellation=source.token)
+        grounded_answer = grounded_text_read_answer(text, answer, turn_results, locale=locale,
+                                                   display_requested=display_requested)
         if grounded_answer is not None:
             answer = grounded_answer
         return CompletionText(answer, result.completion, result.completion_history)
@@ -790,6 +841,18 @@ class ConversationService:
         finally:
             self._run_lock.release()
 
+    def select_response_language(self, code: str) -> None:
+        if not self._run_lock.acquire(blocking=False):
+            raise RuntimeError("Finish or stop the current response before changing reply language.")
+        try:
+            with self._cancellation_lock:
+                if self._closed:
+                    raise RuntimeError("The conversation is closed.")
+            self.response_language_settings.select(code)
+            self._context_measurement = None
+        finally:
+            self._run_lock.release()
+
     def shutdown(self) -> None:
         with self._cancellation_lock:
             if self._closed:
@@ -815,6 +878,7 @@ class ConversationService:
                         close()
                 finally:
                     self.personality_settings.close()
+                    self.response_language_settings.close()
 
     def stop_for_profile(self):
         with self._cancellation_lock:
@@ -833,6 +897,7 @@ class ConversationService:
     def clear_for_profile(self):
         with self._run_lock:
             self.personality_settings.close()
+            self.response_language_settings.close()
             self._documents.clear()
             self._references.reset()
             self._reference_runtime = None
@@ -975,6 +1040,7 @@ class ConversationService:
             raise SkillActivationError(SkillActivationErrorCode.MISSING_SKILL,
                                        "Active skill is unavailable. Select another skill or use /skill to clear it.")
         core_prompt = with_personality(prompt, self.personality_settings.current)
+        core_prompt = with_response_language(core_prompt, self.response_language_settings.current_code)
         if has_attachments(history) and getattr(self.inference, "supports_native_attachment_tools", False) is True:
             from app.conversation.cloud_attachments import CLOUD_ATTACHMENT_GUIDANCE
             core_prompt += CLOUD_ATTACHMENT_GUIDANCE

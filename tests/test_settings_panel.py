@@ -40,10 +40,12 @@ def test_placeholder_controls_do_not_change_preferences_or_draft(app, tmp_path):
         window.input.setPlainText("Keep this draft")
         window.settings_button.click()
         app.processEvents()
-        for selector in (window.theme_selector, window.gui_language_selector, window.response_language_selector):
+        for selector in (window.theme_selector, window.gui_language_selector):
             assert not selector.isEnabled()
             assert selector.currentText() == "Coming soon"
             assert "Placeholder" in selector.accessibleDescription()
+        assert window.response_language_selector.currentData() == "auto"
+        assert not window.response_language_selector.isEnabled()  # No conversation service.
         assert window.tool_approval_toggle.isEnabled()
         assert window.tool_approval_toggle.isChecked()
         assert preferences.path.read_bytes() == before

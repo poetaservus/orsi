@@ -13,15 +13,15 @@ class ImageRouteDecision:
     skill_name: str | None
 
 
-def image_route(text, *, attachments=(), messages=(), supported=True, skill_name=None):
+def image_route(text, *, attachments=(), messages=(), supported=True, skill_name=None, intent=None, implicit_sources=None):
     references = attachment_references(attachments)
     if not supported:
         return ImageRouteDecision("agent", "unsupported_backend", references, "submitted", skill_name)
     # Resolve history only after the request itself establishes a visual follow-up.
-    intent = image_intent(text, has_image=True, skill_name=skill_name)
+    intent = intent if intent is not None else image_intent(text, has_image=True, skill_name=skill_name)
     source = "submitted" if references else "none"
     if not references and intent.followup:
-        references = latest_generated_sources(messages)
+        references = latest_generated_sources(messages) if implicit_sources is None else implicit_sources
         if references:
             source = "current_visual_task"
     if intent.reason == "visual_edit" and not any(ref.kind == "image" for ref in references):

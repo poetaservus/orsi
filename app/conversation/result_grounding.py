@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import PureWindowsPath
 import re
+from app.conversation.language_messages import notice
 
 
 _FILE_LANGUAGES = {
@@ -27,10 +28,11 @@ def grounded_text_read_answer(
     user_text: str,
     assistant_text: str,
     observed_results: list[tuple],
+    *, locale: str = "en", display_requested: bool | None = None,
 ) -> str | None:
     """Return exact read output when a direct-read answer is missing or misleading."""
     report_task = any(call.capability in _REPORT_OPERATIONS for call, _ in observed_results)
-    if report_task and not _explicit_content_display(user_text):
+    if report_task and not (display_requested if display_requested is not None else _explicit_content_display(user_text)):
         # Source reads supporting edits or execution are evidence for the report, not
         # an instruction to replace completion/failure details with the last file.
         return None
@@ -44,9 +46,10 @@ def grounded_text_read_answer(
         return None
     if report_task and file_text and file_text in assistant_text:
         return None
-    if not report_task and not _should_ground_text_read_answer(user_text, assistant_text, file_text):
+    if not report_task and not (display_requested if display_requested is not None else
+                                _should_ground_text_read_answer(user_text, assistant_text, file_text)):
         return None
-    rendered = _render_text_result(call, result)
+    rendered = _render_text_result(call, result, locale=locale)
     return f"{assistant_text}\n\n{rendered}" if report_task else rendered
 
 
@@ -113,7 +116,7 @@ def _is_direct_content_read_request(text: str) -> bool:
     ) is not None
 
 
-def _render_text_result(call, result) -> str:
+def _render_text_result(call, result, *, locale="en") -> str:
     output = result.output or {}
     text = output.get("text")
     if not isinstance(text, str):
@@ -121,7 +124,7 @@ def _render_text_result(call, result) -> str:
     path = PureWindowsPath(str(call.arguments.get("path", "file")))
     name = _safe_filename(path.name)
     if not text:
-        answer = f"{name} is empty."
+        answer = notice(locale, "empty", name=name)
     else:
         fence = _markdown_code_fence(text)
         # The fence is presentation metadata only. Preserve the read text exactly
@@ -129,11 +132,11 @@ def _render_text_result(call, result) -> str:
         language = _FILE_LANGUAGES.get(path.suffix.casefold(), "text")
         closing_prefix = "" if text.endswith(("\n", "\r")) else "\n"
         answer = (
-            f"Here is the content of {name}:\n\n"
+            notice(locale, "contents", name=name) + "\n\n"
             f"{fence}{language}\n{text}{closing_prefix}{fence}"
         )
     if output.get("truncated_by_bytes") is True or output.get("truncated_by_lines") is True:
-        answer += "\n\nThe displayed content was truncated by the configured read limit."
+        answer += "\n\n" + notice(locale, "truncated")
     return answer
 
 
