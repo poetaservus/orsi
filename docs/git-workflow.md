@@ -1,5 +1,19 @@
 # Git layout and baseline hygiene
 
+## Saved repair-history compatibility, 13 October 2026
+
+`codex/history-evidence-compatibility` starts from composer main `766dba3`.
+It retains the known v2 evidence history contract from the unmerged repair
+branch so its saved conversations can load, while preserving receipt equality
+checks and current runtime behavior. See [the repair and checks](history-evidence-compatibility.md).
+All 127 necessary native checks passed, including encrypted startup, retained
+archives and sending from the actual composer with a synthetic provider.
+The user's encrypted profile remains untouched; live API and full-suite gates
+were not run. Preserve prior main at
+`archive/2026-10-13/main-before-history-evidence-compatibility`, commit,
+fast-forward main and remove only this merged feature branch. Preserve the
+earlier unmerged repair branch, other worktrees and all remote refs.
+
 ## Composer model and reasoning selection, 13 October 2026
 
 `codex/composer-model-reasoning` starts from verified local main `aae279a`.

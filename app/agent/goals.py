@@ -27,6 +27,22 @@ class ArtifactEvidence(BaseModel):
     integrity_uncertain: bool = False
 
 
+class InteractionAssertionEvidence(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+    action: str = Field(max_length=32)
+    target: str = Field(max_length=256)
+    label: str = Field(default="", max_length=64)
+    passed: bool
+
+
+class VisualObservationEvidence(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+    label: str = Field(max_length=64)
+    screenshot_path: str = Field(max_length=32767)
+    screenshot_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    status: Literal["requires_review"] = "requires_review"
+
+
 class VerificationEvidence(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
     call_id: str = Field(min_length=1, max_length=128)
@@ -35,6 +51,13 @@ class VerificationEvidence(BaseModel):
     passed: bool
     stale: bool = False
     screenshot_path: str | None = None
+    # The scroll-repair branch persisted these fields before integration. Retain
+    # its exact bounded format and recompute it from v2 receipts when reopening;
+    # accepting the schema alone would still fail the durable-goal equality check.
+    command_passed: bool | None = None
+    interaction_assertions: tuple[InteractionAssertionEvidence, ...] = Field(default=(), max_length=12)
+    visual_observations: tuple[VisualObservationEvidence, ...] = Field(default=(), max_length=5)
+    frame_timing_captured: bool = False
 
 
 class TaskGoal(BaseModel):
@@ -71,7 +94,8 @@ def observe_goal(goal: TaskGoal, settled) -> TaskGoal:
         if isinstance(project, str) and kind in {"build", "test", "browser", "desktop"}:
             item = VerificationEvidence(call_id=result.call_id, project_path=project, kind=kind,
                 passed=result.success and output.get("passed") is True,
-                screenshot_path=output.get("screenshot_path") if isinstance(output.get("screenshot_path"), str) else None)
+                screenshot_path=output.get("screenshot_path") if isinstance(output.get("screenshot_path"), str) else None,
+                **_versioned_verification_details(output, kind=kind, success=result.success))
             check = "runtime_execution" if call.capability == "project.verify" else "gui_validation"
             return goal.model_copy(update={"verification": (*goal.verification, item),
                 "unavailable_checks": tuple(value for value in goal.unavailable_checks if value != check) if result.success else goal.unavailable_checks})
@@ -115,6 +139,40 @@ def observe_goal(goal: TaskGoal, settled) -> TaskGoal:
                 or call.capability == "filesystem.read_text" and result.error.code == CapabilityErrorCode.NOT_FOUND):
             artifacts[index] = item.model_copy(update={"source_check_call_id": None, "integrity_uncertain": True})
     return goal.model_copy(update={"artifacts": tuple(artifacts)})
+
+
+def _versioned_verification_details(output: dict, *, kind: str, success: bool) -> dict:
+    """Reproduce the known v2 history projection without changing legacy receipts.
+
+    These details retain observations, never proof of the user's whole task.
+    Live tools and prompts remain on their existing contracts.
+    """
+    if output.get("evidence_version") != 2:
+        return {}
+    checks, checkpoints = output.get("checks", []), output.get("checkpoints", [])
+    if (not isinstance(checks, list) or not isinstance(checkpoints, list)
+            or any(not isinstance(item, dict) for item in checks[:12])
+            or any(not isinstance(item, dict) for item in checkpoints[:4])):
+        raise ValueError("Version 2 verification receipts require structured checks and checkpoints.")
+    checks = checks[:12]
+    assertions = []
+    for check in checks:
+        action = check.get("action")
+        if (action in {"visible", "text", "in_view", "model_loaded", "scroll"}
+                or action == "checkpoint" and check.get("expectation") != "observe"):
+            assertions.append(InteractionAssertionEvidence(action=action, target=check.get("target", ""),
+                label=check.get("label", ""), passed=check.get("passed") is True))
+    visuals = []
+    for observation in [*checkpoints[:4], output]:
+        if isinstance(observation.get("screenshot_path"), str):
+            visuals.append(VisualObservationEvidence(label=observation.get("label", "final"),
+                screenshot_path=observation["screenshot_path"], screenshot_sha256=observation.get("screenshot_sha256")))
+    return {
+        "command_passed": success and output.get("passed") is True if kind in {"build", "test"} else None,
+        "interaction_assertions": tuple(assertions),
+        "visual_observations": tuple(visuals),
+        "frame_timing_captured": any(isinstance(check.get("frame_timing"), dict) for check in checks),
+    }
 
 
 def finish_goal(goal: TaskGoal, *, completed: bool) -> TaskGoal:
