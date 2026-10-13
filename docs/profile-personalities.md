@@ -91,7 +91,11 @@ and temporary files remain in ignored repository-local `state/`; verification
 does not use the user's personal profile or conversation contents.
 
 Prior main is preserved at `archive/2026-10-13/main-before-profile-personalities`.
-The requested feature is committed on `codex/profile-personalities`, with main
-retained at verified baseline `1315375` while the full regression gate remains
-unmet. The active checkout runs this feature branch through the existing
-launcher. Other worktrees and remote refs remain intact.
+The requested feature is committed on `codex/profile-personalities`; its full
+regression gate remains unmet. The subsequent UI-only composer polish advanced
+local main to `410d45d` and was merged back into this feature branch. All 12
+narrow composer and General-settings integration checks pass on the combined
+checkout (`state/composer-polish-combined.xml`). No full suite was rerun, as the
+user explicitly excluded it for the UI follow-up. The active checkout retains
+both features through the existing launcher. Other worktrees and remote refs
+remain intact.

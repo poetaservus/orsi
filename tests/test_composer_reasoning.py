@@ -6,7 +6,7 @@ from unittest.mock import Mock
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtCore import QPoint, QRect, Qt
+from PySide6.QtCore import QEvent, QObject, QPoint, QRect, Qt
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 
@@ -111,6 +111,11 @@ def test_composer_changes_model_and_reasoning_for_next_api_request(monkeypatch, 
             assert window.composer.rect().contains(rectangle)
             assert rectangle.top() > window.input.mapTo(window.composer, QPoint()).y()
         ordered = (window.composer_tools, models, reasoning, window.microphone_placeholder, window.action_slot)
+        centers = [widget.mapTo(window.composer, widget.rect().center()).y() for widget in ordered]
+        assert max(centers) - min(centers) <= 1
+        for button in (window.send, window.stop):
+            assert window.action_slot.rect().contains(button.geometry())
+            assert button.geometry().center() == window.action_slot.rect().center()
         for left, right in zip(ordered, ordered[1:]):
             assert left.mapTo(window.composer, QPoint(left.width(), 0)).x() < right.mapTo(window.composer, QPoint()).x()
         assert window.microphone_placeholder.mapTo(window.composer, QPoint()).x() > window.composer.width() / 2
@@ -128,7 +133,8 @@ def test_composer_changes_model_and_reasoning_for_next_api_request(monkeypatch, 
 
 
 @pytest.mark.parametrize('size', [(760, 600), (1280, 800)])
-def test_composer_popups_open_above_and_slider_commits_only_released_effort(monkeypatch, tmp_path, size):
+@pytest.mark.parametrize('intro', [True, False])
+def test_composer_popups_open_above_and_slider_commits_only_released_effort(monkeypatch, tmp_path, size, intro):
     app = QApplication.instance() or QApplication([])
     service, hybrid, cloud, client, requests = make_service(monkeypatch, tmp_path)
     window = MainWindow(service, 'SYNTHETIC-HOST', inference=hybrid)
@@ -136,14 +142,49 @@ def test_composer_popups_open_above_and_slider_commits_only_released_effort(monk
         window.resize(*size)
         window.show()
         app.processEvents()
+        if not intro:
+            window._leave_intro_mode()
+            window._intro_transition.setCurrentTime(window._intro_transition.duration())
+            app.processEvents()
         models, reasoning = window.composer_model_selector, window.reasoning_selector
-        models.showPopup()
-        app.processEvents()
+        frames = []
+
+        class PopupObserver(QObject):
+            def eventFilter(self, watched, event):  # noqa: N802
+                if event.type() in (QEvent.Type.Show, QEvent.Type.Paint):
+                    frames.append((event.type(), watched.frameGeometry()))
+                return False
+
+        observer = PopupObserver()
         model_popup = models.view().window()
-        assert model_popup.isVisible()
-        assert model_popup.frameGeometry().bottom() < models.mapToGlobal(QPoint()).y()
-        assert models.screen().availableGeometry().contains(model_popup.frameGeometry())
-        models.hidePopup()
+        model_popup.installEventFilter(observer)
+        animate = QApplication.isEffectEnabled(Qt.UIEffect.UI_AnimateCombo)
+        try:
+            QApplication.setEffectEnabled(Qt.UIEffect.UI_AnimateCombo, True)
+            effect_enabled = QApplication.isEffectEnabled(Qt.UIEffect.UI_AnimateCombo)
+            for attempt in range(2):
+                frames.clear()
+                models.showPopup()
+                app.processEvents()
+                assert QApplication.isEffectEnabled(Qt.UIEffect.UI_AnimateCombo) == effect_enabled
+                assert model_popup.isVisible()
+                assert any(kind == QEvent.Type.Show for kind, _ in frames)
+                assert any(kind == QEvent.Type.Paint for kind, _ in frames)
+                for _, frame in frames:
+                    assert frame.bottom() < models.mapToGlobal(QPoint()).y()
+                    assert models.screen().availableGeometry().contains(frame)
+                if attempt == 0:
+                    QTest.keyClick(models.view(), Qt.Key.Key_Escape)
+                    assert not model_popup.isVisible()
+                    assert cloud.active_model == 'gpt-6-luna'
+                else:
+                    QTest.keyClick(models.view(), Qt.Key.Key_Down)
+                    QTest.keyClick(models.view(), Qt.Key.Key_Return)
+                    assert not model_popup.isVisible()
+                    assert cloud.active_model == 'gpt-6.1-sol'
+        finally:
+            QApplication.setEffectEnabled(Qt.UIEffect.UI_AnimateCombo, animate)
+        models.setCurrentIndex(models.findData('cloud:gpt-6-luna'))
         QTest.mouseClick(reasoning, Qt.MouseButton.LeftButton)
         app.processEvents()
         assert reasoning.popup.isVisible()

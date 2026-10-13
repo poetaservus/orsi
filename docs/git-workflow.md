@@ -10,10 +10,12 @@ policy, accepted model profiles and existing user settings are preserved. See
 Prior main is preserved at `archive/2026-10-13/main-before-profile-personalities`.
 All 310 affected checks pass. Two full runs recorded separate unchanged runtime
 timing and Windows Git installer cleanup failures; all 92 corresponding checks
-pass in isolation. Preserve the committed feature branch and verified main
-`1315375` while the full regression gate remains unmet. After qualification,
-fast-forward main and remove only the merged feature branch. Other worktrees
-and remote refs remain intact.
+pass in isolation. Preserve the committed feature branch while its full
+regression gate remains unmet. The later UI-only composer polish advanced
+local main to `410d45d` and was merged back into this branch; 12 narrow composer
+and personality-control checks pass on the combined checkout. After personality
+qualification, fast-forward main and remove only the merged feature branch.
+Other worktrees and remote refs remain intact.
 
 ## Composer effort slider, 13 October 2026
 
@@ -25,6 +27,18 @@ After native verification, preserve prior main at
 `archive/2026-10-13/main-before-composer-effort-slider`, commit, fast-forward
 local main and remove only the merged feature branch. Other worktrees and
 remote refs remain intact.
+
+## Composer alignment and popup polish, 13 October 2026
+
+`codex/composer-menu-polish` starts from local main `1315375`. It aligns the
+composer icons and controls and positions the model list before its first
+visible frame. All 58 relevant UI checks passed; the user explicitly excluded
+the full suite for this presentation change. See [the fix and checks](composer-menu-polish.md).
+Preserve prior main at `archive/2026-10-13/main-before-composer-menu-polish`,
+commit, fast-forward local main and remove only the merged UI branch. Bring
+updated main back into the preserved `codex/profile-personalities` branch and
+leave that branch active. Its earlier qualification record remains unchanged.
+Other worktrees and remote refs remain intact.
 
 ## Complete integration and cleanup, 13 October 2026
 

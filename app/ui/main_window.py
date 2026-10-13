@@ -72,7 +72,7 @@ from app.ui.attachments import AttachmentTray
 from app.ui.image_viewer import ImageViewer
 from app.ui.motion import create_attachment_file_dialog
 from app.ui.composer import (
-    ComposerFrame, MessageInput, COMPOSER_STYLE, composer_tools, configure_input, configure_send,
+    ComposerFrame, MessageInput, COMPOSER_STYLE, COMPOSER_CONTROL_SIZE, composer_tools, configure_input, configure_send,
     composer_microphone, composer_selector,
     COMPOSER_WIDTH as _COMPOSER_WIDTH, MESSAGE_COMPOSER_HEIGHT as _COMPOSER_HEIGHT,
 )
@@ -583,16 +583,14 @@ class MainWindow(QMainWindow):
 
         self.action_slot = QWidget()
         self.action_slot.setObjectName("composerActionSlot")
-        self.action_slot.setFixedSize(34, 37)
+        self.action_slot.setFixedSize(COMPOSER_CONTROL_SIZE, COMPOSER_CONTROL_SIZE)
 
         self.send = QPushButton(self.action_slot)
         configure_send(self.send)
-        self.send.move(0, 4)
 
         self.stop = QPushButton(self.action_slot)
         self.stop.setObjectName("stopButton")
-        self.stop.setFixedSize(34, 34)
-        self.stop.move(0, 4)
+        self.stop.setFixedSize(COMPOSER_CONTROL_SIZE, COMPOSER_CONTROL_SIZE)
         self.stop.setIcon(QIcon(str(_ICON_DIRECTORY / "stop.svg")))
         self.stop.setIconSize(QSize(14, 14))
         self.stop.setToolTip("Stop")
@@ -607,18 +605,18 @@ class MainWindow(QMainWindow):
         composer_layout.addLayout(input_layout, 1)
         toolbar = QHBoxLayout()
         toolbar.setContentsMargins(0, 0, 0, 0)
-        toolbar.setSpacing(4)
+        toolbar.setSpacing(6)
         self.microphone_placeholder = composer_microphone(composer_row)
         self.composer_model_selector = composer_selector(composer_row, "Model", 190)
         self.composer_model_selector.setToolTip("Model for your next message")
         self.composer_model_selector.view().setMinimumWidth(300)
         self.reasoning_selector = ReasoningSelector(composer_row)
-        toolbar.addWidget(self.composer_tools)
+        toolbar.addWidget(self.composer_tools, 0, Qt.AlignmentFlag.AlignVCenter)
         toolbar.addStretch(1)
-        toolbar.addWidget(self.composer_model_selector)
-        toolbar.addWidget(self.reasoning_selector)
-        toolbar.addWidget(self.microphone_placeholder)
-        toolbar.addWidget(self.action_slot)
+        toolbar.addWidget(self.composer_model_selector, 0, Qt.AlignmentFlag.AlignVCenter)
+        toolbar.addWidget(self.reasoning_selector, 0, Qt.AlignmentFlag.AlignVCenter)
+        toolbar.addWidget(self.microphone_placeholder, 0, Qt.AlignmentFlag.AlignVCenter)
+        toolbar.addWidget(self.action_slot, 0, Qt.AlignmentFlag.AlignVCenter)
         composer_layout.addLayout(toolbar)
         self.composer_model_selector.currentIndexChanged.connect(self._select_composer_model)
         self.reasoning_selector.effort_selected.connect(self._select_composer_reasoning)
