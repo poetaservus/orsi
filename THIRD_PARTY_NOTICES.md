@@ -1,5 +1,14 @@
 # Third-party notices
 
+## Selectable interface fonts
+
+Lora, Merriweather, Outfit, Nunito, DM Sans and Montserrat are bundled unchanged
+from the official [Google Fonts repository](https://github.com/google/fonts/tree/67bc647ce1910e92f461bcc82aae30f21d21a9cc/ofl).
+Their full SIL Open Font License notices, pinned source URLs and SHA-256 hashes
+are included under `app/ui/assets/fonts/`. Preserve the adjacent `OFL-*.txt`
+licenses when distributing the portable app. These fonts load from local assets
+without installation or network access.
+
 ## Conformist theme: DM Sans and Lucide
 
 Conformist bundles the unmodified DM Sans variable font from the official

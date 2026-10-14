@@ -3,6 +3,7 @@ from copy import deepcopy
 from uuid import UUID
 
 from app.state.storage import JsonStore
+from app.settings.font import FONT_IDS
 from app.ui.themes import BUILTIN_IDS, validate_manifest, validate_package
 
 
@@ -16,9 +17,9 @@ class LoginAppearance:
         value = self.store.load()
         if value is None:
             return None
-        if (not isinstance(value, dict) or set(value) - {"version", "profile_id", "theme_id", "overrides"}
+        if (not isinstance(value, dict) or set(value) - {"version", "profile_id", "theme_id", "overrides", "font_id"}
                 or type(value.get("version")) is not int or value["version"] != 1
-                or value.get("theme_id") not in BUILTIN_IDS):
+                or value.get("theme_id") not in BUILTIN_IDS or value.get("font_id", "theme") not in FONT_IDS):
             raise ValueError("Invalid login appearance.")
         if not isinstance(value.get("profile_id"), str):
             raise ValueError("Invalid login appearance.")
@@ -31,10 +32,14 @@ class LoginAppearance:
             raise ValueError("Invalid login appearance.")
         return value
 
-    def remember(self, theme, profile_id):
+    def remember(self, theme, profile_id, *, font_id="theme"):
         try:
             self._load()  # Preserve an unreadable cache just like other preferences.
             value = {"version": 1, "profile_id": profile_id, "theme_id": theme.identity}
+            if font_id not in FONT_IDS:
+                return
+            if font_id != "theme":
+                value["font_id"] = font_id
             if theme.identity not in BUILTIN_IDS:
                 value["theme_id"] = "conformist" if theme.family == "DM Sans" else "original"
                 overrides = {"palette": deepcopy(theme.palette), "font": {"family": theme.family}}
@@ -62,5 +67,6 @@ class LoginAppearance:
                 controller.repository.packages["login-appearance"] = validate_package(package)
                 identity = "login-appearance"
             controller.select(identity, persist=False)
+            controller.select_font(value.get("font_id", "theme"), persist=False)
         except (OSError, ValueError, TypeError, KeyError):
             pass

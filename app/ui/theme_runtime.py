@@ -10,6 +10,8 @@ from PySide6.QtWidgets import QWidget
 
 from app.ui.themes import ASSETS, ICON_FILES, ORIGINAL, ThemeError, ThemeRepository
 from app.ui.settings_style import settings_typography
+from app.settings.font import FontSettings
+from app.ui.fonts import load_font
 
 
 # Legacy style literals remain the exact Original theme. Their semantic aliases
@@ -77,7 +79,8 @@ def themed_stylesheet(widget, source):
     if controller is None:
         return source
     theme = controller.current
-    source = source.replace("font-family: Saira", f'font-family: "{theme.family}"') if theme.family != "Saira" else source
+    family = controller.family
+    source = source.replace("font-family: Saira", f'font-family: "{family}"') if family != "Saira" else source
     if not theme.palette:
         return source
 
@@ -306,6 +309,15 @@ class ThemeController(QObject):
         self.repository = ThemeRepository(preferences)
         self.current = PreparedTheme({"manifest": dict(ORIGINAL), "assets": {}})
         self.notice = self.repository.error
+        self.font_settings = FontSettings.for_preferences(preferences)
+        self.font_identity = self.font_settings.identity
+        self._font_family = ""
+        self.font_notice = ("The saved font preference is unreadable; your settings were preserved."
+                            if self.font_settings.load_error else "")
+        try:
+            self._font_family = load_font(self.font_identity)
+        except (OSError, ValueError):
+            self.font_notice = "The saved font is unavailable. Theme default is active; your selection is preserved."
         self._applying = False
         selected = self.repository.selected()
         if isinstance(selected, str) and selected != "original":
@@ -315,13 +327,17 @@ class ThemeController(QObject):
             except Exception:
                 self.notice = "The saved theme is unavailable. Original is active; your selection is preserved."
 
+    @property
+    def family(self):
+        return self._font_family or self.current.family
+
     def apply_tree(self, root):
         if self._applying:
             return
         self._applying = True
         try:
             root_font = self.window.font()
-            root_font.setFamily(self.current.family)
+            root_font.setFamily(self.family)
             self.window.setFont(root_font)
             for widget in (root, *root.findChildren(QWidget)):
                 source = getattr(widget, "_theme_style_source", None)
@@ -337,7 +353,7 @@ class ThemeController(QObject):
                 # Explicit composer/greeting fonts must follow the stylesheet family.
                 if widget.objectName() in {"messageInput", "startupGreeting"}:
                     font = widget.font()
-                    font.setFamily(self.current.family)
+                    font.setFamily(self.family)
                     widget.setFont(font)
                 if widget.objectName() == "messageInput":
                     palette = widget.palette()
@@ -358,10 +374,7 @@ class ThemeController(QObject):
             prepared.close()
             raise
         previous, self.current = self.current, prepared
-        self.apply_tree(self.window)
-        self.window.chat.refresh_theme()
-        self.window.bottom_glass._transition_blur = None
-        self.window.bottom_glass.update()
+        self._refresh_appearance()
         previous.close()
         self.notice = prepared.warning
         controls = self.window.settings_panel.theme_controls
@@ -369,13 +382,31 @@ class ThemeController(QObject):
         controls.status.setText(self.notice)
         self.changed.emit()
 
+    def _refresh_appearance(self):
+        self.apply_tree(self.window)
+        self.window.chat.refresh_theme()
+        self.window.bottom_glass._transition_blur = None
+        self.window.bottom_glass.update()
+
+    def select_font(self, identity, *, persist=True):
+        family = load_font(identity)
+        if persist:
+            self.font_settings.select(identity)
+        self.font_identity, self._font_family = identity, family
+        self.font_notice = ""
+        self._refresh_appearance()
+        self.changed.emit()
+
     def clear(self):
         previous = self.current
         self.current = PreparedTheme({"manifest": dict(ORIGINAL), "assets": {}})
+        self.font_settings.close()
+        self.font_identity, self._font_family, self.font_notice = "theme", "", ""
         self.apply_tree(self.window)
         previous.close()
         self.repository.clear()
 
     def release(self):
+        self.font_settings.close()
         self.current.close()
         self.repository.clear()

@@ -1,5 +1,30 @@
 # Git layout and baseline hygiene
 
+## Independent interface font, 15 October 2026
+
+`codex/font-selector` starts from clean local main `302e182`. Appearance's Text
+size placeholder becomes an English-only Font selector with Theme default,
+Lora, Merriweather, Outfit, Nunito, DM Sans and Montserrat. The independent
+profile preference overrides theme typography without modifying theme exports.
+Bundled font binaries, italic faces, complete licenses and pinned source/hash
+metadata travel with the app and work offline after relocation. Login restores
+the public bundled font ID before unlock; protected settings remain in the vault.
+See [the behavior and verification record](interface-font.md).
+
+All **76 essential native checks passed** with no failures/errors/skips: 15
+focused checks in 55.64 seconds and 61 existing UI regressions in 57.04 seconds.
+Twenty-eight font/theme/window-size layouts fit, representative previews were
+visually inspected, and the built wheel's fonts load from a relocated extraction.
+The initial new-test optical-size-alias expectations and sandbox lock denial
+remain separate evidence. Full-suite/live inference gates and a full standalone
+runtime rebuild were not run under the user's essential-UI-test scope.
+
+Pre-change refs/worktree inventories are retained under ignored
+`state/backups/font-selector-20261014/`. Preserve prior main at
+`archive/2026-10-15/main-before-font-selector`, commit, fast-forward local main
+and remove only the merged font branch. Other active worktrees, historical/
+unmerged tips, private user settings and remote refs remain unchanged.
+
 ## Full-window Settings, 14 October 2026
 
 The accepted GUI-language work (`b87c29b`, Hungarian editorial revision

@@ -814,6 +814,9 @@ class MainWindow(QMainWindow):
         self.notification_sound.shutdown()
         self.theme_controller.clear()
         self.theme_selector.clear()
+        self.font_selector.clear()
+        self.font_selector.setEnabled(False)
+        self.settings_panel.font_controls.status.clear()
         self.settings_panel.theme_controls.status.clear()
 
     def resizeEvent(self, event) -> None:  # noqa: N802 - Qt API name

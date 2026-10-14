@@ -299,7 +299,8 @@ class ProfileApplication(QObject):
 
     def _remember_login_appearance(self, window):
         if window is self.window and self.manager.active and self.manager.locator is not None:
-            self.login_appearance.remember(window.theme_controller.current, self.manager.locator.profile_id)
+            self.login_appearance.remember(window.theme_controller.current, self.manager.locator.profile_id,
+                                           font_id=window.theme_controller.font_identity)
 
     def _remember_login_language(self, window, code):
         if window is self.window and self.manager.active and self.manager.locator is not None:

@@ -14,6 +14,7 @@ from app.conversation.personality import PERSONALITIES
 from app.conversation.response_language import RESPONSE_LANGUAGES
 from app.ui.theme_runtime import apply_theme_style, apply_theme_tree, theme_color
 from app.ui.theme_settings import ThemeControls
+from app.ui.font_settings import FontControls
 from app.ui.profile_layout import FeedbackLabel
 
 
@@ -300,7 +301,7 @@ class SettingsPanel(QFrame):
         appearance.addWidget(window.gui_language_hint)
         window.gui_language_selector.currentIndexChanged.connect(window._select_gui_language)
         window._sync_gui_language_selector()
-        self._future(appearance, "Text size", ui_text('Adjust interface text size'))
+        self.font_controls = FontControls(self, window, appearance)
         self._future(appearance, "Reduced motion", ui_text('Limit interface animations'))
         self._future(appearance, "High contrast", ui_text('Increase contrast for easier reading'))
         appearance.addStretch()
