@@ -6,6 +6,7 @@ from PySide6.QtGui import QColor, QIcon, QPainter, QPen
 from PySide6.QtWidgets import QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QPushButton, QWidget
 from app.ui.inputs import ScrollSafeComboBox
 from app.ui.settings_style import CONTROL_SURFACE
+from app.ui.theme_runtime import theme_color
 
 
 class NotificationSwitch(QCheckBox):
@@ -50,7 +51,7 @@ class NotificationSwitch(QCheckBox):
         painter.drawRoundedRect(QRectF(3 + 24 * self._position, 5, 14, 14), 5, 5)
         if self.hasFocus():
             painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.setPen(QPen(QColor("#9baec6"), 1))
+            painter.setPen(QPen(theme_color(self, "#888888", "focus"), 1))
             painter.drawRoundedRect(QRectF(0.5, 1, 43, 22), 10, 10)
 
 

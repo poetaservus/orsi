@@ -1035,7 +1035,7 @@ class MainWindow(QMainWindow):
         width = min(_COMPOSER_WIDTH, max(320, content.width() - 32))
         x = max(16, (content.width() - width) // 2)
         height = self.composer.height()
-        if self._intro_active:
+        if self._intro_active or getattr(self, "_profile_locked", False):
             y = max(24, (content.height() - height) // 2)
         else:
             y = max(16, content.height() - _COMPOSER_BOTTOM_MARGIN - height)

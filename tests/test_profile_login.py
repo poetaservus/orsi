@@ -47,6 +47,7 @@ def test_login_is_minimal_and_remembers_the_theme_after_lock_and_restart(qt, tmp
         assert not page.summary.isVisible() and not page.recovery.isVisible()
         assert not window.startup_greeting.text() and not window.startup_greeting.isVisible()
         assert not window.input.placeholderText()
+        assert abs(window.composer.geometry().center().y() - window.composer.parentWidget().rect().center().y()) <= 1
         assert page.more_button.font().underline()
         assert page.unlock_button.width() < page.password.width() / 2
         assert login.height() < 370 and login.width() <= 480
@@ -85,6 +86,7 @@ def test_login_is_minimal_and_remembers_the_theme_after_lock_and_restart(qt, tmp
             qt.processEvents()
             assert window.rect().contains(login.geometry())
             assert not window.startup_greeting.isVisible()
+            assert abs(window.composer.geometry().center().y() - window.composer.parentWidget().rect().center().y()) <= 1
             assert login.scroll.horizontalScrollBar().maximum() == 0
             for button in page.findChildren(QPushButton):
                 if button.isVisible():
@@ -107,9 +109,11 @@ def test_login_is_minimal_and_remembers_the_theme_after_lock_and_restart(qt, tmp
     restarted = ProfileApplication(qt, manager.application_root, build)
     try:
         restarted.start()
+        qt.processEvents()
         assert restarted.window.theme_controller.current.identity == theme
         assert len(calls) == 1  # Login appearance never opens the encrypted profile.
         assert buttons(restarted.window.personal_profile_page) == ["Unlock profile", "More"]
+        assert abs(restarted.window.composer.geometry().center().y() - restarted.window.composer.parentWidget().rect().center().y()) <= 1
     finally:
         close_controller(qt, restarted)
 

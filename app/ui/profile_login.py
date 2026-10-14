@@ -14,19 +14,19 @@ QWidget#personalProfilePage QLabel#loginProfileSummary {
 QWidget#personalProfilePage QLabel#loginFieldLabel { color: #e4e5eb; font-size: 16px; }
 QWidget#personalProfilePage QLabel#loginOptionsHeading { color: #a2afc1; font-size: 16px; }
 QWidget#personalProfilePage QLineEdit { font-size: 18px; border-radius: 8px; padding: 8px 10px; }
-QWidget#personalProfilePage QLineEdit:focus { border-color: #40536d; outline: none; }
+QWidget#personalProfilePage QLineEdit:focus { border-color: #505050; outline: none; }
 QWidget#personalProfilePage QPushButton { font-size: 16px; padding: 6px 14px; }
-QWidget#personalProfilePage QPushButton:focus { border-color: #40536d; outline: none; }
+QWidget#personalProfilePage QPushButton:focus { border-color: #505050; outline: none; }
 QWidget#personalProfilePage QLabel#profileFeedback {
-    background: #252d41; border: 1px solid #61748f; border-radius: 6px;
+    background: #252d41; border: 1px solid #505050; border-radius: 6px;
     padding: 10px 12px; color: #f0c5bb; font-size: 16px;
 }
 QWidget#personalProfilePage QPushButton#loginPrimary {
-    background: #3b5675; border-color: #6983a2; color: #f4f6fb; font-size: 16px; font-weight: 500;
+    background: #3b5675; border-color: #686868; color: #f4f6fb; font-size: 16px; font-weight: 500;
 }
 QWidget#personalProfilePage QPushButton#loginPrimary:hover { background: #46658a; }
 QWidget#personalProfilePage QPushButton#loginPrimary:pressed { background: #304761; }
-QWidget#personalProfilePage QPushButton#loginPrimary:focus { border-color: #6983a2; outline: none; }
+QWidget#personalProfilePage QPushButton#loginPrimary:focus { border-color: #686868; outline: none; }
 QWidget#personalProfilePage QPushButton#loginMore,
 QWidget#personalProfilePage QPushButton#loginMore:hover,
 QWidget#personalProfilePage QPushButton#loginMore:pressed,
@@ -149,5 +149,5 @@ class ProfileLoginPanel(QFrame):
         gradient.setColorAt(0, theme_color(self, "#090c15", "settings_bottom"))
         gradient.setColorAt(1, theme_color(self, "#1d2637", "settings_top"))
         painter.setBrush(gradient)
-        painter.setPen(QPen(theme_color(self, "#48525f", "border"), 1.0))
+        painter.setPen(QPen(theme_color(self, "#505050", "border"), 1.0))
         painter.drawRoundedRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5), 16, 16)

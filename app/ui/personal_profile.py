@@ -28,14 +28,14 @@ QWidget#personalProfilePage QWidget { font-family: Saira; color: #e4e5eb; }
 QWidget#personalProfilePage QLabel#profileHeading { font-size: 26px; font-weight: 600; }
 QWidget#personalProfilePage QLabel#profileName { font-size: 18px; font-weight: 500; }
 QWidget#personalProfilePage QLabel#profileFeedback { font-size: 14px; color: #c4e3f6; }
-QWidget#personalProfilePage QFrame#profileCard { background: rgba(25, 31, 42, 30); border: 1px solid #526171; border-radius: 7px; }
+QWidget#personalProfilePage QFrame#profileCard { background: rgba(25, 31, 42, 30); border: 1px solid #505050; border-radius: 7px; }
 QWidget#personalProfilePage QLabel#profileCardHeading { font-size: 20px; font-weight: 400; }
 QWidget#personalProfilePage QLabel#profileHint { font-size: 14px; color: #b9c2d0; }
 QWidget#personalProfilePage QRadioButton, QWidget#personalProfilePage QCheckBox { font-size: 14px; }
 QWidget#personalProfilePage QTabWidget::pane { border: none; background: transparent; }
 QWidget#personalProfilePage QTabBar, QWidget#personalProfilePage QTabWidget, QWidget#personalProfilePage QStackedWidget { background: transparent; border: none; }
 QWidget#personalProfilePage QTabBar::tab { background: transparent; color: #ccd3de; border: none; border-bottom: 2px solid transparent; padding: 10px 12px; font-size: 14px; }
-QWidget#personalProfilePage QTabBar::tab:selected { color: #f4f6fb; border-bottom-color: #65bdea; }
+QWidget#personalProfilePage QTabBar::tab:selected { color: #f4f6fb; border-bottom-color: #888888; }
 QWidget#personalProfilePage QTabBar::tab:hover { background: rgba(185,197,213,12); }
 QWidget#personalProfilePage QScrollArea, QWidget#personalProfilePage QScrollArea > QWidget > QWidget { background: transparent; border: none; }
 QWidget#personalProfilePage QScrollBar:vertical { width: 5px; background: transparent; }

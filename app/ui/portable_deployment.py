@@ -60,9 +60,9 @@ class PortableDeploymentDialog(QDialog):
             QDialog#personalProfileDialog {
                 background: qlineargradient(x1:0, y1:1, x2:1, y2:0, stop:0 #090c15, stop:1 #1d2637);
             }
-            QProgressBar { background: #162235; border: 1px solid #35465e; border-radius: 6px; color: #dce5f0; }
+            QProgressBar { background: #162235; border: 1px solid #3d3d3d; border-radius: 6px; color: #dce5f0; }
             QProgressBar::chunk { background: #3b5675; border-radius: 5px; }
-            QPushButton#deployPrimary { background: #3b5675; border-color: #6983a2; color: #f4f6fb; }
+            QPushButton#deployPrimary { background: #3b5675; border-color: #686868; color: #f4f6fb; }
             QPushButton#deployPrimary:hover { background: #46658a; }
             QPushButton#deployPrimary:disabled { background: #243247; color: #8899ad; }
         """)

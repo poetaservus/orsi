@@ -123,6 +123,11 @@ Application code maps its existing style values to these roles. Omitted roles
 retain their exact original values, rather than flattening the existing palette.
 Theme files cannot supply arbitrary Qt stylesheets or change formatting rules.
 
+Original's Settings controls use neutral gray borders in normal, hover, focused,
+pressed, disabled and selected states. This includes dropdown popups, lists,
+profile cards/tabs, checkboxes, radio buttons, switches and app-owned settings
+dialogs. Other themes continue to map these colors through their palette roles.
+
 ## Image-generation placeholder
 
 Themes may opt into the fixed `shimmer_dots` appearance used by Conformist:
@@ -157,7 +162,8 @@ password field, a compact unlock button and an underlined **More** control.
 More reveals recovery, profile details and alternative profile/restore actions.
 The expanded view labels the location **Profile Path:**. Less shrinks the panel
 back to its compact size. Login fields and buttons retain neutral borders on
-focus, and the locked backdrop does not repeat the login greeting.
+focus, and the locked backdrop keeps the composer centered without repeating the
+login greeting.
 The password and recovery-key Enter shortcuts retain their existing behavior.
 
 After opening a profile, the app remembers its appearance in ignored application

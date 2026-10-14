@@ -318,7 +318,7 @@ class SettingsPanel(QFrame):
         gradient.setColorAt(0, theme_color(self, "#090c15", "settings_bottom"))
         gradient.setColorAt(1, theme_color(self, "#1d2637", "settings_top"))
         painter.setBrush(gradient)
-        painter.setPen(QPen(theme_color(self, "#48525f", "border"), 1.0))
+        painter.setPen(QPen(theme_color(self, "#505050", "border"), 1.0))
         painter.drawRoundedRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5), 16, 16)
 
     def bounded_position(self, position):
@@ -378,8 +378,8 @@ QLabel#settingsSectionTitle { font-size: 20px; font-weight: 500; }
 QLabel#settingName { font-size: 18px; font-weight: 500; }
 QFrame#settingsPanel QLabel#conversationStatus { font-size: 14px; color: #d9dde5; }
 QFrame#settingsPanel QLabel#settingsLabel, QLabel#settingsDescription { font-size: 14px; color: #d9dde5; }
-QFrame#settingsDivider { background: rgba(207, 214, 227, 42); border: none; }
-QFrame#settingRow { background: transparent; border: none; border-bottom: 1px solid rgba(207, 214, 227, 42); }
+QFrame#settingsDivider { background: rgba(214, 214, 214, 42); border: none; }
+QFrame#settingRow { background: transparent; border: none; border-bottom: 1px solid rgba(214, 214, 214, 42); }
 QFrame#settingRowPlain { background: transparent; border: none; }
 QFrame#settingsPanel QPushButton#settingsNavigation { text-align: left; padding-left: 9px; font-size: 20px;
     border: none; border-radius: 5px; background: transparent; }

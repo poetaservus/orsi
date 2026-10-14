@@ -1,5 +1,31 @@
 # Git layout and baseline hygiene
 
+## Centered login composer and neutral Settings borders, 14 October 2026
+
+`codex/original-settings-borders` starts from clean main `a4146f7`. The locked
+backdrop positions the composer in the center independently of the hidden intro
+greeting. Original's settings and app-owned settings dialogs use neutral gray
+borders across controls and interaction states, including dropdown/list selections,
+checkbox/radio indicators, switch focus rings, profile cards/tabs and panel edges.
+Other themes retain palette mapping. This change does not alter authentication,
+notification/sound behavior, response formatting or animation timing.
+
+All **45 essential native checks passed** in **65.70 seconds**, with no failures,
+errors or skips. Coverage includes border/indicator pixels in native interaction
+states, settings navigation/geometry, theme switching, numeric editing, checkbox
+consent and login centering through lock, resize and cold restart. The initial
+pixel probe included text antialiasing; the final probe samples border perimeters.
+Native Settings and Original/Conformist locked previews were visually inspected.
+Evidence is under ignored `state/settings-borders-final.xml` and
+`state/settings-borders-preview/`. Full-suite and live inference gates were not
+run under the user's essential-test scope. Whitespace checks passed.
+
+Ref/worktree inventories are retained under ignored
+`state/backups/original-settings-borders-20261014/`, with prior main preserved at
+`archive/2026-10-14/main-before-original-settings-borders`. Commit, fast-forward
+local main and remove only this merged branch. Other worktrees, historical/unmerged
+tips, private settings and remote refs remain unchanged; no push is part of this task.
+
 ## Login panel polish, 14 October 2026
 
 `codex/login-panel-polish` starts from clean main `8cdc851`. Normal login labels
