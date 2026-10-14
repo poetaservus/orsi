@@ -1,5 +1,33 @@
 # Spacious Settings and centered login
 
+## Dropdown choices and sliding module highlight, 15 October 2026
+
+Shared Settings dropdown styling removes borders around choices, including
+the selected choice, and adds a faint hover fill using the theme's hover
+surface. The popup's outside border remains. The shared rules also apply to
+Personal profile controls and Settings-owned dialogs.
+
+One background slides behind the selected module over 220 milliseconds with
+OutCubic easing. Page selection remains immediate. Rapid selections continue
+from the current highlight position; closing stops the animation, and opening,
+resizing or translated label reflow aligns it with the selected button. Modules
+added later, including Personal profile, use the same highlight.
+
+All **20 essential native UI checks passed in 31.61 seconds**, without failures,
+errors, skips or warnings. Coverage includes popup borders/hover across ordinary
+Settings selectors in both bundled themes, selection cancellation, rapid module
+changes, resize/reopen, translated labels, late-added modules, font/theme/mode
+selection, image saving, existing page transitions, caption controls and blur/
+greeting placement. Representative native popup and intermediate/settled module
+screenshots were visually inspected. Compilation and whitespace checks pass.
+Full-suite and live gates were not run under the user's focused UI scope.
+
+Early popup checks assumed fixed visible language-list rows and relied on the
+background Windows cursor. The final checks use fully visible choices and direct
+Qt hover events, retaining pixel assertions for borders and hover color. Evidence
+is under ignored `state/settings-dropdown-motion-complete.xml` and
+`state/settings-dropdown-preview/`.
+
 ## Installed skills, switches and greeting backdrop, 15 October 2026
 
 Installed skills has a gray outline, no separators between entries and a

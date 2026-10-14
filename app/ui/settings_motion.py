@@ -1,11 +1,11 @@
 """Vector button feedback and dragging for the settings UI."""
-from app.ui.localization import ui_text, QPushButton, QWidget
+from app.ui.localization import ui_text, QFrame, QPushButton, QWidget
 
 from math import sin, pi
 
-from PySide6.QtCore import QEasingCurve, QEvent, QLineF, QObject, QRectF, Qt, QVariantAnimation, Signal
+from PySide6.QtCore import QEasingCurve, QEvent, QLineF, QObject, QPropertyAnimation, QRectF, Qt, QVariantAnimation, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
-from app.ui.theme_runtime import controller_for, theme_color, theme_icon
+from app.ui.theme_runtime import apply_theme_style, controller_for, theme_color, theme_icon
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (QStyle, QStyleOptionButton, QStylePainter)
 
@@ -65,6 +65,59 @@ class SettingsPageTransition(QObject):
     def eventFilter(self, watched, event):  # noqa: N802
         if event.type() in (QEvent.Type.Hide, QEvent.Type.Resize):
             self.cancel()
+        return super().eventFilter(watched, event)
+
+
+class SettingsNavigationHighlight(QObject):
+    """Move one background behind the active module without delaying its page."""
+    def __init__(self, container, buttons, stack):
+        super().__init__(container)
+        self.container, self.buttons, self.stack = container, buttons, stack
+        self.highlight = QFrame(container)
+        self.highlight.setObjectName("settingsNavigationHighlight")
+        self.highlight.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        apply_theme_style(self.highlight, """
+QFrame#settingsNavigationHighlight {
+    background: rgba(185, 197, 213, 17); border: none; border-radius: 5px;
+}
+""")
+        self.highlight.hide()
+        self.animation = QPropertyAnimation(self.highlight, b"geometry", self)
+        self.animation.setDuration(220)
+        self.animation.setEasingCurve(QEasingCurve.Type.OutCubic)
+        container.installEventFilter(self)
+        for button in buttons:
+            self.watch(button)
+        stack.currentChanged.connect(self._change)
+
+    def watch(self, button):
+        button.installEventFilter(self)
+
+    def sync(self):
+        self.animation.stop()
+        index = self.stack.currentIndex()
+        if not self.container.isVisible() or not 0 <= index < len(self.buttons):
+            self.highlight.hide()
+            return
+        self.highlight.setGeometry(self.buttons[index].geometry())
+        self.highlight.show()
+        self.highlight.lower()
+
+    def _change(self, index):
+        if not self.container.isVisible() or not self.highlight.isVisible():
+            self.sync()
+            return
+        start = self.highlight.geometry()
+        self.animation.stop()
+        self.animation.setStartValue(start)
+        self.animation.setEndValue(self.buttons[index].geometry())
+        self.animation.start()
+
+    def eventFilter(self, watched, event):  # noqa: N802
+        if event.type() in (QEvent.Type.Show, QEvent.Type.Resize, QEvent.Type.Move):
+            self.sync()
+        elif watched is self.container and event.type() == QEvent.Type.Hide:
+            self.animation.stop()
         return super().eventFilter(watched, event)
 
 

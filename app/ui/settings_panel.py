@@ -4,7 +4,7 @@ from app.ui.localization import ui_extra, ui_text, QComboBox, QFrame, QLabel, QP
 from PySide6.QtCore import QRect, Qt
 from PySide6.QtGui import QFont, QKeySequence, QPainter, QShortcut, QPalette
 from PySide6.QtWidgets import (QGraphicsBlurEffect, QHBoxLayout, QSizePolicy, QStackedWidget, QVBoxLayout, QStyle, QStyleOptionButton)
-from app.ui.settings_motion import SettingsIconButton, SettingsPageTransition
+from app.ui.settings_motion import SettingsIconButton, SettingsNavigationHighlight, SettingsPageTransition
 from app.ui.settings_style import settings_control_style
 from app.ui.skill_settings import SkillSettingsPage
 from app.ui.image_settings import ImageSettingsPage
@@ -86,7 +86,10 @@ class SettingsPanel(QFrame):
         outer.addWidget(line)
         body = QHBoxLayout()
         body.setSpacing(20)
-        nav = QVBoxLayout()
+        self.navigation_container = QWidget(self)
+        self.navigation_container.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding)
+        nav = QVBoxLayout(self.navigation_container)
+        nav.setContentsMargins(0, 0, 0, 0)
         self.navigation_layout = nav
         nav.setSpacing(4)
         self.pages = QStackedWidget()
@@ -116,13 +119,14 @@ class SettingsPanel(QFrame):
         self.page_transition = SettingsPageTransition(self.pages)
         self.pages.currentChanged.connect(lambda i: self.navigation[i].setChecked(True))
         nav.addStretch()
-        body.addLayout(nav)
+        body.addWidget(self.navigation_container)
         divider = QFrame()
         divider.setObjectName("settingsDivider")
         divider.setFixedWidth(1)
         body.addWidget(divider)
         body.addWidget(self.pages, 1)
         outer.addLayout(body, 1)
+        self.navigation_highlight = SettingsNavigationHighlight(self.navigation_container, self.navigation, self.pages)
         parent.theme_controller.changed.connect(self.fit_to_parent)
 
     def show_section(self, name):
@@ -159,6 +163,7 @@ class SettingsPanel(QFrame):
         button.clicked.connect(lambda: self.pages.setCurrentIndex(index))
         self.navigation.append(button)
         self.navigation_layout.insertWidget(self.navigation_layout.count() - 1, button)
+        self.navigation_highlight.watch(button)
         if page.tabbed:
             self.pages.addWidget(page)
             apply_theme_tree(page)
@@ -460,7 +465,7 @@ QFrame#settingRow { background: transparent; border: none; border-bottom: 1px so
 QFrame#settingRowPlain { background: transparent; border: none; }
 QFrame#settingsPanel QPushButton#settingsNavigation { text-align: left; padding-left: 9px; font-size: 20px;
     border: none; border-radius: 5px; background: transparent; }
-QFrame#settingsPanel QPushButton#settingsNavigation:checked, QFrame#settingsPanel QPushButton#settingsNavigation:hover { background: rgba(185, 197, 213, 17); }
+QFrame#settingsPanel QPushButton#settingsNavigation:hover { background: rgba(185, 197, 213, 17); }
 QFrame#settingsPanel QPushButton#settingsClose { background: transparent; border: none; border-radius: 5px; padding: 0; }
 QFrame#settingsPanel QPushButton#settingsClose:hover { background: rgba(255,255,255,18); }
 QFrame#settingsPanel QPushButton#settingsClose:pressed { background: rgba(255,255,255,30); }

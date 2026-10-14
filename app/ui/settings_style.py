@@ -51,8 +51,9 @@ def settings_control_style(*roots):
  background: {CONTROL_SURFACE}; color: #e4e5eb; border: 1px solid {SETTINGS_BORDER_HOVER};
  selection-background-color: #3b5675; selection-color: #f4f6fb; outline: 0;
 }}
-{select('QComboBox QAbstractItemView::item')} {{ border: 1px solid transparent; }}
-{select('QComboBox QAbstractItemView::item:selected')} {{ border-color: {SETTINGS_BORDER_HOVER}; outline: none; }}
+{select('QComboBox QAbstractItemView::item')} {{ border: none; outline: none; }}
+{select('QComboBox QAbstractItemView::item:selected')} {{ border: none; outline: none; }}
+{select('QComboBox QAbstractItemView::item:hover')} {{ background: #2d4059; border: none; outline: none; }}
 {select('QListWidget')} {{ outline: 0; padding: 4px; }}
 {select('QListWidget::item')} {{ padding: 7px 8px; border: 1px solid transparent; border-radius: 4px; }}
 {select('QListWidget::item:hover')} {{ background: #2d4059; }}

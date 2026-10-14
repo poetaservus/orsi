@@ -1,5 +1,25 @@
 # Git layout and baseline hygiene
 
+## Dropdown choices and sliding module highlight, 15 October 2026
+
+`codex/settings-dropdown-motion` starts from clean local main `2cdc6ec`.
+Shared Settings dropdown choices remove their borders and gain a faint hover
+fill. A single module highlight slides behind the selected button, supports
+rapid changes and follows layout changes and later-added modules. See
+[the presentation and verification](spacious-settings.md).
+
+All **20 essential native UI checks passed in 31.61 seconds**, without failures,
+errors, skips or warnings. Representative popup and moving/settled highlight
+screenshots were visually inspected in both bundled themes. Compilation and
+whitespace checks pass. Full-suite and live gates remain outside the user's
+focused UI scope.
+
+Inventories are retained under ignored
+`state/backups/settings-dropdown-motion-20261015/`. Preserve prior main at
+`archive/2026-10-15/main-before-settings-dropdown-motion`, commit, fast-forward
+local main and remove only the merged feature branch. Other worktrees,
+historical/unmerged tips, private settings and remote refs stay intact.
+
 ## Installed skills, switches and greeting backdrop, 15 October 2026
 
 `codex/settings-skills-switches` starts from clean local main `b793854`.

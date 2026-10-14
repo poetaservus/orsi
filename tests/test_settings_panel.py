@@ -9,14 +9,15 @@ import pytest
 
 pytest.importorskip("PySide6")
 from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
-from PySide6.QtGui import QColor, QEnterEvent, QFont, QImage, QPainter, QRegion
+from PySide6.QtGui import QColor, QEnterEvent, QFont, QHoverEvent, QImage, QPainter, QRegion
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QFrame, QLabel, QStyle, QStyleOptionButton, QStyleOptionComboBox, QWidget
+from PySide6.QtWidgets import QApplication, QComboBox, QFrame, QLabel, QStyle, QStyleOptionButton, QStyleOptionComboBox, QWidget
 
 from app.settings.images import ImageGenerationSettings, ImageSettingsStore
 from app.state.storage import JsonStore
 from app.ui.main_window import MainWindow
 from app.ui.settings_layout import SettingsButton
+from app.ui.theme_runtime import theme_color
 from app.settings.personality import PersonalitySettings
 from app.settings.response_language import ResponseLanguageSettings
 
@@ -153,6 +154,109 @@ def test_clean_settings_still_display_unreadable_preference_errors(app, tmp_path
         window._sync_personality_selector()
         window._sync_response_language_selector()
         assert not window.personality_hint.isVisible() and not window.response_language_hint.isVisible()
+    finally:
+        window.close()
+
+
+@pytest.mark.parametrize("theme", ["original", "conformist"])
+def test_settings_dropdowns_have_borderless_choices_and_subtle_hover(app, theme):
+    window = MainWindow(None, "SYNTHETIC")
+    try:
+        window.resize(1280, 900)
+        window.theme_controller.select(theme)
+        window.show()
+        panel = window.settings_panel
+        panel.show()
+        checked = 0
+        for section in ("General", "Models", "Image Generation", "Appearance"):
+            panel.show_section(section)
+            panel.page_transition.cancel()
+            app.processEvents()
+            scroll = panel.pages.currentWidget()
+            for selector in scroll.widget().findChildren(QComboBox):
+                if selector.count() < 2:
+                    continue
+                selector.setEnabled(True)  # Inspect unavailable synthetic-service controls, too.
+                scroll.ensureWidgetVisible(selector)
+                app.processEvents()
+                before = selector.currentIndex()
+                selector.showPopup()
+                app.processEvents()
+                view = selector.view()
+                QTest.qWaitForWindowExposed(view.window())
+                QTest.qWait(50)
+                app.sendEvent(view.viewport(), QEvent(QEvent.Type.Leave))
+                image = view.viewport().grab().toImage()
+                visible = [view.model().index(row, 0) for row in range(selector.count())
+                           if view.viewport().rect().contains(view.visualRect(view.model().index(row, 0)))]
+                assert len(visible) >= 2
+                for index in visible[:2]:
+                    bounds = view.visualRect(index)
+                    x = bounds.right() - 10
+                    assert image.pixelColor(x, bounds.top()) == image.pixelColor(x, bounds.center().y())
+                    assert image.pixelColor(x, bounds.bottom()) == image.pixelColor(x, bounds.center().y())
+                target = visible[1]
+                bounds = view.visualRect(target)
+                local, global_pos = QPointF(bounds.center()), QPointF(view.viewport().mapToGlobal(bounds.center()))
+                app.sendEvent(view.viewport(), QEnterEvent(local, local, global_pos))
+                app.sendEvent(view.viewport(), QHoverEvent(QEvent.Type.HoverMove, local, global_pos, QPointF(-1, -1)))
+                bounds = view.visualRect(target)
+                assert view.viewport().rect().contains(bounds)
+                hover = view.viewport().grab().toImage()
+                assert hover.pixelColor(bounds.right() - 10, bounds.center().y()) == theme_color(selector, "#2d4059", "surface_hover"), selector.accessibleName()
+                assert selector.currentIndex() == before
+                QTest.keyClick(view, Qt.Key.Key_Escape)
+                assert not view.isVisible() and selector.currentIndex() == before
+                checked += 1
+        assert checked >= 9
+    finally:
+        window.close()
+
+
+@pytest.mark.parametrize("theme", ["original", "conformist"])
+def test_module_highlight_slides_retargets_and_fits_after_reopen_resize(app, theme):
+    window = MainWindow(None, "SYNTHETIC")
+    try:
+        window.theme_controller.select(theme)
+        window.show()
+        panel = window.settings_panel
+        panel.show()
+        app.processEvents()
+        motion = panel.navigation_highlight
+        start = panel.navigation[0].geometry()
+        assert motion.highlight.geometry() == start
+        QTest.mouseClick(panel.navigation[2], Qt.MouseButton.LeftButton)
+        assert panel.pages.currentIndex() == 2
+        assert motion.animation.state() == motion.animation.State.Running
+        motion.animation.setCurrentTime(80)
+        midway = motion.highlight.geometry()
+        assert start.y() < midway.y() < panel.navigation[2].y()
+        QTest.mouseClick(panel.navigation[4], Qt.MouseButton.LeftButton)
+        assert panel.pages.currentIndex() == 4 and motion.highlight.geometry() == midway
+        motion.animation.setCurrentTime(motion.animation.duration())
+        assert motion.highlight.geometry() == panel.navigation[4].geometry()
+        for size in ((760, 600), (1280, 900)):
+            panel.show_section("General")
+            motion.animation.setCurrentTime(70)
+            panel.hide()
+            assert motion.animation.state() == motion.animation.State.Stopped
+            window.resize(*size)
+            panel.show()
+            app.processEvents()
+            assert motion.highlight.geometry() == panel.navigation[0].geometry()
+            button = panel.navigation[0]
+            assert panel.childAt(button.mapTo(panel, button.rect().center())) is button
+        window.gui_language_selector.setCurrentIndex(window.gui_language_selector.findData("hu"))
+        app.processEvents()
+        assert motion.highlight.geometry() == panel.navigation[0].geometry()
+        personal_page = QWidget()
+        personal_page.tabbed = False
+        panel.add_personal_page(personal_page)
+        app.processEvents()
+        QTest.mouseClick(panel.navigation[-1], Qt.MouseButton.LeftButton)
+        assert panel.pages.currentIndex() == len(panel.navigation) - 1
+        motion.animation.setCurrentTime(motion.animation.duration())
+        assert motion.highlight.geometry() == panel.navigation[-1].geometry()
     finally:
         window.close()
 
