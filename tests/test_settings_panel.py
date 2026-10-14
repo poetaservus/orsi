@@ -9,7 +9,7 @@ import pytest
 
 pytest.importorskip("PySide6")
 from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
-from PySide6.QtGui import QColor, QEnterEvent, QPainter
+from PySide6.QtGui import QColor, QEnterEvent, QFont, QPainter
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QFrame, QLabel, QStyle, QStyleOptionButton, QStyleOptionComboBox, QWidget
 
@@ -50,6 +50,10 @@ def test_clean_settings_keep_labels_and_accessible_help_without_subtexts(app, th
             "General", "Greeting", "Personality",
             "Response Language", "Tool execution approval", "Notifications", "Notification sound",
         }
+        notification_labels = [label for label in general.findChildren(QLabel)
+                               if label.isVisible() and label.text() == "Notifications"]
+        assert len(notification_labels) == 1
+        assert notification_labels[0].font().weight() >= QFont.Weight.DemiBold
         assert not window.activity.isVisible()
         assert not window.personality_hint.isVisible()
         assert not window.response_language_hint.isVisible()
@@ -84,6 +88,7 @@ def test_action_buttons_stay_compact_at_native_caption_width(app, theme):
     try:
         window.show()
         window.theme_controller.select(theme)
+        window.skill_settings_page.set_vault_guidance(True)
         for font in ("theme", "merriweather", "outfit"):
             window.theme_controller.select_font(font)
             for size in ((1280, 900), (760, 600)):
@@ -94,6 +99,22 @@ def test_action_buttons_stay_compact_at_native_caption_width(app, theme):
                     panel.show()
                     panel.page_transition.cancel()
                     app.processEvents()
+                    if section == "Skills" and size[0] >= 900:
+                        page = window.skill_settings_page
+                        buttons = (page.browse, page.browse_folder, page.preview_button, page.install_button)
+                        centers = [button.mapTo(page, button.rect().center()).y() for button in buttons]
+                        assert max(centers) - min(centers) <= 1
+                    elif section == "Image Generation":
+                        page = window.image_settings_page
+                        row = page.choices["output_format"].parentWidget()
+                        bottom = row.mapTo(page, QPoint(0, row.height())).y()
+                        assert page.actions.mapTo(page, QPoint()).y() - bottom >= 12
+                    elif section == "Appearance":
+                        controls = panel.theme_controls
+                        row = controls.selector.parentWidget()
+                        parent = row.parentWidget()
+                        bottom = row.mapTo(parent, QPoint(0, row.height())).y()
+                        assert controls.actions.mapTo(parent, QPoint()).y() - bottom >= 12
                     for button in panel.findChildren(SettingsButton):
                         if not button.isVisible():
                             continue

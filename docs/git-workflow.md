@@ -1,5 +1,23 @@
 # Git layout and baseline hygiene
 
+## Settings action alignment, 15 October 2026
+
+`codex/settings-action-alignment` starts from clean local main `3ed7306`.
+Notifications retains one bold label, Skills shares one import action row, and
+Image Generation/Appearance separate their compact footer buttons from the
+preceding row. See [the presentation and verification](spacious-settings.md).
+
+All **13 focused native checks passed in 30.87 seconds**, without failures,
+errors or skips. Twenty native module/theme/size states were checked and the
+affected modules' screenshots visually inspected. Compilation and whitespace
+checks pass. Full-suite and live gates remain outside the user's focused UI scope.
+
+Inventories are retained under ignored
+`state/backups/settings-action-alignment-20261015/`. Preserve prior main at
+`archive/2026-10-15/main-before-settings-action-alignment`, commit, fast-forward
+local main and remove only the merged feature branch. Other worktrees,
+historical/unmerged tips, private settings and remote refs stay intact.
+
 ## Flat Settings and compact action buttons, 15 October 2026
 
 `codex/settings-cleanup` starts from clean local main `1502224`. The ordinary

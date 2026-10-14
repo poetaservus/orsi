@@ -46,6 +46,7 @@ class ImageSettingsPage(QWidget):
         self.save_button = QPushButton(ui_text('Save image settings'))
         self.reset_button = QPushButton(ui_text('Reset changes'))
         self.actions = AdaptiveRow([self.save_button, self.reset_button])
+        form.addSpacing(16)
         form.addWidget(self.actions)
         form.addSpacing(12)
         self.save_button.clicked.connect(self._save)

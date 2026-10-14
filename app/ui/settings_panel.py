@@ -232,14 +232,15 @@ class SettingsPanel(QFrame):
         window.tool_approval_toggle.toggled.connect(window._set_tool_approval_required)
         self._row(general, ui_text('Tool execution approval'), ui_text('Review tool changes before they run'),
                   window.tool_approval_toggle, control_size=(44, 24))
-        general = settings_group(general_page, ui_text('Notifications'))
+        general = settings_group(general_page)
         window.notification_toggle = NotificationSwitch(self)
         window.notification_toggle.setAccessibleName(ui_text('Notifications'))
         window.notification_toggle.setChecked(window.notifications.enabled)
         window.notification_toggle.toggled.connect(
             lambda enabled: window.notifications.configure(enabled=enabled))
-        self._row(general, ui_text('Notifications'), ui_text('Alerts while O.R.S.I is in the background'),
-                  window.notification_toggle, control_size=(44, 24))
+        notification_row = self._row(general, ui_text('Notifications'), ui_text('Alerts while O.R.S.I is in the background'),
+                                     window.notification_toggle, control_size=(44, 24))
+        notification_row.title.setObjectName("settingsGroupTitle")
         window.notification_sound = NotificationSoundControl(window.notifications, self)
         self._row(general, ui_text('Notification sound'), ui_text('Choose your alert sound'),
                   window.notification_sound, control_size=(280, 44))

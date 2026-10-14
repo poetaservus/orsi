@@ -1,5 +1,23 @@
 # Spacious Settings and centered login
 
+## Settings action alignment, 15 October 2026
+
+Notifications now has one bold label aligned with its toggle. Skills places
+Choose file, Choose folder, Preview and Install in profile on one action row,
+using the existing stacked layout when a narrow window needs more room. Image
+Generation's Save/Reset and Appearance's Add/Export actions have 16 pixels of
+space above them, separating the compact buttons from the preceding row.
+
+All **13 focused native checks passed in 30.87 seconds**, without failures,
+errors or skips. They cover the requested alignment and spacing, compact
+buttons, navigation, translated controls, image saving, skill installation/
+removal and theme import/export. Twenty native module/theme/size states were
+checked; the four affected modules' final screenshots were visually inspected.
+No inference requests were made. Compilation and whitespace checks pass.
+Evidence is under ignored `state/settings-actions.xml` and
+`state/settings-actions-preview/`. Full-suite and live gates were not run under
+the user's focused UI scope.
+
 ## Flat Settings cleanup, 15 October 2026
 
 The current presentation removes the gray group fills, rounded group borders

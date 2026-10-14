@@ -26,6 +26,7 @@ class ThemeControls:
         self.add.setAccessibleName(ui_text('Add theme'))
         self.export.setAccessibleName(ui_text('Export current theme'))
         self.actions = AdaptiveRow([self.add, self.export])
+        layout.addSpacing(16)
         layout.addWidget(self.actions)
         self.status = FeedbackLabel(self.controller.notice)
         self.status.setObjectName("settingsDescription")
