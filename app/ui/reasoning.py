@@ -1,8 +1,10 @@
 """A model-aware effort slider in a compact popup above the composer."""
+from app.ui.localization import ui_text, QFrame, QLabel, QPushButton, QSlider
+
 from app.ui.theme_runtime import apply_theme_style, theme_color
 from PySide6.QtCore import QEvent, QPoint, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath
-from PySide6.QtWidgets import QFrame, QLabel, QPushButton, QSlider, QVBoxLayout
+from PySide6.QtWidgets import QVBoxLayout
 
 from app.ui.composer import ASSETS, COMPOSER_CONTROL_SIZE, REASONING_LABELS
 
@@ -12,7 +14,7 @@ class EffortSlider(QSlider):
         super().__init__(Qt.Orientation.Horizontal, parent)
         self.setFixedHeight(30)
         self.setTracking(False)
-        self.setAccessibleName("Reasoning effort")
+        self.setAccessibleName(ui_text('Reasoning effort'))
 
     def _index_at(self, x):
         fraction = max(0., min(1., (x - 15) / max(1, self.width() - 30)))
@@ -100,7 +102,7 @@ class ReasoningSelector(QPushButton):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setObjectName("reasoningSelector")
-        self.setAccessibleName("Reasoning level")
+        self.setAccessibleName(ui_text('Reasoning level'))
         self.setFixedHeight(COMPOSER_CONTROL_SIZE)
         self._efforts = ()
         self.current_effort = None
@@ -141,7 +143,7 @@ class ReasoningSelector(QPushButton):
         self.slider.setValue(self._efforts.index(current) if self.current_effort else 0)
         self.slider.blockSignals(False)
         self._preview(self.slider.value())
-        label = REASONING_LABELS.get(self.current_effort, "Reasoning")
+        label = ui_text(REASONING_LABELS.get(self.current_effort, "Reasoning"))
         self.setText(label)
         self.setFixedWidth(max(100, self.fontMetrics().horizontalAdvance(label) + 34))
         self.setAccessibleDescription(label)
@@ -154,7 +156,7 @@ class ReasoningSelector(QPushButton):
 
     def _preview(self, index):
         effort = self._efforts[index] if 0 <= index < len(self._efforts) else None
-        label = REASONING_LABELS.get(effort, "Reasoning")
+        label = ui_text(REASONING_LABELS.get(effort, "Reasoning"))
         self.level_label.setText(label)
         self.slider.setAccessibleDescription(label)
         self.slider.update()

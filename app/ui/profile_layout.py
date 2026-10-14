@@ -1,7 +1,8 @@
 """Small native widgets for the personal-profile settings workspace."""
-from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtWidgets import (QBoxLayout, QButtonGroup, QFrame, QLabel, QRadioButton, QTabBar,
-                              QLayout, QSizePolicy, QVBoxLayout, QWidget)
+from app.ui.localization import ui_text, QFrame, QLabel, QRadioButton, QWidget
+
+from PySide6.QtCore import QEvent, QSize, Qt, Signal
+from PySide6.QtWidgets import (QBoxLayout, QButtonGroup, QTabBar, QLayout, QSizePolicy, QVBoxLayout)
 
 from app.vault.credentials import CredentialPolicy
 
@@ -53,6 +54,14 @@ class AdaptiveRow(QWidget):
         self.adapt()
         super().resizeEvent(event)
 
+    def changeEvent(self, event):  # noqa: N802
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.LanguageChange:
+            for widget in self.widgets:
+                if hasattr(widget, "retranslate_ui"):
+                    widget.retranslate_ui()
+            self.adapt()
+
     def adapt(self):
         required = self._required_width()
         stacked = self.width() < required
@@ -100,8 +109,8 @@ class CredentialPolicyChoice(QWidget):
         box.setContentsMargins(0, 0, 0, 0)
         box.setSpacing(10)
         for index, title in enumerate(("Ask whenever Cloud is selected", "Use saved encrypted credentials")):
-            choice = QRadioButton(title)
-            choice.setAccessibleName(title)
+            choice = QRadioButton(ui_text(title))
+            choice.setAccessibleName(ui_text(title))
             self.group.addButton(choice, index)
             box.addWidget(choice)
             choice.toggled.connect(lambda checked, i=index: self.currentIndexChanged.emit(i) if checked else None)

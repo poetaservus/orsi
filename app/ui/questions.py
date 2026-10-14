@@ -1,14 +1,12 @@
 """Native mixed question form rendered inside the existing composer."""
 from __future__ import annotations
+from app.ui.localization import ui_text, UiText, QCheckBox, QFrame, QLabel, QLineEdit, QPlainTextEdit, QPushButton, QRadioButton, QScrollArea, QWidget
+
 
 from app.ui.theme_runtime import apply_theme_style
 from PySide6.QtCore import QEvent, QSize, Qt, Signal
 from PySide6.QtGui import QFont, QKeySequence, QShortcut, QTextLayout, QTextOption
-from PySide6.QtWidgets import (
-    QButtonGroup, QCheckBox, QFrame, QHBoxLayout, QLabel, QLineEdit,
-    QPlainTextEdit, QPushButton, QRadioButton, QScrollArea, QSizePolicy, QStyle, QStyleOptionButton,
-    QVBoxLayout, QWidget, QGraphicsOpacityEffect,
-)
+from PySide6.QtWidgets import (QButtonGroup, QHBoxLayout, QSizePolicy, QStyle, QStyleOptionButton, QVBoxLayout, QGraphicsOpacityEffect)
 
 from app.conversation.questions import Question, QuestionBatch, format_answers
 from app.ui.inputs import ScrollSafeComboBox
@@ -40,7 +38,8 @@ class _WrappingChoice:
                     else QStyle.SubElement.SE_CheckBoxContents)
         width = max(1, self.style().subElementRect(contents, option, self).width() - 4)
         lines = []
-        for paragraph in self._label.split("\n"):
+        text_label = self._label.resolve() if isinstance(self._label, UiText) else self._label
+        for paragraph in text_label.split("\n"):
             encoded = paragraph.encode("utf-16-le")
             text = QTextLayout(paragraph, self.font())
             options = QTextOption()
@@ -76,7 +75,7 @@ class _WrappingChoice:
 
     def changeEvent(self, event):  # noqa: N802
         super().changeEvent(event)
-        if event.type() in (QEvent.Type.FontChange, QEvent.Type.StyleChange):
+        if event.type() in (QEvent.Type.FontChange, QEvent.Type.StyleChange, QEvent.Type.LanguageChange):
             self._wrap()
             self.updateGeometry()
 
@@ -92,22 +91,21 @@ class QuestionCheckBox(_WrappingChoice, QCheckBox):
 class QuestionField(QWidget):
     changed = Signal()
 
-    def __init__(self, question: Question, number: int, parent=None):
+    def __init__(self, question: Question, number: int, parent=None, *, display_title=None):
         super().__init__(parent)
         self.question = question
-        self.setAccessibleName(question.title)
+        title_text = question.title if display_title is None else display_title
+        self.setAccessibleName(title_text)
         self.buttons = []
         self.other_button = self.other_text = self.editor = self.combo = None
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 12, 0, 16)
         layout.setSpacing(8)
-        title = plain_label(f"{number}. {question.title}", self)
+        title = plain_label(ui_text('{value_0}. {value_1}', value_0=number, value_1=title_text), self)
         title.setObjectName("questionTitle")
         layout.addWidget(title)
         if question.kind == "multi" or not question.required:
-            detail = "Select multiple" if question.kind == "multi" else ""
-            if not question.required:
-                detail += " (optional)" if detail else "Optional"
+            detail = (ui_text("Select multiple (optional)") if not question.required else ui_text("Select multiple")) if question.kind == "multi" else ui_text("Optional")
             hint = plain_label(detail, self)
             hint.setObjectName("questionHint")
             layout.addWidget(hint)
@@ -115,19 +113,19 @@ class QuestionField(QWidget):
         self.group.setExclusive(question.kind != "multi")
         if question.kind == "text":
             self.editor = QPlainTextEdit(self)
-            self.editor.setPlaceholderText("Type your answer here…")
-            self.editor.setAccessibleName(question.title)
+            self.editor.setPlaceholderText(ui_text('Type your answer here…'))
+            self.editor.setAccessibleName(title_text)
             self.editor.setFixedHeight(96)
             self.editor.textChanged.connect(self.changed)
             layout.addWidget(self.editor)
         elif question.kind == "dropdown" or question.kind == "single" and len(question.options) > 5:
             self.combo = ScrollSafeComboBox(self)
             self.combo.setAccessibleName(question.title)
-            self.combo.addItem("Select an option…", None)
+            self.combo.addItem(ui_text('Select an option…'), None)
             for option in question.options:
                 self.combo.addItem(option.label, option.id)
             if question.allow_other:
-                self.combo.addItem("Something else…", "__other__")
+                self.combo.addItem(ui_text('Something else…'), "__other__")
             self.combo.currentIndexChanged.connect(self._changed)
             layout.addWidget(self.combo)
         else:
@@ -141,14 +139,14 @@ class QuestionField(QWidget):
                 button.toggled.connect(self._changed)
                 layout.addWidget(button)
             if question.allow_other:
-                self.other_button = button_type("Something else…", self)
+                self.other_button = button_type(ui_text("Something else…"), self)
                 self.group.addButton(self.other_button)
                 self.other_button.toggled.connect(self._changed)
                 layout.addWidget(self.other_button)
         if question.allow_other:
             self.other_text = QLineEdit(self)
-            self.other_text.setPlaceholderText("Your answer…")
-            self.other_text.setAccessibleName(question.title + ": custom answer")
+            self.other_text.setPlaceholderText(ui_text('Your answer…'))
+            self.other_text.setAccessibleName(ui_text("{title}: custom answer", title=question.title))
             self.other_text.setMaxLength(8000)
             self.other_text.hide()
             self.other_text.textChanged.connect(self.changed)
@@ -202,7 +200,7 @@ class QuestionComposer(QFrame):
         layout.setContentsMargins(22, 16, 22, 16)
         layout.setSpacing(10)
         header = QHBoxLayout()
-        title = plain_label("O.R.S.I. / Questions", self)
+        title = plain_label(ui_text('O.R.S.I. / Questions'), self)
         title.setObjectName("questionsHeader")
         header.addWidget(title, 1)
         self.required_count = plain_label("", self)
@@ -229,7 +227,7 @@ class QuestionComposer(QFrame):
             field.changed.connect(self.refresh)
             body_layout.addWidget(field)
         extra = QuestionField(Question(id="additional", title="Additional information", kind="text", required=False),
-                              len(batch.questions) + 1, self.body)
+                              len(batch.questions) + 1, self.body, display_title=ui_text("Additional information"))
         self.additional = extra.editor
         extra.changed.connect(self.refresh)
         body_layout.addWidget(extra)
@@ -238,15 +236,15 @@ class QuestionComposer(QFrame):
         install_smooth_scroll(self.scroll)
         layout.addWidget(self.scroll, 1)
         footer = QHBoxLayout()
-        self.chat_button = QPushButton("Answer in chat", self)
+        self.chat_button = QPushButton(ui_text('Answer in chat'), self)
         self.chat_button.clicked.connect(self.chat_requested)
         footer.addWidget(self.chat_button)
         self.hint = plain_label("", self)
         self.hint.setObjectName("questionHint")
         footer.addWidget(self.hint, 1)
-        self.send = QPushButton("Send  ↑", self)
+        self.send = QPushButton(ui_text('Send  ↑'), self)
         self.send.setObjectName("questionsSend")
-        self.send.setAccessibleName("Send answers")
+        self.send.setAccessibleName(ui_text('Send answers'))
         self.send.clicked.connect(self._submit)
         footer.addWidget(self.send)
         layout.addLayout(footer)
@@ -271,9 +269,9 @@ class QuestionComposer(QFrame):
             valid = all(field.complete() for field in self.fields.values())
         except ValueError:
             valid = False
-        self.required_count.setText(f"{remaining} required" if remaining else "Ready" if valid else "Check answers")
-        self.hint.setText("Complete required questions to continue" if remaining else
-                          "Ready to send" if valid else "Check your answers")
+        self.required_count.setText(ui_text('{value_0} required', value_0=remaining) if remaining else ui_text('Ready') if valid else ui_text('Check answers'))
+        self.hint.setText(ui_text('Complete required questions to continue') if remaining else
+                          ui_text('Ready to send') if valid else ui_text('Check your answers'))
         self.send.setEnabled(valid and self.isEnabled())
 
     def _submit(self):

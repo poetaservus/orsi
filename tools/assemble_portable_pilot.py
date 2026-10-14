@@ -102,7 +102,8 @@ def public_export(source: Path, revision: str) -> list[tuple[str, bytes]]:
                 raise ValueError("Public export contains a link or unsupported entry.")
             if member.name not in PUBLIC_FILES and not (
                     name.parts[0] == "app" and (name.suffix in {".py", ".png", ".ico", ".svg", ".ogg", ".ttf", ".txt", ".md"}
-                    or (name.parts[:4] == ("app", "ui", "assets", "themes") and name.suffix == ".json"))):
+                    or (name.parts[:4] == ("app", "ui", "assets", "themes") and name.suffix == ".json")
+                    or (name.parts[:3] == ("app", "ui", "translations") and name.suffix in {".ts", ".qm"}))):
                 raise ValueError("Unexpected public application file.")
             exported.append((member.name, content.extractfile(member).read()))
     if not {*PUBLIC_FILES, "app/main.py"} <= {name for name, _ in exported}:

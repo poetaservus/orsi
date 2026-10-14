@@ -1,4 +1,6 @@
 """Public bundled artwork for desktop startup and profile loading."""
+from app.ui.localization import ui_text, QWidget
+
 from pathlib import Path
 from math import cos, pi
 import os
@@ -8,7 +10,7 @@ from threading import Event, Thread
 
 from PySide6.QtCore import QEasingCurve, QEventLoop, QObject, QPropertyAnimation, QRect, QRectF, Qt, Signal, QVariantAnimation
 from PySide6.QtGui import QColor, QPainter, QPixmap
-from PySide6.QtWidgets import QApplication, QWidget
+from PySide6.QtWidgets import (QApplication)
 
 from app.ui.window_frame import DEFAULT_WINDOW_SIZE
 
@@ -24,10 +26,10 @@ class ProfileLoadingWindow(QWidget):
         super().__init__(None, Qt.WindowType.SplashScreen | Qt.WindowType.FramelessWindowHint
                          | Qt.WindowType.WindowDoesNotAcceptFocus | Qt.WindowType.WindowStaysOnTopHint)
         self.setObjectName("profileLoadingWindow")
-        self.setWindowTitle("O.R.S.I")
+        self.setWindowTitle(ui_text('O.R.S.I'))
         from app.ui.branding import app_icon
         self.setWindowIcon(app_icon())
-        self.setAccessibleName("Opening personal profile")
+        self.setAccessibleName(ui_text('Opening personal profile'))
         self.setAttribute(Qt.WidgetAttribute.WA_QuitOnClose, False)
         self.setAttribute(Qt.WidgetAttribute.WA_ShowWithoutActivating)
         self.setGeometry(previous.geometry() if previous is not None else geometry)

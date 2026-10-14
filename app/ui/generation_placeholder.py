@@ -1,10 +1,12 @@
 """Theme-aware image-request placeholders with the shared visibility lifecycle."""
+from app.ui.localization import ui_text, QWidget
+
 from math import cos, pi, sin
 from random import Random
 
 from PySide6.QtCore import QElapsedTimer, QEvent, QPointF, QRectF, QTimer, Qt
 from PySide6.QtGui import QColor, QFont, QFontMetricsF, QImage, QLinearGradient, QPainter, QPainterPath, QPen, QRadialGradient
-from PySide6.QtWidgets import QWidget
+
 from app.ui.theme_runtime import color, controller_for
 
 
@@ -15,7 +17,7 @@ class GenerationPlaceholder(QWidget):
     def __init__(self, parent=None, *, aspect_ratio=1.0):
         super().__init__(parent)
         self.setObjectName("imageGenerationPlaceholder")
-        self.setAccessibleName("Generating image")
+        self.setAccessibleName(ui_text('Generating image'))
         self.aspect_ratio = aspect_ratio
         self.active = False
         self._occluded = False
@@ -63,14 +65,14 @@ class GenerationPlaceholder(QWidget):
     def start(self):
         self.active = True
         self.status = "Generating image…"
-        self.setAccessibleName(self.status)
+        self.setAccessibleName(ui_text(self.status))
         self._resume()
 
     def stop(self, status=""):
         self._pause()
         self.active = False
         self.status = status
-        self.setAccessibleName(status or "Image generation finished")
+        self.setAccessibleName(ui_text(status or "Image generation finished"))
         self.update()
 
     def _pause(self):
@@ -191,9 +193,10 @@ class GenerationPlaceholder(QWidget):
         metrics = QFontMetricsF(font)
         baseline = bounds.bottom() - 24 - metrics.descent()
         left = bounds.left() + 24
-        key = (self.status, bounds.width(), bounds.height(), font.key())
+        text = str(ui_text(self.status))
+        key = (text, bounds.width(), bounds.height(), font.key())
         if key != self._status_key:
-            label = metrics.elidedText(self.status, Qt.TextElideMode.ElideRight,
+            label = metrics.elidedText(text, Qt.TextElideMode.ElideRight,
                                       max(0, bounds.right() - 24 - left))
             self._status_path = QPainterPath()
             self._status_path.addText(QPointF(left, baseline), font, label)

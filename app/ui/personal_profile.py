@@ -1,12 +1,12 @@
 """Personal profile controls shared by settings and the locked-profile login."""
+from app.ui.localization import ui_text, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QLabel, QLineEdit, QListWidget, QMenu, QPushButton, QScrollArea, QTabWidget, QTextEdit, QWidget, QFileDialog, QMessageBox
+
 from pathlib import Path
 import json
 
 from app.ui.theme_runtime import apply_theme_style
 from PySide6.QtCore import Qt, Signal
-from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
-    QFileDialog, QFormLayout, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
-    QMenu, QMessageBox, QPushButton, QScrollArea, QSizePolicy, QStackedWidget, QTabWidget, QTextEdit, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QAbstractItemView, QGridLayout, QHBoxLayout, QListWidgetItem, QSizePolicy, QStackedWidget, QVBoxLayout)
 
 from app.ui.notification_settings import NotificationSwitch
 from app.ui.inputs import CompactNumberInput, ScrollSafeComboBox
@@ -54,7 +54,7 @@ def profile_dialog(parent):
 
 
 def label(text):
-    widget = QLabel(text)
+    widget = QLabel(ui_text(text))
     widget.setTextFormat(Qt.TextFormat.PlainText)
     widget.setWordWrap(True)
     widget.setObjectName("settingsDescription")
@@ -62,6 +62,7 @@ def label(text):
 
 
 def secret(name):
+    name = ui_text(name)
     widget = QLineEdit()
     widget.setEchoMode(QLineEdit.EchoMode.Password)
     widget.setAccessibleName(name)
@@ -72,7 +73,7 @@ def secret(name):
 def combo(options):
     widget = ScrollSafeComboBox()
     for title, value in options:
-        widget.addItem(title, value)
+        widget.addItem(ui_text(title), value)
     widget.setMinimumContentsLength(12)
     widget.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
     widget.setMinimumWidth(0)
@@ -89,21 +90,20 @@ class ProfileChoice(QDialog):
         super().__init__(parent)
         self.setObjectName("personalProfileDialog")
         apply_theme_style(self, _STYLE)
-        self.setWindowTitle("Select personal profile" if existing else "Set up personal profile")
+        self.setWindowTitle(ui_text('Select personal profile') if existing else ui_text('Set up personal profile'))
         self.resize(560, 400)
         layout = QVBoxLayout(self)
-        layout.addWidget(label("History, images, imported copies, skills, documentation, your greeting and setup preferences "
-            "stay together. Host projects remain outside unless you import a copy."))
+        layout.addWidget(label(ui_text('History, images, imported copies, skills, documentation, your greeting and setup preferences stay together. Host projects remain outside unless you import a copy.')))
         form = QFormLayout()
         self.mode = combo((("Local computer", "local"), ("Portable drive", "portable")))
-        self.mode.setAccessibleName("Storage mode")
-        self.encryption = QCheckBox("Encrypt personal storage")
+        self.mode.setAccessibleName(ui_text('Storage mode'))
+        self.encryption = QCheckBox(ui_text('Encrypt personal storage'))
         self.encryption.setChecked(True)
         self.location = QLineEdit(str(manager.default_location()))
-        self.location.setAccessibleName("Personal profile location")
-        browse = QPushButton("Choose location…")
+        self.location.setAccessibleName(ui_text('Personal profile location'))
+        browse = QPushButton(ui_text('Choose location…'))
         def choose():
-            path = QFileDialog.getExistingDirectory(self, "Select existing profile" if existing else "Choose containing folder")
+            path = QFileDialog.getExistingDirectory(self, ui_text('Select existing profile') if existing else ui_text('Choose containing folder'))
             if path:
                 self.location.setText(path if existing else str(Path(path) / "orsi-profile"))
         browse.clicked.connect(choose)
@@ -113,38 +113,37 @@ class ProfileChoice(QDialog):
         location_layout.addWidget(self.location, 1)
         location_layout.addWidget(browse)
         self.mode.currentIndexChanged.connect(lambda: self.location.setText(str(manager.default_location(self.mode.currentData()))))
-        self.password, self.repeat = secret("Profile password"), secret("Repeat profile password")
+        self.password, self.repeat = secret(ui_text('Profile password')), secret(ui_text('Repeat profile password'))
         self.quota = CompactNumberInput()
         self.quota.setRange(1, 1_000_000)
         self.quota.setValue(1)
         self.quota.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.quota.setAccessibleName("Profile quota")
+        self.quota.setAccessibleName(ui_text('Profile quota'))
         self.policy = combo((("Ask whenever cloud is selected", CredentialPolicy.ASK),
                              ("Allow explicitly saved encrypted credentials", CredentialPolicy.SAVED)))
-        self.policy.setAccessibleName("Credential policy")
-        form.addRow("Storage", self.mode)
+        self.policy.setAccessibleName(ui_text('Credential policy'))
+        form.addRow(ui_text('Storage'), self.mode)
         form.addRow(self.encryption)
-        form.addRow("Location", location_row)
+        form.addRow(ui_text('Location'), location_row)
         if existing:
-            form.addRow("Password", self.password)
+            form.addRow(ui_text('Password'), self.password)
         if not existing:
             password_row = QWidget()
             password_layout = QHBoxLayout(password_row)
             password_layout.setContentsMargins(0, 0, 0, 0)
             password_layout.addWidget(self.password)
             password_layout.addWidget(self.repeat)
-            form.addRow("Password", password_row)
+            form.addRow(ui_text('Password'), password_row)
             quota_row = QWidget()
             quota_layout = QHBoxLayout(quota_row)
             quota_layout.setContentsMargins(0, 0, 0, 0)
             quota_layout.addWidget(self.quota)
-            quota_layout.addWidget(label("GiB"))
+            quota_layout.addWidget(label(ui_text('GiB')))
             quota_layout.addStretch()
-            form.addRow("Quota (grows with usage)", quota_row)
-            form.addRow("Credentials", self.policy)
+            form.addRow(ui_text('Quota (grows with usage)'), quota_row)
+            form.addRow(ui_text('Credentials'), self.policy)
         layout.addLayout(form)
-        self.storage_info = label("Recommended: encrypted copies are protected while locked. Unencrypted profiles use "
-            "session-only credentials. Saving a key always needs separate consent.")
+        self.storage_info = label(ui_text('Recommended: encrypted copies are protected while locked. Unencrypted profiles use session-only credentials. Saving a key always needs separate consent.'))
         layout.addWidget(self.storage_info)
         self.error = label("")
         layout.addWidget(self.error)
@@ -160,8 +159,8 @@ class ProfileChoice(QDialog):
                 self.repeat.clear()
                 self.policy.setCurrentIndex(0)
             self.policy.setEnabled(enabled)
-            self.storage_info.setText("Recommended: encrypted copies are protected while locked. Saving a key always needs separate consent."
-                if enabled else "This profile stores personal data without encryption. Connection credentials remain session-only.")
+            self.storage_info.setText(ui_text('Recommended: encrypted copies are protected while locked. Saving a key always needs separate consent.')
+                if enabled else ui_text('This profile stores personal data without encryption. Connection credentials remain session-only.'))
         self.encryption.toggled.connect(encryption_changed)
         self.finished.connect(lambda: (self.password.clear(), self.repeat.clear()))
         self.existing, self.selection = existing, None
@@ -169,7 +168,7 @@ class ProfileChoice(QDialog):
     def _accept(self):
         if not self.location.text().strip() or (self.encryption.isChecked() and
             (not self.password.text() or not self.existing and self.password.text() != self.repeat.text())):
-            self.error.setText("Choose a location and enter matching passwords.")
+            self.error.setText(ui_text('Choose a location and enter matching passwords.'))
             return
         self.selection = {"root": Path(self.location.text().strip()), "mode": self.mode.currentData(),
             "encrypted": self.encryption.isChecked(), "password": self.password.text().encode(),
@@ -204,34 +203,33 @@ class PersonalProfilePage(QWidget):
         if login:
             self.layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         if not login and not self.tabbed:
-            heading = label("Personal profile")
+            heading = label(ui_text('Personal profile'))
             heading.setObjectName("profileHeading")
             self.layout.addWidget(heading)
-            self.layout.addWidget(label("Set up a profile to keep your personal storage and preferences together."))
+            self.layout.addWidget(label(ui_text('Set up a profile to keep your personal storage and preferences together.')))
         self.summary = label("")
-        self.summary.setAccessibleName("Selected personal profile")
+        self.summary.setAccessibleName(ui_text('Selected personal profile'))
         if login:
             self.summary.setObjectName("loginProfileSummary")
             self.summary.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
             self.summary.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.layout.addWidget(self.summary)
         self.status = FeedbackLabel(message)
-        self.status.setAccessibleName("Personal profile status")
+        self.status.setAccessibleName(ui_text('Personal profile status'))
         if setup_required:
             self.summary.hide()
             self.layout.addWidget(self.status)
             self.status.setVisible(bool(message))
-            self.create_profile, = self._buttons((("Create profile", self._new),))
+            self.create_profile, = self._buttons(((ui_text('Create profile'), self._new),))
             self.create_profile.setObjectName("loginPrimary")
             self.create_profile.setFixedHeight(44)
             return
         if manager.deletion_pending:
-            self.summary.setText("Profile deletion is not finished.")
+            self.summary.setText(ui_text('Profile deletion is not finished.'))
             self.layout.addWidget(self.status)
-            self.layout.addWidget(label("Reconnect the profile's drives and close any other instance using its copies, then retry. "
-                "O.R.S.I keeps track of the remaining locations until deletion completes."))
+            self.layout.addWidget(label(ui_text("Reconnect the profile's drives and close any other instance using its copies, then retry. O.R.S.I keeps track of the remaining locations until deletion completes.")))
             locations = QListWidget()
-            locations.setAccessibleName("Pending profile deletion locations")
+            locations.setAccessibleName(ui_text('Pending profile deletion locations'))
             locations.setTextElideMode(Qt.TextElideMode.ElideMiddle)
             locations.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
             locations.setMaximumHeight(160)
@@ -239,9 +237,9 @@ class PersonalProfilePage(QWidget):
                 for path in manager.deletion_targets():
                     locations.addItem(str(path))
             except Exception as error:
-                self.status.setText(public_error(error))
+                self.status.setText(ui_text(public_error(error)))
             self.layout.addWidget(locations)
-            self._buttons((("Retry profile deletion", lambda: self.transition_requested.emit(
+            self._buttons(((ui_text('Retry profile deletion'), lambda: self.transition_requested.emit(
                 lambda: self.manager.delete_current(consent=True))),))
             if not login:
                 self.layout.addStretch()
@@ -254,17 +252,17 @@ class PersonalProfilePage(QWidget):
         if login:
             self.status.setVisible(bool(message))
         else:
-            self._buttons((("New profile…", self._new), ("Select existing…", self._select)))
+            self._buttons(((ui_text('New profile…'), self._new), (ui_text('Select existing…'), self._select)))
         if location_error is not None:
-            self.create_profile, = self._buttons((("Create profile", self._new),))
+            self.create_profile, = self._buttons(((ui_text('Create profile'), self._new),))
             self.create_profile.setObjectName("loginPrimary")
             self.create_profile.setFixedHeight(44)
-            self._buttons((("Check location again", lambda: self.transition_requested.emit(lambda: None)),))
+            self._buttons(((ui_text('Check location again'), lambda: self.transition_requested.emit(lambda: None)),))
         elif manager.locator is not None and not manager.active:
-            self.password, self.recovery = secret("Profile password"), secret("Recovery key (optional)")
+            self.password, self.recovery = secret(ui_text('Profile password')), secret(ui_text('Recovery key (optional)'))
             if login:
-                self.password.setPlaceholderText("Enter your profile password")
-                self.recovery.setPlaceholderText("Or paste your recovery key")
+                self.password.setPlaceholderText(ui_text('Enter your profile password'))
+                self.recovery.setPlaceholderText(ui_text('Or paste your recovery key'))
                 fields = (("Password", self.password),) if self.compact_login else (
                     ("Password", self.password), ("Recovery key (optional)", self.recovery))
                 for title, field in fields:
@@ -277,7 +275,7 @@ class PersonalProfilePage(QWidget):
             else:
                 self.layout.addWidget(self.password)
                 self.layout.addWidget(self.recovery)
-            self.unlock_button, = self._buttons((("Unlock profile" if manager.encrypted else "Open profile", self._unlock),))
+            self.unlock_button, = self._buttons(((ui_text('Unlock profile') if manager.encrypted else ui_text('Open profile'), self._unlock),))
             if login:
                 self.unlock_button.setObjectName("loginPrimary")
                 self.unlock_button.setFixedHeight(44)
@@ -288,24 +286,24 @@ class PersonalProfilePage(QWidget):
         if login:
             if not self.compact_login:
                 self.layout.addSpacing(10)
-                options = label("Other profile options")
+                options = label(ui_text('Other profile options'))
                 options.setObjectName("loginOptionsHeading")
                 self.layout.addWidget(options)
             choices = QHBoxLayout()
             actions = (("Select existing…", self._select),) if location_error is not None else (
                 ("New profile…", self._new), ("Select existing…", self._select))
             for title, action in actions:
-                button = QPushButton(title)
+                button = QPushButton(ui_text(title))
                 button.setFixedHeight(40)
                 button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
                 button.clicked.connect(action)
                 choices.addWidget(button)
             choices.addStretch()
             self.layout.addLayout(choices)
-        self._buttons((("Use current unencrypted storage", self._legacy),))
+        self._buttons(((ui_text('Use current unencrypted storage'), self._legacy),))
         if not login:
             if not is_deployed_node(self.manager.application_root):
-                self._buttons((("Deploy portable node…", self._deploy_node),))
+                self._buttons(((ui_text('Deploy portable node…'), self._deploy_node),))
             self.layout.addStretch()
         self.refresh_summary()
         if message:
@@ -314,18 +312,18 @@ class PersonalProfilePage(QWidget):
     def _login_more(self):
         root = self.layout
         root.removeWidget(self.summary)
-        self.more_button = QPushButton("More", self)
+        self.more_button = QPushButton(ui_text('More'), self)
         self.more_button.setObjectName("loginMore")
         self.more_button.setCheckable(True)
         self.more_button.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.more_button.setAccessibleName("More login options")
+        self.more_button.setAccessibleName(ui_text('More login options'))
         root.addWidget(self.more_button, 0, Qt.AlignmentFlag.AlignLeft)
         self.more_options = QWidget(self)
         self.more_options.setObjectName("loginMoreOptions")
         self.layout = QVBoxLayout(self.more_options)
         self.layout.setContentsMargins(0, 12, 0, 0)
         self.layout.setSpacing(12)
-        caption = label("Recovery key")
+        caption = label(ui_text('Recovery key'))
         caption.setObjectName("loginFieldLabel")
         caption.setBuddy(self.recovery)
         self.recovery.setFixedHeight(48)
@@ -341,39 +339,39 @@ class PersonalProfilePage(QWidget):
 
     def _toggle_login_more(self, expanded):
         self.more_options.setVisible(expanded)
-        self.more_button.setText("Less" if expanded else "More")
+        self.more_button.setText(ui_text('Less') if expanded else ui_text('More'))
         if not expanded:
             self.recovery.clear()
         self.login_layout_changed.emit()
 
     def _workspace(self, message):
         outer = self.layout
-        heading = label("Personal profile")
+        heading = label(ui_text('Personal profile'))
         heading.setObjectName("profileHeading")
         outer.addWidget(heading)
-        self.subtitle = label("Your profile, access and backups.")
+        self.subtitle = label(ui_text('Your profile, access and backups.'))
         outer.addWidget(self.subtitle)
         identity = QWidget()
         identity_box = QVBoxLayout(identity)
         identity_box.setContentsMargins(0, 0, 0, 0)
         identity_box.setSpacing(5)
-        name = label("Personal profile")
+        name = label(ui_text('Personal profile'))
         name.setObjectName("profileName")
         name.setToolTip(str(self.manager.locator.root))
         identity_box.addWidget(name)
         self.summary.deleteLater()
         self.summary = self._location_field()
-        self.summary.setAccessibleName("Selected personal profile")
+        self.summary.setAccessibleName(ui_text('Selected personal profile'))
         identity_box.addWidget(self.summary)
-        self.manage_profile = self._button("Manage profile", None)
+        self.manage_profile = self._button(ui_text('Manage profile'), None)
         menu = QMenu(self.manage_profile)
         for title, action in (("New profile…", self._new), ("Select existing…", self._select),
                               ("Use current unencrypted storage", self._legacy)):
-            menu.addAction(title, action)
+            menu.addAction(ui_text(title), action)
         menu.addSeparator()
-        menu.addAction("Delete profile…", self._delete_profile)
+        menu.addAction(ui_text("Delete profile…"), self._delete_profile)
         self.manage_profile.setMenu(menu)
-        self.lock_profile = self._button("Lock", lambda: self.transition_requested.emit(self.manager.lock))
+        self.lock_profile = self._button(ui_text('Lock'), lambda: self.transition_requested.emit(self.manager.lock))
         actions = QWidget()
         action_box = QHBoxLayout(actions)
         action_box.setContentsMargins(0, 0, 0, 0)
@@ -392,7 +390,7 @@ class PersonalProfilePage(QWidget):
         self.tabs.setObjectName("profileTabs")
         self.tabs.setDocumentMode(True)
         self.tabs.setMinimumSize(0, 0)
-        self.tabs.setAccessibleName("Personal profile sections")
+        self.tabs.setAccessibleName(ui_text('Personal profile sections'))
         self.sections, self.section_layouts = {}, {}
         for title in ("Storage", "Cloud access", "Backups", "Security", "Data"):
             scroll = QScrollArea()
@@ -404,59 +402,58 @@ class PersonalProfilePage(QWidget):
             box.setContentsMargins(0, 16, 6, 0)
             box.setSpacing(14)
             scroll.setWidget(content)
-            self.tabs.addTab(scroll, title)
+            self.tabs.addTab(scroll, ui_text(title))
             self.sections[title], self.section_layouts[title] = scroll, box
         self.tab_transition = SettingsPageTransition(self.tabs.findChild(QStackedWidget))
         outer.addWidget(self.tabs, 1)
         self._section("Storage")
-        self._card("Profile storage", "Personal storage grows with usage, up to your quota.")
+        self._card(ui_text('Profile storage'), ui_text('Personal storage grows with usage, up to your quota.'))
         self.usage = label("")
-        self.usage.setAccessibleName("Storage usage")
+        self.usage.setAccessibleName(ui_text('Storage usage'))
         self.layout.addWidget(self.usage)
-        self._buttons((("Refresh usage", self._refresh_usage),))
+        self._buttons(((ui_text('Refresh usage'), self._refresh_usage),))
         if self.manager.encrypted:
             self._quota_controls()
-        self._card("Automatic lock")
+        self._card(ui_text('Automatic lock'))
         self._idle_controls()
         if not is_deployed_node(self.manager.application_root):
-            self._card("Portable nodes", "Create a fresh node or include a complete copy of this profile on another drive.")
-            self._buttons((("Deploy portable node…", self._deploy_node),))
+            self._card(ui_text('Portable nodes'), ui_text('Create a fresh node or include a complete copy of this profile on another drive.'))
+            self._buttons(((ui_text('Deploy portable node…'), self._deploy_node),))
         self._section("Cloud access")
         self._credential_controls()
         self._section("Backups")
         if self.manager.encrypted:
-            self._card("Encrypted backups", "Keep an independent copy on another device to protect against disk loss.")
-            self._buttons((("Create managed backup", lambda: self._perform(lambda: self.manager.vault().backup(), "Encrypted backup verified.")),
-                           ("Backup elsewhere…", self._backup), ("Restore backup…", self._restore)))
-            self._card("Managed retention", "Applies only to backups managed by O.R.S.I.")
+            self._card(ui_text('Encrypted backups'), ui_text('Keep an independent copy on another device to protect against disk loss.'))
+            self._buttons(((ui_text('Create managed backup'), lambda: self._perform(lambda: self.manager.vault().backup(), "Encrypted backup verified.")),
+                           (ui_text('Backup elsewhere…'), self._backup), (ui_text('Restore backup…'), self._restore)))
+            self._card(ui_text('Managed retention'), ui_text('Applies only to backups managed by O.R.S.I.'))
             self._backup_retention_controls()
         else:
-            self._card("Encrypted backups", "Encrypted backup creation and retention require an encrypted profile.")
+            self._card(ui_text('Encrypted backups'), ui_text('Encrypted backup creation and retention require an encrypted profile.'))
         self._section("Security")
         if self.manager.encrypted:
-            self._card("Profile password", "Changing your password keeps existing profile data. Older backups retain their previous password.")
-            self._buttons((("Change password…", self._change_password),))
-            self._card("Recovery key", "Keep your recovery key somewhere accessible without this profile or its disk.")
-            self._buttons((("Generate recovery key…", self._recovery_key), ("Disable recovery key", self._disable_recovery)))
+            self._card(ui_text('Profile password'), ui_text('Changing your password keeps existing profile data. Older backups retain their previous password.'))
+            self._buttons(((ui_text('Change password…'), self._change_password),))
+            self._card(ui_text('Recovery key'), ui_text('Keep your recovery key somewhere accessible without this profile or its disk.'))
+            self._buttons(((ui_text('Generate recovery key…'), self._recovery_key), (ui_text('Disable recovery key'), self._disable_recovery)))
         else:
-            self._card("Profile security", "This profile stores personal data without encryption. Password and recovery controls require an encrypted profile.")
-        self._card("Storage location", "Relocation creates and verifies a copy before selecting it. The source remains intact.")
+            self._card(ui_text('Profile security'), ui_text('This profile stores personal data without encryption. Password and recovery controls require an encrypted profile.'))
+        self._card(ui_text('Storage location'), ui_text('Relocation creates and verifies a copy before selecting it. The source remains intact.'))
         self.layout.addWidget(self._location_field())
         if self.manager.encrypted:
-            self._buttons((("Relocate verified copy…", self._relocate),))
+            self._buttons(((ui_text('Relocate verified copy…'), self._relocate),))
         self._section("Data")
         if self.manager.encrypted:
-            self._card("Import files and folders", "Copy documents from anywhere on this computer or a connected drive into your current profile. "
-                "Folder imports include subfolders. Originals stay unchanged.")
+            self._card(ui_text('Import files and folders'), ui_text('Copy documents from anywhere on this computer or a connected drive into your current profile. Folder imports include subfolders. Originals stay unchanged.'))
             self._migration_controls()
             self._retention_controls()
         else:
-            self._card("Personal data", "This profile uses unencrypted personal storage. Protected import, saved-record and cleanup controls require an encrypted profile.")
+            self._card(ui_text('Personal data'), ui_text('This profile uses unencrypted personal storage. Protected import, saved-record and cleanup controls require an encrypted profile.'))
         for box in self.section_layouts.values():
             box.addStretch()
         self.layout = outer
         self._refresh_usage()
-        self.status.setText(message)
+        self.status.setText(ui_text(message))
 
     def _section(self, name):
         self._section_box = self.section_layouts[name]
@@ -465,7 +462,7 @@ class PersonalProfilePage(QWidget):
         path = str(self.manager.locator.root)
         field = QLineEdit(path)
         field.setObjectName("profilePath")
-        field.setAccessibleName("Personal profile location")
+        field.setAccessibleName(ui_text('Personal profile location'))
         field.setReadOnly(True)
         field.setMinimumWidth(0)
         field.setToolTip(path)
@@ -486,14 +483,14 @@ class PersonalProfilePage(QWidget):
             compact = self.width() < 620
             self.subtitle.setVisible(not compact)
             self.summary.setVisible(not compact)
-            self.manage_profile.setText("Profile" if compact else "Manage profile")
+            self.manage_profile.setText(ui_text('Profile') if compact else ui_text('Manage profile'))
             self.summary_row.threshold = None if compact else 650
             self.summary_row.adapt()
         super().resizeEvent(event)
 
     def _button(self, title, action):
-        button = QPushButton(title)
-        button.setAccessibleName(title.removesuffix("…"))
+        button = QPushButton(ui_text(title))
+        button.setAccessibleName(ui_text(getattr(title, "source", title).removesuffix("…")))
         button.setFixedHeight(36)
         button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         if action is not None:
@@ -521,8 +518,8 @@ class PersonalProfilePage(QWidget):
         row = QVBoxLayout()
         buttons = []
         for title, action in actions:
-            button = QPushButton(title)
-            button.setAccessibleName(title.removesuffix("…"))
+            button = QPushButton(ui_text(title))
+            button.setAccessibleName(ui_text(getattr(title, "source", title).removesuffix("…")))
             button.setFixedHeight(40)
             button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
             button.clicked.connect(action)
@@ -540,27 +537,26 @@ class PersonalProfilePage(QWidget):
     def refresh_summary(self):
         locator = self.manager.locator
         if self.manager.profile_deleted:
-            self.summary.setText("This profile and its recorded copies have been deleted.")
+            self.summary.setText(ui_text('This profile and its recorded copies have been deleted.'))
             return
         if self.location_error is not None:
-            self.summary.setText(f"Previous profile location\n{locator.root}")
+            self.summary.setText(ui_text('Previous profile location\n{value_0}', value_0=locator.root))
             return
         if self.login and locator is not None:
-            self.summary.setText(f"Profile Path:\n{locator.root}")
+            self.summary.setText(ui_text('Profile Path:\n{value_0}', value_0=locator.root))
             return
-        self.summary.setText("Current unencrypted storage. Set up or select a personal profile here." if locator is None else
-            f"{'Local' if locator.mode == 'local' else 'Portable'} · {'Encrypted' if locator.encrypted else 'Unencrypted'} · "
-            f"{'Unlocked' if self.manager.active else 'Locked'}\n{locator.root}")
+        self.summary.setText(ui_text('Current unencrypted storage. Set up or select a personal profile here.') if locator is None else
+            ui_text('{value_0} · {value_1} · {value_2}\n{value_3}', value_0='Local' if locator.mode == 'local' else 'Portable', value_1='Encrypted' if locator.encrypted else 'Unencrypted', value_2='Unlocked' if self.manager.active else 'Locked', value_3=locator.root))
         if self.manager.bootstrap_error:
-            self.summary.setText("The saved profile selection could not be read. Select an existing profile to continue.")
+            self.summary.setText(ui_text('The saved profile selection could not be read. Select an existing profile to continue.'))
 
     def _perform(self, action, success="Saved."):
         try:
             action()
-            self.status.setText(success)
+            self.status.setText(ui_text(success))
             return True
         except Exception as error:
-            self.status.setText(public_error(error))
+            self.status.setText(ui_text(public_error(error)))
             return False
 
     def _new(self):
@@ -586,7 +582,7 @@ class PersonalProfilePage(QWidget):
         self.transition_requested.emit(unlock)
 
     def _legacy(self):
-        if confirm(self, "Use unencrypted storage", "Open the existing unencrypted personal storage? No data will be copied or merged."):
+        if confirm(self, ui_text('Use unencrypted storage'), ui_text('Open the existing unencrypted personal storage? No data will be copied or merged.')):
             self.transition_requested.emit(self.manager.use_legacy)
 
     def _deploy_node(self):
@@ -601,26 +597,25 @@ class PersonalProfilePage(QWidget):
         try:
             targets = self.manager.deletion_targets()
         except Exception as error:
-            self.status.setText(public_error(error))
+            self.status.setText(ui_text(public_error(error)))
             return
         dialog = profile_dialog(self)
-        dialog.setWindowTitle("Delete profile permanently")
+        dialog.setWindowTitle(ui_text('Delete profile permanently'))
         dialog.resize(620, 510)
         box = QVBoxLayout(dialog)
-        box.addWidget(label("Permanently delete this profile and every recorded backup or older copy below. "
-            "This removes its saved credentials, conversations, images, imported documents, settings and managed backups."))
+        box.addWidget(label(ui_text('Permanently delete this profile and every recorded backup or older copy below. This removes its saved credentials, conversations, images, imported documents, settings and managed backups.')))
         locations = QListWidget()
-        locations.setAccessibleName("Profile locations to delete")
+        locations.setAccessibleName(ui_text('Profile locations to delete'))
         locations.setTextElideMode(Qt.TextElideMode.ElideMiddle)
         locations.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         for target in targets:
             locations.addItem(str(target))
         box.addWidget(locations, 1)
         extras = set()
-        include = QPushButton("Include another backup or copy…")
+        include = QPushButton(ui_text('Include another backup or copy…'))
         feedback = FeedbackLabel()
         def choose_copy():
-            path = QFileDialog.getExistingDirectory(dialog, "Choose another copy of this profile")
+            path = QFileDialog.getExistingDirectory(dialog, ui_text('Choose another copy of this profile'))
             if not path:
                 return
             try:
@@ -632,14 +627,13 @@ class PersonalProfilePage(QWidget):
                     locations.addItem(str(target))
                 feedback.setText("")
             except Exception as error:
-                feedback.setText(public_error(error))
+                feedback.setText(ui_text(public_error(error)))
         include.clicked.connect(choose_copy)
         box.addWidget(include, 0, Qt.AlignmentFlag.AlignLeft)
         box.addWidget(feedback)
-        box.addWidget(label("Imported source files and copies you exported elsewhere are separate files. "
-                            "Type DELETE to confirm permanent deletion."))
+        box.addWidget(label(ui_text('Imported source files and copies you exported elsewhere are separate files. Type DELETE to confirm permanent deletion.')))
         confirmation = QLineEdit()
-        confirmation.setAccessibleName("Confirm profile deletion")
+        confirmation.setAccessibleName(ui_text('Confirm profile deletion'))
         confirmation.setPlaceholderText("DELETE")
         box.addWidget(confirmation)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Cancel)
@@ -659,8 +653,7 @@ class PersonalProfilePage(QWidget):
             def size(value):
                 return f"{value / 1024**3:.2f} GiB"
             quota = " / " + size(usage["quota"]) + " quota" if usage["quota"] else ""
-            self.usage.setText(f"Application/runtime: {size(usage['application'])}\nModels: {size(usage['models'])}\n"
-                f"Personal storage: {size(usage['personal'])}{quota}\nDisk free space: {size(usage['free'])}")
+            self.usage.setText(ui_text('Application/runtime: {value_0}\nModels: {value_1}\nPersonal storage: {value_2}{value_3}\nDisk free space: {value_4}', value_0=size(usage['application']), value_1=size(usage['models']), value_2=size(usage['personal']), value_3=quota, value_4=size(usage['free'])))
         self._perform(refresh, "Storage usage refreshed.")
 
     def _idle_controls(self):
@@ -671,28 +664,28 @@ class PersonalProfilePage(QWidget):
         row.setContentsMargins(0, 0, 0, 0)
         row.setSpacing(10)
         self.idle_toggle = NotificationSwitch(self.idle_controls)
-        self.idle_toggle.setAccessibleName("Idle lock")
-        self.idle_toggle.setAccessibleDescription("Turn automatic idle locking on or off, then save idle lock.")
+        self.idle_toggle.setAccessibleName(ui_text('Idle lock'))
+        self.idle_toggle.setAccessibleDescription(ui_text('Turn automatic idle locking on or off, then save idle lock.'))
         self.idle_toggle.setChecked(minutes > 0)
         self.idle = CompactNumberInput(self.idle_controls)
         self.idle.setRange(1, 1440)
         self.idle.setValue(minutes or 5)
         self.idle.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.idle.setAccessibleName("Idle lock minutes")
-        self.idle.setToolTip("Minutes of inactivity before locking (1–1440)")
+        self.idle.setAccessibleName(ui_text('Idle lock minutes'))
+        self.idle.setToolTip(ui_text('Minutes of inactivity before locking (1–1440)'))
         self.idle.setEnabled(self.idle_toggle.isChecked())
         self.idle_toggle.toggled.connect(self.idle.setEnabled)
-        self.idle_save = QPushButton("Save idle lock", self.idle_controls)
+        self.idle_save = QPushButton(ui_text('Save idle lock'), self.idle_controls)
         self.idle_save.setFixedSize(128, 36)
         self.idle_save.clicked.connect(self._save_idle_lock)
-        title = label("Idle lock")
+        title = label(ui_text('Idle lock'))
         title.setBuddy(self.idle_toggle)
-        for widget in (title, self.idle_toggle, self.idle, label("minutes"), self.idle_save):
+        for widget in (title, self.idle_toggle, self.idle, label(ui_text('minutes')), self.idle_save):
             row.addWidget(widget)
         row.addStretch()
         self.layout.addWidget(self.idle_controls)
         if self.manager.encrypted:
-            self.guidance = QCheckBox("Show profile storage recommendations")
+            self.guidance = QCheckBox(ui_text('Show profile storage recommendations'))
             self.guidance.setChecked(not settings.get("storage_guidance_dismissed", False))
             self.guidance.toggled.connect(lambda enabled: self._perform(
                 lambda: self.manager.configure(storage_guidance_dismissed=not enabled)))
@@ -705,48 +698,48 @@ class PersonalProfilePage(QWidget):
                       "Idle lock saved." if minutes else "Idle lock disabled.")
 
     def _credential_controls(self):
-        self._section_box.addWidget(label("Cloud chat and image generation"))
+        self._section_box.addWidget(label(ui_text('Cloud chat and image generation')))
         if not self.manager.encrypted:
-            self._card("Session credentials", "Enter a key when selecting Cloud. It is released on leaving Cloud, closing this profile or exiting. Saved credentials require an encrypted profile.")
+            self._card(ui_text('Session credentials'), ui_text('Enter a key when selecting Cloud. It is released on leaving Cloud, closing this profile or exiting. Saved credentials require an encrypted profile.'))
             return
         self.provider = getattr(self.window.inference, "credential_provider", None)
         self.connection = getattr(self.window.inference, "connection_id", "cloud-chat")
         if self.provider is None:
-            self._card("Cloud connection unavailable", "Configure a cloud connection in Models before saving credentials here.")
+            self._card(ui_text('Cloud connection unavailable'), ui_text('Configure a cloud connection in Models before saving credentials here.'))
             return
         self.credential_status = label("")
-        self.credential_status.setAccessibleName("Saved cloud API key status")
+        self.credential_status.setAccessibleName(ui_text('Saved cloud API key status'))
         self._section_box.addWidget(self.credential_status)
-        self._card("Connection policy", "Choose how O.R.S.I uses your saved key.")
+        self._card(ui_text('Connection policy'), ui_text('Choose how O.R.S.I uses your saved key.'))
         self.policy = CredentialPolicyChoice()
         policy = self.provider.policy(self.connection) if self.provider else CredentialPolicy.ASK
         self.policy.setCurrentIndex(0 if policy == CredentialPolicy.ASK else 1)
         self.policy.setEnabled(self.manager.encrypted and self.provider is not None)
-        self.policy.setAccessibleName("Cloud credential policy")
-        self.policy_save = self._button("Apply policy", self._policy)
+        self.policy.setAccessibleName(ui_text('Cloud credential policy'))
+        self.policy_save = self._button(ui_text('Apply policy'), self._policy)
         self.layout.addWidget(AdaptiveRow([self.policy, self.policy_save], trailing=True))
-        self._card("Saved credential")
+        self._card(ui_text('Saved credential'))
         self.kind = combo((("API key", "api_key"), ("Login token", "login_token"),
                            ("Access token", "access_token"), ("Refresh token", "refresh_token")))
-        self.kind.setAccessibleName("Credential type")
+        self.kind.setAccessibleName(ui_text('Credential type'))
         self.kind.setMaximumWidth(240)
         self.kind.setFixedHeight(36)
-        self.key = secret("New connection credential")
-        self.key.setPlaceholderText("Paste a replacement key")
+        self.key = secret(ui_text('New connection credential'))
+        self.key.setPlaceholderText(ui_text('Paste a replacement key'))
         self.key.setFixedHeight(36)
-        self.consent = QCheckBox("Save this credential encrypted in this profile")
+        self.consent = QCheckBox(ui_text('Save this credential encrypted in this profile'))
         self.consent.setEnabled(self.manager.encrypted)
         form = self._form()
         form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         form.setVerticalSpacing(12)
-        form.addRow("Credential type", self.kind)
-        self.key_caption = label("Replace API key")
+        form.addRow(ui_text('Credential type'), self.kind)
+        self.key_caption = label(ui_text('Replace API key'))
         self.key_caption.setBuddy(self.key)
         form.addRow(self.key_caption, self.key)
         self._refresh_credential_status()
-        self.credential_save = self._button("Save credential", self._save_key)
-        self.credential_delete = self._button("Delete saved key", self._delete_key)
-        self.credential_save.setToolTip("Save this value encrypted and apply the selected connection policy.")
+        self.credential_save = self._button(ui_text('Save credential'), self._save_key)
+        self.credential_delete = self._button(ui_text('Delete saved key'), self._delete_key)
+        self.credential_save.setToolTip(ui_text('Save this value encrypted and apply the selected connection policy.'))
         credential_actions = QWidget()
         buttons = QHBoxLayout(credential_actions)
         buttons.setContentsMargins(0, 0, 0, 0)
@@ -760,16 +753,16 @@ class PersonalProfilePage(QWidget):
 
     def _credential_kind_changed(self):
         api_key = self.kind.currentData() == "api_key"
-        self.key_caption.setText("Replace API key" if api_key else "New token value")
-        self.key.setPlaceholderText("Paste a replacement key" if api_key else "Paste a token")
-        self.credential_delete.setText("Delete saved key" if api_key else "Delete saved token")
+        self.key_caption.setText(ui_text('Replace API key') if api_key else ui_text('New token value'))
+        self.key.setPlaceholderText(ui_text('Paste a replacement key') if api_key else ui_text('Paste a token'))
+        self.credential_delete.setText(ui_text('Delete saved key') if api_key else ui_text('Delete saved token'))
 
     def _refresh_credential_status(self):
         saved = self.provider.has_saved_api_key(self.connection)
         policy = self.provider.policy(self.connection)
-        self.credential_status.setText("No API key is saved for this cloud connection in this profile." if not saved else
-            "API key saved encrypted · Automatic use enabled." if policy == CredentialPolicy.SAVED else
-            "API key saved encrypted · Ask mode: choose whether to use it when selecting Cloud.")
+        self.credential_status.setText(ui_text('No API key is saved for this cloud connection in this profile.') if not saved else
+            ui_text('API key saved encrypted · Automatic use enabled.') if policy == CredentialPolicy.SAVED else
+            ui_text('API key saved encrypted · Ask mode: choose whether to use it when selecting Cloud.'))
 
     def _policy(self):
         if self.provider:
@@ -791,22 +784,22 @@ class PersonalProfilePage(QWidget):
                 self.provider.configure(self.connection, policy)
                 self.manager.configure(credential_policy=str(policy))
                 self._refresh_credential_status()
-            message = ("Credential saved encrypted. Cloud will still ask because the selected policy is Ask whenever cloud is selected."
-                if policy == CredentialPolicy.ASK else "Credential saved encrypted. Cloud will use the saved API key for this connection.")
+            message = (ui_text('Credential saved encrypted. Cloud will still ask because the selected policy is Ask whenever cloud is selected.')
+                if policy == CredentialPolicy.ASK else ui_text('Credential saved encrypted. Cloud will use the saved API key for this connection.'))
             if kind != "api_key":
-                message = "Token saved encrypted with the selected policy. Cloud chat requires a separately saved API key."
+                message = ui_text('Token saved encrypted with the selected policy. Cloud chat requires a separately saved API key.')
             self._perform(save, message)
 
     def _delete_key(self):
-        if self.provider and confirm(self, "Delete credential", "Delete this saved credential and end its connection session? Older backups may retain it."):
+        if self.provider and confirm(self, ui_text('Delete credential'), ui_text('Delete this saved credential and end its connection session? Older backups may retain it.')):
             self._perform(lambda: (self.provider.delete_saved(self.connection, kind=self.kind.currentData()),
                 self._refresh_credential_status()))
 
     def _import_key(self):
         if not self.consent.isChecked() or self.provider is None:
-            self.status.setText("Select explicit encrypted-save consent before importing a credential.")
+            self.status.setText(ui_text('Select explicit encrypted-save consent before importing a credential.'))
             return
-        source, _ = QFileDialog.getOpenFileName(self, "Import credential without displaying its value", "", "Credential JSON (*.json)")
+        source, _ = QFileDialog.getOpenFileName(self, ui_text('Import credential without displaying its value'), "", "Credential JSON (*.json)")
         if not source:
             return
         from app.vault.migration import prepare_credential_import, apply_migration
@@ -831,14 +824,14 @@ class PersonalProfilePage(QWidget):
         self.quota.setRange(1, 1_000_000)
         self.quota.setValue(max(1, (self.manager.vault().quota_bytes + 1024**3 - 1) // 1024**3))
         self.quota.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.quota.setAccessibleName("Profile quota")
-        self.quota.setToolTip("Personal storage quota in GiB (1–1,000,000)")
-        self.quota_save = QPushButton("Change quota", self.quota_controls)
+        self.quota.setAccessibleName(ui_text('Profile quota'))
+        self.quota.setToolTip(ui_text('Personal storage quota in GiB (1–1,000,000)'))
+        self.quota_save = QPushButton(ui_text('Change quota'), self.quota_controls)
         self.quota_save.setFixedSize(128, 36)
         self.quota_save.clicked.connect(self._save_quota)
-        title = label("Profile quota")
+        title = label(ui_text('Profile quota'))
         title.setBuddy(self.quota)
-        for widget in (title, self.quota, label("GiB"), self.quota_save):
+        for widget in (title, self.quota, label(ui_text('GiB')), self.quota_save):
             row.addWidget(widget)
         row.addStretch()
         self.layout.addWidget(self.quota_controls)
@@ -847,13 +840,13 @@ class PersonalProfilePage(QWidget):
         self.quota.interpretText()
         if self._perform(lambda: self.manager.vault().set_quota(self.quota.value() * 1024**3), "Profile quota saved."):
             self._refresh_usage()
-            self.status.setText("Profile quota saved.")
+            self.status.setText(ui_text('Profile quota saved.'))
 
     def _change_password(self):
         dialog = profile_dialog(self)
-        dialog.setWindowTitle("Change profile password")
+        dialog.setWindowTitle(ui_text('Change profile password'))
         layout = QVBoxLayout(dialog)
-        first, second = secret("New profile password"), secret("Repeat new password")
+        first, second = secret(ui_text('New profile password')), secret(ui_text('Repeat new password'))
         layout.addWidget(first)
         layout.addWidget(second)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
@@ -865,7 +858,7 @@ class PersonalProfilePage(QWidget):
             if value and first.text() == second.text():
                 self._perform(lambda: self.manager.vault().change_password(value), "Password changed. Older backups keep their previous password.")
             else:
-                self.status.setText("Enter matching new passwords.")
+                self.status.setText(ui_text('Enter matching new passwords.'))
         first.clear()
         second.clear()
 
@@ -873,18 +866,17 @@ class PersonalProfilePage(QWidget):
         def show():
             key = self.manager.vault().generate_recovery_key()
             dialog = profile_dialog(self)
-            dialog.setWindowTitle("Save your recovery key separately")
+            dialog.setWindowTitle(ui_text('Save your recovery key separately'))
             layout = QVBoxLayout(dialog)
-            layout.addWidget(label("This new key replaces the previous recovery key. Keep a copy somewhere accessible "
-                "without this profile or its disk. Anyone with this key can unlock this profile. There is no password-reset backdoor."))
+            layout.addWidget(label(ui_text('This new key replaces the previous recovery key. Keep a copy somewhere accessible without this profile or its disk. Anyone with this key can unlock this profile. There is no password-reset backdoor.')))
             value = QLineEdit(key.hex())
             value.setReadOnly(True)
-            value.setAccessibleName("Recovery key")
+            value.setAccessibleName(ui_text('Recovery key'))
             layout.addWidget(value)
-            export = QPushButton("Export recovery key outside profile…")
+            export = QPushButton(ui_text('Export recovery key outside profile…'))
             layout.addWidget(export)
             def save():
-                path, _ = QFileDialog.getSaveFileName(dialog, "Save independent recovery key", "orsi-recovery-key.txt")
+                path, _ = QFileDialog.getSaveFileName(dialog, ui_text('Save independent recovery key'), "orsi-recovery-key.txt")
                 if path:
                     target = Path(path).absolute()
                     if any(target.is_relative_to(root) for root in self.manager.known_roots):
@@ -900,22 +892,23 @@ class PersonalProfilePage(QWidget):
         self._perform(show, "Recovery key created. Keep its copy independently accessible.")
 
     def _disable_recovery(self):
-        if confirm(self, "Disable recovery", "Disable the current recovery key? Older independent backups may still accept it."):
+        if confirm(self, ui_text('Disable recovery'), ui_text('Disable the current recovery key? Older independent backups may still accept it.')):
             self._perform(lambda: self.manager.vault().disable_recovery())
 
     def _destination(self, title):
+        title = ui_text(title)
         from PySide6.QtWidgets import QInputDialog
         from uuid import uuid4
-        parent = QFileDialog.getExistingDirectory(self, title + " · choose containing folder", str(self.manager.locator.root.parent))
+        parent = QFileDialog.getExistingDirectory(self, ui_text("{title} · choose containing folder", title=title), str(self.manager.locator.root.parent))
         if not parent:
             return None
-        name, accepted = QInputDialog.getText(self, title, "Name for the new directory (must not exist):",
+        name, accepted = QInputDialog.getText(self, title, ui_text('Name for the new directory (must not exist):'),
             text="orsi-profile-" + uuid4().hex[:8])
         name = name.strip()
         if not accepted or not name:
             return None
         if Path(name).name != name or name in {".", ".."}:
-            self.status.setText("Enter a new directory name without a path.")
+            self.status.setText(ui_text('Enter a new directory name without a path.'))
             return None
         return Path(parent).absolute() / name
 
@@ -934,19 +927,19 @@ class PersonalProfilePage(QWidget):
         if not accepted:
             return
         path = self._destination("Relocate personal profile")
-        if path and confirm(self, "Relocate verified copy", "Create and verify a copy, then select it? The source and independent backups remain intact; this does not synchronize them."):
+        if path and confirm(self, ui_text('Relocate verified copy'), ui_text('Create and verify a copy, then select it? The source and independent backups remain intact; this does not synchronize them.')):
             self.transition_requested.emit(lambda: self.manager.relocate(path, mode=mode))
 
     def _migration_controls(self):
-        self._buttons((("Import files…", self._import_copy), ("Import folder…", self._import_folder)))
-        self.layout.addWidget(label("Moving from another O.R.S.I installation? Import its saved settings, conversations or personal data."))
-        self._buttons((("Import from another O.R.S.I.…", self._migrate),))
-        self._buttons((("Review retained originals…", self._originals),))
+        self._buttons(((ui_text('Import files…'), self._import_copy), (ui_text('Import folder…'), self._import_folder)))
+        self.layout.addWidget(label(ui_text('Moving from another O.R.S.I installation? Import its saved settings, conversations or personal data.')))
+        self._buttons(((ui_text('Import from another O.R.S.I.…'), self._migrate),))
+        self._buttons(((ui_text('Review retained originals…'), self._originals),))
 
     def _migrate(self):
         from app.vault.migration import CATEGORIES, prepare_migration, apply_migration
         dialog = profile_dialog(self)
-        dialog.setWindowTitle("Import from another O.R.S.I installation")
+        dialog.setWindowTitle(ui_text('Import from another O.R.S.I installation'))
         dialog.resize(680, 580)
         outer = QVBoxLayout(dialog)
         scroll = QScrollArea()
@@ -957,8 +950,7 @@ class PersonalProfilePage(QWidget):
         layout = QVBoxLayout(content)
         scroll.setWidget(content)
         outer.addWidget(scroll)
-        layout.addWidget(label("Bring saved data from a previous O.R.S.I installation into your current profile. "
-            "To add ordinary documents instead, cancel and use Import files or Import folder in the Data tab."))
+        layout.addWidget(label(ui_text('Bring saved data from a previous O.R.S.I installation into your current profile. To add ordinary documents instead, cancel and use Import files or Import folder in the Data tab.')))
         def folder_field(box, title, value, picker_title):
             field = QLineEdit(value)
             field.setMinimumWidth(0)
@@ -968,10 +960,10 @@ class PersonalProfilePage(QWidget):
             box.addWidget(caption)
             row = QHBoxLayout()
             row.addWidget(field, 1)
-            browse = QPushButton("Browse…")
+            browse = QPushButton(ui_text('Browse…'))
             browse.setAccessibleName("Browse for " + title.lower())
             def choose():
-                path = QFileDialog.getExistingDirectory(dialog, picker_title, field.text() or str(Path.home()))
+                path = QFileDialog.getExistingDirectory(dialog, ui_text(picker_title), field.text() or str(Path.home()))
                 if path:
                     field.setText(path)
             browse.clicked.connect(choose)
@@ -979,11 +971,11 @@ class PersonalProfilePage(QWidget):
             box.addLayout(row)
             return field
         source = folder_field(layout, "Previous O.R.S.I application folder", "", "Choose the previous O.R.S.I application folder")
-        source.setPlaceholderText("Choose the previous O.R.S.I folder")
-        layout.addWidget(label("Select what to import. Conversations become saved archives."))
+        source.setPlaceholderText(ui_text('Choose the previous O.R.S.I folder'))
+        layout.addWidget(label(ui_text('Select what to import. Conversations become saved archives.')))
         checks = {}
         for name, title in CATEGORIES.items():
-            checks[name] = QCheckBox(title)
+            checks[name] = QCheckBox(ui_text(title))
             layout.addWidget(checks[name])
         skills_group = QWidget()
         skills_layout = QVBoxLayout(skills_group)
@@ -992,13 +984,12 @@ class PersonalProfilePage(QWidget):
         layout.addWidget(skills_group)
         skills_group.hide()
         checks["skills"].toggled.connect(skills_group.setVisible)
-        replace = QCheckBox("Replace matching selected settings or records already in this profile")
+        replace = QCheckBox(ui_text('Replace matching selected settings or records already in this profile'))
         layout.addWidget(replace)
-        layout.addWidget(label("Import verifies every selected copy before reporting completion. Originals stay unchanged; "
-            "you can review their exact locations and choose cleanup separately afterward."))
+        layout.addWidget(label(ui_text('Import verifies every selected copy before reporting completion. Originals stay unchanged; you can review their exact locations and choose cleanup separately afterward.')))
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         import_button = buttons.button(QDialogButtonBox.StandardButton.Ok)
-        import_button.setText("Import selected data")
+        import_button.setText(ui_text('Import selected data'))
         def update_import():
             selected = {name for name, check in checks.items() if check.isChecked()}
             import_button.setEnabled(bool(selected) and (bool(source.text().strip()) or selected == {"skills"})
@@ -1037,7 +1028,7 @@ class PersonalProfilePage(QWidget):
         self.reload_requested.emit(copy)
 
     def _import_folder(self):
-        source = QFileDialog.getExistingDirectory(self, "Choose a folder to copy into your profile, including subfolders", str(Path.home()))
+        source = QFileDialog.getExistingDirectory(self, ui_text('Choose a folder to copy into your profile, including subfolders'), str(Path.home()))
         if not source:
             return
         def copy():
@@ -1048,15 +1039,13 @@ class PersonalProfilePage(QWidget):
     def _originals(self):
         from app.vault.migration import retained_originals, cleanup_originals
         dialog = profile_dialog(self)
-        dialog.setWindowTitle("Retained plaintext originals")
+        dialog.setWindowTitle(ui_text('Retained plaintext originals'))
         dialog.resize(720, 430)
         layout = QVBoxLayout(dialog)
-        layout.addWidget(label("These originals remain outside the profile. Select specific originals to remove. "
-            "Credential cleanup removes only its imported JSON field. Exports and independent backups are not swept. "
-            "Deletion does not guarantee physical erasure on an SSD."))
+        layout.addWidget(label(ui_text('These originals remain outside the profile. Select specific originals to remove. Credential cleanup removes only its imported JSON field. Exports and independent backups are not swept. Deletion does not guarantee physical erasure on an SSD.')))
         listing = QListWidget()
         listing.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        listing.setAccessibleName("Retained original locations")
+        listing.setAccessibleName(ui_text('Retained original locations'))
         layout.addWidget(listing)
         vault = self.manager.vault()
         for key in vault.list_paths():
@@ -1069,14 +1058,14 @@ class PersonalProfilePage(QWidget):
                     item = QListWidgetItem(path)
                     item.setData(Qt.ItemDataRole.UserRole, (key, path))
                     listing.addItem(item)
-        remove = QPushButton("Remove selected verified originals")
+        remove = QPushButton(ui_text('Remove selected verified originals'))
         layout.addWidget(remove)
         def cleanup():
             selected = {}
             for item in listing.selectedItems():
                 key, path = item.data(Qt.ItemDataRole.UserRole)
                 selected.setdefault(key, []).append(path)
-            if selected and confirm(dialog, "Remove originals", "Remove only the selected originals after rechecking their protected copies? This cannot guarantee physical erasure."):
+            if selected and confirm(dialog, ui_text('Remove originals'), ui_text('Remove only the selected originals after rechecking their protected copies? This cannot guarantee physical erasure.')):
                 def action():
                     for key, paths in selected.items():
                         cleanup_originals(self.manager.session, key, paths, consent=True)
@@ -1095,12 +1084,12 @@ class PersonalProfilePage(QWidget):
         policy = self.manager.vault()._catalog["backup_policy"]
         self.backup_count.setRange(0, 100)
         self.backup_count.setValue(policy["max_count"])
-        self.backup_count.setAccessibleName("Managed backup count")
-        self.backup_count.setToolTip("Maximum managed backups (0 disables managed backups)")
+        self.backup_count.setAccessibleName(ui_text('Managed backup count'))
+        self.backup_count.setToolTip(ui_text('Maximum managed backups (0 disables managed backups)'))
         self.backup_days.setRange(0, 3650)
         self.backup_days.setValue(policy["max_age_seconds"] // 86400)
-        self.backup_days.setAccessibleName("Managed backup age in days")
-        self.backup_days.setToolTip("Maximum backup age in days (0 means no age limit)")
+        self.backup_days.setAccessibleName(ui_text('Managed backup age in days'))
+        self.backup_days.setToolTip(ui_text('Maximum backup age in days (0 means no age limit)'))
         for index, (title, field, unit) in enumerate((("Managed backups", self.backup_count, "copies"),
                                                      ("Backup days", self.backup_days, "days"))):
             field.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1109,42 +1098,42 @@ class PersonalProfilePage(QWidget):
             row.addWidget(caption, index, 0)
             row.addWidget(field, index, 1)
             row.addWidget(label(unit), index, 2)
-        self.backup_save = QPushButton("Apply retention", self.retention_controls)
+        self.backup_save = QPushButton(ui_text('Apply retention'), self.retention_controls)
         self.backup_save.setFixedSize(128, 36)
         self.backup_save.clicked.connect(self._backup_retention)
         row.addWidget(self.backup_save, 1, 3)
         row.setColumnStretch(4, 1)
         self.layout.addWidget(self.retention_controls)
-        self.layout.addWidget(label("0 backups disables managed backups. 0 days means no age limit."))
+        self.layout.addWidget(label(ui_text('0 backups disables managed backups. 0 days means no age limit.')))
 
     def _retention_controls(self):
-        self._card("Saved records", "Browse archived conversations and imported material. View a record to export a copy.")
+        self._card(ui_text('Saved records'), ui_text('Browse archived conversations and imported material. View a record to export a copy.'))
         self.records = QListWidget()
-        self.records.setAccessibleName("Saved personal records")
+        self.records.setAccessibleName(ui_text('Saved personal records'))
         self.records.setTextElideMode(Qt.TextElideMode.ElideMiddle)
         self.records.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.records.setSpacing(3)
         self.records.setMinimumHeight(160)
         self.records.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.layout.addWidget(self.records)
-        self._buttons((("Refresh saved records", self._refresh_records), ("View selected record…", self._view_record),
-                       ("Delete selected records…", self._delete_records)))
+        self._buttons(((ui_text('Refresh saved records'), self._refresh_records), (ui_text('View selected record…'), self._view_record),
+                       (ui_text('Delete selected records…'), self._delete_records)))
         self.records.itemDoubleClicked.connect(lambda _: self._view_record())
         self._refresh_records()
-        self._card("Cleanup", "Unsent attachment drafts expire after 24 hours. Independent copies and current composer drafts remain.")
-        self._buttons((("Clean expired drafts and caches", lambda: self._perform(self.manager.maintenance, "Expired data cleaned; retained records and independent copies remain.")),
-                       ("Delete abandoned drafts…", self._delete_abandoned_drafts)))
-        self.layout.addWidget(label("Deleting saved records removes their unshared assets. Shared assets, outside originals, exports and independent backups remain."))
+        self._card(ui_text('Cleanup'), ui_text('Unsent attachment drafts expire after 24 hours. Independent copies and current composer drafts remain.'))
+        self._buttons(((ui_text('Clean expired drafts and caches'), lambda: self._perform(self.manager.maintenance, "Expired data cleaned; retained records and independent copies remain.")),
+                       (ui_text('Delete abandoned drafts…'), self._delete_abandoned_drafts)))
+        self.layout.addWidget(label(ui_text('Deleting saved records removes their unshared assets. Shared assets, outside originals, exports and independent backups remain.')))
 
     def _backup_retention(self):
         self.backup_count.interpretText()
         self.backup_days.interpretText()
-        if confirm(self, "Apply backup retention", "Apply this policy and remove excess application-managed backups? Independent backups remain unchanged and may retain deleted data or old credentials."):
+        if confirm(self, ui_text('Apply backup retention'), ui_text('Apply this policy and remove excess application-managed backups? Independent backups remain unchanged and may retain deleted data or old credentials.')):
             self._perform(lambda: self.manager.vault().set_backup_policy(BackupPolicy(
                 self.backup_count.value(), self.backup_days.value() * 86400)))
 
     def _delete_abandoned_drafts(self):
-        if confirm(self, "Delete abandoned drafts", "Remove uncommitted attachment copies left by earlier sessions? Current composer drafts and retained images remain; external originals and backups remain."):
+        if confirm(self, ui_text('Delete abandoned drafts'), ui_text('Remove uncommitted attachment copies left by earlier sessions? Current composer drafts and retained images remain; external originals and backups remain.')):
             def remove():
                 store = getattr(getattr(self.window.service, "store", None), "attachment_store", None)
                 if store is None:
@@ -1164,7 +1153,7 @@ class PersonalProfilePage(QWidget):
 
     def _delete_records(self):
         paths = [item.text() for item in self.records.selectedItems()]
-        if paths and confirm(self, "Delete saved personal data", "Delete selected records and their unshared associated data? Shared assets, outside originals, exports and independent backups remain. Physical erasure is not guaranteed."):
+        if paths and confirm(self, ui_text('Delete saved personal data'), ui_text('Delete selected records and their unshared associated data? Shared assets, outside originals, exports and independent backups remain. Physical erasure is not guaranteed.')):
             if self._perform(lambda: self.manager.delete_records(paths), "Selected records deleted. Independent copies remain."):
                 self._refresh_records()
 
@@ -1176,12 +1165,12 @@ class PersonalProfilePage(QWidget):
             key = current.text()
             data = self.manager.vault().read(key)
             dialog = profile_dialog(self)
-            dialog.setWindowTitle("Saved personal record")
+            dialog.setWindowTitle(ui_text('Saved personal record'))
             dialog.resize(700, 500)
             layout = QVBoxLayout(dialog)
             body = QTextEdit()
             body.setReadOnly(True)
-            body.setAccessibleName("Saved record contents")
+            body.setAccessibleName(ui_text('Saved record contents'))
             layout.addWidget(body)
             refs = ()
             if key.startswith("state/conversation_v1/archives/"):
@@ -1195,14 +1184,14 @@ class PersonalProfilePage(QWidget):
                     from app.inference.attachments import AttachmentReference
                     refs = (AttachmentReference.model_validate_json(json.dumps(json.loads(data)["image"])),)
             if refs:
-                image = QPushButton("View saved images…")
+                image = QPushButton(ui_text('View saved images…'))
                 layout.addWidget(image)
                 image.clicked.connect(lambda: (dialog.accept(), self.window._open_image_viewer(refs, 0)))
-            export = QPushButton("Export outside profile…")
-            layout.addWidget(label("An exported copy remains outside profile protection after locking or deleting this record."))
+            export = QPushButton(ui_text('Export outside profile…'))
+            layout.addWidget(label(ui_text('An exported copy remains outside profile protection after locking or deleting this record.')))
             layout.addWidget(export)
             def save():
-                path, _ = QFileDialog.getSaveFileName(dialog, "Export outside profile", Path(key).name)
+                path, _ = QFileDialog.getSaveFileName(dialog, ui_text('Export outside profile'), Path(key).name)
                 if path:
                     target = Path(path).absolute()
                     if any(target.is_relative_to(root) for root in self.manager.known_roots):
@@ -1226,17 +1215,17 @@ def choose_mode(parent):
 
 
 def restore_dialog(parent, manager, transition):
-    source = QFileDialog.getExistingDirectory(parent, "Select encrypted backup directory")
+    source = QFileDialog.getExistingDirectory(parent, ui_text('Select encrypted backup directory'))
     if not source:
         return
     dialog = profile_dialog(parent)
-    dialog.setWindowTitle("Restore encrypted backup")
+    dialog.setWindowTitle(ui_text('Restore encrypted backup'))
     layout = QVBoxLayout(dialog)
-    layout.addWidget(label("Restore to a new directory. The backup and current source remain intact. Use the backup's password or recovery key."))
+    layout.addWidget(label(ui_text("Restore to a new directory. The backup and current source remain intact. Use the backup's password or recovery key.")))
     mode = combo((("Local", "local"), ("Portable", "portable")))
     path = QLineEdit(str(manager.default_location()))
-    path.setAccessibleName("Restore destination")
-    password, recovery = secret("Backup password"), secret("Backup recovery key (optional)")
+    path.setAccessibleName(ui_text('Restore destination'))
+    password, recovery = secret(ui_text('Backup password')), secret(ui_text('Backup recovery key (optional)'))
     for item in (mode, path, password, recovery):
         layout.addWidget(item)
     buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)

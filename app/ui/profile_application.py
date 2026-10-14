@@ -1,4 +1,6 @@
 """Own windows and profile lifetimes; selected locked profiles never compose personal consumers."""
+from app.ui.localization import ui_text
+
 import logging
 from time import monotonic
 
@@ -10,6 +12,8 @@ from app.ui.personal_profile import PersonalProfilePage, restore_dialog
 from app.ui.profile_loading import ProfileLoadingCover
 from app.ui.profile_login import ProfileLoginPanel
 from app.ui.login_appearance import LoginAppearance
+from app.settings.gui_language import LoginLanguage
+from app.ui.localization import language_runtime
 from app.vault.profiles import ProfileManager, public_error
 
 
@@ -20,6 +24,7 @@ class ProfileApplication(QObject):
         self.application, self.builder = application, builder
         self.manager = manager or ProfileManager(application_root)
         self.login_appearance = LoginAppearance(self.manager.bootstrap.path.parent / "login_appearance_v1.json")
+        self.login_language = LoginLanguage(self.manager.bootstrap.path.parent / "login_language_v1.json")
         self.legacy_logging = legacy_logging
         self.window_factory = window_factory or MainWindow
         self.initial_geometry = initial_geometry
@@ -100,7 +105,7 @@ class ProfileApplication(QObject):
             elif self.manager.active:
                 self._legacy_selected = False
             if renew:
-                message = "Import completed and verified. Originals remain outside the profile; review them before choosing cleanup."
+                message = ui_text('Import completed and verified. Originals remain outside the profile; review them before choosing cleanup.')
         except Exception as error:
             message = public_error(error)
             if (self.manager.active and self.window is not None
@@ -172,7 +177,7 @@ class ProfileApplication(QObject):
             old_session = getattr(old, "_profile_session", None)
             if (getattr(old_page, "tabbed", False) and old_session is not None
                     and old_session._vault.root == self.manager.locator.root):
-                section = old_page.tabs.tabText(old_page.tabs.currentIndex())
+                section = tuple(old_page.sections)[old_page.tabs.currentIndex()]
         if old is not None:
             old._closing = True
             old.setEnabled(False)
@@ -220,10 +225,18 @@ class ProfileApplication(QObject):
         locked = bool((selected or setup_required) and not self.manager.active)
         self.window.theme_controller.changed.connect(
             lambda window=self.window: self._remember_login_appearance(window))
+        self.window.gui_language_changed.connect(
+            lambda code, window=self.window: self._remember_login_language(window, code))
         if self.manager.active:
             self._remember_login_appearance(self.window)
+            self._remember_login_language(self.window, self.window.gui_language_settings.code)
         elif locked and self.manager.locator is not None:
             self.login_appearance.apply(self.window.theme_controller, self.manager.locator.profile_id)
+            runtime = language_runtime()
+            try:
+                runtime.apply(runtime.prepare(self.login_language.code_for(self.manager.locator.profile_id)))
+            except ValueError:
+                runtime.apply(runtime.prepare("en"))
         location_error = self.manager.selection_error() if locked else None
         page = PersonalProfilePage(self.manager, self.window, message=message, login=locked,
                                    setup_required=setup_required, location_error=location_error)
@@ -244,15 +257,15 @@ class ProfileApplication(QObject):
         if locked:
             self.window._profile_locked = True
             if setup_required:
-                activity = "Profile setup required"
+                activity = ui_text('Profile setup required')
             elif self.manager.deletion_pending:
-                activity = "Profile deletion needs a retry"
+                activity = ui_text('Profile deletion needs a retry')
             elif self.manager.profile_deleted:
-                activity = "Profile deleted"
+                activity = ui_text('Profile deleted')
             elif location_error is not None:
-                activity = "Profile unavailable"
+                activity = ui_text('Profile unavailable')
             else:
-                activity = "Profile locked · Unlock to continue"
+                activity = ui_text('Profile locked · Unlock to continue')
             self.window._intro_active = False
             self.window.startup_greeting.clear()
             self.window.startup_greeting.hide()
@@ -265,7 +278,7 @@ class ProfileApplication(QObject):
                 self.window.settings_panel.pages.widget(index).setEnabled(False)
         # Restore must remain available when password/recovery unlock fails.
         if not self.manager.active and not self.manager.deletion_pending and not setup_required:
-            page._buttons((("Restore encrypted backup…", lambda: restore_dialog(page, self.manager, page.transition_requested.emit)),))
+            page._buttons(((ui_text('Restore encrypted backup…'), lambda: restore_dialog(page, self.manager, page.transition_requested.emit)),))
         if old is not None and old.isMaximized():
             self.window.showMaximized()
         else:
@@ -287,6 +300,11 @@ class ProfileApplication(QObject):
     def _remember_login_appearance(self, window):
         if window is self.window and self.manager.active and self.manager.locator is not None:
             self.login_appearance.remember(window.theme_controller.current, self.manager.locator.profile_id)
+
+    def _remember_login_language(self, window, code):
+        if window is self.window and self.manager.active and self.manager.locator is not None:
+            if not window.gui_language_settings.load_error:
+                self.login_language.remember(code, self.manager.locator.profile_id)
 
     def _collect_retired(self):
         keep = []

@@ -1,5 +1,7 @@
 """Ordered composer drafts and off-thread attachment preparation."""
 from __future__ import annotations
+from app.ui.localization import ui_text, QFrame, QLabel, QPushButton, QScrollArea, QWidget
+
 
 from dataclasses import dataclass
 from html import escape
@@ -8,7 +10,7 @@ from uuid import uuid4
 
 from PySide6.QtCore import QBuffer, QIODevice, QObject, Qt, QThread, Signal, Slot
 from PySide6.QtGui import QImage, QPixmap
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (QHBoxLayout, QVBoxLayout)
 
 from app.conversation.attachment_processing import AttachmentProcessor, MAX_IMAGE_PIXELS
 from app.runtime.cancellation import CancellationSource, TaskCancelled
@@ -170,7 +172,7 @@ class AttachmentTray(QWidget):
             row = QHBoxLayout(card)
             row.setContentsMargins(8, 5, 5, 5)
             row.setSpacing(7)
-            preview = QLabel("FILE")
+            preview = QLabel(ui_text('FILE'))
             preview.setObjectName("attachmentPreview")
             preview.setFixedSize(40, 40)
             preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -178,7 +180,7 @@ class AttachmentTray(QWidget):
             labels = QVBoxLayout()
             labels.setContentsMargins(0, 0, 0, 0)
             labels.setSpacing(1)
-            name, status = QLabel(), QLabel("Preparing…")
+            name, status = QLabel(), QLabel(ui_text('Preparing…'))
             name.setTextFormat(Qt.TextFormat.PlainText)
             status.setTextFormat(Qt.TextFormat.PlainText)
             name.setObjectName("attachmentName")
@@ -189,7 +191,7 @@ class AttachmentTray(QWidget):
             labels.addWidget(name)
             labels.addWidget(status)
             row.addLayout(labels, 1)
-            remove = QPushButton("×")
+            remove = QPushButton(ui_text('×'))
             remove.setObjectName("attachmentRemove")
             remove.setFixedSize(22, 22)
             remove.setAccessibleName("Remove " + job.name)
@@ -250,7 +252,7 @@ class AttachmentTray(QWidget):
         entry["card"].setFixedSize(56, 56)
         entry["card"].layout().setContentsMargins(4, 4, 4, 4)
         entry["preview"].setFixedSize(48, 48)
-        entry["preview"].setText("…")
+        entry["preview"].setText(ui_text('…'))
         entry["remove"].setParent(entry["card"])
         entry["card"].layout().removeWidget(entry["remove"])
         entry["remove"].setFixedSize(18, 18)
@@ -268,7 +270,7 @@ class AttachmentTray(QWidget):
         if key not in self._entries or self._closing:
             return
         entry = self._entries[key]
-        entry["status"].setText("Could not prepare")
+        entry["status"].setText(ui_text('Could not prepare'))
         entry["card"].setToolTip("<qt>" + escape(entry["job"].name + "\n" + error).replace("\n", "<br/>") + "</qt>")
         self.notice.emit(error)
         self.changed.emit()

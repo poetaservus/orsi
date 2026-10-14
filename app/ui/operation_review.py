@@ -1,11 +1,11 @@
 """Explicit human acknowledgement of retained uncertain outcomes."""
+from app.ui.localization import ui_text, QCheckBox, QDialog, QLabel, QPlainTextEdit, QPushButton
+
 from datetime import datetime
 
 from app.ui.theme_runtime import apply_theme_style
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (
-    QCheckBox, QDialog, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QSizePolicy, QVBoxLayout,
-)
+from PySide6.QtWidgets import (QHBoxLayout, QSizePolicy, QVBoxLayout)
 
 from app.ui.motion import install_smooth_scroll
 
@@ -32,7 +32,7 @@ def _operation_time(timestamp):
 class OperationReviewDialog(QDialog):
     def __init__(self, parent, service, snapshot):
         super().__init__(parent)
-        self.setWindowTitle("Review interrupted operations")
+        self.setWindowTitle(ui_text('Review interrupted operations'))
         self.setWindowModality(Qt.WindowModality.WindowModal)
         self.resize(680, 540)
         self.setMinimumSize(620, 500)
@@ -41,14 +41,11 @@ class OperationReviewDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(14)
-        heading = QLabel("Review interrupted operations", self)
+        heading = QLabel(ui_text('Review interrupted operations'), self)
         heading.setStyleSheet("font-size: 20px; font-weight: 500;")
         layout.addWidget(heading)
         description = QLabel(
-            "O.R.S.I stopped before confirming the outcome of these operations. Check the affected "
-            "files or apps and the earlier chat before continuing with changes. Chat and read-only "
-            "checks remain available.\n\nAcknowledging keeps these outcomes uncertain. It does not "
-            "retry the operations or mark earlier tasks complete.", self)
+            ui_text('O.R.S.I stopped before confirming the outcome of these operations. Check the affected files or apps and the earlier chat before continuing with changes. Chat and read-only checks remain available.\n\nAcknowledging keeps these outcomes uncertain. It does not retry the operations or mark earlier tasks complete.'), self)
         description.setWordWrap(True)
         description.setTextFormat(Qt.TextFormat.PlainText)
         description.setAlignment(Qt.AlignmentFlag.AlignTop)
@@ -64,7 +61,7 @@ class OperationReviewDialog(QDialog):
             for item in snapshot.operations) or "No recoverable operation records are available yet.")
         layout.addWidget(self.details, 1)
         self.confirm = QCheckBox(
-            "I reviewed these operations and understand the outcomes are uncertain.", self)
+            ui_text('I reviewed these operations and understand the outcomes are uncertain.'), self)
         self.confirm.setObjectName("confirmOperationReview")
         self.confirm.setEnabled(not snapshot.restart_required and bool(self._call_ids))
         layout.addWidget(self.confirm)
@@ -72,16 +69,16 @@ class OperationReviewDialog(QDialog):
         self.notice.setWordWrap(True)
         self.notice.setTextFormat(Qt.TextFormat.PlainText)
         if snapshot.restart_required:
-            self.notice.setText("The last result could not be saved safely. Restart O.R.S.I, then reopen this review.")
+            self.notice.setText(ui_text('The last result could not be saved safely. Restart O.R.S.I, then reopen this review.'))
         else:
             self.notice.hide()
         layout.addWidget(self.notice)
         buttons = QHBoxLayout()
         buttons.addStretch()
-        keep = QPushButton("Keep paused", self)
+        keep = QPushButton(ui_text('Keep paused'), self)
         keep.clicked.connect(self.reject)
         buttons.addWidget(keep)
-        self.acknowledge = QPushButton("Acknowledge reviewed operations", self)
+        self.acknowledge = QPushButton(ui_text('Acknowledge reviewed operations'), self)
         self.acknowledge.setObjectName("acknowledgeOperationReview")
         self.acknowledge.setEnabled(False)
         self.acknowledge.setAutoDefault(False)
@@ -104,7 +101,7 @@ class OperationReviewDialog(QDialog):
             self._service.acknowledge_operation_review(self._call_ids)
         except Exception:
             # No raw storage/path errors or private call data in the UI.
-            self.notice.setText("The review could not be saved. Operations remain paused. Restart O.R.S.I and try again.")
+            self.notice.setText(ui_text('The review could not be saved. Operations remain paused. Restart O.R.S.I and try again.'))
             self.notice.show()
             return
         super().accept()

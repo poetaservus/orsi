@@ -101,7 +101,7 @@ def test_clean_settings_still_display_unreadable_preference_errors(app, tmp_path
         window.close()
 
 
-def test_placeholder_controls_do_not_change_preferences_or_draft(app, tmp_path):
+def test_opening_settings_does_not_change_preferences_or_draft(app, tmp_path):
     preferences = JsonStore(tmp_path / "ui.json")
     preferences.save({"greeting_message": "Hello", "unrelated": "keep"})
     before = preferences.path.read_bytes()
@@ -113,10 +113,9 @@ def test_placeholder_controls_do_not_change_preferences_or_draft(app, tmp_path):
         app.processEvents()
         assert window.theme_selector.isEnabled()
         assert window.theme_selector.currentData() == "original"
-        for selector in (window.gui_language_selector,):
-            assert not selector.isEnabled()
-            assert selector.currentText() == "Coming soon"
-            assert "Placeholder" in selector.accessibleDescription()
+        assert window.gui_language_selector.isEnabled()
+        assert window.gui_language_selector.currentData() == "en"
+        assert window.gui_language_selector.count() == 46
         assert window.response_language_selector.currentData() == "auto"
         assert not window.response_language_selector.isEnabled()  # No conversation service.
         assert window.tool_approval_toggle.isEnabled()

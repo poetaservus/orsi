@@ -1,11 +1,13 @@
 from __future__ import annotations
+from app.ui.localization import ui_text, QFrame, QLabel, QPlainTextEdit, QWidget
+
 
 from dataclasses import dataclass
 from typing import Callable
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QKeySequence, QShortcut
-from PySide6.QtWidgets import QFrame, QLabel, QPlainTextEdit, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (QVBoxLayout)
 from app.ui.motion import install_smooth_scroll
 
 
@@ -42,7 +44,7 @@ class InlineApproval(QFrame):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(22, 12, 22, 12)
         layout.setSpacing(6)
-        title = QLabel(spec.title, self)
+        title = QLabel(ui_text(spec.title), self)
         title.setObjectName("approvalTitle")
         layout.addWidget(title)
         if spec.content_kind in {"path", "path_and_content"}:
@@ -50,11 +52,11 @@ class InlineApproval(QFrame):
             path.setMaximumHeight(54)
         if spec.content_kind == "path_and_content":
             label = "Exact diff" if record.capability == "filesystem.edit_text" else "File content"
-            layout.addWidget(QLabel(label, self))
+            layout.addWidget(QLabel(ui_text(label), self))
             self._add_preview(layout, "approvalContent", record.approval_preview)
         elif spec.content_kind == "details":
             self._add_preview(layout, "approvalDetails", record.approval_preview)
-        hint = QLabel("Enter to approve · Esc to abort", self)
+        hint = QLabel(ui_text('Enter to approve · Esc to abort'), self)
         hint.setObjectName("approvalHint")
         layout.addWidget(hint)
 

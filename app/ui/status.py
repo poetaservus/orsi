@@ -1,11 +1,13 @@
 from __future__ import annotations
+from app.ui.localization import ui_text, QLabel, QWidget
+
 
 import math
 
 from PySide6.QtCore import QElapsedTimer, QRectF, QTimer, Qt, Slot
 from PySide6.QtGui import QColor, QPainter
 from app.ui.theme_runtime import theme_color
-from PySide6.QtWidgets import QLabel, QWidget
+
 
 
 class ThinkingDots(QWidget):
@@ -13,7 +15,7 @@ class ThinkingDots(QWidget):
         super().__init__(parent)
         self.setObjectName("thinkingDots")
         self.setFixedSize(37, 22)
-        self.setAccessibleName("O.R.S.I is thinking")
+        self.setAccessibleName(ui_text('O.R.S.I is thinking'))
         self._elapsed = QElapsedTimer()
         self._timer = QTimer(self)
         self._timer.setTimerType(Qt.TimerType.PreciseTimer)

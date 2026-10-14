@@ -1,9 +1,11 @@
 """Notification sound selector embedded in General settings."""
+from app.ui.localization import ui_text, QCheckBox, QComboBox, QPushButton, QWidget, QFileDialog
+
 from pathlib import Path
 
 from PySide6.QtCore import QEasingCurve, QRectF, QSize, Qt, QVariantAnimation
 from PySide6.QtGui import QColor, QIcon, QPainter, QPen
-from PySide6.QtWidgets import QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QPushButton, QWidget
+from PySide6.QtWidgets import (QHBoxLayout)
 from app.ui.inputs import ScrollSafeComboBox
 from app.ui.settings_style import CONTROL_SURFACE
 from app.ui.theme_runtime import theme_color
@@ -65,13 +67,13 @@ class NotificationSoundControl(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
         self.selector = ScrollSafeComboBox()
-        self.selector.setAccessibleName("Notification sound")
-        self.selector.addItem("noti_1 (Default)", "noti_1.ogg")
-        self.selector.addItem("noti_2", "noti_2.ogg")
-        self.selector.addItem("Silent", "")
+        self.selector.setAccessibleName(ui_text('Notification sound'))
+        self.selector.addItem(ui_text('noti_1 (Default)'), "noti_1.ogg")
+        self.selector.addItem(ui_text('noti_2'), "noti_2.ogg")
+        self.selector.addItem(ui_text('Silent'), "")
         if self.selector.findData(manager.sound) < 0:
             self.selector.addItem(Path(manager.sound).name, manager.sound)
-        self.selector.addItem("Choose audio file…", None)
+        self.selector.addItem(ui_text('Choose audio file…'), None)
         self.selector.setCurrentIndex(self.selector.findData(manager.sound))
         self.selector.setMinimumWidth(0)
         self.selector.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
@@ -82,8 +84,8 @@ class NotificationSoundControl(QWidget):
         self.preview.setObjectName("notificationPreview")
         self.preview.setIcon(QIcon(str(Path(__file__).with_name("assets") / "notification_play.svg")))
         self.preview.setIconSize(QSize(16, 16))
-        self.preview.setAccessibleName("Preview notification sound")
-        self.preview.setToolTip("Preview notification sound")
+        self.preview.setAccessibleName(ui_text('Preview notification sound'))
+        self.preview.setToolTip(ui_text('Preview notification sound'))
         self.preview.setFixedSize(36, 36)
         self.preview.setEnabled(bool(manager.sound))
         self.preview.clicked.connect(manager.play_sound)
@@ -105,7 +107,7 @@ class NotificationSoundControl(QWidget):
         if self.dialog is not None:
             self.dialog.raise_()
             return
-        dialog = QFileDialog(self, "Choose notification sound")
+        dialog = QFileDialog(self, ui_text("Choose notification sound"))
         dialog.setFileMode(QFileDialog.FileMode.ExistingFile)
         dialog.setNameFilter("Audio files (*.ogg *.wav *.mp3 *.flac *.m4a)")
         dialog.setOption(QFileDialog.Option.DontUseNativeDialog)

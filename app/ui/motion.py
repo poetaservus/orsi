@@ -1,6 +1,8 @@
 """Small presentation animations that leave layout and input ownership intact."""
+from app.ui.localization import ui_text, QPlainTextEdit, QFileDialog
+
 from PySide6.QtCore import QEasingCurve, QEvent, QObject, QPropertyAnimation, Qt, Signal
-from PySide6.QtWidgets import QApplication, QAbstractItemView, QFileDialog, QPlainTextEdit
+from PySide6.QtWidgets import (QApplication, QAbstractItemView)
 
 
 class OpeningFade(QObject):
@@ -31,7 +33,7 @@ class OpeningFade(QObject):
 def create_attachment_file_dialog(parent, *, cloud, name_filter):
     # Keep a plain QFileDialog: Qt subclasses can disable the native OS picker.
     dialog = QFileDialog(parent)
-    dialog.setWindowTitle("Attach images or files" if cloud else "Attach an image or file")
+    dialog.setWindowTitle(ui_text('Attach images or files') if cloud else ui_text('Attach an image or file'))
     dialog.setNameFilter(name_filter)
     dialog.setAcceptMode(QFileDialog.AcceptMode.AcceptOpen)
     dialog.setFileMode(QFileDialog.FileMode.ExistingFiles if cloud else QFileDialog.FileMode.ExistingFile)

@@ -1,4 +1,6 @@
 from __future__ import annotations
+from app.ui.localization import ui_text, QComboBox, QDialog, QFrame, QLabel, QLineEdit, QMainWindow, QPushButton, QTextEdit, QWidget, QFileDialog, QInputDialog, QMessageBox
+
 
 import logging
 from pathlib import Path
@@ -29,28 +31,7 @@ from PySide6.QtGui import (
     QPixmap,
     QRegion,
 )
-from PySide6.QtWidgets import (
-    QApplication,
-    QComboBox,
-    QDialog,
-    QFrame,
-    QFileDialog,
-    QGraphicsBlurEffect,
-    QGraphicsOpacityEffect,
-    QGraphicsPixmapItem,
-    QGraphicsScene,
-    QHBoxLayout,
-    QInputDialog,
-    QLabel,
-    QLineEdit,
-    QMainWindow,
-    QMessageBox,
-    QPushButton,
-    QStackedLayout,
-    QTextEdit,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtWidgets import (QApplication, QGraphicsBlurEffect, QGraphicsOpacityEffect, QGraphicsPixmapItem, QGraphicsScene, QHBoxLayout, QStackedLayout, QVBoxLayout)
 
 from app.security.host_access import HostReadScope
 from app.inference.engine import InferenceUnavailable
@@ -360,6 +341,7 @@ class ChatSurface(QWidget):
 
 class MainWindow(QMainWindow):
     approval_requested = Signal(object)
+    gui_language_changed = Signal(str)
 
     def __init__(
         self,
@@ -378,6 +360,17 @@ class MainWindow(QMainWindow):
         self.inference = inference
         self.startup_error = startup_error
         self._preferences_store = preferences_store
+        from app.settings.gui_language import GuiLanguageSettings
+        from app.ui.localization import language_runtime
+        self.gui_language_settings = GuiLanguageSettings.for_preferences(preferences_store)
+        self.language_runtime = language_runtime()
+        self._gui_language_unavailable = False
+        try:
+            prepared = self.language_runtime.prepare(self.gui_language_settings.code)
+        except ValueError:
+            self._gui_language_unavailable = True
+            prepared = self.language_runtime.prepare("en")
+        self.language_runtime.apply(prepared)
         self.theme_controller = ThemeController(self, preferences_store)
         self._greeting_message = self._load_greeting_message()
         self._tool_approval_required = self._load_tool_approval_required()
@@ -406,7 +399,7 @@ class MainWindow(QMainWindow):
             bind_approval(self.approval_requested.emit)
 
         self.setObjectName("mainWindow")
-        self.setWindowTitle("O.R.S.I")
+        self.setWindowTitle(ui_text('O.R.S.I'))
         from app.ui.branding import app_icon
         self.setWindowIcon(app_icon())
         self._window_frame = WindowsFrame(self)
@@ -437,8 +430,8 @@ class MainWindow(QMainWindow):
         self.new_session_button.setFixedSize(_TOP_BUTTON_WIDTH, _TOP_BUTTON_HEIGHT)
         set_theme_icon(self.new_session_button, "new_message")
         self.new_session_button.setIconSize(QSize(_TOP_ICON_SIZE, _TOP_ICON_SIZE))
-        self.new_session_button.setToolTip("New session — permanently clears this conversation")
-        self.new_session_button.setAccessibleName("New session")
+        self.new_session_button.setToolTip(ui_text('New session — permanently clears this conversation'))
+        self.new_session_button.setAccessibleName(ui_text('New session'))
         self.new_session_button.setEnabled(service is not None)
 
         self.settings_button = SettingsIconButton(svg=_ICON_DIRECTORY / "top_settings.svg")
@@ -446,8 +439,8 @@ class MainWindow(QMainWindow):
         self.settings_button.setFixedSize(_TOP_BUTTON_WIDTH, _TOP_BUTTON_HEIGHT)
         set_theme_icon(self.settings_button, "settings")
         self.settings_button.setIconSize(QSize(_TOP_ICON_SIZE, _TOP_ICON_SIZE))
-        self.settings_button.setToolTip("Settings")
-        self.settings_button.setAccessibleName("Settings")
+        self.settings_button.setToolTip(ui_text('Settings'))
+        self.settings_button.setAccessibleName(ui_text('Settings'))
 
         controls_layout.addWidget(self.new_session_button)
         self.app_controls_separator = QFrame(self.app_controls)
@@ -481,7 +474,7 @@ class MainWindow(QMainWindow):
         self.operation_review_label.setWordWrap(True)
         self.operation_review_label.setTextFormat(Qt.TextFormat.PlainText)
         review_layout.addWidget(self.operation_review_label, 1)
-        self.operation_review_button = QPushButton("Review interrupted operations", self.operation_review_banner)
+        self.operation_review_button = QPushButton(ui_text('Review interrupted operations'), self.operation_review_banner)
         self.operation_review_button.clicked.connect(self._show_operation_review)
         review_layout.addWidget(self.operation_review_button)
         apply_theme_style(self.operation_review_banner,
@@ -503,22 +496,22 @@ class MainWindow(QMainWindow):
         self.model_selector.setObjectName("modelSelector")
         self.model_selector.setFixedHeight(38)
         if inference is None:
-            self.model_selector.addItem("Local", "local")
+            self.model_selector.addItem(ui_text('Local'), "local")
             self.model_selector.setEnabled(False)
         else:
             for mode in inference.available_modes:
-                label = "Local"
+                label = ui_text("Local")
                 if mode == "cloud":
-                    label = f"Cloud · {inference.cloud_provider_name}"
+                    label = ui_text("Cloud · {provider}", provider=inference.cloud_provider_name)
                 self.model_selector.addItem(label, mode)
             self._sync_inference_selector()
             self.model_selector.currentIndexChanged.connect(self._select_inference_mode)
 
-        self.local_model_label = QLabel("Local Model")
+        self.local_model_label = QLabel(ui_text('Local Model'))
         self.local_model_label.setObjectName("settingsLabel")
         self.local_model_selector = ScrollSafeComboBox()
         self.local_model_selector.setObjectName("modelSelector")
-        self.local_model_selector.setAccessibleName("Local model")
+        self.local_model_selector.setAccessibleName(ui_text('Local model'))
         self.local_model_selector.setFixedHeight(38)
         self.local_model_selector.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
         self.local_model_selector.setMinimumContentsLength(20)
@@ -532,18 +525,18 @@ class MainWindow(QMainWindow):
                 Qt.ItemDataRole.ToolTipRole,
             )
         if self.local_model_selector.count() == 0:
-            self.local_model_selector.addItem("No supported local models found", None)
+            self.local_model_selector.addItem(ui_text('No supported local models found'), None)
         self.local_model_details = QLabel()
         self.local_model_details.setObjectName("settingsLabel")
         self.local_model_details.setWordWrap(True)
         self.local_model_details.setMinimumHeight(36)
         self.local_model_selector.currentIndexChanged.connect(self._select_local_model)
 
-        self.cloud_model_label = QLabel("Cloud Model")
+        self.cloud_model_label = QLabel(ui_text('Cloud Model'))
         self.cloud_model_label.setObjectName("settingsLabel")
         self.cloud_model_selector = ScrollSafeComboBox()
         self.cloud_model_selector.setObjectName("modelSelector")
-        self.cloud_model_selector.setAccessibleName("Cloud model")
+        self.cloud_model_selector.setAccessibleName(ui_text('Cloud model'))
         self.cloud_model_selector.setFixedHeight(38)
         cloud_catalog = getattr(inference, "cloud_model_catalog", None)
         for profile in getattr(getattr(cloud_catalog, "config", None), "profiles", ()):
@@ -591,7 +584,7 @@ class MainWindow(QMainWindow):
         message_layout = QVBoxLayout(self._message_composer)
         message_layout.setContentsMargins(0, 0, 0, 0)
         message_layout.setSpacing(0)
-        self.questions_back = QPushButton("Back to questions", self._message_composer)
+        self.questions_back = QPushButton(ui_text('Back to questions'), self._message_composer)
         self.questions_back.setFixedHeight(28)
         self.questions_back.hide()
         self.questions_back.clicked.connect(self._show_questions)
@@ -629,8 +622,8 @@ class MainWindow(QMainWindow):
         self.stop.setFixedSize(COMPOSER_CONTROL_SIZE, COMPOSER_CONTROL_SIZE)
         set_theme_icon(self.stop, "stop")
         self.stop.setIconSize(QSize(14, 14))
-        self.stop.setToolTip("Stop")
-        self.stop.setAccessibleName("Stop")
+        self.stop.setToolTip(ui_text('Stop'))
+        self.stop.setAccessibleName(ui_text('Stop'))
         self.stop.setEnabled(False)
         self.stop.hide()
 
@@ -644,7 +637,7 @@ class MainWindow(QMainWindow):
         toolbar.setSpacing(6)
         self.microphone_placeholder = composer_microphone(composer_row)
         self.composer_model_selector = composer_selector(composer_row, "Model", 190)
-        self.composer_model_selector.setToolTip("Model for your next message")
+        self.composer_model_selector.setToolTip(ui_text('Model for your next message'))
         self.composer_model_selector.view().setMinimumWidth(300)
         self.reasoning_selector = ReasoningSelector(composer_row)
         toolbar.addWidget(self.composer_tools, 0, Qt.AlignmentFlag.AlignVCenter)
@@ -719,7 +712,7 @@ class MainWindow(QMainWindow):
             snapshot = getter() if callable(getter) else None
         except Exception:
             log.warning("Operation review could not be refreshed.")
-            self.operation_review_label.setText("Operation review is unavailable. Restart O.R.S.I before making changes.")
+            self.operation_review_label.setText(ui_text('Operation review is unavailable. Restart O.R.S.I before making changes.'))
             self.operation_review_banner.show()
             self.operation_review_button.setEnabled(False)
             return
@@ -729,12 +722,12 @@ class MainWindow(QMainWindow):
             and not self._settings_busy and not getattr(self, "_closing", False))
         if required:
             count = len(snapshot.operations)
-            summary = ("1 interrupted operation needs" if count == 1 else f"{count} interrupted operations need")
+            summary = (ui_text("1 interrupted operation needs") if count == 1 else
+                       ui_text("{count} interrupted operations need", count=count))
             self.operation_review_label.setText(
-                "An operation could not be saved safely. Restart O.R.S.I before reviewing it."
+                ui_text('An operation could not be saved safely. Restart O.R.S.I before reviewing it.')
                 if snapshot.restart_required else
-                f"{summary} review before further changes. "
-                "Chat and read-only checks remain available.")
+                ui_text('{value_0} review before further changes. Chat and read-only checks remain available.', value_0=summary))
 
     def _show_operation_review(self):
         if self.thread is not None or self._settings_busy or self._operation_review_dialog is not None:
@@ -804,6 +797,10 @@ class MainWindow(QMainWindow):
         self.response_language_selector.blockSignals(False)
         self.response_language_selector.setEnabled(False)
         self.response_language_hint.clear()
+        self.gui_language_settings.close()
+        self.gui_language_selector.setCurrentIndex(-1)
+        self.gui_language_selector.setEnabled(False)
+        self.gui_language_hint.clear()
         self.startup_greeting.clear()
         self._greeting_message = ""
         self._image_request_draft = None
@@ -866,7 +863,7 @@ class MainWindow(QMainWindow):
         self.personality_selector.setEnabled(bool(available and not busy and not settings.load_error
                                                   and not getattr(self, "_closing", False)))
         self.personality_hint.setText(
-            "Saved personality could not be loaded. Original is active; your saved preference is preserved."
+            ui_text('Saved personality could not be loaded. Original is active; your saved preference is preserved.')
             if available and settings.load_error else
             " · ".join(filter(None, (
                 settings.current.name + (" " + settings.current.version if settings.current.version else ""),
@@ -883,7 +880,7 @@ class MainWindow(QMainWindow):
         try:
             self.service.select_personality(requested)
         except Exception:
-            self.chat.add_message("Agent", "Could not change personality. Your previous choice is still active.", True)
+            self.chat.add_message("Agent", ui_text('Could not change personality. Your previous choice is still active.'), True)
         self._sync_personality_selector()
 
         self._update_context_window()
@@ -905,9 +902,40 @@ class MainWindow(QMainWindow):
         self.response_language_selector.setEnabled(bool(available and not busy and not settings.load_error
                                                         and not getattr(self, "_closing", False)))
         self.response_language_hint.setText(
-            "Saved response language could not be loaded. Auto is active; your saved preference is preserved."
+            ui_text('Saved response language could not be loaded. Auto is active; your saved preference is preserved.')
             if available and settings.load_error else "")
         self.response_language_hint.setVisible(bool(self.response_language_hint.text()))
+
+    def _sync_gui_language_selector(self):
+        settings = self.gui_language_settings
+        self.gui_language_selector.blockSignals(True)
+        self.gui_language_selector.setCurrentIndex(self.gui_language_selector.findData(settings.code))
+        self.gui_language_selector.blockSignals(False)
+        self.gui_language_selector.setEnabled(not settings.closed and not settings.load_error)
+        if settings.load_error:
+            self.gui_language_hint.setText(ui_text("Saved GUI language could not be loaded. English is active; your saved preference is preserved."))
+        elif self._gui_language_unavailable:
+            self.gui_language_hint.setText(ui_text("The saved GUI translation is unavailable. English is active; your saved preference is preserved."))
+
+    def _select_gui_language(self, index):
+        if getattr(self, "_closing", False) or getattr(self, "_profile_locked", False):
+            return
+        code = self.gui_language_selector.itemData(index)
+        prepared = None
+        try:
+            prepared = self.language_runtime.prepare(code)
+            self.gui_language_settings.select(code)
+        except (OSError, ValueError, TypeError):
+            if prepared is not None and prepared[1] is not None:
+                prepared[1].deleteLater()
+            self.gui_language_hint.setText(ui_text("Could not change GUI language. Your previous choice is still active."))
+            self._sync_gui_language_selector()
+            return
+        self._gui_language_unavailable = False
+        self.language_runtime.apply(prepared)
+        self.gui_language_hint.clear()
+        self._sync_gui_language_selector()
+        self.gui_language_changed.emit(code)
 
     def _select_response_language(self, index):
         requested = self.response_language_selector.itemData(index)
@@ -917,7 +945,7 @@ class MainWindow(QMainWindow):
         try:
             self.service.select_response_language(requested)
         except (OSError, ValueError, RuntimeError):
-            self.chat.add_message("Agent", "Could not change response language. Your previous choice is still active.", True)
+            self.chat.add_message("Agent", ui_text('Could not change response language. Your previous choice is still active.'), True)
         self._sync_response_language_selector()
         self._update_context_window()
 
@@ -1194,10 +1222,10 @@ class MainWindow(QMainWindow):
                                                name_filter=SUPPORTED_FILE_FILTER)
         manager = getattr(self, "_profile_manager", None)
         if manager is not None and manager.guidance():
-            dialog.setWindowTitle("Import a copy into profile · Recommended")
-            dialog.setLabelText(QFileDialog.DialogLabel.Accept, "Import into profile")
+            dialog.setWindowTitle(ui_text('Import a copy into profile · Recommended'))
+            dialog.setLabelText(QFileDialog.DialogLabel.Accept, ui_text('Import into profile'))
             dialog.setLabelText(QFileDialog.DialogLabel.FileName,
-                "Your saved copy is encrypted while locked. External originals remain unchanged.")
+                ui_text('Your saved copy is encrypted while locked. External originals remain unchanged.'))
         self._attachment_picker = dialog
 
         def finished(result):
@@ -1234,10 +1262,10 @@ class MainWindow(QMainWindow):
         if viewer is None or getattr(self, "_closing", False):
             return
         if self.thread is not None or self.attachment_tray.is_processing:
-            viewer.status.setText("Wait for the current operation to finish.")
+            viewer.status.setText(ui_text('Wait for the current operation to finish.'))
             return
         if self.input.toPlainText().strip() or self.attachment_tray.count:
-            viewer.status.setText("Your main composer has a draft. Close this viewer to finish it, or clear it before sending.")
+            viewer.status.setText(ui_text('Your main composer has a draft. Close this viewer to finish it, or clear it before sending.'))
             return
         viewer.set_preparing()
         self._pending_image_reply = viewer
@@ -1314,7 +1342,7 @@ class MainWindow(QMainWindow):
             return
         if attachment_count:
             if not self.attachment_tray.ready:
-                self._attachment_notice("Wait for preparation, remove failed attachments, or keep only one attachment in local mode.")
+                self._attachment_notice(ui_text('Wait for preparation, remove failed attachments, or keep only one attachment in local mode.'))
                 return
             # Do this before clearing text/skill/draft or asking for an API key.
             try:
@@ -1326,7 +1354,7 @@ class MainWindow(QMainWindow):
                 self._attachment_notice(str(exc))
                 return
             except Exception:
-                self._attachment_notice("Attachments are ready. Sending images and files will be available in the next updates.")
+                self._attachment_notice(ui_text('Attachments are ready. Sending images and files will be available in the next updates.'))
                 return
         if self.startup_error:
             self.chat.add_message("Agent", self.startup_error, True)
@@ -1752,9 +1780,9 @@ class MainWindow(QMainWindow):
 
     def _ready_status(self) -> str:
         if self._agent_error() and not self._agent_enabled():
-            return "Agent unavailable · Chat only"
+            return ui_text('Agent unavailable · Chat only')
         if self.inference is None:
-            return "Ready · Chat only"
+            return ui_text('Ready · Chat only')
         if self._agent_enabled():
             listing_enabled = self._filesystem_list_enabled()
             find_enabled = self._filesystem_find_enabled()
@@ -1790,18 +1818,18 @@ class MainWindow(QMainWindow):
                 read_status += f" · Trash {approval_mode}"
             if self.inference.mode == "cloud":
                 return (
-                    f"Cloud key needed · Agent · {read_status}"
+                    ui_text('Cloud key needed · Agent · {value_0}', value_0=f'{read_status}')
                     if not self.inference.cloud_has_api_key
-                    else f"Ready · Cloud · Agent · {read_status}"
+                    else ui_text('Ready · Cloud · Agent · {value_0}', value_0=f'{read_status}')
                 )
-            return f"Ready · Local · Agent · {read_status}"
+            return ui_text('Ready · Local · Agent · {value_0}', value_0=f'{read_status}')
         if self.inference.mode == "cloud":
             return (
-                "Cloud key needed · Chat only"
+                ui_text('Cloud key needed · Chat only')
                 if not self.inference.cloud_has_api_key
-                else "Ready · Cloud · Chat only"
+                else ui_text('Ready · Cloud · Chat only')
             )
-        return "Ready · Local · Chat only"
+        return ui_text('Ready · Local · Chat only')
 
     @Slot(int)
     def _select_inference_mode(self, index: int) -> None:
@@ -1823,7 +1851,7 @@ class MainWindow(QMainWindow):
         self._sync_cloud_model_selector()
         self._refresh_attachment_composer()
         if requested == "local" and self.attachment_tray.count > 1:
-            self._attachment_notice("Local mode allows one attachment per message. Remove the extra attachments to continue.")
+            self._attachment_notice(ui_text('Local mode allows one attachment per message. Remove the extra attachments to continue.'))
         self._update_context_window()
         self.activity.set_activity(self._ready_status())
 
@@ -1847,7 +1875,7 @@ class MainWindow(QMainWindow):
             profile = catalog.current_profile
             status = "Verified" if profile.qualified else "Verification pending"
             self.cloud_model_details.setText(
-                f"{profile.effective_context_length:,} context · {profile.max_output_tokens:,} reply limit\n{status}"
+                ui_text('{value_0} context · {value_1} reply limit\n{value_2}', value_0=format(profile.effective_context_length,','), value_1=format(profile.max_output_tokens,','), value_2=status)
             )
 
             self.cloud_model_selector.setToolTip(self.cloud_model_details.text())
@@ -1861,7 +1889,7 @@ class MainWindow(QMainWindow):
         self.image_settings_page.set_context(store, apply_settings, available=available, busy=busy)
         self.settings_panel.image_hint.setText(
             "" if available and store is not None else
-            "Image generation is unavailable in the current mode. Choose a supported cloud model in Models.")
+            ui_text('Image generation is unavailable in the current mode. Choose a supported cloud model in Models.'))
 
     def _open_image_settings(self):
         self.settings_panel.show_section("Image Generation")
@@ -1879,7 +1907,7 @@ class MainWindow(QMainWindow):
         try:
             self.service.select_cloud_model(requested)
         except (InferenceUnavailable, RuntimeError, ValueError, OSError):
-            self.chat.add_message("Agent", "Could not switch cloud models. Your previous selection is still active.", True)
+            self.chat.add_message("Agent", ui_text('Could not switch cloud models. Your previous selection is still active.'), True)
         self._sync_cloud_model_selector()
         self._update_context_window()
         self.activity.set_activity(self._ready_status())
@@ -1907,19 +1935,16 @@ class MainWindow(QMainWindow):
             if config.vision is not None:
                 note = "Image input available · Experimental file editing"
             self.local_model_details.setText(
-                f"{int(config.context_length):,} context · {config.max_tokens:,} reply limit\n"
-                f"Settings applied automatically\n{note}"
-                if isinstance(config.context_length, int) else "Settings applied automatically"
+                ui_text('{value_0} context · {value_1} reply limit\nSettings applied automatically\n{value_2}', value_0=format(int(config.context_length),','), value_1=format(config.max_tokens,','), value_2=note)
+                if isinstance(config.context_length, int) else ui_text('Settings applied automatically')
             )
             self.local_model_details.setToolTip(
-                f"Temperature {config.temperature} · Top-p {config.top_p} · Top-k {config.top_k}\n"
-                f"{'GPU acceleration' if config.gpu_layers != 0 else 'CPU'} · {config.cache_type.upper()} cache\n"
-                "Switching preserves your conversation. Choose the Qwen vision model for image input."
+                ui_text('Temperature {value_0} · Top-p {value_1} · Top-k {value_2}\n{value_3} · {value_4} cache\nSwitching preserves your conversation. Choose the Qwen vision model for image input.', value_0=config.temperature, value_1=config.top_p, value_2=config.top_k, value_3='GPU acceleration' if config.gpu_layers != 0 else 'CPU', value_4=config.cache_type.upper())
             )
             self.local_model_selector.setToolTip(
                 self.local_model_details.text() + "\n" + self.local_model_details.toolTip())
         else:
-            self.local_model_details.setText("Local model selection is unavailable.")
+            self.local_model_details.setText(ui_text('Local model selection is unavailable.'))
         self._sync_composer_models()
 
     def _sync_composer_models(self, *, busy=None):
@@ -1940,14 +1965,14 @@ class MainWindow(QMainWindow):
                 for model in models:
                     selector.addItem(model.name, "local:" + model.id)
                 if not models:
-                    selector.addItem("Local", "local:")
+                    selector.addItem(ui_text('Local'), "local:")
             elif option == "cloud":
                 profiles = getattr(getattr(cloud, "config", None), "profiles", ())
                 for profile in profiles:
                     label = {"gpt-6-luna": "GPT-6 Luna", "gpt-6.1-sol": "GPT-6.1 Sol"}.get(profile.id, profile.id)
                     selector.addItem(label, "cloud:" + profile.id)
                 if not profiles:
-                    selector.addItem("Cloud", "cloud:")
+                    selector.addItem(ui_text('Cloud'), "cloud:")
         current_id = getattr(cloud if mode == "cloud" else local, "current_id", None)
         selector.setCurrentIndex(selector.findData(mode + ":" + (current_id or "")))
         selector.setFixedWidth(min(220, max(110, selector.fontMetrics().horizontalAdvance(selector.currentText()) + 38)))
@@ -1957,10 +1982,10 @@ class MainWindow(QMainWindow):
         if cloud is not None and mode == "cloud":
             profile = cloud.current_profile
             reason.set_context(profile.supported_reasoning_efforts, profile.reasoning_effort, selector.currentText())
-            reason.setToolTip("Reasoning level sent to the API for your next message")
+            reason.setToolTip(ui_text('Reasoning level sent to the API for your next message'))
         else:
             reason.set_context((), None, selector.currentText())
-            reason.setToolTip("Reasoning level is available for supported cloud models")
+            reason.setToolTip(ui_text('Reasoning level is available for supported cloud models'))
         reason.setEnabled(available and not busy and cloud is not None and mode == "cloud")
 
     def _select_composer_model(self, index):
@@ -1983,7 +2008,7 @@ class MainWindow(QMainWindow):
         try:
             self.service.select_cloud_reasoning(effort)
         except (InferenceUnavailable, RuntimeError, ValueError, OSError):
-            self.chat.add_message("Agent", "Could not change reasoning. Your previous level is still active.", True)
+            self.chat.add_message("Agent", ui_text('Could not change reasoning. Your previous level is still active.'), True)
         self._sync_cloud_model_selector()
         self._update_context_window()
 
@@ -1997,7 +2022,7 @@ class MainWindow(QMainWindow):
             return
         self._set_busy(True)
         self.stop.setEnabled(False)
-        self.activity.set_activity("Loading local model...")
+        self.activity.set_activity(ui_text('Loading local model...'))
         self.thread = QThread()
         self.worker = ModelSwitchWorker(self.service, requested)
         self.worker.moveToThread(self.thread)
@@ -2060,8 +2085,8 @@ class MainWindow(QMainWindow):
         if not self.inference.cloud_has_api_key:
             key, accepted = QInputDialog.getText(
                 self,
-                f"{self.inference.cloud_provider_name} API key",
-                "Enter the API key for this connection session. Saving it requires a separate choice in Personal profile settings:",
+                ui_text('{value_0} API key', value_0=f'{self.inference.cloud_provider_name}'),
+                ui_text('Enter the API key for this connection session. Saving it requires a separate choice in Personal profile settings:'),
                 QLineEdit.EchoMode.Password,
             )
             if not accepted or not key.strip() or getattr(self, "_closing", False):
@@ -2077,11 +2102,11 @@ class MainWindow(QMainWindow):
 
     def _saved_cloud_key_choice(self):
         dialog = QMessageBox(self)
-        dialog.setWindowTitle("Saved cloud API key")
-        dialog.setText("An API key is saved encrypted in this profile. Ask mode is currently selected.")
-        dialog.setInformativeText("Use the saved key automatically for this cloud connection, or enter a different key for this session.")
-        saved = dialog.addButton("Use saved key", QMessageBox.ButtonRole.AcceptRole)
-        manual = dialog.addButton("Enter a different key", QMessageBox.ButtonRole.ActionRole)
+        dialog.setWindowTitle(ui_text('Saved cloud API key'))
+        dialog.setText(ui_text('An API key is saved encrypted in this profile. Ask mode is currently selected.'))
+        dialog.setInformativeText(ui_text("Use the saved key automatically for this cloud connection, or enter a different key for this session."))
+        saved = dialog.addButton(ui_text("Use saved key"), QMessageBox.ButtonRole.AcceptRole)
+        manual = dialog.addButton(ui_text("Enter a different key"), QMessageBox.ButtonRole.ActionRole)
         dialog.addButton(QMessageBox.StandardButton.Cancel)
         dialog.setDefaultButton(saved)
         dialog.exec()
@@ -2171,6 +2196,7 @@ class MainWindow(QMainWindow):
             return
         self.chat.set_thinking(False)
         self.theme_controller.release()
+        self.gui_language_settings.close()
         super().closeEvent(event)
 
     def _sync_inference_selector(self) -> None:

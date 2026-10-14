@@ -1,20 +1,13 @@
 from __future__ import annotations
+from app.ui.localization import ui_text, QFrame, QLabel, QPlainTextEdit, QScrollArea, QWidget
+
 
 import re
 from html import escape
 
 from PySide6.QtCore import QElapsedTimer, QPoint, QRect, QRectF, QTimer, Qt, Signal
 from PySide6.QtGui import QColor, QFontDatabase, QLinearGradient, QPainter, QPen
-from PySide6.QtWidgets import (
-    QFrame,
-    QHBoxLayout,
-    QLabel,
-    QPlainTextEdit,
-    QScrollArea,
-    QSizePolicy,
-    QVBoxLayout,
-    QWidget,
-)
+from PySide6.QtWidgets import (QHBoxLayout, QSizePolicy, QVBoxLayout)
 
 from app.ui.status import ThinkingDots
 from app.ui.code_highlighting import CodeHighlighter
@@ -84,7 +77,7 @@ class _CodeBlock(QFrame):
         header_layout.setContentsMargins(16, 7, 10, 7)
         header_layout.setSpacing(8)
 
-        self.language = QLabel(f"{language} · Incomplete" if incomplete else language)
+        self.language = QLabel(ui_text('{value_0} · Incomplete', value_0=language) if incomplete else language)
         self.language.setObjectName("codeLanguage")
         self.copy_button = CopyButton("Copy code")
         self.copy_button.setObjectName("copyCodeButton")
@@ -169,7 +162,7 @@ class _Message(QFrame):
             attachment.setTextFormat(Qt.TextFormat.PlainText)
             attachment.setWordWrap(True)
             apply_theme_style(attachment, "color: #b1b8c8; font-size: 12px; padding: 3px 0;")
-            attachment.setToolTip(f"{reference.name} · {reference.size_bytes:,} bytes")
+            attachment.setToolTip(ui_text('{value_0} · {value_1} bytes', value_0=reference.name, value_1=format(reference.size_bytes,',')))
             self._text_labels.append(attachment)
             layout.addWidget(attachment)
 
@@ -180,24 +173,20 @@ class _Message(QFrame):
         )
         self.completion_label = None
         if not from_user and (self.completion.incomplete or any(kind == "incomplete_code" for kind, _, _ in parts)):
-            indication = ("Incomplete — output limit reached. Partial response."
+            indication = (ui_text("Incomplete — output limit reached. Partial response.")
                           if self.completion.finish_reason == "length" else
-                          "Incomplete response." if self.completion.incomplete else
-                          "Incomplete code block — closing fence missing.")
+                          ui_text("Incomplete response.") if self.completion.incomplete else
+                          ui_text("Incomplete code block — closing fence missing."))
             if getattr(content, "status_message", None):
-                indication += "\n" + content.status_message
+                indication = ui_text("{indication}\n{detail}", indication=indication, detail=content.status_message)
             elif self.completion.failure_message and self.completion.failure_message not in content:
-                indication += "\n" + self.completion.failure_message
+                indication = ui_text("{indication}\n{detail}", indication=indication, detail=self.completion.failure_message)
             self.completion_label = QLabel(indication)
             self.completion_label.setObjectName("incompleteResponse")
             self.completion_label.setWordWrap(True)
             self.completion_label.setTextFormat(Qt.TextFormat.PlainText)
             self.completion_label.setToolTip(
-                f"Finish reason: {self.completion.finish_reason or 'not supplied'}\n"
-                f"Failure reason: {self.completion.failure_reason or 'not supplied'}\n"
-                f"Input tokens: {self.completion.usage.input_tokens}\n"
-                f"Output tokens: {self.completion.usage.output_tokens}\n"
-                f"Total tokens: {self.completion.usage.total_tokens}")
+                ui_text('Finish reason: {value_0}\nFailure reason: {value_1}\nInput tokens: {value_2}\nOutput tokens: {value_3}\nTotal tokens: {value_4}', value_0=self.completion.finish_reason or 'not supplied', value_1=self.completion.failure_reason or 'not supplied', value_2=self.completion.usage.input_tokens, value_3=self.completion.usage.output_tokens, value_4=self.completion.usage.total_tokens))
             layout.addWidget(self.completion_label)
         for kind, language, value in parts:
             if kind in {"code", "incomplete_code"}:
@@ -354,7 +343,7 @@ class _MessageBand(QWidget):
         self.skill_label = QLabel(self.meta_row)
         self.skill_label.setObjectName("userSkill")
         self.skill_label.setTextFormat(Qt.TextFormat.PlainText)
-        self.skill_label.setAccessibleName("Skill used for this message")
+        self.skill_label.setAccessibleName(ui_text('Skill used for this message'))
         if from_user:
             meta_layout.addWidget(self.skill_label)
         self.skill_label.setVisible(bool(self.skill_name))
@@ -481,13 +470,13 @@ class ChatView(QScrollArea):
         self._thinking_layout = QVBoxLayout(self._thinking_row)
         self._thinking_layout.setContentsMargins(4, 0, 0, 0)
         self._thinking_layout.setSpacing(6)
-        self.working_label = QLabel("Working for 0s")
+        self.working_label = QLabel(ui_text('Working for 0s'))
         self.working_label.setObjectName("responseTiming")
         self.activity_label = QLabel()
         self.activity_label.setObjectName("workingActivity")
         self.activity_label.setTextFormat(Qt.TextFormat.PlainText)
         self.activity_label.setWordWrap(True)
-        self.activity_label.setAccessibleName("Current activity")
+        self.activity_label.setAccessibleName(ui_text('Current activity'))
         self.thinking_dots = ThinkingDots()
         self.stream_preview = QLabel()
         self.stream_preview.setObjectName("streamPreview")
@@ -682,7 +671,7 @@ class ChatView(QScrollArea):
         if thinking:
             self.activity_label.show()
             self.thinking_dots.show()
-            self.activity_label.setText("Preparing your request…")
+            self.activity_label.setText(ui_text('Preparing your request…'))
             self._response_elapsed.start()
             self._update_working_label()
             self._response_timer.start()
@@ -715,7 +704,7 @@ class ChatView(QScrollArea):
             return
         self.stream_preview.setText(text)
         if text:
-            self.set_activity("Writing reply…")
+            self.set_activity(ui_text('Writing reply…'))
         self.stream_preview.setVisible(bool(text))
         if self._follow_tail:
             QTimer.singleShot(0, self._scroll_to_bottom)

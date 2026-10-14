@@ -1,7 +1,9 @@
 """Profile setup and login, separate from the settings navigation."""
+from app.ui.localization import ui_text, QFrame, QLabel, QScrollArea, QWidget
+
 from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QFont, QLinearGradient, QPainter, QPen
-from PySide6.QtWidgets import QFrame, QGraphicsBlurEffect, QLabel, QScrollArea, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (QGraphicsBlurEffect, QVBoxLayout)
 
 from app.vault.types import ProfileNotFound, RecoveryRequired
 from app.ui.theme_runtime import apply_theme_style, apply_theme_tree, theme_color
@@ -42,7 +44,7 @@ class ProfileLoginPanel(QFrame):
     def __init__(self, page, parent):
         super().__init__(parent)
         self.setObjectName("profileLoginPanel")
-        self.setAccessibleName("Profile login")
+        self.setAccessibleName(ui_text('Profile login'))
         self.page = page
         font = self.font()
         font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
@@ -85,24 +87,24 @@ class ProfileLoginPanel(QFrame):
         body.setAlignment(Qt.AlignmentFlag.AlignTop)
         header = QVBoxLayout()
         header.setSpacing(8)
-        heading = QLabel("Create your profile" if page.setup_required else
-                         "Finish profile deletion" if page.manager.deletion_pending else
-                         "Profile deleted" if page.manager.profile_deleted else
-                         "Profile not found" if isinstance(page.location_error, ProfileNotFound) else
-                         "Profile needs recovery" if isinstance(page.location_error, RecoveryRequired) else
-                         "Profile unavailable" if page.location_error is not None else
-                         "Unlock your profile" if page.manager.encrypted else "Open your personal profile")
+        heading = QLabel(ui_text('Create your profile') if page.setup_required else
+                         ui_text('Finish profile deletion') if page.manager.deletion_pending else
+                         ui_text('Profile deleted') if page.manager.profile_deleted else
+                         ui_text('Profile not found') if isinstance(page.location_error, ProfileNotFound) else
+                         ui_text('Profile needs recovery') if isinstance(page.location_error, RecoveryRequired) else
+                         ui_text('Profile unavailable') if page.location_error is not None else
+                         ui_text('Unlock your profile') if page.manager.encrypted else ui_text('Open your personal profile'))
         heading.setObjectName("loginHeading")
         heading.setAlignment(Qt.AlignmentFlag.AlignCenter)
         heading.setWordWrap(True)
         header.addWidget(heading)
-        subtitle = QLabel("Set up your personal profile to get started." if page.setup_required else
-                          "Some profile locations still need to be removed." if page.manager.deletion_pending else
-                          "Create or select a profile, or continue without a profile." if page.manager.profile_deleted else
-                          "Choose how to continue, or reconnect its drive and check again." if page.location_error is not None else
-                          "Enter your password or recovery key to continue." if page.manager.encrypted else
-                          "Open your profile to continue." if page.manager.locator is not None else
-                          "Select a profile to continue.")
+        subtitle = QLabel(ui_text('Set up your personal profile to get started.') if page.setup_required else
+                          ui_text('Some profile locations still need to be removed.') if page.manager.deletion_pending else
+                          ui_text('Create or select a profile, or continue without a profile.') if page.manager.profile_deleted else
+                          ui_text('Choose how to continue, or reconnect its drive and check again.') if page.location_error is not None else
+                          ui_text('Enter your password or recovery key to continue.') if page.manager.encrypted else
+                          ui_text('Open your profile to continue.') if page.manager.locator is not None else
+                          ui_text('Select a profile to continue.'))
         subtitle.setWordWrap(True)
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         subtitle.setObjectName("loginSubtitle")

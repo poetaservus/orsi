@@ -47,6 +47,9 @@ and independent security qualification remain pending.
   language of your request, or remembers one of 45 language choices per profile.
   Explicit output-language requests take precedence. Tools and skills retain
   their original names and protocols. See [response languages](docs/response-language.md).
+- **Settings → Appearance → GUI Language** switches interface text immediately,
+  independently of replies, with Auto and 45 profile-scoped language choices.
+  Offline draft catalogs and verification are described in [GUI languages](docs/gui-language.md).
 - Composer model and cloud reasoning selectors apply to the next API request and save
   preferences per model. The microphone is a placeholder. See [composer controls](docs/composer-reasoning.md).
 - `filesystem.stat`, `filesystem.find`, `filesystem.list`,

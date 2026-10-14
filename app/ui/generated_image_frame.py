@@ -2,6 +2,7 @@
 from PySide6.QtCore import QEasingCurve, QRectF, QVariantAnimation, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPainterPath
 from app.ui.generation_placeholder import GenerationPlaceholder
+from app.ui.localization import ui_text
 
 
 class GeneratedImageFrame(GenerationPlaceholder):
@@ -26,7 +27,7 @@ class GeneratedImageFrame(GenerationPlaceholder):
         self.references = tuple(references)
         reference = self.references[0]
         self.reference, self.loader = reference, loader
-        self.setAccessibleName("Generated image: " + reference.name)
+        self.setAccessibleName(ui_text("Generated image: {name}", name=reference.name))
         self.setCursor(Qt.CursorShape.PointingHandCursor)
         loader.loaded.connect(self._loaded)
         image = loader.image(reference)

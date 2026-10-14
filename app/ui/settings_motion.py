@@ -1,11 +1,13 @@
 """Vector button feedback and dragging for the settings UI."""
+from app.ui.localization import ui_text, QPushButton, QWidget
+
 from math import sin, pi
 
 from PySide6.QtCore import QEasingCurve, QEvent, QLineF, QObject, QRectF, Qt, QVariantAnimation, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 from app.ui.theme_runtime import controller_for, theme_color, theme_icon
 from PySide6.QtSvg import QSvgRenderer
-from PySide6.QtWidgets import QPushButton, QStyle, QStyleOptionButton, QStylePainter, QWidget
+from PySide6.QtWidgets import (QStyle, QStyleOptionButton, QStylePainter)
 
 
 class _PageCover(QWidget):

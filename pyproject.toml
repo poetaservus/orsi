@@ -36,4 +36,4 @@ include = ["app*"]
 
 [tool.setuptools.package-data]
 "app.conversation" = ["personalities/*.md", "personalities/*.txt"]
-"app.ui" = ["assets/sounds/*.ogg", "assets/*.svg", "assets/*.png", "assets/fonts/*", "assets/themes/*/*.json", "assets/themes/*/*.md", "assets/themes/*/fonts/*", "assets/themes/*/icons/*"]
+"app.ui" = ["assets/sounds/*.ogg", "assets/*.svg", "assets/*.png", "assets/fonts/*", "assets/themes/*/*.json", "assets/themes/*/*.md", "assets/themes/*/fonts/*", "assets/themes/*/icons/*", "translations/*.qm", "translations/*.ts"]

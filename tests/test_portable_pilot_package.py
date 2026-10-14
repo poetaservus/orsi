@@ -23,6 +23,10 @@ def inputs(tmp_path):
     icon.write_bytes((Path(__file__).resolve().parents[1] / "app/ui/assets/orsi.ico").read_bytes())
     shutil.copytree(Path(__file__).resolve().parents[1] / "app/ui/assets/themes",
                     source / "app/ui/assets/themes")
+    translations = source / "app/ui/translations"
+    translations.mkdir()
+    for name in ("hu.ts", "hu.qm", "nn.ts", "nn.qm"):
+        (translations / name).write_bytes((Path(__file__).resolve().parents[1] / "app/ui/translations" / name).read_bytes())
     directory = source / "app/conversation/personalities"
     directory.mkdir(parents=True)
     for personality in (Path(__file__).resolve().parents[1] / "app/conversation/personalities").glob("*.md"):
@@ -67,6 +71,8 @@ def test_export_uses_committed_public_files_and_never_copies_instance_data(input
     assert not (destination / ".git").exists() and not (destination / "tests").exists()
     assert (destination / "runtime/python/Lib/site-packages/demo-1.0.dist-info/licenses/LICENSE").exists()
     assert (destination / "app/ui/assets/orsi.ico").read_bytes() == (source / "app/ui/assets/orsi.ico").read_bytes()
+    for name in ("hu.ts", "hu.qm", "nn.ts", "nn.qm"):
+        assert (destination / "app/ui/translations" / name).read_bytes() == (source / "app/ui/translations" / name).read_bytes()
     conformist = destination / "app/ui/assets/themes/conformist"
     assert json.loads((conformist / "theme.json").read_text())["name"] == "Conformist"
     assert (conformist / "fonts/DMSans.ttf").read_bytes() == (source / "app/ui/assets/themes/conformist/fonts/DMSans.ttf").read_bytes()

@@ -1,5 +1,7 @@
 """Quiet client-side controls with native Windows moving and sizing."""
 from __future__ import annotations
+from app.ui.localization import ui_text, QPushButton, QWidget
+
 
 import ctypes
 import sys
@@ -8,7 +10,7 @@ from ctypes import wintypes
 from app.ui.theme_runtime import apply_theme_style, theme_color
 from PySide6.QtCore import QLineF, QPoint, QRectF, Qt
 from PySide6.QtGui import QColor, QPainter, QPen
-from PySide6.QtWidgets import QAbstractButton, QApplication, QHBoxLayout, QPushButton, QWidget
+from PySide6.QtWidgets import (QAbstractButton, QApplication, QHBoxLayout)
 
 
 CAPTION_HEIGHT = 34
@@ -97,8 +99,8 @@ class WindowControls(QWidget):
 
     def refresh(self):
         name = "Restore" if self.window.isMaximized() else "Maximize"
-        self.maximize.setAccessibleName(name)
-        self.maximize.setToolTip(name)
+        self.maximize.setAccessibleName(ui_text(name))
+        self.maximize.setToolTip(ui_text(name))
         self.maximize.update()
 
 

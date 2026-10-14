@@ -1,13 +1,12 @@
 """Composer-only skill picker; selection is metadata for one outgoing message."""
+from app.ui.localization import ui_text, QFrame, QLabel, QListWidget, QPushButton, QWidget
+
 import re
 from html import escape
 
 from PySide6.QtCore import QEvent, QObject, Qt
 from PySide6.QtGui import QTextCursor
-from PySide6.QtWidgets import (
-    QApplication, QFrame, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
-    QPushButton, QVBoxLayout, QWidget,
-)
+from PySide6.QtWidgets import (QApplication, QHBoxLayout, QListWidgetItem, QVBoxLayout)
 
 from app.ui.motion import install_smooth_scroll
 
@@ -39,7 +38,7 @@ class SkillPicker(QObject):
 
         self.popup = QFrame(composer.parentWidget())
         self.popup.setObjectName("skillPicker")
-        self.popup.setAccessibleName("Choose a skill for this message")
+        self.popup.setAccessibleName(ui_text('Choose a skill for this message'))
         layout = QVBoxLayout(self.popup)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -47,7 +46,7 @@ class SkillPicker(QObject):
         self.header.setObjectName("skillPickerHeader")
         header_layout = QHBoxLayout(self.header)
         header_layout.setContentsMargins(16, 7, 10, 7)
-        self.title = QLabel("Skills", self.header)
+        self.title = QLabel(ui_text('Skills'), self.header)
         self.title.setObjectName("skillPickerTitle")
         header_layout.addWidget(self.title)
         layout.addWidget(self.header)
@@ -57,13 +56,13 @@ class SkillPicker(QObject):
         self.items = QListWidget(body)
         install_smooth_scroll(self.items)
         self.items.setObjectName("skillPickerList")
-        self.items.setAccessibleName("Installed skills")
+        self.items.setAccessibleName(ui_text('Installed skills'))
         self.items.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.items.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.items.setWordWrap(False)
         self.items.itemClicked.connect(self._choose)
         body_layout.addWidget(self.items)
-        self.empty = QLabel("No skills installed", body)
+        self.empty = QLabel(ui_text('No skills installed'), body)
         self.empty.setObjectName("skillPickerEmpty")
         self.empty.setTextFormat(Qt.TextFormat.PlainText)
         self.empty.setWordWrap(True)
@@ -107,7 +106,7 @@ class SkillPicker(QObject):
             self.items.addItem(item)
         self.items.setVisible(bool(skills))
         self.empty.setVisible(not skills)
-        self.empty.setText("No matching skills" if catalog else "No skills installed")
+        self.empty.setText(ui_text('No matching skills') if catalog else ui_text('No skills installed'))
         if skills:
             self.items.setCurrentRow(0)
         row_height = max(32, self.items.sizeHintForRow(0))
@@ -146,8 +145,9 @@ class SkillPicker(QObject):
         self.selected_name = name
         label = self.chip.fontMetrics().elidedText('/' + ' '.join(name.split()), Qt.TextElideMode.ElideRight, 210)
         self.chip.setText(label.replace('&', '&&') + '  ×')
-        self.chip.setToolTip('<qt>' + escape(name[:512]) + '<br/>Applies to this message. Click to remove.</qt>')
-        self.chip.setAccessibleName('Remove skill ' + ' '.join(name.split())[:128])
+        self.chip.setToolTip(ui_text('<qt>{name}<br/>{hint}</qt>', name=escape(name[:512]),
+                                    hint=ui_text('Applies to this message. Click to remove.')))
+        self.chip.setAccessibleName(ui_text('Remove skill {name}', name=' '.join(name.split())[:128]))
         self.chip.show()
         self.popup.hide()
         self._command_range = None

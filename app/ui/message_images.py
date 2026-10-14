@@ -1,5 +1,7 @@
 """Lazy, bounded previews of immutable chat attachments."""
 from __future__ import annotations
+from app.ui.localization import ui_text, QFrame, QScrollArea, QWidget
+
 
 from collections import OrderedDict
 from html import escape
@@ -7,7 +9,7 @@ from html import escape
 from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QObject, QRectF, QRunnable, QSize, QThreadPool, Qt, Signal, Slot
 from PySide6.QtGui import QColor, QImage, QImageReader, QPainter, QPainterPath, QPen
 from app.ui.theme_runtime import theme_color
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QScrollArea, QWidget
+from PySide6.QtWidgets import (QHBoxLayout)
 from app.ui.motion import install_smooth_scroll
 
 from app.conversation.attachment_processing import MAX_IMAGE_PIXELS
@@ -169,7 +171,7 @@ class _ImagePreview(QWidget):
             name = painter.fontMetrics().elidedText(self.reference.name, Qt.TextElideMode.ElideMiddle,
                                                    max(1, self.width() - 16))
             painter.drawText(bounds, Qt.AlignmentFlag.AlignCenter,
-                             ("Loading image…" if image is None else "Preview unavailable") + "\n" + name)
+                             str(ui_text("Loading image…") if image is None else ui_text("Preview unavailable")) + "\n" + name)
         painter.setClipping(False)
         painter.setPen(QPen(theme_color(self, QColor(170, 190, 232, 40), "border"), 1))
         painter.drawPath(clip)

@@ -1,11 +1,13 @@
 """Reusable image preferences, independent of chat model profiles."""
+from app.ui.localization import ui_text, QDialog, QDialogButtonBox, QFormLayout, QPushButton, QWidget
+
 from app.ui.theme_runtime import apply_theme_style
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (QHBoxLayout, QVBoxLayout)
 from app.settings.images import ImageGenerationSettings
 from app.ui.inputs import ScrollSafeComboBox
 from app.ui.settings_style import settings_control_style
-from app.ui.profile_layout import FeedbackLabel
+from app.ui.profile_layout import AdaptiveRow, FeedbackLabel
 
 
 class ImageSettingsPage(QWidget):
@@ -21,6 +23,7 @@ class ImageSettingsPage(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(18)
         form = QFormLayout()
+        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
         form.setVerticalSpacing(16)
         form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
         self.choices = {}
@@ -30,24 +33,23 @@ class ImageSettingsPage(QWidget):
             ("quality", "Quality", ("auto", "low", "medium", "high")),
             ("output_format", "File format", ("png", "jpeg", "webp")),
         ):
+            label = ui_text(label)
             selector = ScrollSafeComboBox()
             selector.setAccessibleName(label)
-            selector.addItems(values)
+            for value in values:
+                selector.addItem(ui_text(value) if name == "quality" else value, value)
             selector.setFixedHeight(36)
             selector.setMinimumWidth(240)
             form.addRow(label, selector)
             self.choices[name] = selector
         layout.addLayout(form)
         self.notice = FeedbackLabel()
-        self.setToolTip("Availability depends on your cloud account. Images are saved at their original resolution.")
+        self.setToolTip(ui_text('Availability depends on your cloud account. Images are saved at their original resolution.'))
         layout.addWidget(self.notice)
-        actions = QHBoxLayout()
-        self.save_button = QPushButton("Save image settings")
-        self.reset_button = QPushButton("Reset changes")
-        actions.addWidget(self.save_button)
-        actions.addWidget(self.reset_button)
-        actions.addStretch()
-        layout.addLayout(actions)
+        self.save_button = QPushButton(ui_text('Save image settings'))
+        self.reset_button = QPushButton(ui_text('Reset changes'))
+        self.actions = AdaptiveRow([self.save_button, self.reset_button])
+        layout.addWidget(self.actions)
         self.save_button.clicked.connect(self._save)
         self.reset_button.clicked.connect(self.reload)
         self.reload()
@@ -56,7 +58,7 @@ class ImageSettingsPage(QWidget):
     def reload(self):
         settings = self.store.current if self.store is not None else ImageGenerationSettings()
         for name, selector in self.choices.items():
-            selector.setCurrentText(getattr(settings, name))
+            selector.setCurrentIndex(selector.findData(getattr(settings, name)))
 
     def set_context(self, store, apply_settings, *, available, busy=False):
         changed = store is not self.store
@@ -72,12 +74,12 @@ class ImageSettingsPage(QWidget):
         if not self._available or self._busy:
             return
         try:
-            settings = ImageGenerationSettings(**{name: widget.currentText() for name, widget in self.choices.items()})
+            settings = ImageGenerationSettings(**{name: widget.currentData() for name, widget in self.choices.items()})
             self.apply_settings(settings)
         except Exception:
-            self.notice.setText("Could not save image settings. Finish the current request and try again.")
+            self.notice.setText(ui_text('Could not save image settings. Finish the current request and try again.'))
             return
-        self.notice.setText("Image generation settings saved.")
+        self.notice.setText(ui_text('Image generation settings saved.'))
         self.saved.emit()
 
 
@@ -90,7 +92,7 @@ class ImageSettingsDialog(QDialog):
         apply_theme_style(self, "QDialog#imageSettingsDialog { background: #343f50; color: #e4e5eb; } "
             "QDialog#imageSettingsDialog QWidget { color: #e4e5eb; font-family: Saira; font-size: 14px; } "
             + settings_control_style("QDialog#imageSettingsDialog"))
-        self.setWindowTitle("Image generation")
+        self.setWindowTitle(ui_text('Image generation'))
         self.setMinimumWidth(370)
         self.store, self.apply_settings = settings_store, apply_settings
         layout = QVBoxLayout(self)

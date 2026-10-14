@@ -1,10 +1,9 @@
 """Settings-only skill import/review, installation and removal."""
+from app.ui.localization import ui_text, QDialog, QLabel, QLineEdit, QListWidget, QPushButton, QWidget, QFileDialog, QMessageBox
+
 from app.ui.theme_runtime import apply_theme_style
 from PySide6.QtCore import QThread, Qt, Signal, Slot
-from PySide6.QtWidgets import (
-    QDialog, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QListWidget,
-    QListWidgetItem, QMessageBox, QPushButton, QSizePolicy, QVBoxLayout, QWidget,
-)
+from PySide6.QtWidgets import (QHBoxLayout, QListWidgetItem, QSizePolicy, QVBoxLayout)
 from html import escape
 
 from app.runtime.skills.contracts import SkillLoadError, SkillParseError
@@ -82,19 +81,19 @@ class SkillSettingsPage(QWidget):
         source_row = QHBoxLayout()
         self.source = SkillSourceInput()
         self.source.setObjectName("skillSource")
-        self.source.setAccessibleName("Skill repository, folder or Markdown file")
-        self.source.setAccessibleDescription("Paste a GitHub repository or skill-file link, or drop a folder/file.")
-        self.source.setToolTip(self.source.accessibleDescription())
-        self.source.setPlaceholderText("GitHub repository, skill folder or SKILL.md link")
+        self.source.setAccessibleName(ui_text('Skill repository, folder or Markdown file'))
+        self.source.setAccessibleDescription(ui_text('Paste a GitHub repository or skill-file link, or drop a folder/file.'))
+        self.source.use_description_as_tooltip()
+        self.source.setPlaceholderText(ui_text('GitHub repository, skill folder or SKILL.md link'))
         self.source.setMaxLength(4096)
         self.source.setAcceptDrops(True)
-        self.browse = QPushButton("Choose file…")
-        self.browse_folder = QPushButton("Choose folder…")
+        self.browse = QPushButton(ui_text('Choose file…'))
+        self.browse_folder = QPushButton(ui_text('Choose folder…'))
         source_row.addWidget(self.source, 1)
         source_row.addWidget(self.browse)
         source_row.addWidget(self.browse_folder)
         layout.addLayout(source_row)
-        self.preview_button = QPushButton("Preview")
+        self.preview_button = QPushButton(ui_text('Preview'))
         self.preview_button.setObjectName("skillPreview")
         self.preview_button.setEnabled(False)
         layout.addWidget(self.preview_button)
@@ -111,34 +110,34 @@ class SkillSettingsPage(QWidget):
         self.preview_source.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.preview_packages = QListWidget()
         install_smooth_scroll(self.preview_packages)
-        self.preview_packages.setAccessibleName("Packages to install")
+        self.preview_packages.setAccessibleName(ui_text('Packages to install'))
         self.preview_packages.setMaximumHeight(100)
         self.preview_packages.hide()
         layout.addWidget(self.preview_packages)
-        self.install_button = QPushButton("Install")
+        self.install_button = QPushButton(ui_text('Install'))
         self.install_button.setObjectName("skillInstall")
         self.install_button.setEnabled(False)
-        self._install_help = ("Folders and repositories include supporting Markdown documents. File links import "
+        self._install_help = ui_text("Folders and repositories include supporting Markdown documents. File links import "
                               "only the main instructions. Selected skills can read their references when tools are enabled.")
         self.install_button.setAccessibleDescription(self._install_help)
         self.install_button.setToolTip(self._install_help)
         layout.addWidget(self.install_button)
         installed_row = QHBoxLayout()
-        installed_row.addWidget(QLabel("Installed skills"), 1)
-        self.remove_button = QPushButton("Remove…")
+        installed_row.addWidget(QLabel(ui_text('Installed skills')), 1)
+        self.remove_button = QPushButton(ui_text('Remove…'))
         installed_row.addWidget(self.remove_button)
         layout.addLayout(installed_row)
         self.installed = QListWidget()
         self.installed.setObjectName("installedSkills")
         install_smooth_scroll(self.installed)
         self.installed.setMinimumHeight(150)
-        self.installed.setAccessibleName("Installed skills")
+        self.installed.setAccessibleName(ui_text('Installed skills'))
         layout.addWidget(self.installed, 1)
         self.status = FeedbackLabel()
         self.status.setTextFormat(Qt.TextFormat.PlainText)
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
-        self.close_button = QPushButton("Done")
+        self.close_button = QPushButton(ui_text('Done'))
         layout.addWidget(self.close_button)
         self.close_button.hide()
         # Enter in the source prepares a preview; it never installs implicitly.
@@ -156,10 +155,10 @@ class SkillSettingsPage(QWidget):
         self._refresh_installed()
 
     def set_vault_guidance(self, enabled, recommend=True):
-        self.install_button.setText("Install in profile" if enabled else "Install")
-        guidance = ("Recommended: import a copy into your profile. Your saved copy is encrypted while locked; "
+        self.install_button.setText(ui_text('Install in profile') if enabled else ui_text('Install'))
+        guidance = ui_text("Recommended: import a copy into your profile. Your saved copy is encrypted while locked; "
                     "external originals remain unchanged.") if enabled and recommend else ""
-        help_text = "\n".join(filter(None, (self._install_help, guidance)))
+        help_text = ui_text("{help}\n{guidance}", help=self._install_help, guidance=guidance) if guidance else self._install_help
         self.install_button.setToolTip(help_text)
         self.install_button.setAccessibleDescription(help_text)
 
@@ -173,12 +172,12 @@ class SkillSettingsPage(QWidget):
         self._update_buttons()
 
     def _browse(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Choose a skill", "", "Markdown skills (*.md)")
+        path, _ = QFileDialog.getOpenFileName(self, ui_text('Choose a skill'), "", "Markdown skills (*.md)")
         if path:
             self.source.setText(path)
 
     def _browse_folder(self):
-        path = QFileDialog.getExistingDirectory(self, "Choose a skill folder")
+        path = QFileDialog.getExistingDirectory(self, ui_text('Choose a skill folder'))
         if path:
             self.source.setText(path)
 
@@ -234,9 +233,9 @@ class SkillSettingsPage(QWidget):
             return
         name = item.data(Qt.ItemDataRole.UserRole)
         confirm = QMessageBox(self)
-        confirm.setWindowTitle("Remove skill")
+        confirm.setWindowTitle(ui_text('Remove skill'))
         confirm.setTextFormat(Qt.TextFormat.PlainText)
-        confirm.setText('Remove "' + " ".join(name.split())[:128] + '" from installed skills?')
+        confirm.setText(ui_text('Remove "{name}" from installed skills?', name=" ".join(name.split())[:128]))
         confirm.setStandardButtons(QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.Cancel)
         confirm.setDefaultButton(QMessageBox.StandardButton.Cancel)
         if confirm.exec() == QMessageBox.StandardButton.Yes:
@@ -246,11 +245,11 @@ class SkillSettingsPage(QWidget):
         if self.thread is not None or not self._available:
             return
         self._action = action
-        self.status.setText({"preview": "Checking skill…", "install": "Installing…", "remove": "Removing…"}[action])
+        self.status.setText(ui_text({"preview": "Checking skill…", "install": "Installing…", "remove": "Removing…"}[action]))
         self.worker = SkillSettingsWorker(self.service, action, value, self)
         self.thread = self.worker
         self.worker.succeeded.connect(self._succeeded)
-        self.worker.failed.connect(self.status.setText)
+        self.worker.failed.connect(lambda text: self.status.setText(ui_text(text)))
         self.thread.finished.connect(self._finished)
         self._update_buttons()
         self.busy_changed.emit(True)
@@ -278,19 +277,17 @@ class SkillSettingsPage(QWidget):
             self.preview_source.setToolTip("<qt>" + escape(result.source[:2048]) + "</qt>")
             skill_label = "skill" if result.skill_count == 1 else "skills"
             reference_label = "reference" if result.reference_count == 1 else "references"
-            self.preview_summary.setText(f"{result.skill_count} {skill_label} · {result.reference_count} {reference_label} · "
-                                         f"{result.total_bytes / 1024:.1f} KB")
+            self.preview_summary.setText(ui_text('{value_0} {value_1} · {value_2} {value_3} · {value_4} KB', value_0=result.skill_count, value_1=skill_label, value_2=result.reference_count, value_3=reference_label, value_4=format(result.total_bytes / 1024,'.1f')))
             for label in (self.preview_name, self.preview_description, self.preview_source, self.preview_summary):
                 label.show()
-            self.status.setText("Ready to install.")
+            self.status.setText(ui_text('Ready to install.'))
             self.layout().activate()
             self.updateGeometry()
         else:
             if self._action == "install":
-                self.status.setText(f"Installed {len(result.installed)}; already present {len(result.already_installed)}. "
-                                    "Available in /skill.")
+                self.status.setText(ui_text('Installed {value_0}; already present {value_1}. Available in /skill.', value_0=len(result.installed), value_1=len(result.already_installed)))
             else:
-                self.status.setText("Skill removed.")
+                self.status.setText(ui_text('Skill removed.'))
             self._refresh_installed()
             self.catalog_changed.emit()
 
@@ -340,7 +337,7 @@ class SkillSettingsDialog(QDialog):
     def __init__(self, service, parent=None):
         super().__init__(parent)
         self.setObjectName("skillSettings")
-        self.setWindowTitle("Skills")
+        self.setWindowTitle(ui_text('Skills'))
         self.setMinimumWidth(600)
         self.resize(640, 610)
         apply_theme_style(self, _STYLE)

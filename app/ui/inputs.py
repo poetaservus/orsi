@@ -1,5 +1,7 @@
 """Typed settings controls that leave mouse-wheel gestures to the page."""
-from PySide6.QtWidgets import QComboBox, QSpinBox
+from app.ui.localization import ui_text, QComboBox, QSpinBox
+
+
 
 
 class ScrollSafeComboBox(QComboBox):

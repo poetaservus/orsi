@@ -1,10 +1,12 @@
 """Attention events, local sound playback and UI preference persistence."""
+from app.ui.localization import ui_text
+
 import logging
 import sys
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QObject, QUrl
-from PySide6.QtWidgets import QApplication, QSystemTrayIcon
+from PySide6.QtWidgets import (QApplication, QSystemTrayIcon)
 
 from app.ui.branding import app_icon
 
@@ -99,7 +101,7 @@ class NotificationManager(QObject):
             self.backend.clicked.connect(self.open_window)
         elif QSystemTrayIcon.isSystemTrayAvailable():
             self.backend = QSystemTrayIcon(app_icon(), self)
-            self.backend.setToolTip("O.R.S.I")
+            self.backend.setToolTip(ui_text('O.R.S.I'))
             self.backend.messageClicked.connect(self.open_window)
             self.backend.show()
 
@@ -108,7 +110,7 @@ class NotificationManager(QObject):
             return
         if not self._needs_attention():
             return
-        title, message = EVENTS[event]
+        title, message = (str(ui_text(text)) for text in EVENTS[event])
         self.play_sound(preview=False)
         QApplication.alert(self.window)
         try:

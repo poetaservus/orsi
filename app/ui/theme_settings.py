@@ -1,8 +1,10 @@
 """Small Appearance controls for selecting, importing and exporting themes."""
+from app.ui.localization import ui_text, QPushButton, QFileDialog
+
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QPushButton
+from PySide6.QtWidgets import (QHBoxLayout)
 
 from app.ui.inputs import ScrollSafeComboBox
 from app.ui.theme_runtime import PreparedTheme
@@ -15,16 +17,16 @@ class ThemeControls:
         self.panel, self.window = panel, window
         self.controller = window.theme_controller
         self.selector = ScrollSafeComboBox(panel)
-        self.selector.setAccessibleName("Theme")
-        self.selector.setToolTip("Change the appearance immediately")
+        self.selector.setAccessibleName(ui_text('Theme'))
+        self.selector.setToolTip(ui_text('Change the appearance immediately'))
         window.theme_selector = self.selector
-        panel._row(layout, "Theme", "Colors, background, font and icons", self.selector)
+        panel._row(layout, ui_text('Theme'), ui_text('Colors, background, font and icons'), self.selector)
         actions = QHBoxLayout()
         actions.setSpacing(10)
-        self.add = QPushButton("Add theme…", panel)
-        self.export = QPushButton("Export current theme…", panel)
-        self.add.setAccessibleName("Add theme")
-        self.export.setAccessibleName("Export current theme")
+        self.add = QPushButton(ui_text('Add theme…'), panel)
+        self.export = QPushButton(ui_text('Export current theme…'), panel)
+        self.add.setAccessibleName(ui_text('Add theme'))
+        self.export.setAccessibleName(ui_text('Export current theme'))
         actions.addWidget(self.add)
         actions.addWidget(self.export)
         actions.addStretch()
@@ -33,7 +35,7 @@ class ThemeControls:
         self.status.setObjectName("settingsDescription")
         self.status.setTextFormat(Qt.TextFormat.PlainText)
         self.status.setWordWrap(True)
-        self.status.setAccessibleName("Theme status")
+        self.status.setAccessibleName(ui_text('Theme status'))
         layout.addWidget(self.status)
         layout.addSpacing(12)
         self.refresh()
@@ -62,7 +64,7 @@ class ThemeControls:
             self.controller.select(identity)
             self.status.setText(self.controller.notice)
         except Exception as error:
-            self.status.setText(str(error) if isinstance(error, ThemeError) else "Could not save the theme selection. Your settings were preserved.")
+            self.status.setText(str(error) if isinstance(error, ThemeError) else ui_text('Could not save the theme selection. Your settings were preserved.'))
         self.refresh()
 
     def import_path(self, path):
@@ -72,19 +74,19 @@ class ThemeControls:
         self.controller.repository.add(package)
         self.controller.select(package["manifest"]["id"])
         self.refresh()
-        self.status.setText(self.controller.notice or "Theme added.")
+        self.status.setText(self.controller.notice or ui_text("Theme added."))
 
     def choose_import(self):
-        path, _ = QFileDialog.getOpenFileName(self.panel, "Add theme", "", "Theme manifest (theme.json *.json)")
+        path, _ = QFileDialog.getOpenFileName(self.panel, ui_text('Add theme'), "", "Theme manifest (theme.json *.json)")
         if not path:
             return
         try:
             self.import_path(path)
         except Exception as error:
-            self.status.setText(str(error) if isinstance(error, ThemeError) else "Could not import this theme. The current appearance is unchanged.")
+            self.status.setText(str(error) if isinstance(error, ThemeError) else ui_text('Could not import this theme. The current appearance is unchanged.'))
 
     def choose_export(self):
-        parent = QFileDialog.getExistingDirectory(self.panel, "Choose a folder for the theme export")
+        parent = QFileDialog.getExistingDirectory(self.panel, ui_text('Choose a folder for the theme export'))
         if not parent:
             return
         identity = self.controller.current.identity
@@ -96,6 +98,6 @@ class ThemeControls:
             number += 1
         try:
             export_folder(self.controller.current.package, destination)
-            self.status.setText(f"Exported to {destination.name}. Edit theme.json, then use Add theme to import it.")
+            self.status.setText(ui_text('Exported to {value_0}. Edit theme.json, then use Add theme to import it.', value_0=destination.name))
         except Exception:
-            self.status.setText("Could not export the theme. Choose another folder.")
+            self.status.setText(ui_text('Could not export the theme. Choose another folder.'))

@@ -1,11 +1,10 @@
 """Large image inspection over the blurred chat with its shared composer."""
+from app.ui.localization import ui_text, QCheckBox, QDialog, QLabel, QMenu, QPushButton, QWidget, QFileDialog
+
 from app.ui.theme_runtime import apply_theme_style, apply_theme_tree, theme_color
 from PySide6.QtCore import QLineF, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QPixmap
-from PySide6.QtWidgets import (
-    QCheckBox, QDialog, QGraphicsBlurEffect, QGraphicsPixmapItem, QGraphicsScene,
-    QFileDialog, QHBoxLayout, QLabel, QMenu, QPushButton, QSizePolicy, QVBoxLayout, QWidget,
-)
+from PySide6.QtWidgets import (QGraphicsBlurEffect, QGraphicsPixmapItem, QGraphicsScene, QHBoxLayout, QSizePolicy, QVBoxLayout)
 
 from app.inference.attachments import attachment_references
 from app.ui.composer import (
@@ -92,7 +91,7 @@ class _ImageCanvas(QWidget):
         if image is None or image.isNull():
             painter.setPen(theme_color(self, "#b1b8c8", "text_muted"))
             painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter,
-                             "Opening image…" if image is None else "This saved image is unavailable.")
+                             ui_text("Opening image…") if image is None else ui_text("This saved image is unavailable."))
             return
         target = self.target_rect(image)
         path = QPainterPath()
@@ -112,7 +111,7 @@ class ImageViewer(QDialog):
         self.index = min(max(0, index), len(self.references) - 1)
         self._available, self._preparing = True, False
         self.setObjectName("imageViewer")
-        self.setWindowTitle("Image · O.R.S.I.")
+        self.setWindowTitle(ui_text('Image · O.R.S.I.'))
         self.setWindowModality(Qt.WindowModality.WindowModal)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
@@ -137,24 +136,24 @@ class ImageViewer(QDialog):
         self.counter = QLabel()
         self.counter.setObjectName("imageViewerCounter")
         self.previous = _NavigationButton('previous')
-        self.previous.setAccessibleName("Previous image")
+        self.previous.setAccessibleName(ui_text('Previous image'))
         self.next = _NavigationButton('next')
-        self.next.setAccessibleName("Next image")
+        self.next.setAccessibleName(ui_text('Next image'))
         self.close_button = _NavigationButton('close')
-        self.save_button = QPushButton("Save image…")
+        self.save_button = QPushButton(ui_text('Save image…'))
         self.save_button.setObjectName("imageViewerSave")
-        self.save_button.setAccessibleName("Save original image")
+        self.save_button.setAccessibleName(ui_text('Save original image'))
         if self._vault_enabled:
-            self.save_button.setText("Export outside profile…")
-            self.save_button.setAccessibleName("Export original image outside profile")
-            self.save_button.setToolTip("Creates an outside copy that remains after the profile is locked or this image is deleted.")
+            self.save_button.setText(ui_text('Export outside profile…'))
+            self.save_button.setAccessibleName(ui_text('Export original image outside profile'))
+            self.save_button.setToolTip(ui_text('Creates an outside copy that remains after the profile is locked or this image is deleted.'))
         self.save_button.clicked.connect(self._save_image)
-        self.close_button.setAccessibleName("Close image viewer")
+        self.close_button.setAccessibleName(ui_text('Close image viewer'))
         header.addWidget(self.name, 1)
         header.addWidget(self.counter)
         if self._vault_enabled:
-            self.store_button = QPushButton("Store in profile")
-            self.store_button.setAccessibleName("Store image in profile")
+            self.store_button = QPushButton(ui_text('Store in profile'))
+            self.store_button.setAccessibleName(ui_text('Store image in profile'))
             self.store_button.clicked.connect(self._store_in_vault)
             header.addWidget(self.store_button)
         header.addWidget(self.save_button)
@@ -164,17 +163,17 @@ class ImageViewer(QDialog):
         header.addWidget(self.close_button)
         layout.addLayout(header)
         if self._vault_enabled and (self._profile_manager is None or self._profile_manager.guidance()):
-            self.vault_hint = QLabel("Recommended: store in your profile. Your saved copy is encrypted while the profile is locked.")
+            self.vault_hint = QLabel(ui_text('Recommended: store in your profile. Your saved copy is encrypted while the profile is locked.'))
             self.vault_hint.setWordWrap(True)
             layout.addWidget(self.vault_hint)
         self.canvas = _ImageCanvas(self.loader)
         layout.addWidget(self.canvas, 1)
 
-        self.include_all = QCheckBox(f"Include all {len(self.references)} images")
+        self.include_all = QCheckBox(ui_text('Include all {value_0} images', value_0=len(self.references)))
         self.include_all.setVisible(len(self.references) > 1)
         self.include_all.setEnabled(cloud)
         if not cloud:
-            self.include_all.setToolTip("Local mode sends the image you are viewing, one per message.")
+            self.include_all.setToolTip(ui_text('Local mode sends the image you are viewing, one per message.'))
         self.status = QLabel()
         self.status.setTextFormat(Qt.TextFormat.PlainText)
         self.status.setWordWrap(True)
@@ -195,18 +194,18 @@ class ImageViewer(QDialog):
         composer.setContentsMargins(22, 7, 20, 7)
         composer.setSpacing(6)
         self.tools, self.add_placeholder, self.folder_placeholder = composer_tools(self.composer)
-        self.add_placeholder.setAccessibleName("Choose images to include")
-        self.add_placeholder.setToolTip("Choose images to include")
+        self.add_placeholder.setAccessibleName(ui_text('Choose images to include'))
+        self.add_placeholder.setToolTip(ui_text('Choose images to include'))
         self.prompt = MessageInput()
         configure_input(self.prompt)
         self.prompt.insertPlainText("Edit this image: ")
-        self.prompt.setAccessibleName("New prompt with this image")
+        self.prompt.setAccessibleName(ui_text('New prompt with this image'))
         self.action_slot = QWidget()
         self.action_slot.setFixedSize(COMPOSER_CONTROL_SIZE, COMPOSER_CONTROL_SIZE)
         self.send = QPushButton(self.action_slot)
         configure_send(self.send)
-        self.send.setAccessibleName("Send prompt with image")
-        self.send.setToolTip("Send with image · Enter (Shift+Enter for a new line)")
+        self.send.setAccessibleName(ui_text('Send prompt with image'))
+        self.send.setToolTip(ui_text('Send with image · Enter (Shift+Enter for a new line)'))
         composer.addWidget(self.tools, 0, Qt.AlignmentFlag.AlignVCenter)
         composer.addWidget(self.prompt, 1)
         composer.addWidget(self.action_slot, 0, Qt.AlignmentFlag.AlignVCenter)
@@ -221,7 +220,7 @@ class ImageViewer(QDialog):
         self.close_button.clicked.connect(self.reject)
         self.prompt.textChanged.connect(self._refresh_send)
         self.prompt.submit_requested.connect(self._submit)
-        self.prompt.attachments_requested.connect(lambda _: self.status.setText("Use the chat composer to attach additional files."))
+        self.prompt.attachments_requested.connect(lambda _: self.status.setText(ui_text('Use the chat composer to attach additional files.')))
         self.send.clicked.connect(self._submit)
         self.finished.connect(self._clear)
         apply_theme_style(self, _STYLE + COMPOSER_STYLE)
@@ -254,7 +253,7 @@ class ImageViewer(QDialog):
     def _refresh_image(self):
         self.name.setText(self.reference.name)
         self.name.setToolTip(self.reference.name)
-        self.counter.setText(f"{self.index + 1} / {len(self.references)}")
+        self.counter.setText(ui_text('{value_0} / {value_1}', value_0=self.index + 1, value_1=len(self.references)))
         self.previous.setEnabled(self.index > 0)
         self.next.setEnabled(self.index < len(self.references) - 1)
         self.canvas.reference = self.reference
@@ -263,12 +262,12 @@ class ImageViewer(QDialog):
 
     def _choose_images(self):
         menu = QMenu(self)
-        current = menu.addAction("This image")
+        current = menu.addAction(ui_text("This image"))
         current.setCheckable(True)
         current.setChecked(not self.include_all.isChecked())
         current.triggered.connect(lambda: self.include_all.setChecked(False))
         if len(self.references) > 1:
-            all_images = menu.addAction(f"All {len(self.references)} images")
+            all_images = menu.addAction(ui_text("All {count} images", count=len(self.references)))
             all_images.setCheckable(True)
             all_images.setChecked(self.include_all.isChecked())
             all_images.setEnabled(self.include_all.isEnabled())
@@ -278,16 +277,16 @@ class ImageViewer(QDialog):
 
     def _save_image(self):
         from pathlib import Path
-        path, _ = QFileDialog.getSaveFileName(self, "Export outside profile" if self._vault_enabled else "Save original image", self.reference.name,
+        path, _ = QFileDialog.getSaveFileName(self, ui_text('Export outside profile') if self._vault_enabled else ui_text('Save original image'), self.reference.name,
                                              "Images (*.png *.jpg *.jpeg *.webp);;All files (*)")
         if not path:
             return
         try:
             self._export_original(Path(path))
         except Exception:
-            self.status.setText("Could not save the image. Choose another location and try again.")
+            self.status.setText(ui_text('Could not save the image. Choose another location and try again.'))
             return
-        self.status.setText("Image exported outside profile; this copy remains after locking." if self._vault_enabled else "Image saved.")
+        self.status.setText(ui_text('Image exported outside profile; this copy remains after locking.') if self._vault_enabled else ui_text('Image saved.'))
 
     def _store_in_vault(self):
         try:
@@ -296,10 +295,10 @@ class ImageViewer(QDialog):
                 store.commit_document(store.session.path("imports/images/" + self.reference.id + ".json"),
                     {"image": self.reference.model_dump(mode="json")}, (self.reference,))
                 store.retain_drafts((self.reference,))
-            self.status.setText("Image stored in profile. Your saved copy is encrypted while locked.")
+            self.status.setText(ui_text('Image stored in profile. Your saved copy is encrypted while locked.'))
         except Exception as error:
             from app.vault.profiles import public_error
-            self.status.setText(public_error(error))
+            self.status.setText(ui_text(public_error(error)))
 
     def _clear_profile(self):
         self.hide()
@@ -337,7 +336,7 @@ class ImageViewer(QDialog):
 
     def set_reply_available(self, available):
         self._available = available
-        self.status.setText("" if available else "Wait for the current reply to finish.")
+        self.status.setText("" if available else ui_text('Wait for the current reply to finish.'))
         self._refresh_send()
 
     def set_preparing(self):
@@ -345,7 +344,7 @@ class ImageViewer(QDialog):
         self.prompt.setEnabled(False)
         self.include_all.setEnabled(False)
         self.add_placeholder.setEnabled(False)
-        self.status.setText("Preparing your image…")
+        self.status.setText(ui_text('Preparing your image…'))
         self._refresh_send()
 
     def _refresh_send(self, *_):

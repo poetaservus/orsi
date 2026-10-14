@@ -1,9 +1,11 @@
 """Shared chat composer paint, controls and typography."""
+from app.ui.localization import ui_text, QFrame, QPushButton, QTextEdit, QWidget
+
 from pathlib import Path
 
 from PySide6.QtCore import QEasingCurve, QEvent, QPoint, QRect, QRectF, QSize, Qt, Signal, QVariantAnimation
 from PySide6.QtGui import QColor, QIcon, QLinearGradient, QPainter, QPainterPath, QPalette
-from PySide6.QtWidgets import QApplication, QFrame, QHBoxLayout, QPushButton, QStyle, QStyleOptionButton, QTextEdit, QWidget
+from PySide6.QtWidgets import (QApplication, QHBoxLayout, QStyle, QStyleOptionButton)
 from app.ui.inputs import ScrollSafeComboBox
 from app.ui.theme_runtime import apply_theme_style, set_theme_icon, theme_color
 
@@ -78,8 +80,8 @@ def composer_microphone(parent):
     button.setFixedSize(COMPOSER_CONTROL_SIZE, COMPOSER_CONTROL_SIZE)
     set_theme_icon(button, "microphone")
     button.setIconSize(QSize(22, 22))
-    button.setAccessibleName("Microphone (coming soon)")
-    button.setToolTip("Microphone (coming soon)")
+    button.setAccessibleName(ui_text('Microphone (coming soon)'))
+    button.setToolTip(ui_text('Microphone (coming soon)'))
     button.setEnabled(False)
     return button
 
@@ -195,8 +197,8 @@ def composer_tools(parent):
         set_theme_icon(button, "attach" if asset == "plus.svg" else "folder")
         button.setIconSize(QSize(24, 24))
         button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        button.setToolTip(description)
-        button.setAccessibleName(description)
+        button.setToolTip(ui_text(description))
+        button.setAccessibleName(ui_text(description))
         button.setAutoDefault(False)
         layout.addWidget(button)
         buttons.append(button)
@@ -205,7 +207,7 @@ def composer_tools(parent):
 
 def configure_input(input):
     input.setObjectName("messageInput")
-    input.setPlaceholderText("Ask O.R.S.I.")
+    input.setPlaceholderText(ui_text('Ask O.R.S.I.'))
     input.setAcceptRichText(False)
     input.setFixedHeight(41)
     input.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
@@ -220,8 +222,8 @@ def configure_send(button):
     button.setFixedSize(COMPOSER_CONTROL_SIZE, COMPOSER_CONTROL_SIZE)
     set_theme_icon(button, "send")
     button.setIconSize(QSize(28, 28))
-    button.setToolTip("Send")
-    button.setAccessibleName("Send")
+    button.setToolTip(ui_text('Send'))
+    button.setAccessibleName(ui_text('Send'))
     button.setAutoDefault(False)
 
 

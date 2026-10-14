@@ -1,8 +1,10 @@
+
+from app.ui.localization import ui_text, QPushButton
 from pathlib import Path
 
 from PySide6.QtCore import QSize, QTimer, Qt, Signal
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QApplication, QPushButton
+from PySide6.QtWidgets import (QApplication)
 from app.ui.theme_runtime import theme_icon
 
 
@@ -16,7 +18,7 @@ class CopyButton(QPushButton):
         assets = Path(__file__).with_name("assets")
         self._copy_icon = QIcon(str(assets / "copy.svg"))
         self._check_icon = QIcon(str(assets / "check.svg"))
-        self._description = description
+        self._description = ui_text(description)
         self.copy_succeeded = False
         self.setIconSize(QSize(16, 16))
         self.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -36,12 +38,12 @@ class CopyButton(QPushButton):
         except RuntimeError:
             copied = False
         if not copied:
-            self.setToolTip("Copy failed. Try again.")
+            self.setToolTip(ui_text('Copy failed. Try again.'))
             return False
         self.copy_succeeded = True
         self.setIcon(self._check_icon)
-        self.setToolTip("Copied")
-        self.setAccessibleName("Copied")
+        self.setToolTip(ui_text('Copied'))
+        self.setAccessibleName(ui_text('Copied'))
         self._feedback_timer.start()
         return True
 
