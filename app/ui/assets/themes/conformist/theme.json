@@ -10,6 +10,11 @@
     "type": "solid",
     "color": "#171717"
   },
+  "image_placeholder": {
+    "style": "shimmer_dots",
+    "background": "#141414",
+    "dot": "#ffffff"
+  },
   "palette": {
     "text": "#ececec",
     "text_muted": "#a3a3a3",

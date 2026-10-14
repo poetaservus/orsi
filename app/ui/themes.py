@@ -89,7 +89,7 @@ def referenced_assets(manifest):
 
 
 def validate_manifest(manifest, *, builtin=False):
-    _fields(manifest, {"version", "id", "name", "palette", "font", "background", "icons", "licenses"}, "theme")
+    _fields(manifest, {"version", "id", "name", "palette", "font", "background", "icons", "licenses", "image_placeholder"}, "theme")
     if type(manifest.get("version")) is not int or manifest["version"] != 1:
         raise ThemeError("This theme format version is not supported.")
     if not isinstance(manifest.get("id"), str) or not _ID.fullmatch(manifest["id"]):
@@ -103,6 +103,14 @@ def validate_manifest(manifest, *, builtin=False):
     _fields(palette, set(PALETTE_DEFAULTS), "palette")
     for value in palette.values():
         _color(value)
+    placeholder = manifest.get("image_placeholder", {})
+    _fields(placeholder, {"style", "background", "dot"}, "image placeholder")
+    if placeholder:
+        if placeholder.get("style") not in ("clouds", "shimmer_dots"):
+            raise ThemeError("Image placeholder style must be clouds or shimmer_dots.")
+        for key in ("background", "dot"):
+            if key in placeholder:
+                _color(placeholder[key])
     font = manifest.get("font", {})
     _fields(font, {"family", "file"}, "font")
     if "family" in font and (not isinstance(font["family"], str) or not font["family"]

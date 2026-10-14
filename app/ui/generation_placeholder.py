@@ -1,10 +1,11 @@
-"""Cached drifting clouds and grain for an active image request."""
+"""Theme-aware image-request placeholders with the shared visibility lifecycle."""
 from math import cos, pi, sin
 from random import Random
 
 from PySide6.QtCore import QElapsedTimer, QEvent, QPointF, QRectF, QTimer, Qt
-from PySide6.QtGui import QColor, QFont, QFontMetricsF, QImage, QLinearGradient, QPainter, QPainterPath, QRadialGradient
+from PySide6.QtGui import QColor, QFont, QFontMetricsF, QImage, QLinearGradient, QPainter, QPainterPath, QPen, QRadialGradient
 from PySide6.QtWidgets import QWidget
+from app.ui.theme_runtime import color, controller_for
 
 
 class GenerationPlaceholder(QWidget):
@@ -21,6 +22,8 @@ class GenerationPlaceholder(QWidget):
         self.status = "Generating image…"
         self._status_key = self._status_path = None
         self._elapsed_ms = 0
+        self._dot_key = None
+        self._dots = ()
         self._clock = QElapsedTimer()
         self.timer = QTimer(self)
         self.timer.setInterval(33)
@@ -113,8 +116,14 @@ class GenerationPlaceholder(QWidget):
         clip = QPainterPath()
         clip.addRoundedRect(bounds, 13, 13)
         painter.setClipPath(clip)
-        painter.fillRect(bounds, QColor("#101720"))
         elapsed = self._elapsed_ms + (self._clock.elapsed() if self._clock.isValid() else 0)
+        appearance = self.placeholder_appearance()
+        if appearance.get("style") == "shimmer_dots":
+            self._paint_dots(painter, bounds, elapsed, appearance)
+            if self.status and not self.active:
+                self._draw_status(painter, bounds)
+            return
+        painter.fillRect(bounds, QColor("#101720"))
         phase = 2 * pi * elapsed / self.cycle_ms
         for index, layer in enumerate(self.layers):
             angle = phase * (1 + index * .17) + index * 1.7
@@ -134,6 +143,46 @@ class GenerationPlaceholder(QWidget):
             painter.fillRect(bounds, shade)
             if not self.active:
                 self._draw_status(painter, bounds)
+
+    def placeholder_appearance(self):
+        controller = controller_for(self)
+        if controller is None:
+            return {}
+        return controller.current.package.get("manifest", {}).get("image_placeholder", {})
+
+    def _dot_pattern(self):
+        key = (self.width(), self.height())
+        if key != self._dot_key:
+            # Fixed positions; only brightness changes. Stable phases keep
+            # resize/theme switches from restarting the shimmer or reshuffling.
+            spacing = 17.0
+            columns = max(1, int((self.width() - 22) / spacing) + 1)
+            rows = max(1, int((self.height() - 22) / spacing) + 1)
+            left = (self.width() - (columns - 1) * spacing) / 2
+            top = (self.height() - (rows - 1) * spacing) / 2
+            dots = []
+            for row in range(rows):
+                for column in range(columns):
+                    random = Random(71 + row * 1009 + column * 9176)
+                    dots.append((QPointF(left + column * spacing, top + row * spacing),
+                                 random.random() * 2 * pi, .85 + random.random() * .30))
+            self._dots = tuple(dots)
+            self._dot_key = key
+        return self._dots
+
+    def _paint_dots(self, painter, bounds, elapsed, appearance):
+        painter.fillRect(bounds, color(appearance.get("background", "#141414")))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(color(appearance.get("dot", "#ffffff")))
+        phase = 2 * pi * elapsed / self.cycle_ms
+        for position, offset, speed in self._dot_pattern():
+            brightness = (.5 + .5 * sin(phase * speed + offset)) ** 1.4
+            painter.setOpacity(.055 + .325 * brightness)
+            painter.drawEllipse(position, .9, .9)
+        painter.setOpacity(1)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        painter.setPen(QPen(QColor("#222222"), 1.0))
+        painter.drawRoundedRect(bounds.adjusted(.5, .5, -.5, -.5), 12.5, 12.5)
 
     def _draw_status(self, painter, bounds):
         font = painter.font()

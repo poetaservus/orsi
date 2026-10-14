@@ -6,7 +6,29 @@ Conformist is the familiar dark AI-chat look: a flat `#171717` background,
 charcoal `#262626` composer and controls, `#303030` user bubbles, soft white text,
 and one `#3b82f6` blue accent. Composer, bubble and settings gradient stops use
 identical opaque colors, with a transparent composer highlight, so the surfaces
-remain flat. The existing rounding, layout and animations are retained.
+remain flat. The existing rounding and layout are retained.
+
+The image-generation placeholder follows the user's dot-grid reference: a flat
+`#141414` fill, a quiet rounded edge and small white dots in a regular grid. Only
+their opacity changes, with staggered phases and roughly 9–12 second cycles.
+Positions remain fixed. Hidden, occluded and minimized placeholders still pause,
+and completion still uses the existing 650 ms image-reveal fade. This explicitly
+requested placeholder appearance is the only animation variation in Conformist.
+It is carried by `image_placeholder` in the theme manifest, including exports
+under a custom theme ID. Other themes retain the existing cloud/grain placeholder.
+
+The dot-placeholder follow-up starts from main `75a98bd` on
+`codex/conformist-dot-placeholder`. Final essential native verification passed
+**62 tests**, with no failures/errors/skips, in **21.80 seconds**. Checks cover
+flat neutral rendering, fixed dot geometry, gentle frame-to-frame brightness
+changes, theme switching with pixel-identical cloud restoration, pause/stop,
+export/import under a new ID, and real source-backed result reveal/activation.
+Portrait and square native previews were visually inspected. Compilation and
+Git whitespace checks passed. Evidence is retained in ignored
+`state/conformist-dots-essential.xml` and `state/conformist-dots-preview/`,
+including a twelve-second animated preview. All content is synthetic; no live
+model request or API credential was used. Full-suite/live inference gates remain
+unrun under the standing essential-test scope.
 
 The unmodified DM Sans variable font is bundled from the official
 [Google Fonts repository](https://github.com/google/fonts/tree/5b35b7208dd4100571326fdf37f030b32a524232/ofl/dmsans).

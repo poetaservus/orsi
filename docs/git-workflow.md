@@ -1,5 +1,26 @@
 # Git layout and baseline hygiene
 
+## Conformist shimmering-dot image placeholder, 14 October 2026
+
+`codex/conformist-dot-placeholder` starts from clean main `75a98bd`. The user's
+requested placeholder appearance uses stationary white dots which slowly vary
+in opacity over flat darker charcoal. A bounded `image_placeholder` manifest
+option preserves it in exported custom themes. Original/Ocean cloud visuals,
+pause/stop behavior, image reveal, other UI animations and notifications remain
+unchanged. No prompts, routing, inference policy or private settings change.
+
+All **62 essential native checks passed**, with no failures/errors/skips, in
+**21.80 seconds**. Native square/portrait and animated previews were inspected;
+compile/whitespace checks passed. Evidence is retained under ignored
+`state/conformist-dots-essential.xml` and `state/conformist-dots-preview/`.
+Full-suite and live inference gates were not run under the user's essential-test scope.
+
+Inventories are retained under ignored `state/backups/conformist-dot-placeholder-20261014/`,
+with prior main at `archive/2026-10-14/main-before-conformist-dot-placeholder`.
+Commit, fast-forward local main and remove only this merged feature branch.
+Other worktrees, historical/unmerged tips, private settings and remote refs
+remain unchanged; no push is part of this task.
+
 ## Conformist attachment plus icon, 14 October 2026
 
 `codex/conformist-plus-icon` starts from clean main `ca43447`. Only Conformist's

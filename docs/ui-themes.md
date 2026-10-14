@@ -4,12 +4,13 @@ Settings → Appearance → Theme changes the background, interface palette, use
 bubbles, composer, interface/chat font family and action icons immediately.
 Original preserves the existing appearance. Ocean provides a contrasting example.
 Conformist uses flat charcoal surfaces, one blue accent, bundled Google Fonts
-DM Sans and Lucide outline icons. It works offline and is available to every profile.
+DM Sans and Lucide outline icons. Its image-generation placeholder has softly
+shimmering white dots on flat darker charcoal. It works offline and is available to every profile.
 See [Conformist's design and verification](conformist-theme.md).
 See the [essential verification record](ui-themes-verification.md).
 
 Response formatting, Markdown parsing, headings, emphasis, spacing, font sizes,
-code's monospace font and syntax highlighting, control geometry, animations,
+code's monospace font and syntax highlighting, control geometry, general UI animations,
 notification artwork, notification events and notification sounds retain their
 existing behavior. A different font family naturally changes text wrapping.
 The microphone and folder retain their current placeholder behavior.
@@ -121,6 +122,25 @@ per side. Up to 100 custom themes / a 64 MiB saved catalog are supported.
 Application code maps its existing style values to these roles. Omitted roles
 retain their exact original values, rather than flattening the existing palette.
 Theme files cannot supply arbitrary Qt stylesheets or change formatting rules.
+
+## Image-generation placeholder
+
+Themes may opt into the fixed `shimmer_dots` appearance used by Conformist:
+
+```json
+"image_placeholder": {
+  "style": "shimmer_dots",
+  "background": "#141414",
+  "dot": "#ffffff"
+}
+```
+
+Dots stay in a regular grid and slowly vary their opacity independently. This
+dedicated placeholder option carries through export/import. Omit it or use
+`{"style": "clouds"}` to retain the existing cloud/grain placeholder. The
+application owns the motion, with no scripts, video assets or arbitrary animation
+settings in the manifest. Other UI animations, notification/audio behavior,
+placeholder pause/stop rules and the completed-image reveal remain unchanged.
 
 ## Storage and failure behavior
 
