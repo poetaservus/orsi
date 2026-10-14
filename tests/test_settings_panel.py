@@ -9,9 +9,9 @@ import pytest
 
 pytest.importorskip("PySide6")
 from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
-from PySide6.QtGui import QEnterEvent, QMouseEvent
+from PySide6.QtGui import QColor, QEnterEvent, QPainter
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QFrame, QLabel
+from PySide6.QtWidgets import QApplication, QFrame, QLabel, QStyle, QStyleOptionComboBox, QWidget
 
 from app.settings.images import ImageGenerationSettings, ImageSettingsStore
 from app.state.storage import JsonStore
@@ -302,56 +302,42 @@ def test_full_agent_status_keeps_general_controls_inside_viewport(app, size):
         window.close()
 
 
-def test_larger_panel_drags_independently_and_keeps_position_during_chat_layout(app):
+def test_settings_fill_window_through_resize_and_preserve_chat_draft(app):
     window = MainWindow(None, "TEST")
     try:
         window.resize(1600, 1000)
         window.show()
+        window.input.setPlainText("Keep this draft while changing settings")
+        cursor = window.input.textCursor()
+        cursor.setPosition(7)
+        window.input.setTextCursor(cursor)
         window.settings_button.click()
         app.processEvents()
         panel = window.settings_panel
-        assert panel.size().width() == 1120 and panel.size().height() == 740
-        original = panel.pos()
+        assert panel.parentWidget() is window and panel.geometry() == window.rect()
         window_position = window.pos()
-        header = panel.drag_strip
-        local = QPoint(90, 8)
-        global_start = header.mapToGlobal(local)
-        QTest.mousePress(header, Qt.MouseButton.LeftButton, pos=local)
-        target = global_start + QPoint(70, 40)
-        move = QMouseEvent(QMouseEvent.Type.MouseMove, QPointF(header.mapFromGlobal(target)),
-                           QPointF(target), Qt.MouseButton.NoButton, Qt.MouseButton.LeftButton,
-                           Qt.KeyboardModifier.NoModifier)
-        app.sendEvent(header, move)
-        QTest.mouseRelease(header, Qt.MouseButton.LeftButton, pos=local)
-        assert panel.pos() == original + QPoint(70, 40)
-        assert panel.user_positioned
-        assert window.pos() == window_position
-        dragged = panel.pos()
+        panel.show_section("Appearance")
         window._position_overlays()
-        window.input.setPlainText("Keep draft while dragging")
-        app.processEvents()
-        assert panel.pos() == dragged
+        assert window.pos() == window_position and not window.input.isEnabled()
+        for size in ((760, 600), (1280, 800), (1600, 1000)):
+            window.resize(*size)
+            app.processEvents()
+            assert panel.geometry() == window.rect()
+            assert panel.pages.currentIndex() == 4
+            assert window.greeting_input.font().pixelSize() == (15 if size[0] < 900 else 16)
+        panel.hide()
         window.settings_button.click()
-        window.settings_button.click()
-        assert panel.pos() == dragged
-        window.resize(760, 600)
         app.processEvents()
-        assert window._root.rect().contains(panel.geometry())
-        local = QPoint(90, 8)
-        target = header.mapToGlobal(local) + QPoint(5000, 5000)
-        QTest.mousePress(header, Qt.MouseButton.LeftButton, pos=local)
-        move = QMouseEvent(QMouseEvent.Type.MouseMove, QPointF(header.mapFromGlobal(target)),
-                           QPointF(target), Qt.MouseButton.NoButton, Qt.MouseButton.LeftButton,
-                           Qt.KeyboardModifier.NoModifier)
-        app.sendEvent(header, move)
-        QTest.mouseRelease(header, Qt.MouseButton.LeftButton, pos=local)
-        assert window._root.rect().contains(panel.geometry())
-        assert window.input.toPlainText() == "Keep draft while dragging"
+        assert panel.geometry() == window.rect() and panel.pages.currentIndex() == 4
+        panel.hide()
+        assert window.input.isEnabled()
+        assert window.input.toPlainText() == "Keep this draft while changing settings"
+        assert window.input.textCursor().position() == 7
     finally:
         window.close()
 
 
-def test_dragging_is_at_top_edge_and_does_not_overlap_close_button(app):
+def test_full_window_settings_retain_native_caption_controls_and_close_action(app):
     window = MainWindow(None, "TEST")
     try:
         window.show()
@@ -361,19 +347,80 @@ def test_dragging_is_at_top_edge_and_does_not_overlap_close_button(app):
         for size in ((1280, 800), (760, 600)):
             window.resize(*size)
             app.processEvents()
-            assert panel.childAt(QPoint(100, 4)) is panel.drag_strip
+            assert window.drag_strip.parentWidget() is panel
+            assert window.window_controls.parentWidget() is panel
+            assert window.window_controls.isEnabled()
             close = panel.close_button
             top_left = close.mapTo(panel, QPoint())
             close_rect = close.rect().translated(top_left)
-            assert not panel.drag_strip.geometry().intersects(close_rect)
+            assert not window.drag_strip.geometry().intersects(close_rect)
             assert panel.childAt(close_rect.center()) is close
             assert close.cursor().shape() == Qt.CursorShape.ArrowCursor
             assert panel.header.cursor().shape() == Qt.CursorShape.ArrowCursor
         position = panel.pos()
-        # Clicking the close area must activate its button rather than starting a drag.
+        window.showMaximized()
+        app.processEvents()
+        assert panel.geometry() == window.rect()
+        window.showNormal()
+        app.processEvents()
+        assert panel.geometry() == window.rect()
         QTest.mouseClick(panel.close_button, Qt.MouseButton.LeftButton)
-        assert panel.drag_strip._drag_offset is None and panel.pos() == position
+        assert panel.pos() == position
         wait_for(panel.isHidden)
+        assert window.window_controls.parentWidget() is window._root
+        assert window.drag_strip.parentWidget() is window._root
+        assert window._root.isEnabled() and window._root.graphicsEffect() is None
+    finally:
+        window.close()
+
+
+@pytest.mark.parametrize("theme", ["original", "conformist"])
+def test_settings_blur_actual_backdrop_and_restore_chat_busy_state(app, theme):
+    class Stripes(QWidget):
+        def paintEvent(self, event):
+            painter = QPainter(self)
+            for x in range(0, self.width(), 4):
+                painter.fillRect(x, 0, 4, self.height(), QColor("white" if x % 8 else "black"))
+
+    def contrast(image):
+        values = [image.pixelColor(x, image.height() // 2).red() for x in range(image.width())]
+        mean = sum(values) / len(values)
+        return sum((value - mean) ** 2 for value in values) / len(values)
+
+    window = MainWindow(None, "TEST")
+    try:
+        window.resize(1280, 800)
+        window.theme_controller.select(theme, persist=False)
+        window.show()
+        marker = Stripes(window._root)
+        marker.setGeometry(28, 650, 160, 70)
+        marker.show()
+        marker.raise_()
+        app.processEvents()
+        before = window.grab(marker.geometry()).toImage()
+        window.settings_button.click()
+        app.processEvents()
+        panel = window.settings_panel
+        blurred = window.grab(marker.geometry()).toImage()
+        assert contrast(blurred) < contrast(before) * .2
+        assert panel.graphicsEffect() is None and window._root.graphicsEffect() is not None
+        assert window.greeting_input.font().pixelSize() == 16
+        assert panel.navigation[0].font().pixelSize() == 22
+        assert window.input.font().pixelSize() != 16
+        sound = window.notification_sound.selector
+        option = QStyleOptionComboBox()
+        sound.initStyleOption(option)
+        bounds = sound.style().subControlRect(QStyle.ComplexControl.CC_ComboBox, option,
+                                             QStyle.SubControl.SC_ComboBoxEditField, sound)
+        assert sound.fontMetrics().horizontalAdvance(sound.currentText()) <= bounds.width()
+        window._set_busy(True)
+        panel.hide()
+        app.processEvents()
+        assert not window.input.isEnabled()  # Closing Settings must not end active work.
+        window._set_busy(False)
+        assert window.input.isEnabled() and window._root.graphicsEffect() is None
+        restored = window.grab(marker.geometry()).toImage()
+        assert contrast(restored) == pytest.approx(contrast(before), rel=.01)
     finally:
         window.close()
 

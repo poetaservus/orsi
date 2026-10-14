@@ -1,11 +1,25 @@
 """One control palette for Settings pages and their app-owned dialogs."""
 from pathlib import Path
+import re
 
 
 CONTROL_SURFACE = "#243247"
 SETTINGS_BORDER = "#505050"
 SETTINGS_BORDER_HOVER = "#686868"
 SETTINGS_BORDER_FOCUS = "#888888"
+
+
+def settings_typography(widget, source):
+    """Enlarge only the full-window Settings view, retaining each original style source."""
+    while widget is not None:
+        step = getattr(widget, "settings_font_step", 0)
+        if step:
+            return re.sub(r"(font-size\s*:\s*)(\d+)(px\b)",
+                          lambda match: f"{match[1]}{int(match[2]) + step}{match[3]}", source)
+        if widget.isWindow():
+            break  # App-owned dialogs keep their established typography.
+        widget = widget.parentWidget()
+    return source
 
 
 def settings_control_style(*roots):

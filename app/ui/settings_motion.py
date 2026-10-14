@@ -141,6 +141,7 @@ class SettingsDragStrip(QWidget):
     def __init__(self, panel):
         super().__init__(panel)
         self.panel = panel
+        self.setAccessibleName(ui_text('Move settings'))
         self._drag_offset = None
         self.setCursor(Qt.CursorShape.OpenHandCursor)
 

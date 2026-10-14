@@ -1,5 +1,32 @@
 # Git layout and baseline hygiene
 
+## Full-window Settings, 14 October 2026
+
+The accepted GUI-language work (`b87c29b`, Hungarian editorial revision
+`4619c92`) was fast-forwarded into local main before starting the bounded
+`codex/settings-full-window` presentation change. Prior main `7ba2278` is
+preserved at `archive/2026-10-14/main-before-gui-language`; the merged language
+branch was removed. Other active worktrees and remote refs were untouched.
+
+Settings now fills the application window with the actual chat blurred behind
+it, retaining its section/control layout and theme colors. Typography increases
+within Settings and adapts at minimum size. Native caption controls, close/Escape,
+drafts, profile and worker lifetimes retain their behavior. See
+[the presentation and verification record](settings-full-window.md).
+
+All **46 essential native tests and eight subtests passed in 85.99 seconds**,
+with no failures, errors or skips. Forty-five synthetic screen states were
+rendered with no measured caption or horizontal overflow. No full-suite or live
+model/API qualification is claimed under the user's essential-test scope.
+The initial compact fitting failure is retained in the presentation record;
+its unchanged check passes after the responsive typography correction.
+
+Ref/worktree inventories are retained under ignored
+`state/backups/settings-full-window-20261014/`. Preserve prior main `4619c92` at
+`archive/2026-10-14/main-before-settings-full-window`, commit, fast-forward local
+main and remove only the merged Settings branch. Other worktrees, historical/
+unmerged tips, user settings and remote refs remain outside this operation.
+
 ## Greeting question-form guard, 14 October 2026
 
 `codex/greeting-question-guard` starts from clean main `47343cf`. Known

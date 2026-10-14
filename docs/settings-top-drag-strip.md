@@ -1,5 +1,10 @@
 # Settings top-edge drag area, 8 October 2026
 
+Superseded on 14 October by [full-window Settings](settings-full-window.md).
+The application caption now moves the whole window; Settings no longer has an
+independent floating-panel drag area. The original implementation below is
+retained as history.
+
 GUI-only correction from main `51aecbb` on `codex/settings-top-drag-strip`.
 Dragging moves from the title/header row to an independent 18-pixel strip at the
 very top of the panel, inside its rounded corners. The title and close button

@@ -490,7 +490,8 @@ class MainWindow(QMainWindow):
         self.chat.image_activated.connect(self._open_image_viewer)
         content_layout.addWidget(self.chat, 1)
 
-        self.settings_panel = SettingsPanel(root)
+        # Settings is a sibling of the chat root, so its controls never inherit blur.
+        self.settings_panel = SettingsPanel(self)
 
         self.model_selector = ScrollSafeComboBox()
         self.model_selector.setObjectName("modelSelector")

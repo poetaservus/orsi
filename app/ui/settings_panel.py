@@ -1,10 +1,10 @@
 """Presentation-only settings shell; actions remain owned by MainWindow."""
 from app.ui.localization import ui_extra, ui_text, QComboBox, QFrame, QLabel, QPushButton, QScrollArea, QWidget
 
-from PySide6.QtCore import QPoint, QRect, QRectF, QSize, Qt
-from PySide6.QtGui import QColor, QFont, QKeySequence, QLinearGradient, QPainter, QPen, QShortcut, QPalette
-from PySide6.QtWidgets import (QHBoxLayout, QSizePolicy, QStackedWidget, QVBoxLayout, QStyle, QStyleOptionButton)
-from app.ui.settings_motion import SettingsDragStrip, SettingsIconButton, SettingsPageTransition
+from PySide6.QtCore import QRect, Qt
+from PySide6.QtGui import QFont, QKeySequence, QPainter, QShortcut, QPalette
+from PySide6.QtWidgets import (QGraphicsBlurEffect, QHBoxLayout, QSizePolicy, QStackedWidget, QVBoxLayout, QStyle, QStyleOptionButton)
+from app.ui.settings_motion import SettingsIconButton, SettingsPageTransition
 from app.ui.settings_style import settings_control_style
 from app.ui.skill_settings import SkillSettingsPage
 from app.ui.image_settings import ImageSettingsPage
@@ -36,30 +36,30 @@ class _NavigationButton(QPushButton):
 
 
 class SettingsPanel(QFrame):
-    preferred_size = QSize(1120, 740)
+    settings_font_step = 2
     section_names = ("General", "Models", "Skills", "Image Generation", "Appearance")
 
     def __init__(self, parent):
         super().__init__(parent)
         self.setObjectName("settingsPanel")
         apply_theme_style(self, _STYLE)
-        self.resize(self.preferred_size)
-        self.user_positioned = False
+        self.backdrop_blur = None
+        self._backdrop_root = None
+        self._backdrop_focus = None
+        self._root_was_enabled = True
+        self._chrome_widgets = ()
         self._close_pending = False
         font = self.font()
         font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
         font.setHintingPreference(QFont.HintingPreference.PreferVerticalHinting)
         self.setFont(font)
         outer = QVBoxLayout(self)
-        outer.setContentsMargins(28, 20, 28, 26)
+        # Reserve the existing native caption band above the unchanged settings layout.
+        outer.setContentsMargins(28, 52, 28, 26)
         outer.setSpacing(11)
         escape = QShortcut(QKeySequence("Escape"), self)
         escape.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         escape.activated.connect(self.hide)
-        self.drag_strip = SettingsDragStrip(self)
-        self.drag_strip.setObjectName("settingsDragStrip")
-        self.drag_strip.setAccessibleName(ui_text('Move settings'))
-        self.drag_strip.setGeometry(12, 0, self.width() - 24, 18)
         self.header = QWidget(self)
         header = QHBoxLayout(self.header)
         header.setContentsMargins(0, 0, 0, 0)
@@ -123,6 +123,7 @@ class SettingsPanel(QFrame):
         body.addWidget(divider)
         body.addWidget(self.pages, 1)
         outer.addLayout(body, 1)
+        parent.theme_controller.changed.connect(self.fit_to_parent)
 
     def show_section(self, name):
         self.pages.setCurrentIndex(self.section_names.index(name))
@@ -363,26 +364,69 @@ class SettingsPanel(QFrame):
 
     def paintEvent(self, event):  # noqa: N802
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        gradient = QLinearGradient(self.rect().bottomLeft(), self.rect().topRight())
-        gradient.setColorAt(0, theme_color(self, "#090c15", "settings_bottom"))
-        gradient.setColorAt(1, theme_color(self, "#1d2637", "settings_top"))
-        painter.setBrush(gradient)
-        painter.setPen(QPen(theme_color(self, "#505050", "border"), 1.0))
-        painter.drawRoundedRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5), 16, 16)
-
-    def bounded_position(self, position):
-        parent = self.parentWidget()
-        return QPoint(max(8, min(position.x(), parent.width() - self.width() - 8)),
-                      max(44, min(position.y(), parent.height() - self.height() - 8)))
+        tint = theme_color(self, "#090c15", "settings_bottom")
+        tint.setAlpha(160)
+        painter.fillRect(self.rect(), tint)
 
     def fit_to_parent(self):
         parent = self.parentWidget()
-        self.resize(min(self.preferred_size.width(), parent.width() - 32),
-                    min(self.preferred_size.height(), parent.height() - 64))
-        position = self.pos() if self.user_positioned else QPoint(
-            (parent.width() - self.width()) // 2, (parent.height() - self.height()) // 2)
-        self.move(self.bounded_position(position))
+        step = 1 if parent.width() < 900 else 2
+        if self.settings_font_step != step:
+            self.settings_font_step = step
+            apply_theme_tree(self)
+        self.setGeometry(parent.rect())
+        self._fit_navigation()
+        for widget, _ in self._chrome_widgets:
+            widget.raise_()
+
+    def showEvent(self, event):  # noqa: N802
+        super().showEvent(event)
+        owner = self.parentWidget()
+        self.fit_to_parent()
+        if self._backdrop_root is not None:
+            return
+        root = owner._root
+        self._backdrop_focus = owner.focusWidget()
+        self._root_was_enabled = root.isEnabled()
+        self._chrome_widgets = tuple((widget, widget.parentWidget())
+                                     for widget in (owner.drag_strip, owner.window_controls))
+        # Keep the same window-control instances sharp and active above the blur.
+        for widget, _ in self._chrome_widgets:
+            widget.setParent(self)
+            widget.show()
+            widget.raise_()
+        owner._position_overlays()
+        self._backdrop_root = root
+        if root.graphicsEffect() is None:
+            self.backdrop_blur = QGraphicsBlurEffect(root)
+            self.backdrop_blur.setBlurRadius(18)
+            self.backdrop_blur.setBlurHints(QGraphicsBlurEffect.BlurHint.QualityHint)
+            root.setGraphicsEffect(self.backdrop_blur)
+        # The chat is behind a full-window view; keyboard focus must stay in Settings.
+        root.setEnabled(False)
+        self.navigation[self.pages.currentIndex()].setFocus()
+
+    def _release_backdrop(self):
+        root, self._backdrop_root = self._backdrop_root, None
+        if root is None:
+            return
+        if self.backdrop_blur is not None and root.graphicsEffect() is self.backdrop_blur:
+            root.setGraphicsEffect(None)
+        self.backdrop_blur = None
+        for widget, parent in self._chrome_widgets:
+            widget.setParent(parent)
+            widget.show()
+        self._chrome_widgets = ()
+        root.setEnabled(self._root_was_enabled)
+        owner = self.parentWidget()
+        owner._position_overlays()
+        focus, self._backdrop_focus = self._backdrop_focus, None
+        if focus is not None and not getattr(owner, "_closing", False):
+            try:
+                if focus.isVisible() and focus.isEnabled():
+                    focus.setFocus()
+            except RuntimeError:
+                pass  # A profile transition may already have destroyed its editor.
 
     def _close_with_feedback(self):
         if not self._close_pending:
@@ -396,17 +440,13 @@ class SettingsPanel(QFrame):
     def hideEvent(self, event):  # noqa: N802
         self._close_pending = False
         self.close_button.reset()
-        self.drag_strip._drag_offset = None
-        self.drag_strip.setCursor(Qt.CursorShape.OpenHandCursor)
+        self._release_backdrop()
         super().hideEvent(event)
 
     def resizeEvent(self, event):  # noqa: N802
         super().resizeEvent(event)
         if hasattr(self, "navigation"):
             self._fit_navigation()
-        if hasattr(self, "drag_strip"):
-            self.drag_strip.setGeometry(12, 0, max(0, self.width() - 24), 18)
-            self.drag_strip.raise_()
 
     def keyPressEvent(self, event):  # noqa: N802
         if event.key() == Qt.Key.Key_Escape:
@@ -418,7 +458,7 @@ class SettingsPanel(QFrame):
 
 _STYLE = settings_control_style("QFrame#settingsPanel") + """
 QFrame#settingsPanel {
-    background: transparent; border: none; border-radius: 16px;
+    background: transparent; border: none; border-radius: 0;
 }
 QFrame#settingsPanel QWidget { font-family: Saira; color: #e4e5eb; }
 QWidget#settingsPage, QStackedWidget, QScrollArea, QScrollArea > QWidget > QWidget {
@@ -440,6 +480,7 @@ QFrame#settingsPanel QPushButton#settingsClose { background: transparent; border
 QFrame#settingsPanel QPushButton#settingsClose:hover { background: rgba(255,255,255,18); }
 QFrame#settingsPanel QPushButton#settingsClose:pressed { background: rgba(255,255,255,30); }
 QFrame#settingsPanel QPushButton#notificationPreview { padding: 0; }
+QFrame#settingsPanel QWidget#notificationSoundControl QComboBox { padding-right: 8px; }
 QWidget#skillSettingsPage, QWidget#imageSettingsPage { background: transparent; }
 QWidget#skillSettingsPage QLabel, QWidget#imageSettingsPage QLabel { font-size: 14px; }
 QFrame#settingsPanel QLineEdit#greetingInput,

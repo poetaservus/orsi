@@ -9,6 +9,7 @@ from PySide6.QtGui import QColor, QFontDatabase, QIcon, QImageReader, QLinearGra
 from PySide6.QtWidgets import QWidget
 
 from app.ui.themes import ASSETS, ICON_FILES, ORIGINAL, ThemeError, ThemeRepository
+from app.ui.settings_style import settings_typography
 
 
 # Legacy style literals remain the exact Original theme. Their semantic aliases
@@ -71,6 +72,7 @@ def theme_color(widget, original, role=None):
 
 
 def themed_stylesheet(widget, source):
+    source = settings_typography(widget, source)
     controller = controller_for(widget)
     if controller is None:
         return source
