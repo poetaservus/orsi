@@ -1,5 +1,25 @@
 # Git layout and baseline hygiene
 
+## Questionnaire header and footer text, 14 October 2026
+
+`codex/questionnaire-chrome-text` starts from clean main `f9a5741`. Questionnaire
+header, required-count, hint and action text now use 16px instead of 14px. The
+header uses medium weight rather than semibold. The form uses the same explicit
+antialiasing and vertical hinting preferences as Settings, retaining each theme's
+font family. Answer handling, transition animations and notifications are unchanged.
+
+All **5 focused native checks passed** in **6.00 seconds**, with no failures,
+errors or skips. Original/Conformist header/footer and compact previews were
+inspected. Evidence is under ignored `state/questionnaire-chrome-essential.xml`
+and `state/questionnaire-chrome-preview/`. Full-suite and live inference gates
+were not run under the user's essential-test scope.
+
+Ref/worktree inventories are retained under ignored
+`state/backups/questionnaire-chrome-text-20261014/`, with prior main preserved at
+`archive/2026-10-14/main-before-questionnaire-chrome-text`. Commit, fast-forward
+local main and remove only this merged branch. Other worktrees, historical/unmerged
+tips, private settings and remote refs remain unchanged; no push is part of this task.
+
 ## Readable questionnaire typography, 14 October 2026
 
 `codex/questionnaire-typography` starts from clean main `1c1d51d`. Questionnaire

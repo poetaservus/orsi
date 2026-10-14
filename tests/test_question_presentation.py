@@ -72,7 +72,11 @@ def test_larger_question_text_wraps_and_stays_reachable_across_themes(app, size)
             assert panel.fields["audience"].editor.font().pixelSize() == 16
             assert panel.fields["audience"].editor.font().family() == window.theme_controller.current.family
             assert panel.fields["style"].combo.font().pixelSize() == 16
-            assert panel.hint.font().pixelSize() == 14
+            for control in (panel.findChild(QLabel, "questionsHeader"), panel.required_count,
+                            panel.hint, panel.chat_button, panel.send):
+                assert control.font().pixelSize() == 16
+                assert control.font().family() == window.theme_controller.current.family
+                assert panel.rect().contains(control.geometry())
             for field in panel.fields.values():
                 title = field.findChild(QLabel, "questionTitle")
                 assert title.font().pixelSize() == 18

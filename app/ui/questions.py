@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from app.ui.theme_runtime import apply_theme_style
 from PySide6.QtCore import QEvent, QSize, Qt, Signal
-from PySide6.QtGui import QKeySequence, QShortcut, QTextLayout, QTextOption
+from PySide6.QtGui import QFont, QKeySequence, QShortcut, QTextLayout, QTextOption
 from PySide6.QtWidgets import (
     QButtonGroup, QCheckBox, QFrame, QHBoxLayout, QLabel, QLineEdit,
     QPlainTextEdit, QPushButton, QRadioButton, QScrollArea, QSizePolicy, QStyle, QStyleOptionButton,
@@ -193,6 +193,10 @@ class QuestionComposer(QFrame):
         self.reveal_effect.setOpacity(1.)
         self.reveal_effect.setEnabled(False)
         self.setObjectName("questionComposer")
+        font = self.font()
+        font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+        font.setHintingPreference(QFont.HintingPreference.PreferVerticalHinting)
+        self.setFont(font)
         apply_theme_style(self, QUESTION_STYLE)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(22, 16, 22, 16)
@@ -287,9 +291,9 @@ class QuestionComposer(QFrame):
 QUESTION_STYLE = """
 QFrame#questionComposer, QFrame#questionComposer QWidget { background: transparent; color: #dedee0; font-family: Saira; font-size: 16px; }
 QFrame#questionComposer QLabel { border: none; font-size: 16px; }
-QFrame#questionComposer QLabel#questionsHeader { font-size: 14px; font-weight: 600; }
+QFrame#questionComposer QLabel#questionsHeader { font-size: 16px; font-weight: 500; }
 QFrame#questionComposer QLabel#questionTitle { font-size: 18px; font-weight: 500; }
-QFrame#questionComposer QLabel#questionHint { color: #a8adb6; font-size: 14px; }
+QFrame#questionComposer QLabel#questionHint { color: #a8adb6; font-size: 16px; font-weight: 400; }
 QFrame#questionDivider { background: #373c43; border: none; }
 QFrame#questionComposer QRadioButton, QFrame#questionComposer QCheckBox { spacing: 10px; min-height: 32px; border: none; outline: none; }
 QFrame#questionComposer QRadioButton::indicator, QFrame#questionComposer QCheckBox::indicator {
@@ -310,7 +314,7 @@ QFrame#questionComposer QScrollBar:vertical { background: transparent; width: 5p
 QFrame#questionComposer QScrollBar::handle:vertical { background: #41444a; border-radius: 2px; min-height: 24px; }
 QFrame#questionComposer QScrollBar::add-line:vertical, QFrame#questionComposer QScrollBar::sub-line:vertical { height: 0; }
 QFrame#questionComposer QScrollBar::add-page:vertical, QFrame#questionComposer QScrollBar::sub-page:vertical { background: transparent; }
-QFrame#questionComposer QPushButton { background: transparent; border: none; font-size: 14px; min-height: 24px; padding: 8px 12px; border-radius: 18px; }
+QFrame#questionComposer QPushButton { background: transparent; border: none; font-size: 16px; font-weight: 400; min-height: 24px; padding: 8px 12px; border-radius: 18px; }
 QFrame#questionComposer QPushButton:hover { background: #454852; }
 QFrame#questionComposer QPushButton:pressed { background: #2c2e35; }
 QFrame#questionComposer QPushButton#questionsSend { background: #373c43; min-width: 55px; }
