@@ -11,11 +11,12 @@ pytest.importorskip("PySide6")
 from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
 from PySide6.QtGui import QColor, QEnterEvent, QPainter
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QFrame, QLabel, QStyle, QStyleOptionComboBox, QWidget
+from PySide6.QtWidgets import QApplication, QFrame, QLabel, QStyle, QStyleOptionButton, QStyleOptionComboBox, QWidget
 
 from app.settings.images import ImageGenerationSettings, ImageSettingsStore
 from app.state.storage import JsonStore
 from app.ui.main_window import MainWindow
+from app.ui.settings_layout import SettingsButton
 from app.settings.personality import PersonalitySettings
 from app.settings.response_language import ResponseLanguageSettings
 
@@ -33,7 +34,7 @@ def wait_for(predicate):
 
 
 @pytest.mark.parametrize("theme", ["original", "conformist"])
-def test_clean_settings_keep_module_introductions_and_accessible_help(app, theme):
+def test_clean_settings_keep_labels_and_accessible_help_without_subtexts(app, theme):
     service = SimpleNamespace(personality_settings=PersonalitySettings(),
                               response_language_settings=ResponseLanguageSettings())
     window = MainWindow(service, "TEST")
@@ -46,11 +47,8 @@ def test_clean_settings_keep_module_introductions_and_accessible_help(app, theme
         panel = window.settings_panel
         general = panel.pages.currentWidget().widget()
         assert {label.text() for label in general.findChildren(QLabel) if label.isVisible()} == {
-            "General", "Everyday preferences for O.R.S.I.", "Greeting", "Personality",
+            "General", "Greeting", "Personality",
             "Response Language", "Tool execution approval", "Notifications", "Notification sound",
-            "Your welcome message", "O.R.S.I.'s voice · Remembered for this profile",
-            "Auto follows your request · Remembered for this profile", "Review tool changes before they run",
-            "Alerts while O.R.S.I is in the background", "Choose your alert sound",
         }
         assert not window.activity.isVisible()
         assert not window.personality_hint.isVisible()
@@ -68,14 +66,43 @@ def test_clean_settings_keep_module_introductions_and_accessible_help(app, theme
             panel.pages.setCurrentIndex(index)
             app.processEvents()
             page = panel.pages.currentWidget().widget()
-            assert any(label.text() == introduction and label.isVisible() for label in page.findChildren(QLabel))
+            assert not any(label.text() == introduction and label.isVisible() for label in page.findChildren(QLabel))
             for row in page.findChildren(QFrame, "settingRow"):
-                assert len(row.findChildren(QLabel)) == 2
+                assert len(row.findChildren(QLabel)) == 1
                 assert all(label.wordWrap() for label in row.findChildren(QLabel))
         assert not panel.theme_controls.status.isVisible()
         assert "drop a folder/file" in window.skill_settings_page.source.toolTip()
         window.skill_settings_page.set_vault_guidance(True)
         assert "encrypted while locked" in window.skill_settings_page.install_button.toolTip()
+    finally:
+        window.close()
+
+
+@pytest.mark.parametrize("theme", ["original", "conformist"])
+def test_action_buttons_stay_compact_at_native_caption_width(app, theme):
+    window = MainWindow(None, "SYNTHETIC")
+    try:
+        window.show()
+        window.theme_controller.select(theme)
+        for font in ("theme", "merriweather", "outfit"):
+            window.theme_controller.select_font(font)
+            for size in ((1280, 900), (760, 600)):
+                window.resize(*size)
+                for section in ("Skills", "Image Generation", "Appearance"):
+                    panel = window.settings_panel
+                    panel.show_section(section)
+                    panel.show()
+                    panel.page_transition.cancel()
+                    app.processEvents()
+                    for button in panel.findChildren(SettingsButton):
+                        if not button.isVisible():
+                            continue
+                        option = QStyleOptionButton()
+                        button.initStyleOption(option)
+                        content = button.style().subElementRect(QStyle.SubElement.SE_PushButtonContents, option, button)
+                        metrics = button.fontMetrics()
+                        assert metrics.horizontalAdvance(button.text()) <= content.width(), (theme, font, button.text())
+                        assert button.height() <= max(36, metrics.height() + 16), (theme, font, button.text(), button.height())
     finally:
         window.close()
 

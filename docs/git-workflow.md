@@ -1,5 +1,24 @@
 # Git layout and baseline hygiene
 
+## Flat Settings and compact action buttons, 15 October 2026
+
+`codex/settings-cleanup` starts from clean local main `1502224`. The ordinary
+Settings modules remove gray group backgrounds/borders and visible static
+subtexts. Installed skill entries show names. Action buttons use native content
+bounds to avoid accidental wrapping and double heights. Personal profile,
+login, preferences, translations and model behavior are unchanged. See
+[the current presentation and verification](spacious-settings.md).
+
+All **32 focused native tests passed in 51.25 seconds**, without failures,
+errors or skips. Twenty native module/theme/size states were rendered and checked;
+representative final screens were visually inspected. Compilation and whitespace
+checks pass. Full-suite and live gates remain outside the user's focused UI scope.
+
+Inventories are retained under ignored `state/backups/settings-cleanup-20261015/`.
+Preserve prior main at `archive/2026-10-15/main-before-settings-cleanup`, commit,
+fast-forward local main and remove only the merged cleanup branch. Other
+worktrees, historical/unmerged tips, private settings and remote refs stay intact.
+
 ## Spacious Settings and centered login, 15 October 2026
 
 `codex/spacious-settings` starts from clean local main `7b15478`. The five ordinary

@@ -186,10 +186,6 @@ class SettingsPanel(QFrame):
         greeting_label.setWordWrap(True)
         greeting_label.setBuddy(window.greeting_input)
         greeting_layout.addWidget(greeting_label)
-        greeting_help = QLabel(ui_text('Your welcome message'))
-        greeting_help.setObjectName("settingsDescription")
-        greeting_help.setWordWrap(True)
-        greeting_layout.addWidget(greeting_help)
         window.greeting_input.setAccessibleName(ui_text('Greeting message'))
         window.greeting_input.setAccessibleDescription(ui_text('Your welcome message'))
         window.greeting_input.setToolTip(ui_text('Your welcome message'))
@@ -335,10 +331,6 @@ class SettingsPanel(QFrame):
         label = QLabel(title)
         label.setObjectName("settingsSectionTitle")
         layout.addWidget(label)
-        description = QLabel(hint)
-        description.setObjectName("settingsDescription")
-        description.setWordWrap(True)
-        layout.addWidget(description)
         layout.addSpacing(32)
 
     @staticmethod

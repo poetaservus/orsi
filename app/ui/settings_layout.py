@@ -1,4 +1,4 @@
-"""Spacious cards and responsive rows for the five ordinary Settings modules."""
+"""Flat, spacious groups and responsive rows for ordinary Settings modules."""
 from PySide6.QtCore import QEvent, QRect, QSize, Qt
 from PySide6.QtGui import QFont, QPainter, QPalette
 from PySide6.QtWidgets import QBoxLayout, QHBoxLayout, QSizePolicy, QStyle, QStyleOptionButton, QVBoxLayout
@@ -17,12 +17,23 @@ class SettingsButton(QPushButton):
         self.setSizePolicy(policy)
 
     def minimumSizeHint(self):  # noqa: N802
-        return QSize(0, self.fontMetrics().height() + 18)
+        content = self._caption_bounds(self.width())
+        return QSize(0, max(36, self.fontMetrics().height() + 100 - content.height()))
+
+    def _caption_bounds(self, width):
+        option = QStyleOptionButton()
+        self.initStyleOption(option)
+        option.rect = QRect(0, 0, max(1, width), 100)
+        return self.style().subElementRect(QStyle.SubElement.SE_PushButtonContents, option, self)
 
     def heightForWidth(self, width):  # noqa: N802
-        bounds = self.fontMetrics().boundingRect(QRect(0, 0, max(1, width - 24), 1000),
-            int(Qt.TextFlag.TextWordWrap), self.text())
-        return max(38, bounds.height() + 18)
+        content = self._caption_bounds(width)
+        metrics = self.fontMetrics()
+        height = metrics.height()
+        if metrics.horizontalAdvance(self.text()) > content.width():
+            height = metrics.boundingRect(QRect(0, 0, max(1, content.width()), 1000),
+                int(Qt.TextFlag.TextWordWrap), self.text()).height()
+        return max(36, height + 100 - content.height())
 
     def _fit_caption(self):
         height = self.heightForWidth(self.width())
@@ -40,15 +51,15 @@ class SettingsButton(QPushButton):
             self._fit_caption()
 
     def paintEvent(self, event):  # noqa: N802
-        if self.fontMetrics().horizontalAdvance(self.text()) <= self.width() - 24:
-            super().paintEvent(event)
-            return
         option = QStyleOptionButton()
         self.initStyleOption(option)
+        bounds = self.style().subElementRect(QStyle.SubElement.SE_PushButtonContents, option, self)
+        if self.fontMetrics().horizontalAdvance(self.text()) <= bounds.width():
+            super().paintEvent(event)
+            return
         option.text = ""
         painter = QPainter(self)
         self.style().drawControl(QStyle.ControlElement.CE_PushButton, option, painter, self)
-        bounds = self.style().subElementRect(QStyle.SubElement.SE_PushButtonContents, option, self)
         group = QPalette.ColorGroup.Active if self.isEnabled() else QPalette.ColorGroup.Disabled
         painter.setPen(option.palette.color(group, QPalette.ColorRole.ButtonText))
         painter.drawText(bounds, Qt.AlignmentFlag.AlignCenter | Qt.TextFlag.TextWordWrap, self.text())
@@ -94,7 +105,7 @@ def settings_group(layout, title=None):
     card.setObjectName("settingsGroup")
     card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
     content = QVBoxLayout(card)
-    content.setContentsMargins(22, 8, 22, 8)
+    content.setContentsMargins(0, 0, 0, 0)
     content.setSpacing(0)
     layout.addWidget(card)
     layout.addSpacing(32)
@@ -118,11 +129,6 @@ class SettingRow(QFrame):
         self.title.setWordWrap(True)
         self.title.setBuddy(control)
         labels.addWidget(self.title)
-        if hint:
-            self.description = QLabel(hint)
-            self.description.setObjectName("settingsDescription")
-            self.description.setWordWrap(True)
-            labels.addWidget(self.description)
         if not control.accessibleDescription():
             control.setAccessibleDescription(hint)
         if not control.toolTip():
@@ -175,7 +181,7 @@ QWidget#settingsPage QLabel#settingsSectionTitle { font-size: 26px; font-weight:
 QWidget#settingsPage QLabel#settingsGroupTitle { font-size: 14px; font-weight: 600; }
 QWidget#settingsPage QLabel#settingName { font-size: 14px; font-weight: 500; }
 QWidget#settingsPage QLabel#settingsDescription { font-size: 12px; color: #b9c2d0; }
-QWidget#settingsPage QFrame#settingsGroup { background: #202224; border: 1px solid #35393f; border-radius: 16px; }
+QWidget#settingsPage QFrame#settingsGroup { background: transparent; border: none; border-radius: 0; }
 QWidget#settingsPage QFrame#settingRow { background: transparent; border: none; border-bottom: 1px solid #35393f; border-radius: 0; }
 QWidget#settingsPage QFrame#settingRowPlain { background: transparent; border: none; }
 QWidget#settingsPage QListWidget#installedSkills { background: transparent; border: none; padding: 0; }

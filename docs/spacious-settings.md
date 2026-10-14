@@ -1,5 +1,32 @@
 # Spacious Settings and centered login
 
+## Flat Settings cleanup, 15 October 2026
+
+The current presentation removes the gray group fills, rounded group borders
+and visible static descriptions from all five ordinary Settings modules.
+Labels, separators, larger typography and responsive spacing remain. Installed
+skills show their names; descriptions stay in tooltips. Accessible help,
+operation feedback and the skill import review retain their existing behavior.
+Personal profile and the centered unlock panel are unchanged by this cleanup.
+
+Action sizing and wrapping now use Qt's actual native content rectangle. The
+previous fixed padding estimate underestimated the text width, causing ordinary
+single-line captions to produce double-height buttons. English file/folder,
+preview/install/remove, image Save/Reset and theme actions now have compact
+single-line heights; genuinely long translated captions still wrap when needed.
+
+All **32 focused native tests passed in 51.25 seconds**, without failures,
+errors or skips. Coverage includes compact action heights in Original and
+Conformist with theme, Merriweather and Outfit fonts, translated caption fitting,
+Settings navigation/persistence and real skill preview/install/remove actions.
+Twenty native screen states cover all five modules at 760×600 and 1280×900 in
+both themes; representative final screens were visually inspected. No inference
+requests were made. Compilation and whitespace checks pass. Evidence is under
+ignored `state/settings-cleanup.xml` and `state/settings-cleanup-preview/`.
+The full suite and live gates were not run under the user's focused UI scope.
+
+## Earlier card presentation, 15 October 2026
+
 General, Models, Skills, Image Generation and Appearance use a shared card and
 row layout within the existing full-window Settings shell. The content column
 centers at up to 1040 pixels wide, with 28-pixel page insets, 22-pixel card
@@ -26,7 +53,7 @@ recovery and alternate-profile options remain behind More. These adjustments
 apply to the login instance in `profile_login.py`; the shared Personal profile
 workspace source and its presentation remain unchanged.
 
-## Essential verification, 15 October 2026
+### Essential verification, 15 October 2026
 
 The final essential native run passed **54 tests in 151.84 seconds**, with no
 failures, errors or skips. After the last visual correction to wrapped action

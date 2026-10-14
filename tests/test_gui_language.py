@@ -228,8 +228,9 @@ def test_compact_translated_image_controls_fit_and_remain_reachable(app, code, t
                 option = QStyleOptionButton()
                 control.initStyleOption(option)
                 content = control.style().subElementRect(QStyle.SubElement.SE_PushButtonContents, option, control)
-                text = control.fontMetrics().boundingRect(QRect(0, 0, content.width(), 1000),
-                    int(Qt.TextFlag.TextWordWrap), control.text())
+                flags = (Qt.TextFlag.TextSingleLine if control.fontMetrics().horizontalAdvance(control.text()) <= content.width()
+                         else Qt.TextFlag.TextWordWrap)
+                text = control.fontMetrics().boundingRect(QRect(0, 0, content.width(), 1000), int(flags), control.text())
                 assert text.height() <= content.height(), (code, theme, control.text())
         for control in window.image_settings_page.choices.values():
             caption = control.parentWidget().title
