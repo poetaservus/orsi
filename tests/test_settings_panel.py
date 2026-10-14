@@ -11,11 +11,13 @@ pytest.importorskip("PySide6")
 from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
 from PySide6.QtGui import QEnterEvent, QMouseEvent
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QFrame, QLabel
 
 from app.settings.images import ImageGenerationSettings, ImageSettingsStore
 from app.state.storage import JsonStore
 from app.ui.main_window import MainWindow
+from app.settings.personality import PersonalitySettings
+from app.settings.response_language import ResponseLanguageSettings
 
 
 @pytest.fixture(scope="module")
@@ -28,6 +30,75 @@ def wait_for(predicate):
     while not predicate() and monotonic() < deadline:
         QTest.qWait(10)
     assert predicate()
+
+
+@pytest.mark.parametrize("theme", ["original", "conformist"])
+def test_clean_settings_keep_module_introductions_and_accessible_help(app, theme):
+    service = SimpleNamespace(personality_settings=PersonalitySettings(),
+                              response_language_settings=ResponseLanguageSettings())
+    window = MainWindow(service, "TEST")
+    try:
+        window.theme_controller.select(theme)
+        window.resize(760, 600)
+        window.show()
+        window.settings_button.click()
+        app.processEvents()
+        panel = window.settings_panel
+        general = panel.pages.currentWidget().widget()
+        assert {label.text() for label in general.findChildren(QLabel) if label.isVisible()} == {
+            "General", "Everyday preferences for O.R.S.I.", "Greeting", "Personality",
+            "Response Language", "Tool execution approval", "Notifications", "Notification sound",
+        }
+        assert not window.activity.isVisible()
+        assert not window.personality_hint.isVisible()
+        assert not window.response_language_hint.isVisible()
+        assert window.personality_selector.toolTip()
+        assert "next response" in window.response_language_selector.accessibleDescription()
+        assert "pending review" in window.tool_approval_toggle.accessibleDescription()
+        for index, introduction in enumerate((
+            "Everyday preferences for O.R.S.I.",
+            "Choose where O.R.S.I runs and which model it uses.",
+            "Preview, install and manage skills here.",
+            "Preferences for your next generated image.",
+            "Display and accessibility preferences.",
+        )):
+            panel.pages.setCurrentIndex(index)
+            app.processEvents()
+            page = panel.pages.currentWidget().widget()
+            assert any(label.text() == introduction and label.isVisible() for label in page.findChildren(QLabel))
+            for row in page.findChildren(QFrame, "settingRow"):
+                assert len(row.findChildren(QLabel)) == 1
+        assert not panel.theme_controls.status.isVisible()
+        assert "drop a folder/file" in window.skill_settings_page.source.toolTip()
+        window.skill_settings_page.set_vault_guidance(True)
+        assert "encrypted while locked" in window.skill_settings_page.install_button.toolTip()
+    finally:
+        window.close()
+
+
+def test_clean_settings_still_display_unreadable_preference_errors(app, tmp_path):
+    store = JsonStore(tmp_path / "invalid.json")
+    store.path.write_text("{unreadable", encoding="utf-8")
+    original = store.path.read_bytes()
+    service = SimpleNamespace(personality_settings=PersonalitySettings(store),
+                              response_language_settings=ResponseLanguageSettings(store))
+    window = MainWindow(service, "TEST")
+    try:
+        window.show()
+        window.settings_button.click()
+        app.processEvents()
+        for hint, selector in ((window.personality_hint, window.personality_selector),
+                               (window.response_language_hint, window.response_language_selector)):
+            assert hint.isVisible() and "could not be loaded" in hint.text()
+            assert not selector.isEnabled()
+        assert store.path.read_bytes() == original
+        service.personality_settings = PersonalitySettings()
+        service.response_language_settings = ResponseLanguageSettings()
+        window._sync_personality_selector()
+        window._sync_response_language_selector()
+        assert not window.personality_hint.isVisible() and not window.response_language_hint.isVisible()
+    finally:
+        window.close()
 
 
 def test_placeholder_controls_do_not_change_preferences_or_draft(app, tmp_path):
@@ -413,6 +484,7 @@ def test_image_section_saves_through_existing_settings_handler(app, tmp_path):
         window._open_image_settings()
         page = window.image_settings_page
         assert page.save_button.isVisible() and page.save_button.isEnabled()
+        assert not page.notice.isVisible() and not window.settings_panel.image_hint.isVisible()
         assert not page.isWindow() and QApplication.activeModalWidget() is None
         page.choices["size"].setCurrentText("1024x1536")
         window.settings_panel.show_section("General")
@@ -424,12 +496,14 @@ def test_image_section_saves_through_existing_settings_handler(app, tmp_path):
         assert page.choices["size"].currentText() == "1024x1536"
         page.save_button.click()
         assert page.isVisible() and window.settings_panel.isVisible()
+        assert page.notice.isVisible() and "saved" in page.notice.text()
         assert store.current.size == "1024x1536"
         assert ImageSettingsStore(ImageGenerationSettings(), store.store.path).current.size == "1024x1536"
         window.service.fail = True
         page.choices["size"].setCurrentText("1536x1024")
         page.save_button.click()
         assert store.current.size == "1024x1536" and "Could not save" in page.notice.text()
+        assert page.notice.isVisible()
         assert page.choices["size"].currentText() == "1536x1024"
         page.reset_button.click()
         assert page.choices["size"].currentText() == "1024x1536"

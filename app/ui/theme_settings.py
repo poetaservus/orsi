@@ -2,11 +2,12 @@
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QLabel, QPushButton
+from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QPushButton
 
 from app.ui.inputs import ScrollSafeComboBox
 from app.ui.theme_runtime import PreparedTheme
 from app.ui.themes import BUILTIN_IDS, ThemeError, export_folder, import_folder
+from app.ui.profile_layout import FeedbackLabel
 
 
 class ThemeControls:
@@ -28,7 +29,7 @@ class ThemeControls:
         actions.addWidget(self.export)
         actions.addStretch()
         layout.addLayout(actions)
-        self.status = QLabel(self.controller.notice, panel)
+        self.status = FeedbackLabel(self.controller.notice)
         self.status.setObjectName("settingsDescription")
         self.status.setTextFormat(Qt.TextFormat.PlainText)
         self.status.setWordWrap(True)

@@ -1,10 +1,11 @@
 """Reusable image preferences, independent of chat model profiles."""
 from app.ui.theme_runtime import apply_theme_style
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QPushButton, QVBoxLayout, QWidget
 from app.settings.images import ImageGenerationSettings
 from app.ui.inputs import ScrollSafeComboBox
 from app.ui.settings_style import settings_control_style
+from app.ui.profile_layout import FeedbackLabel
 
 
 class ImageSettingsPage(QWidget):
@@ -37,8 +38,8 @@ class ImageSettingsPage(QWidget):
             form.addRow(label, selector)
             self.choices[name] = selector
         layout.addLayout(form)
-        self.notice = QLabel("Availability depends on your cloud account. Images are saved at their original resolution.")
-        self.notice.setWordWrap(True)
+        self.notice = FeedbackLabel()
+        self.setToolTip("Availability depends on your cloud account. Images are saved at their original resolution.")
         layout.addWidget(self.notice)
         actions = QHBoxLayout()
         self.save_button = QPushButton("Save image settings")

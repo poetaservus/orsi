@@ -12,6 +12,7 @@ from app.runtime.skills.import_source import SkillImportError, prepare_import
 from app.runtime.skills.installer import SkillInstallError
 from app.ui.motion import install_smooth_scroll
 from app.ui.settings_style import settings_control_style
+from app.ui.profile_layout import FeedbackLabel
 
 
 class SkillSourceInput(QLineEdit):
@@ -78,17 +79,12 @@ class SkillSettingsPage(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(10)
-        source_hint = QLabel("Paste a GitHub repository or skill-file link, or drop a folder/file.")
-        source_hint.setWordWrap(True)
-        layout.addWidget(source_hint)
-        self.vault_hint = QLabel("Recommended: import a copy into your profile. Your saved copy is encrypted while locked; external originals remain unchanged.")
-        self.vault_hint.setWordWrap(True)
-        self.vault_hint.hide()
-        layout.addWidget(self.vault_hint)
         source_row = QHBoxLayout()
         self.source = SkillSourceInput()
         self.source.setObjectName("skillSource")
         self.source.setAccessibleName("Skill repository, folder or Markdown file")
+        self.source.setAccessibleDescription("Paste a GitHub repository or skill-file link, or drop a folder/file.")
+        self.source.setToolTip(self.source.accessibleDescription())
         self.source.setPlaceholderText("GitHub repository, skill folder or SKILL.md link")
         self.source.setMaxLength(4096)
         self.source.setAcceptDrops(True)
@@ -119,14 +115,13 @@ class SkillSettingsPage(QWidget):
         self.preview_packages.setMaximumHeight(100)
         self.preview_packages.hide()
         layout.addWidget(self.preview_packages)
-        self.scope = QLabel("Folders and repositories include supporting Markdown documents. File links import "
-                            "only the main instructions. Selected skills can read their references when tools are enabled.")
-        self.scope.setWordWrap(True)
-        self.scope.setObjectName("skillsHint")
-        layout.addWidget(self.scope)
         self.install_button = QPushButton("Install")
         self.install_button.setObjectName("skillInstall")
         self.install_button.setEnabled(False)
+        self._install_help = ("Folders and repositories include supporting Markdown documents. File links import "
+                              "only the main instructions. Selected skills can read their references when tools are enabled.")
+        self.install_button.setAccessibleDescription(self._install_help)
+        self.install_button.setToolTip(self._install_help)
         layout.addWidget(self.install_button)
         installed_row = QHBoxLayout()
         installed_row.addWidget(QLabel("Installed skills"), 1)
@@ -139,7 +134,7 @@ class SkillSettingsPage(QWidget):
         self.installed.setMinimumHeight(150)
         self.installed.setAccessibleName("Installed skills")
         layout.addWidget(self.installed, 1)
-        self.status = QLabel()
+        self.status = FeedbackLabel()
         self.status.setTextFormat(Qt.TextFormat.PlainText)
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
@@ -162,7 +157,11 @@ class SkillSettingsPage(QWidget):
 
     def set_vault_guidance(self, enabled, recommend=True):
         self.install_button.setText("Install in profile" if enabled else "Install")
-        self.vault_hint.setVisible(bool(enabled and recommend))
+        guidance = ("Recommended: import a copy into your profile. Your saved copy is encrypted while locked; "
+                    "external originals remain unchanged.") if enabled and recommend else ""
+        help_text = "\n".join(filter(None, (self._install_help, guidance)))
+        self.install_button.setToolTip(help_text)
+        self.install_button.setAccessibleDescription(help_text)
 
     def _source_changed(self):
         self.prepared = None
@@ -170,7 +169,7 @@ class SkillSettingsPage(QWidget):
         self.preview_packages.hide()
         for label in (self.preview_name, self.preview_description, self.preview_source, self.preview_summary):
             label.hide()
-        self.status.clear()
+        self.status.setText("")
         self._update_buttons()
 
     def _browse(self):

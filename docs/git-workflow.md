@@ -1,5 +1,28 @@
 # Git layout and baseline hygiene
 
+## Lean Settings modules, 14 October 2026
+
+`codex/lean-settings` starts from clean main `b4b9e77`. Settings retain module
+introductions, field names and controls, with routine helper subtitles, selected
+personality/model descriptions and the technical status footer removed from
+the layout. Contextual help remains in tooltips/accessibility descriptions;
+unavailable states, errors, skill previews and save/import feedback remain visible.
+No preference, inference, response-formatting, animation or notification behavior changes.
+
+All **87 essential native checks passed** in **40.59 seconds**, with no
+failures/errors/skips. The Settings tests also passed independently (**21 tests**)
+after checking their import order. Native previews of all five modules and the
+compact General page were inspected. Evidence is under ignored
+`state/lean-settings-essential.xml`, `state/lean-settings-isolated.xml` and
+`state/lean-settings-preview/`. Full-suite and live inference gates were not run
+under the user's essential-test scope.
+
+Ref/worktree inventories are retained under ignored
+`state/backups/lean-settings-20261014/`, with prior main preserved at
+`archive/2026-10-14/main-before-lean-settings`. Commit, fast-forward local main
+and remove only this merged branch. Other worktrees, historical/unmerged tips,
+private settings and remote refs remain unchanged; no push is part of this task.
+
 ## Conformist shimmering-dot image placeholder, 14 October 2026
 
 `codex/conformist-dot-placeholder` starts from clean main `75a98bd`. The user's

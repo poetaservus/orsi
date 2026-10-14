@@ -111,6 +111,8 @@ def test_file_only_personality_appears_in_settings_and_actual_request(tmp_path, 
     try:
         window.personality_selector.setCurrentIndex(window.personality_selector.findData("friendly"))
         assert window.personality_hint.text() == "Friendly 3.0.0 · Warm explanations."
+        assert window.personality_hint.isHidden()
+        assert "Warm explanations." in window.personality_selector.toolTip()
         assert service.run("Explain this clearly.") == "Rendben."
         assert_selected(service.inference.requests[-1][0], "friendly")
     finally:

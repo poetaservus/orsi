@@ -871,6 +871,9 @@ class MainWindow(QMainWindow):
             " · ".join(filter(None, (
                 settings.current.name + (" " + settings.current.version if settings.current.version else ""),
                 settings.current.description))) if available else "")
+        self.personality_hint.setVisible(bool(available and settings.load_error))
+        self.personality_selector.setToolTip(
+            self.personality_hint.text() or self.personality_selector.accessibleDescription())
 
     def _select_personality(self, index):
         requested = self.personality_selector.itemData(index)
@@ -904,6 +907,7 @@ class MainWindow(QMainWindow):
         self.response_language_hint.setText(
             "Saved response language could not be loaded. Auto is active; your saved preference is preserved."
             if available and settings.load_error else "")
+        self.response_language_hint.setVisible(bool(self.response_language_hint.text()))
 
     def _select_response_language(self, index):
         requested = self.response_language_selector.itemData(index)
@@ -1827,8 +1831,9 @@ class MainWindow(QMainWindow):
         self._sync_image_settings(busy=self.thread is not None or self._settings_busy)
         catalog = getattr(self.inference, "cloud_model_catalog", None)
         available = catalog is not None
-        for widget in (self.cloud_model_row, self.cloud_model_label, self.cloud_model_selector, self.cloud_model_details):
+        for widget in (self.cloud_model_row, self.cloud_model_label, self.cloud_model_selector):
             widget.setVisible(available and self.inference.mode == "cloud")
+        self.cloud_model_details.hide()
         self.cloud_model_selector.blockSignals(True)
         self.cloud_model_selector.setCurrentIndex(
             self.cloud_model_selector.findData(catalog.current_id) if available else -1
@@ -1855,7 +1860,7 @@ class MainWindow(QMainWindow):
         available = getattr(self.inference, "supports_image_generation", False) is True
         self.image_settings_page.set_context(store, apply_settings, available=available, busy=busy)
         self.settings_panel.image_hint.setText(
-            "These preferences apply to your next generated image." if available and store is not None else
+            "" if available and store is not None else
             "Image generation is unavailable in the current mode. Choose a supported cloud model in Models.")
 
     def _open_image_settings(self):
@@ -1882,8 +1887,9 @@ class MainWindow(QMainWindow):
     def _sync_local_model_selector(self):
         catalog = getattr(self.inference, "model_catalog", None)
         local_mode = self.inference is None or self.inference.mode == "local"
-        for widget in (self.local_model_row, self.local_model_label, self.local_model_selector, self.local_model_details):
+        for widget in (self.local_model_row, self.local_model_label, self.local_model_selector):
             widget.setVisible(local_mode)
+        self.local_model_details.setVisible(local_mode and catalog is None)
         self.local_model_selector.blockSignals(True)
         index = self.local_model_selector.findData(catalog.current_id) if catalog else -1
         if index >= 0:

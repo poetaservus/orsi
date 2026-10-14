@@ -15,6 +15,7 @@ from app.conversation.personality import PERSONALITIES
 from app.conversation.response_language import RESPONSE_LANGUAGES
 from app.ui.theme_runtime import apply_theme_style, apply_theme_tree, theme_color
 from app.ui.theme_settings import ThemeControls
+from app.ui.profile_layout import FeedbackLabel
 
 
 class SettingsPanel(QFrame):
@@ -145,10 +146,9 @@ class SettingsPanel(QFrame):
         greeting_label.setObjectName("settingName")
         greeting_label.setBuddy(window.greeting_input)
         greeting_layout.addWidget(greeting_label)
-        greeting_description = QLabel("Your welcome message")
-        greeting_description.setObjectName("settingsDescription")
-        greeting_layout.addWidget(greeting_description)
         window.greeting_input.setAccessibleName("Greeting message")
+        window.greeting_input.setAccessibleDescription("Your welcome message")
+        window.greeting_input.setToolTip("Your welcome message")
         window.greeting_input.setPlaceholderText("Enter your welcome message")
         window.greeting_input.setMinimumWidth(0)
         window.greeting_input.setFixedHeight(42)
@@ -203,9 +203,9 @@ class SettingsPanel(QFrame):
         window.notification_sound = NotificationSoundControl(window.notifications, self)
         self._row(general, "Notification sound", "Choose your alert sound",
                   window.notification_sound, control_size=(196, 36))
-        general.addSpacing(20)
-        window.activity.setWordWrap(True)
-        general.addWidget(window.activity)
+        # Keep runtime status available to its owner without a technical footer.
+        window.activity.setParent(self)
+        window.activity.hide()
         general.addStretch()
 
         self._heading(models, "Models", "Choose where O.R.S.I runs and which model it uses.")
@@ -234,11 +234,10 @@ class SettingsPanel(QFrame):
         skills.addStretch()
 
         self._heading(images, "Image Generation", "Preferences for your next generated image.")
-        self.image_hint = QLabel()
+        self.image_hint = FeedbackLabel()
         self.image_hint.setObjectName("settingsDescription")
         self.image_hint.setWordWrap(True)
         images.addWidget(self.image_hint)
-        images.addSpacing(20)
         cloud = getattr(window.inference, "cloud", window.inference)
         window.image_settings_page = ImageSettingsPage(
             getattr(cloud, "image_settings", None), getattr(window.service, "select_image_settings", None))
@@ -295,10 +294,10 @@ class SettingsPanel(QFrame):
         label = title if isinstance(title, QLabel) else QLabel(title)
         label.setObjectName("settingName")
         labels.addWidget(label)
-        description = QLabel(hint)
-        description.setObjectName("settingsDescription")
-        description.setWordWrap(True)
-        labels.addWidget(description)
+        if not control.accessibleDescription():
+            control.setAccessibleDescription(hint)
+        if not control.toolTip():
+            control.setToolTip(hint)
         horizontal.addLayout(labels, 1)
         if isinstance(control, QComboBox):
             control.setFixedSize(control_size[0], 36)

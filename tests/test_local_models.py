@@ -271,6 +271,8 @@ def test_settings_switch_runs_in_worker_and_updates_profile_display(catalog, tmp
         assert selector.isEnabled() and selector.currentData() == "new.gguf"
         assert "16,384 context" in window.local_model_details.text()
         assert "Experimental: file editing may fail" in window.local_model_details.text()
+        assert window.local_model_details.isHidden()
+        assert "16,384 context" in selector.toolTip()
         assert window.context_window.bar.maximum() == 16384
     finally:
         window.close()
