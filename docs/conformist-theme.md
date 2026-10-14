@@ -16,9 +16,15 @@ and syntax palette.
 
 The [Lucide outline icons](https://github.com/lucide-icons/lucide/tree/dab294f313897bacaa968b725b3259fa37c17bd1/icons)
 use a consistent neutral stroke. New message uses square-pen, Settings uses
-sliders, attachments use a paperclip, and Send uses a smaller white upward arrow
+sliders, attachments use a plus, and Send uses a smaller white upward arrow
 on a flat blue circle. Stop, microphone, folder, copy and check share the set.
 Icon hit targets, enabled/disabled state and actions remain unchanged.
+
+The attachment follow-up replaces the paperclip with the app's plus glyph,
+using Conformist's neutral stroke and weight. All 10 essential native
+Conformist/icon checks passed in 3.56 seconds; the 34 × 34 hit target is retained.
+Evidence and preview are in ignored `state/conformist-plus-icon.xml` and
+`state/conformist-plus-icon/`.
 
 The send-icon follow-up uses an 11-unit-radius circle and scales the centered
 arrow to 70%. Native preview retains the 34 × 34 hit target and 28 × 28 icon box.

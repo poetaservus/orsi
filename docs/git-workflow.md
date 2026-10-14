@@ -1,5 +1,19 @@
 # Git layout and baseline hygiene
 
+## Conformist attachment plus icon, 14 October 2026
+
+`codex/conformist-plus-icon` starts from clean main `ca43447`. Only Conformist's
+attachment artwork changes from a paperclip to a plus, retaining its neutral
+stroke, button geometry and attachment behavior. All **10 essential native
+Conformist/icon checks passed** in **3.56 seconds**; the composer preview was
+visually inspected. Full-suite and live inference gates were not run under
+the user's essential-test scope.
+
+Inventories are retained under ignored `state/backups/conformist-plus-icon-20261014/`,
+with prior main at `archive/2026-10-14/main-before-conformist-plus-icon`. Commit,
+fast-forward local main and remove only this merged branch. Other worktrees,
+historical/unmerged tips, private settings and remote refs remain unchanged.
+
 ## Conformist circular send icon, 14 October 2026
 
 `codex/conformist-send-circle` starts from clean main `b1390a7`. The Conformist

@@ -1,6 +1,6 @@
 # Conformist asset sources
 
-DM Sans is bundled unchanged from Google Fonts. Lucide icons use a fixed neutral stroke; the send icon has a flat blue circle and a centered white arrow scaled to 70%. Trailing whitespace in the OFL text is normalized; its full wording is preserved. Preserve the adjacent full licenses when sharing.
+DM Sans is bundled unchanged from Google Fonts. Lucide icons and the app’s existing plus glyph use a fixed neutral stroke; the send icon has a flat blue circle and a centered white arrow scaled to 70%. Trailing whitespace in the OFL text is normalized; its full wording is preserved. Preserve the adjacent full licenses when sharing.
 
 ```json
 {
@@ -67,10 +67,10 @@ DM Sans is bundled unchanged from Google Fonts. Lucide icons use a fixed neutral
     },
     {
       "file": "icons/attach.svg",
-      "source": "https://raw.githubusercontent.com/lucide-icons/lucide/dab294f313897bacaa968b725b3259fa37c17bd1/icons/paperclip.svg",
-      "source_sha256": "28308381efeab2e711feffe560a8eea33b092d440711aec108058041e5879f9f",
-      "sha256": "ea3e186e374c9765fd38cf79c5b5b6a3513b7772b7c4028f16fece8310281b81",
-      "bytes": 339
+      "source": "app/ui/assets/plus.svg",
+      "source_sha256": "a41577a8509b3f8199eea58928b1eeb1a8ad24b6b802af962ae63b0c53822d9f",
+      "sha256": "b95b43fbdf79661733a82c234f2e7144872bbca7cb524492d99499542d6e06a1",
+      "bytes": 248
     },
     {
       "file": "icons/folder.svg",
