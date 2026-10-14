@@ -7,8 +7,8 @@ from uuid import uuid4
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
-from PySide6.QtCore import QCoreApplication, QPoint, Qt
-from PySide6.QtWidgets import QApplication, QLabel as NativeLabel
+from PySide6.QtCore import QCoreApplication, QPoint, QRect, Qt
+from PySide6.QtWidgets import QApplication, QLabel as NativeLabel, QPushButton, QStyle, QStyleOptionButton
 
 from app.conversation.orchestrator import ConversationService
 from app.conversation.response_language import RESPONSE_LANGUAGES
@@ -224,9 +224,15 @@ def test_compact_translated_image_controls_fit_and_remain_reachable(app, code, t
             app.processEvents()
             bounds = control.rect().translated(control.mapTo(scroll.viewport(), QPoint()))
             assert scroll.viewport().rect().contains(bounds), (code, theme, control.objectName())
-        form = window.image_settings_page.layout().itemAt(0).layout()
+            if isinstance(control, QPushButton):
+                option = QStyleOptionButton()
+                control.initStyleOption(option)
+                content = control.style().subElementRect(QStyle.SubElement.SE_PushButtonContents, option, control)
+                text = control.fontMetrics().boundingRect(QRect(0, 0, content.width(), 1000),
+                    int(Qt.TextFlag.TextWordWrap), control.text())
+                assert text.height() <= content.height(), (code, theme, control.text())
         for control in window.image_settings_page.choices.values():
-            caption = form.labelForField(control)
+            caption = control.parentWidget().title
             assert caption.isVisible() and caption.height() > 0
             scroll.ensureWidgetVisible(caption)
             app.processEvents()

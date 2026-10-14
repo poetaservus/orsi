@@ -5,7 +5,7 @@ import json
 import pytest
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QLineEdit, QPushButton
+from PySide6.QtWidgets import QLabel, QLineEdit, QPushButton
 
 from app.ui.profile_application import ProfileApplication
 from app.vault.profiles import ProfileManager
@@ -41,7 +41,7 @@ def test_login_is_minimal_and_remembers_the_theme_after_lock_and_restart(qt, tmp
         assert window.theme_controller.current.identity == theme
         assert page.password.font().family() == window.theme_controller.current.family
         assert page.password.font().pixelSize() == 18
-        assert page.unlock_button.font().pixelSize() == 16
+        assert page.unlock_button.font().pixelSize() == 18
         assert buttons(page) == ["Unlock profile", "More"]
         assert [field for field in page.findChildren(QLineEdit) if field.isVisible()] == [page.password]
         assert not page.summary.isVisible() and not page.recovery.isVisible()
@@ -49,6 +49,11 @@ def test_login_is_minimal_and_remembers_the_theme_after_lock_and_restart(qt, tmp
         assert not window.input.placeholderText()
         assert abs(window.composer.geometry().center().y() - window.composer.parentWidget().rect().center().y()) <= 1
         assert page.more_button.font().underline()
+        assert not any(caption.isVisible() and caption.buddy() is page.password
+                       for caption in page.findChildren(QLabel, "loginFieldLabel"))
+        centers = [control.mapTo(login.scroll.viewport(), control.rect().center()).x()
+                   for control in (page.password, page.unlock_button, page.more_button)]
+        assert max(centers) - min(centers) <= 1
         assert page.unlock_button.width() < page.password.width() / 2
         assert login.height() < 370 and login.width() <= 480
         for control in (page.password, page.unlock_button, page.more_button):

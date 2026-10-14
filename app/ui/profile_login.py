@@ -24,7 +24,7 @@ QWidget#personalProfilePage QLabel#profileFeedback {
     padding: 10px 12px; color: #f0c5bb; font-size: 16px;
 }
 QWidget#personalProfilePage QPushButton#loginPrimary {
-    background: #3b5675; border-color: #686868; color: #f4f6fb; font-size: 16px; font-weight: 500;
+    background: #3b5675; border-color: #686868; color: #f4f6fb; font-size: 18px; font-weight: 500;
 }
 QWidget#personalProfilePage QPushButton#loginPrimary:hover { background: #46658a; }
 QWidget#personalProfilePage QPushButton#loginPrimary:pressed { background: #304761; }
@@ -34,7 +34,7 @@ QWidget#personalProfilePage QPushButton#loginMore:hover,
 QWidget#personalProfilePage QPushButton#loginMore:pressed,
 QWidget#personalProfilePage QPushButton#loginMore:checked {
     background: transparent; border: none; padding: 2px 0;
-    color: #b9c2d0; font-size: 16px; font-weight: 400; text-decoration: underline;
+    color: #b9c2d0; font-size: 18px; font-weight: 400; text-decoration: underline;
 }
 QWidget#personalProfilePage QPushButton#loginMore:focus { color: #e4e5eb; }
 """
@@ -46,6 +46,8 @@ class ProfileLoginPanel(QFrame):
         self.setObjectName("profileLoginPanel")
         self.setAccessibleName(ui_text('Profile login'))
         self.page = page
+        if page.compact_login:
+            self._center_login_controls(page)
         font = self.font()
         font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
         font.setHintingPreference(QFont.HintingPreference.PreferVerticalHinting)
@@ -74,7 +76,7 @@ class ProfileLoginPanel(QFrame):
             QFrame#profileLoginPanel QScrollBar::sub-page:vertical { background: transparent; }
         """)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(32, 28, 26, 28)
+        layout.setContentsMargins(36, 32, 36, 32)
         self.scroll = QScrollArea(self)
         self.scroll.setWidgetResizable(True)
         self.scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -83,7 +85,7 @@ class ProfileLoginPanel(QFrame):
         content.setObjectName("loginContent")
         body = QVBoxLayout(content)
         body.setContentsMargins(0, 0, 0, 0)
-        body.setSpacing(22)
+        body.setSpacing(28)
         body.setAlignment(Qt.AlignmentFlag.AlignTop)
         header = QVBoxLayout()
         header.setSpacing(8)
@@ -120,6 +122,29 @@ class ProfileLoginPanel(QFrame):
         page.login_layout_changed.connect(self.fit_to_parent)
         parent.theme_controller.changed.connect(self.fit_to_parent)
         self.fit_to_parent()
+
+    @staticmethod
+    def _center_login_controls(page):
+        # Change only the locked login instance; the shared profile workspace
+        # retains its own layouts, spacing and typography.
+        root = QWidget.layout(page)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(14)
+        for caption in page.findChildren(QLabel, "loginFieldLabel"):
+            if caption.buddy() is page.password:
+                root.removeWidget(caption)
+                caption.hide()
+                caption.deleteLater()
+        def center(layout):
+            for index in range(layout.count()):
+                item = layout.itemAt(index)
+                if item.widget() in (page.unlock_button, page.more_button):
+                    layout.setAlignment(item.widget(), Qt.AlignmentFlag.AlignHCenter)
+                elif item.layout() is not None:
+                    center(item.layout())
+        center(root)
+        page.password.setFixedHeight(52)
+        page.unlock_button.setFixedHeight(48)
 
     def fit_to_parent(self):
         parent = self.parentWidget()

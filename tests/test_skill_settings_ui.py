@@ -97,14 +97,17 @@ def test_embedded_install_remove_and_tab_changes_preserve_drafts(ui, tmp_path, m
     page.install_button.click()
     wait_worker(page)
     assert service.skill_registry.get("imported") is not None
-    assert page.installed.count() == 3 and window.input.isEnabled()
+    assert page.installed.count() == 3 and not window._settings_busy
     assert page.isVisible() and QApplication.activeModalWidget() is None
+    window.settings_panel.hide()
+    assert window.input.isEnabled()
     window.input.setPlainText("/skill imp")
     window.input.moveCursor(window.input.textCursor().MoveOperation.End)
     QApplication.processEvents()
     assert window.skill_picker.items.count() == 1
     window.skill_picker._choose(window.skill_picker.items.item(0))
     assert window.skill_picker.selected_name == "imported"
+    window._manage_skills()
     for row in range(page.installed.count()):
         if page.installed.item(row).data(Qt.ItemDataRole.UserRole) == "imported":
             page.installed.setCurrentRow(row)

@@ -1,5 +1,31 @@
 # Git layout and baseline hygiene
 
+## Spacious Settings and centered login, 15 October 2026
+
+`codex/spacious-settings` starts from clean local main `7b15478`. The five ordinary
+Settings modules use a centered, wider content column, rounded groups, visible
+descriptions, larger type and responsive controls. Skills separates import and
+installed entries with compact actions and visible descriptions. Regular login
+removes the password caption and centers Unlock and More/Less. Personal profile
+source, geometry and typography remain unchanged. See
+[the presentation and verification record](spacious-settings.md).
+
+All **54 essential native tests passed in 151.84 seconds**, with no failures,
+errors or skips; nine targeted checks passed in 18.19 seconds after the last
+wrapped-caption height correction, and four native caption-fitting checks passed
+in 4.62 seconds. Thirty module/theme/size states have reachable
+controls, and all 20 Personal profile baseline measurements match. Representative
+module, login and wrapped-caption previews were visually inspected. Earlier
+layout failures and the stale Skills assertion reproduced on starting main are
+recorded separately. Full-suite and live inference gates were not run under
+the user's necessary-UI-test scope.
+
+Pre-change refs/worktree inventories are retained under ignored
+`state/backups/spacious-settings-20261015/`. Preserve prior main at
+`archive/2026-10-15/main-before-spacious-settings`, commit, fast-forward local
+main and remove only the merged layout branch. Other worktrees, historical/
+unmerged tips, private settings and remote refs remain unchanged.
+
 ## Independent interface font, 15 October 2026
 
 `codex/font-selector` starts from clean local main `302e182`. Appearance's Text

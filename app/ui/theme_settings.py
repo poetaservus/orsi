@@ -1,15 +1,15 @@
 """Small Appearance controls for selecting, importing and exporting themes."""
-from app.ui.localization import ui_text, QPushButton, QFileDialog
+from app.ui.localization import ui_text, QFileDialog
 
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import (QHBoxLayout)
 
 from app.ui.inputs import ScrollSafeComboBox
 from app.ui.theme_runtime import PreparedTheme
 from app.ui.themes import BUILTIN_IDS, ThemeError, export_folder, import_folder
-from app.ui.profile_layout import FeedbackLabel
+from app.ui.profile_layout import AdaptiveRow, FeedbackLabel
+from app.ui.settings_layout import SettingsButton as QPushButton
 
 
 class ThemeControls:
@@ -21,16 +21,12 @@ class ThemeControls:
         self.selector.setToolTip(ui_text('Change the appearance immediately'))
         window.theme_selector = self.selector
         panel._row(layout, ui_text('Theme'), ui_text('Colors, background, font and icons'), self.selector)
-        actions = QHBoxLayout()
-        actions.setSpacing(10)
         self.add = QPushButton(ui_text('Add theme…'), panel)
         self.export = QPushButton(ui_text('Export current theme…'), panel)
         self.add.setAccessibleName(ui_text('Add theme'))
         self.export.setAccessibleName(ui_text('Export current theme'))
-        actions.addWidget(self.add)
-        actions.addWidget(self.export)
-        actions.addStretch()
-        layout.addLayout(actions)
+        self.actions = AdaptiveRow([self.add, self.export])
+        layout.addWidget(self.actions)
         self.status = FeedbackLabel(self.controller.notice)
         self.status.setObjectName("settingsDescription")
         self.status.setTextFormat(Qt.TextFormat.PlainText)

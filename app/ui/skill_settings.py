@@ -1,9 +1,10 @@
 """Settings-only skill import/review, installation and removal."""
-from app.ui.localization import ui_extra, ui_text, QDialog, QLabel, QLineEdit, QListWidget, QPushButton, QWidget, QFileDialog, QMessageBox
+from app.ui.localization import ui_extra, ui_text, QDialog, QLabel, QLineEdit, QListWidget, QWidget, QFileDialog, QMessageBox
 
 from app.ui.theme_runtime import apply_theme_style
-from PySide6.QtCore import QEvent, QThread, Qt, Signal, Slot
-from PySide6.QtWidgets import (QHBoxLayout, QListWidgetItem, QSizePolicy, QVBoxLayout)
+from PySide6.QtCore import QEvent, QSize, QThread, Qt, Signal, Slot
+from PySide6.QtGui import QFont
+from PySide6.QtWidgets import (QHBoxLayout, QListWidgetItem, QSizePolicy, QStyledItemDelegate, QStyle, QStyleOptionViewItem, QVBoxLayout)
 from html import escape
 
 from app.runtime.skills.contracts import SkillLoadError, SkillParseError
@@ -11,7 +12,39 @@ from app.runtime.skills.import_source import SkillImportError, prepare_import
 from app.runtime.skills.installer import SkillInstallError
 from app.ui.motion import install_smooth_scroll
 from app.ui.settings_style import settings_control_style
-from app.ui.profile_layout import FeedbackLabel
+from app.ui.profile_layout import AdaptiveRow, FeedbackLabel
+from app.ui.settings_layout import SettingsButton as QPushButton, settings_group
+from app.ui.theme_runtime import theme_color
+
+
+class _InstalledSkillDelegate(QStyledItemDelegate):
+    """Readable native selectable rows with a visible description."""
+    def sizeHint(self, option, index):  # noqa: N802
+        return QSize(0, max(80, option.fontMetrics.height() * 2 + 28))
+
+    def paint(self, painter, option, index):
+        background = QStyleOptionViewItem(option)
+        self.initStyleOption(background, index)
+        background.text = ""
+        option.widget.style().drawControl(QStyle.ControlElement.CE_ItemViewItem, background, painter, option.widget)
+        painter.save()
+        bounds = option.rect.adjusted(12, 12, -12, -12)
+        font = QFont(option.font)
+        font.setWeight(QFont.Weight.Medium)
+        painter.setFont(font)
+        painter.setPen(theme_color(option.widget, "#e4e5eb", "text"))
+        metrics = painter.fontMetrics()
+        name = metrics.elidedText(str(index.data() or ""), Qt.TextElideMode.ElideRight, bounds.width())
+        painter.drawText(bounds, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop, name)
+        bounds.setTop(bounds.top() + metrics.height() + 5)
+        font.setWeight(QFont.Weight.Normal)
+        font.setPixelSize(max(14, option.font.pixelSize() - 2))
+        painter.setFont(font)
+        painter.setPen(theme_color(option.widget, "#b9c2d0", "text_muted"))
+        description = painter.fontMetrics().elidedText(str(index.data(Qt.ItemDataRole.UserRole + 2) or ""),
+            Qt.TextElideMode.ElideRight, bounds.width())
+        painter.drawText(bounds, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop, description)
+        painter.restore()
 
 
 class SkillSourceInput(QLineEdit):
@@ -77,8 +110,14 @@ class SkillSettingsPage(QWidget):
         self.setObjectName("skillSettingsPage")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(10)
-        source_row = QHBoxLayout()
+        layout.setSpacing(0)
+        import_box = settings_group(layout, ui_text('Install'))
+        import_box.setContentsMargins(22, 20, 22, 20)
+        import_box.setSpacing(14)
+        source_label = QLabel(ui_text('Skill repository, folder or Markdown file'))
+        source_label.setObjectName("settingName")
+        source_label.setWordWrap(True)
+        import_box.addWidget(source_label)
         self.source = SkillSourceInput()
         self.source.setObjectName("skillSource")
         self.source.setAccessibleName(ui_text('Skill repository, folder or Markdown file'))
@@ -87,16 +126,17 @@ class SkillSettingsPage(QWidget):
         self.source.setPlaceholderText(ui_text('GitHub repository, skill folder or SKILL.md link'))
         self.source.setMaxLength(4096)
         self.source.setAcceptDrops(True)
+        self.source.setMinimumWidth(0)
+        self.source.setMinimumHeight(46)
+        source_label.setBuddy(self.source)
         self.browse = QPushButton(ui_text('Choose file…'))
         self.browse_folder = QPushButton(ui_text('Choose folder…'))
-        source_row.addWidget(self.source, 1)
-        source_row.addWidget(self.browse)
-        source_row.addWidget(self.browse_folder)
-        layout.addLayout(source_row)
+        import_box.addWidget(self.source)
         self.preview_button = QPushButton(ui_text('Preview'))
         self.preview_button.setObjectName("skillPreview")
         self.preview_button.setEnabled(False)
-        layout.addWidget(self.preview_button)
+        self.source_actions = AdaptiveRow([self.browse, self.browse_folder, self.preview_button])
+        import_box.addWidget(self.source_actions)
         self.preview_name = QLabel()
         self.preview_description = QLabel()
         self.preview_source = QLabel()
@@ -105,15 +145,17 @@ class SkillSettingsPage(QWidget):
             label.setTextFormat(Qt.TextFormat.PlainText)
             label.setWordWrap(True)
             label.hide()
-            layout.addWidget(label)
+            label.setObjectName("settingsDescription")
+            import_box.addWidget(label)
+        self.preview_name.setObjectName("settingName")
         self.preview_source.setWordWrap(False)
         self.preview_source.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self.preview_packages = QListWidget()
         install_smooth_scroll(self.preview_packages)
         self.preview_packages.setAccessibleName(ui_text('Packages to install'))
-        self.preview_packages.setMaximumHeight(100)
+        self.preview_packages.setMaximumHeight(180)
         self.preview_packages.hide()
-        layout.addWidget(self.preview_packages)
+        import_box.addWidget(self.preview_packages)
         self.install_button = QPushButton(ui_text('Install'))
         self.install_button.setObjectName("skillInstall")
         self.install_button.setEnabled(False)
@@ -121,18 +163,32 @@ class SkillSettingsPage(QWidget):
                               "only the main instructions. Selected skills can read their references when tools are enabled.")
         self.install_button.setAccessibleDescription(self._install_help)
         self.install_button.setToolTip(self._install_help)
-        layout.addWidget(self.install_button)
+        install_actions = QHBoxLayout()
+        install_actions.addStretch()
+        install_actions.addWidget(self.install_button)
+        import_box.addLayout(install_actions)
+        installed_box = settings_group(layout, ui_text('Installed skills'))
+        installed_box.setContentsMargins(12, 16, 12, 12)
+        installed_box.setSpacing(12)
         installed_row = QHBoxLayout()
-        installed_row.addWidget(QLabel(ui_text('Installed skills')), 1)
+        installed_row.addStretch()
         self.remove_button = QPushButton(ui_text('Remove…'))
         installed_row.addWidget(self.remove_button)
-        layout.addLayout(installed_row)
+        installed_box.addLayout(installed_row)
         self.installed = QListWidget()
         self.installed.setObjectName("installedSkills")
         install_smooth_scroll(self.installed)
-        self.installed.setMinimumHeight(150)
+        self.installed.setMinimumHeight(180)
+        self.installed.setMinimumWidth(0)
+        self.installed.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.installed.setItemDelegate(_InstalledSkillDelegate(self.installed))
         self.installed.setAccessibleName(ui_text('Installed skills'))
-        layout.addWidget(self.installed, 1)
+        installed_box.addWidget(self.installed)
+        self.empty_state = QLabel(ui_text('No skills installed.'))
+        self.empty_state.setObjectName("settingsDescription")
+        self.empty_state.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.empty_state.setMinimumHeight(90)
+        installed_box.addWidget(self.empty_state)
         self.status = FeedbackLabel()
         self.status.setTextFormat(Qt.TextFormat.PlainText)
         self.status.setWordWrap(True)
@@ -189,10 +245,14 @@ class SkillSettingsPage(QWidget):
             item.setData(Qt.ItemDataRole.UserRole, skill.name)
             item.setData(Qt.ItemDataRole.UserRole + 1,
                          skill.source_path.is_relative_to(self.service.skill_registry.global_root))
+            item.setData(Qt.ItemDataRole.UserRole + 2, " ".join(skill.description.split())[:512])
             item.setToolTip("<qt>" + escape(" ".join(skill.description.split())[:512]) + "</qt>")
             self.installed.addItem(item)
         if self.installed.count():
             self.installed.setCurrentRow(0)
+        self.installed.setFixedHeight(min(360, max(180, self.installed.count() * 80 + 12)))
+        self.installed.setVisible(bool(self.installed.count()))
+        self.empty_state.setVisible(not self.installed.count())
         self._update_buttons()
 
     def _update_buttons(self, *args):

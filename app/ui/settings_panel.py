@@ -15,6 +15,7 @@ from app.conversation.response_language import RESPONSE_LANGUAGES
 from app.ui.theme_runtime import apply_theme_style, apply_theme_tree, theme_color
 from app.ui.theme_settings import ThemeControls
 from app.ui.font_settings import FontControls
+from app.ui.settings_layout import SettingsPage, settings_group, settings_row
 from app.ui.profile_layout import FeedbackLabel
 
 
@@ -105,11 +106,8 @@ class SettingsPanel(QFrame):
             scroll.setFrameShape(QFrame.Shape.NoFrame)
             scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
             scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
-            page = QWidget()
-            page.setObjectName("settingsPage")
-            layout = QVBoxLayout(page)
-            layout.setContentsMargins(0, 0, 6, 0)
-            layout.setSpacing(0)
+            page = SettingsPage()
+            layout = page.content
             scroll.setWidget(page)
             self.pages.addWidget(scroll)
             self.page_layouts.append(layout)
@@ -176,21 +174,28 @@ class SettingsPanel(QFrame):
         general, models, skills, images, appearance = self.page_layouts
         self.future_settings = {}
         self._heading(general, ui_text('General'), ui_text('Everyday preferences for O.R.S.I.'))
+        general_page = general
+        general = settings_group(general)
         greeting_row = QFrame()
         greeting_row.setObjectName("settingRow")
         greeting_layout = QVBoxLayout(greeting_row)
-        greeting_layout.setContentsMargins(0, 12, 0, 14)
-        greeting_layout.setSpacing(6)
+        greeting_layout.setContentsMargins(0, 20, 0, 20)
+        greeting_layout.setSpacing(10)
         greeting_label = QLabel(ui_text('Greeting'))
         greeting_label.setObjectName("settingName")
+        greeting_label.setWordWrap(True)
         greeting_label.setBuddy(window.greeting_input)
         greeting_layout.addWidget(greeting_label)
+        greeting_help = QLabel(ui_text('Your welcome message'))
+        greeting_help.setObjectName("settingsDescription")
+        greeting_help.setWordWrap(True)
+        greeting_layout.addWidget(greeting_help)
         window.greeting_input.setAccessibleName(ui_text('Greeting message'))
         window.greeting_input.setAccessibleDescription(ui_text('Your welcome message'))
         window.greeting_input.setToolTip(ui_text('Your welcome message'))
         window.greeting_input.setPlaceholderText(ui_text('Enter your welcome message'))
         window.greeting_input.setMinimumWidth(0)
-        window.greeting_input.setFixedHeight(42)
+        window.greeting_input.setFixedHeight(50)
         window.greeting_input.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         greeting_layout.addWidget(window.greeting_input)
         general.addWidget(greeting_row)
@@ -231,6 +236,7 @@ class SettingsPanel(QFrame):
         window.tool_approval_toggle.toggled.connect(window._set_tool_approval_required)
         self._row(general, ui_text('Tool execution approval'), ui_text('Review tool changes before they run'),
                   window.tool_approval_toggle, control_size=(44, 24))
+        general = settings_group(general_page, ui_text('Notifications'))
         window.notification_toggle = NotificationSwitch(self)
         window.notification_toggle.setAccessibleName(ui_text('Notifications'))
         window.notification_toggle.setChecked(window.notifications.enabled)
@@ -240,13 +246,15 @@ class SettingsPanel(QFrame):
                   window.notification_toggle, control_size=(44, 24))
         window.notification_sound = NotificationSoundControl(window.notifications, self)
         self._row(general, ui_text('Notification sound'), ui_text('Choose your alert sound'),
-                  window.notification_sound, control_size=(196, 36))
+                  window.notification_sound, control_size=(280, 44))
         # Keep runtime status available to its owner without a technical footer.
         window.activity.setParent(self)
         window.activity.hide()
-        general.addStretch()
+        general_page.addStretch()
 
         self._heading(models, ui_text('Models'), ui_text('Choose where O.R.S.I runs and which model it uses.'))
+        models_page = models
+        models = settings_group(models)
         window.model_selector.setAccessibleName(ui_text('Mode'))
         self._row(models, ui_text('Mode'), ui_text('Local or cloud inference'), window.model_selector)
         window.local_model_row = self._row(models, window.local_model_label,
@@ -255,7 +263,7 @@ class SettingsPanel(QFrame):
         window.cloud_model_row = self._row(models, window.cloud_model_label,
             ui_text('Choose your cloud model.'), window.cloud_model_selector)
         models.addWidget(window.cloud_model_details)
-        models.addStretch()
+        models_page.addStretch()
 
         self._heading(skills, ui_text('Skills'), ui_text('Preview, install and manage skills here.'))
         window.skill_settings_page = SkillSettingsPage(window.service)
@@ -280,12 +288,13 @@ class SettingsPanel(QFrame):
         window.image_settings_page = ImageSettingsPage(
             getattr(cloud, "image_settings", None), getattr(window.service, "select_image_settings", None))
         images.addWidget(window.image_settings_page)
-        images.addSpacing(24)
-        self._future(images, "Transparent background", ui_text('Export images without a background'))
+        self._future(settings_group(images), "Transparent background", ui_text('Export images without a background'))
         images.addStretch()
 
         self._heading(appearance, ui_text('Appearance'), ui_text('Display and accessibility preferences.'))
-        self.theme_controls = ThemeControls(self, window, appearance)
+        appearance_page = appearance
+        self.theme_controls = ThemeControls(self, window, settings_group(appearance, ui_text('Theme')))
+        appearance = settings_group(appearance_page)
         window.gui_language_selector = ScrollSafeComboBox()
         window.gui_language_selector.setAccessibleName(ui_text("GUI Language"))
         window.gui_language_selector.setAccessibleDescription(ui_text(
@@ -304,7 +313,7 @@ class SettingsPanel(QFrame):
         self.font_controls = FontControls(self, window, appearance)
         self._future(appearance, "Reduced motion", ui_text('Limit interface animations'))
         self._future(appearance, "High contrast", ui_text('Increase contrast for easier reading'))
-        appearance.addStretch()
+        appearance_page.addStretch()
 
     def _future(self, layout, name, description):
         selector = self._placeholder(name)
@@ -330,38 +339,13 @@ class SettingsPanel(QFrame):
         description.setObjectName("settingsDescription")
         description.setWordWrap(True)
         layout.addWidget(description)
-        layout.addSpacing(20)
+        layout.addSpacing(32)
 
     @staticmethod
     def _row(layout, title, hint, control, *, indent=0, separator=True,
-             control_size=(240, 36)):
-        row = QFrame()
-        row.setObjectName("settingRow" if separator else "settingRowPlain")
-        horizontal = QHBoxLayout(row)
-        horizontal.setContentsMargins(indent, 12, 0, 12)
-        horizontal.setSpacing(12)
-        labels = QVBoxLayout()
-        labels.setSpacing(1)
-        label = title if isinstance(title, QLabel) else QLabel(title)
-        label.setObjectName("settingName")
-        label.setWordWrap(True)
-        labels.addWidget(label)
-        if not control.accessibleDescription():
-            control.setAccessibleDescription(hint)
-        if not control.toolTip():
-            control.setToolTip(hint)
-        horizontal.addLayout(labels, 1)
-        if isinstance(control, QComboBox):
-            control.setFixedSize(control_size[0], 36)
-            control.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
-            control.setMinimumContentsLength(1)
-        else:
-            control.setFixedSize(*control_size)
-        control.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-        horizontal.addWidget(control, 0, Qt.AlignmentFlag.AlignVCenter)
-        label.setBuddy(control)
-        layout.addWidget(row)
-        return row
+             control_size=(280, 44)):
+        return settings_row(layout, title, hint, control, indent=indent,
+                            separator=separator, control_size=control_size)
 
     def paintEvent(self, event):  # noqa: N802
         painter = QPainter(self)

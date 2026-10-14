@@ -48,6 +48,9 @@ def test_clean_settings_keep_module_introductions_and_accessible_help(app, theme
         assert {label.text() for label in general.findChildren(QLabel) if label.isVisible()} == {
             "General", "Everyday preferences for O.R.S.I.", "Greeting", "Personality",
             "Response Language", "Tool execution approval", "Notifications", "Notification sound",
+            "Your welcome message", "O.R.S.I.'s voice · Remembered for this profile",
+            "Auto follows your request · Remembered for this profile", "Review tool changes before they run",
+            "Alerts while O.R.S.I is in the background", "Choose your alert sound",
         }
         assert not window.activity.isVisible()
         assert not window.personality_hint.isVisible()
@@ -67,7 +70,8 @@ def test_clean_settings_keep_module_introductions_and_accessible_help(app, theme
             page = panel.pages.currentWidget().widget()
             assert any(label.text() == introduction and label.isVisible() for label in page.findChildren(QLabel))
             for row in page.findChildren(QFrame, "settingRow"):
-                assert len(row.findChildren(QLabel)) == 1
+                assert len(row.findChildren(QLabel)) == 2
+                assert all(label.wordWrap() for label in row.findChildren(QLabel))
         assert not panel.theme_controls.status.isVisible()
         assert "drop a folder/file" in window.skill_settings_page.source.toolTip()
         window.skill_settings_page.set_vault_guidance(True)
@@ -204,7 +208,7 @@ def test_greeting_field_is_visible_clickable_and_persists_at_all_window_sizes(ap
             visible_rect = field.rect().translated(field.mapTo(scroll.viewport(), QPoint()))
             assert field.isVisible() and field.isEnabled()
             assert scroll.viewport().rect().contains(visible_rect)
-            assert field.width() >= scroll.viewport().width() - 16
+            assert field.width() >= field.parentWidget().width() - 2
             center = field.mapTo(window.settings_panel, field.rect().center())
             assert window.settings_panel.childAt(center) is field
             QTest.mouseClick(field, Qt.MouseButton.LeftButton)
@@ -324,7 +328,7 @@ def test_settings_fill_window_through_resize_and_preserve_chat_draft(app):
             app.processEvents()
             assert panel.geometry() == window.rect()
             assert panel.pages.currentIndex() == 4
-            assert window.greeting_input.font().pixelSize() == (15 if size[0] < 900 else 16)
+            assert window.greeting_input.font().pixelSize() == 18
         panel.hide()
         window.settings_button.click()
         app.processEvents()
@@ -404,7 +408,7 @@ def test_settings_blur_actual_backdrop_and_restore_chat_busy_state(app, theme):
         blurred = window.grab(marker.geometry()).toImage()
         assert contrast(blurred) < contrast(before) * .2
         assert panel.graphicsEffect() is None and window._root.graphicsEffect() is not None
-        assert window.greeting_input.font().pixelSize() == 16
+        assert window.greeting_input.font().pixelSize() == 18
         assert panel.navigation[0].font().pixelSize() == 22
         assert window.input.font().pixelSize() != 16
         sound = window.notification_sound.selector

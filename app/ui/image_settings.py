@@ -1,13 +1,14 @@
 """Reusable image preferences, independent of chat model profiles."""
-from app.ui.localization import ui_text, QDialog, QDialogButtonBox, QFormLayout, QPushButton, QWidget
+from app.ui.localization import ui_text, QDialog, QDialogButtonBox, QWidget
 
 from app.ui.theme_runtime import apply_theme_style
 from PySide6.QtCore import Signal
-from PySide6.QtWidgets import (QHBoxLayout, QVBoxLayout)
+from PySide6.QtWidgets import QVBoxLayout
 from app.settings.images import ImageGenerationSettings
 from app.ui.inputs import ScrollSafeComboBox
 from app.ui.settings_style import settings_control_style
 from app.ui.profile_layout import AdaptiveRow, FeedbackLabel
+from app.ui.settings_layout import SettingsButton as QPushButton, settings_group, settings_row
 
 
 class ImageSettingsPage(QWidget):
@@ -21,11 +22,8 @@ class ImageSettingsPage(QWidget):
         self._busy = False
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(18)
-        form = QFormLayout()
-        form.setRowWrapPolicy(QFormLayout.RowWrapPolicy.WrapLongRows)
-        form.setVerticalSpacing(16)
-        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.ExpandingFieldsGrow)
+        layout.setSpacing(0)
+        form = settings_group(layout)
         self.choices = {}
         for name, label, values in (
             ("model", "Image model", ("gpt-image-2.5-flare", "gpt-image-2.5-sunburst", "gpt-image-2", "gpt-image-1.5", "gpt-image-1", "gpt-image-1-mini")),
@@ -38,18 +36,18 @@ class ImageSettingsPage(QWidget):
             selector.setAccessibleName(label)
             for value in values:
                 selector.addItem(ui_text(value) if name == "quality" else value, value)
-            selector.setFixedHeight(36)
-            selector.setMinimumWidth(240)
-            form.addRow(label, selector)
+            hints = {"model": "Model used for image generation.", "size": "Resolution of the generated image.",
+                     "quality": "Detail level of the generated image.", "output_format": "Format used to save generated images."}
+            settings_row(form, label, ui_text(hints[name]), selector)
             self.choices[name] = selector
-        layout.addLayout(form)
         self.notice = FeedbackLabel()
         self.setToolTip(ui_text('Availability depends on your cloud account. Images are saved at their original resolution.'))
-        layout.addWidget(self.notice)
+        form.addWidget(self.notice)
         self.save_button = QPushButton(ui_text('Save image settings'))
         self.reset_button = QPushButton(ui_text('Reset changes'))
         self.actions = AdaptiveRow([self.save_button, self.reset_button])
-        layout.addWidget(self.actions)
+        form.addWidget(self.actions)
+        form.addSpacing(12)
         self.save_button.clicked.connect(self._save)
         self.reset_button.clicked.connect(self.reload)
         self.reload()
