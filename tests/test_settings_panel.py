@@ -9,7 +9,7 @@ import pytest
 
 pytest.importorskip("PySide6")
 from PySide6.QtCore import QEvent, QPoint, QPointF, Qt
-from PySide6.QtGui import QColor, QEnterEvent, QFont, QPainter
+from PySide6.QtGui import QColor, QEnterEvent, QFont, QImage, QPainter, QRegion
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QFrame, QLabel, QStyle, QStyleOptionButton, QStyleOptionComboBox, QWidget
 
@@ -54,6 +54,10 @@ def test_clean_settings_keep_labels_and_accessible_help_without_subtexts(app, th
                                if label.isVisible() and label.text() == "Notifications"]
         assert len(notification_labels) == 1
         assert notification_labels[0].font().weight() >= QFont.Weight.DemiBold
+        approval_row = window.tool_approval_toggle.parentWidget()
+        notification_row = window.notification_toggle.parentWidget()
+        assert notification_row.parentWidget() is approval_row.parentWidget()
+        assert notification_row.y() - (approval_row.y() + approval_row.height()) <= 1
         assert not window.activity.isVisible()
         assert not window.personality_hint.isVisible()
         assert not window.response_language_hint.isVisible()
@@ -210,6 +214,78 @@ def test_tool_approval_switch_persists_and_preserves_other_preferences_and_draft
         assert preferences.load() == original | {"tool_approval_required": True}
     finally:
         restored.close()
+
+
+@pytest.mark.parametrize("theme", ["original", "conformist"])
+def test_switch_tracks_distinguish_states_without_a_focus_outline(app, theme):
+    def rendered(switch):
+        image = QImage(switch.size(), QImage.Format.Format_ARGB32_Premultiplied)
+        image.fill(Qt.GlobalColor.transparent)
+        switch.render(image, QPoint(), QRegion(), QWidget.RenderFlag.DrawChildren)
+        return image
+
+    window = MainWindow(None, "SYNTHETIC")
+    try:
+        window.theme_controller.select(theme)
+        window.show()
+        window.settings_panel.show()
+        app.processEvents()
+        app.setActiveWindow(window)
+        for switch in (window.tool_approval_toggle, window.notification_toggle):
+            for checked in (False, True):
+                switch.setChecked(checked)
+                wait_for(lambda: switch._slide.state() == switch._slide.State.Stopped)
+                switch.clearFocus()
+                unfocused = rendered(switch)
+                track = unfocused.pixelColor(22, 12)
+                if checked:
+                    assert track.blue() > track.red() + 40
+                else:
+                    assert max(track.red(), track.green(), track.blue()) - min(track.red(), track.green(), track.blue()) < 15
+                switch.setFocus()
+                app.processEvents()
+                assert switch.hasFocus()
+                assert rendered(switch) == unfocused
+                QTest.keyClick(switch, Qt.Key.Key_Space)
+                assert switch.isChecked() != checked
+    finally:
+        window.close()
+
+
+@pytest.mark.parametrize("theme", ["original", "conformist"])
+def test_settings_blur_draws_new_chat_greeting_in_its_original_position(app, theme):
+    window = MainWindow(None, "SYNTHETIC")
+    try:
+        window.resize(1280, 900)
+        window.theme_controller.select(theme)
+        window.show()
+        app.processEvents()
+        greeting = window.startup_greeting
+        bounds = greeting.rect().translated(greeting.mapTo(window, QPoint()))
+        geometry = greeting.geometry()
+        composer = window.composer.geometry()
+        for _ in range(2):
+            window.settings_panel.show()
+            app.processEvents()
+            greeting.hide()
+            hidden = window.grab().toImage()
+            greeting.show()
+            shown = window.grab().toImage()
+            changed = []
+            for y in range(100, shown.height(), 4):
+                for x in range(10, shown.width(), 4):
+                    a, b = hidden.pixelColor(x, y), shown.pixelColor(x, y)
+                    if max(abs(a.red() - b.red()), abs(a.green() - b.green()), abs(a.blue() - b.blue())) > 3:
+                        changed.append(QPoint(x, y))
+            assert len(changed) > 10
+            assert all(bounds.adjusted(-30, -30, 30, 30).contains(point) for point in changed)
+            assert greeting.geometry() == geometry and window.composer.geometry() == composer
+            window.settings_panel.hide()
+            app.processEvents()
+            assert window.startup_greeting_opacity.isEnabled()
+            assert greeting.geometry() == geometry and window.composer.geometry() == composer
+    finally:
+        window.close()
 
 
 @pytest.mark.parametrize("value", [None, 0, 1, "false", [], {}])

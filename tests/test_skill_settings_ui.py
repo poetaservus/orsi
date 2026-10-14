@@ -8,7 +8,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 pytest.importorskip("PySide6")
-from PySide6.QtCore import QMimeData, QPointF, Qt, QUrl
+from PySide6.QtCore import QMimeData, QPoint, QPointF, Qt, QUrl
 from PySide6.QtGui import QDropEvent
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QMessageBox, QPushButton
@@ -16,7 +16,7 @@ from PySide6.QtWidgets import QApplication, QMessageBox, QPushButton
 from app.ui.main_window import MainWindow
 from app.ui.skill_settings import SkillSettingsDialog
 from app.runtime.skills import import_source
-from tests.test_skill_activation import make_service, skill_payload
+from tests.test_skill_activation import make_service, skill_payload, write_skill
 from tests.test_skill_import_source import DATA, RAW
 
 
@@ -70,6 +70,38 @@ def test_settings_is_the_only_management_entry_and_busy_state_preserves_draft(ui
     assert page.isVisible() and QApplication.activeModalWidget() is None
     assert window.settings_panel.pages.currentIndex() == window.settings_panel.section_names.index("Skills")
     assert not model.requests
+
+
+@pytest.mark.parametrize("theme", ["original", "conformist"])
+def test_installed_skills_show_more_rows_with_remove_beside_heading(app, tmp_path, theme):
+    service, model = make_service(tmp_path)
+    for index in range(10):
+        write_skill(service.skill_registry.global_root, f"example-{index}")
+    service.skill_registry.discover()
+    window = MainWindow(service, "SYNTHETIC")
+    try:
+        window.theme_controller.select(theme)
+        window.show()
+        window._manage_skills()
+        page = window.skill_settings_page
+        for size in ((1280, 900), (760, 600)):
+            window.resize(*size)
+            window.settings_panel.page_transition.cancel()
+            app.processEvents()
+            assert page.installed.height() >= 420
+            for index in range(6):
+                assert page.installed.viewport().rect().contains(page.installed.visualItemRect(page.installed.item(index)))
+            assert not page.installed.viewport().rect().contains(page.installed.visualItemRect(page.installed.item(11)))
+            heading_y = page.installed_heading.mapTo(page, page.installed_heading.rect().center()).y()
+            remove_y = page.remove_button.mapTo(page, page.remove_button.rect().center()).y()
+            assert abs(heading_y - remove_y) <= 1
+            scroll = window.settings_panel.pages.currentWidget()
+            scroll.ensureWidgetVisible(page.remove_button)
+            app.processEvents()
+            assert scroll.viewport().rect().contains(page.remove_button.rect().translated(page.remove_button.mapTo(scroll.viewport(), QPoint())))
+        assert not model.requests
+    finally:
+        window.close()
 
 
 def test_embedded_install_remove_and_tab_changes_preserve_drafts(ui, tmp_path, monkeypatch):

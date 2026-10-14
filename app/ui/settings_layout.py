@@ -184,7 +184,7 @@ QWidget#settingsPage QLabel#settingsDescription { font-size: 12px; color: #b9c2d
 QWidget#settingsPage QFrame#settingsGroup { background: transparent; border: none; border-radius: 0; }
 QWidget#settingsPage QFrame#settingRow { background: transparent; border: none; border-bottom: 1px solid #35393f; border-radius: 0; }
 QWidget#settingsPage QFrame#settingRowPlain { background: transparent; border: none; }
-QWidget#settingsPage QListWidget#installedSkills { background: transparent; border: none; padding: 0; }
-QWidget#settingsPage QListWidget#installedSkills::item { padding: 14px 10px; border: none; border-bottom: 1px solid #35393f; border-radius: 0; }
+QWidget#settingsPage QListWidget#installedSkills { background: transparent; border: 1px solid #505050; border-radius: 8px; padding: 4px; }
+QWidget#settingsPage QListWidget#installedSkills::item { padding: 10px; border: none; border-radius: 6px; }
 QWidget#settingsPage QListWidget#installedSkills::item:selected { background: #3b5675; border-radius: 8px; }
 """

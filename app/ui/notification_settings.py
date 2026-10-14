@@ -4,10 +4,9 @@ from app.ui.localization import ui_text, QCheckBox, QComboBox, QPushButton, QWid
 from pathlib import Path
 
 from PySide6.QtCore import QEasingCurve, QRectF, QSize, Qt, QVariantAnimation
-from PySide6.QtGui import QColor, QIcon, QPainter, QPen
+from PySide6.QtGui import QIcon, QPainter
 from PySide6.QtWidgets import (QHBoxLayout)
 from app.ui.inputs import ScrollSafeComboBox
-from app.ui.settings_style import CONTROL_SURFACE
 from app.ui.theme_runtime import theme_color
 
 
@@ -47,14 +46,11 @@ class NotificationSwitch(QCheckBox):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor(CONTROL_SURFACE))
+        painter.setBrush(theme_color(self, "#2475ef", "accent") if self.isChecked()
+                         else theme_color(self, "#35393f", "border"))
         painter.drawRoundedRect(QRectF(0, 3, 44, 18), 9, 9)
-        painter.setBrush(QColor("#e4e5eb" if self.isEnabled() else "#a7adb7"))
+        painter.setBrush(theme_color(self, "#e4e5eb" if self.isEnabled() else "#a7adb7"))
         painter.drawRoundedRect(QRectF(3 + 24 * self._position, 5, 14, 14), 5, 5)
-        if self.hasFocus():
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.setPen(QPen(theme_color(self, "#888888", "focus"), 1))
-            painter.drawRoundedRect(QRectF(0.5, 1, 43, 22), 10, 10)
 
 
 class NotificationSoundControl(QWidget):

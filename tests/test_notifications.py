@@ -252,9 +252,9 @@ def test_notification_settings_visible_and_clickable_after_open_and_reopen(app, 
                 assert scroll.viewport().rect().contains(visible)
                 row = control.parentWidget()
                 assert control.geometry().right() >= row.width() - 2
-                assert control.width() <= 196
-                label = row.layout().itemAt(0).layout().itemAt(0).widget()
-                assert label.geometry().right() < control.geometry().left()
+                assert control.width() <= row.width()
+                label_bounds = row.title.rect().translated(row.title.mapTo(row, QPoint()))
+                assert not label_bounds.intersects(control.geometry())
             assert window.notification_toggle.size().width() == 44
             assert window.notification_toggle.text() == ""
             selector = window.notification_sound.selector

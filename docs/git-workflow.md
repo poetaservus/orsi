@@ -1,5 +1,28 @@
 # Git layout and baseline hygiene
 
+## Installed skills, switches and greeting backdrop, 15 October 2026
+
+`codex/settings-skills-switches` starts from clean local main `b793854`.
+Installed skills gains a taller outlined list without entry separators and
+Remove aligns with its heading. Notifications spacing and switch appearance
+are corrected. Settings bypasses Qt's nested greeting opacity effect during
+the backdrop blur, restoring it on close. See
+[the presentation and verification](spacious-settings.md).
+
+All **22 essential native UI checks passed in 37.12 seconds**, with no failures,
+errors or skips; two test-only Qt window-activation deprecation warnings remain.
+Twenty native module/theme/size states were checked and affected screenshots
+visually inspected. Compilation and whitespace checks pass. An unchanged
+notification layout assertion failed on a preserved starting-revision snapshot
+and now follows the current responsive row structure. Full-suite and live gates
+remain outside the user's focused UI scope.
+
+Inventories are retained under ignored
+`state/backups/settings-skills-switches-20261015/`. Preserve prior main at
+`archive/2026-10-15/main-before-settings-skills-switches`, commit, fast-forward
+local main and remove only the merged feature branch. Other worktrees,
+historical/unmerged tips, private settings and remote refs stay intact.
+
 ## Settings action alignment, 15 October 2026
 
 `codex/settings-action-alignment` starts from clean local main `3ed7306`.

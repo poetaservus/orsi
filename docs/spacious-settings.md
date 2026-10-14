@@ -1,5 +1,40 @@
 # Spacious Settings and centered login
 
+## Installed skills, switches and greeting backdrop, 15 October 2026
+
+Installed skills has a gray outline, no separators between entries and a
+420-pixel minimum height, showing at least six complete rows before list
+scrolling. Remove shares the Installed skills heading row. Notifications uses
+the same continuous row spacing as the other General controls. Switches paint
+a neutral gray off track and a blue on track in both bundled themes, with no
+focus outline; mouse and keyboard toggling remain available.
+
+Qt's nested greeting opacity effect was drawing the greeting near the bottom
+right while the chat root was blurred, despite unchanged widget geometry.
+Settings temporarily bypasses that child effect and restores its prior enabled
+state on close. A pixel-based check verifies the greeting's rendered location
+through repeated opens, and the existing intro/new-chat fade check still passes.
+
+All **22 essential native UI checks passed in 37.12 seconds**, without failures,
+errors or skips. Two Qt deprecation warnings concern test-only window activation.
+Coverage includes skill installation/removal, visible rows, header alignment,
+notification padding/persistence, switch rendering and keyboard interaction,
+blur cleanup, native caption controls, translated controls and greeting fades.
+Twenty native module/theme/size states were checked; affected module screenshots
+were visually inspected. Compilation and whitespace checks pass; no inference
+requests were made by the preview. Full-suite and live gates were not run under
+the user's focused UI scope.
+
+The earlier notification layout test failed identically on untouched starting
+main `b793854`: it expected the former nested layout and 196-pixel controls.
+It now checks actual label/control bounds, visibility and non-overlap while
+retaining its click, keyboard and persistence checks. The new switch check waits
+for the slide animation and explicitly activates its Qt window, avoiding native
+timing/focus assumptions. Evidence is under ignored
+`state/settings-skills-switches-final.xml`,
+`state/settings-skills-baseline-verified.xml` and
+`state/settings-skills-switches-preview/`.
+
 ## Settings action alignment, 15 October 2026
 
 Notifications now has one bold label aligned with its toggle. Skills places

@@ -49,6 +49,7 @@ class SettingsPanel(QFrame):
         self._backdrop_root = None
         self._backdrop_focus = None
         self._root_was_enabled = True
+        self._greeting_effect_was_enabled = None
         self._chrome_widgets = ()
         self._close_pending = False
         font = self.font()
@@ -232,7 +233,6 @@ class SettingsPanel(QFrame):
         window.tool_approval_toggle.toggled.connect(window._set_tool_approval_required)
         self._row(general, ui_text('Tool execution approval'), ui_text('Review tool changes before they run'),
                   window.tool_approval_toggle, control_size=(44, 24))
-        general = settings_group(general_page)
         window.notification_toggle = NotificationSwitch(self)
         window.notification_toggle.setAccessibleName(ui_text('Notifications'))
         window.notification_toggle.setChecked(window.notifications.enabled)
@@ -376,6 +376,10 @@ class SettingsPanel(QFrame):
         owner._position_overlays()
         self._backdrop_root = root
         if root.graphicsEffect() is None:
+            # Qt offsets a nested opacity effect while rendering the root blur.
+            # Bypass the greeting fade until the backdrop effect is released.
+            self._greeting_effect_was_enabled = owner.startup_greeting_opacity.isEnabled()
+            owner.startup_greeting_opacity.setEnabled(False)
             self.backdrop_blur = QGraphicsBlurEffect(root)
             self.backdrop_blur.setBlurRadius(18)
             self.backdrop_blur.setBlurHints(QGraphicsBlurEffect.BlurHint.QualityHint)
@@ -391,12 +395,15 @@ class SettingsPanel(QFrame):
         if self.backdrop_blur is not None and root.graphicsEffect() is self.backdrop_blur:
             root.setGraphicsEffect(None)
         self.backdrop_blur = None
+        owner = self.parentWidget()
+        if self._greeting_effect_was_enabled is not None:
+            owner.startup_greeting_opacity.setEnabled(self._greeting_effect_was_enabled)
+            self._greeting_effect_was_enabled = None
         for widget, parent in self._chrome_widgets:
             widget.setParent(parent)
             widget.show()
         self._chrome_widgets = ()
         root.setEnabled(self._root_was_enabled)
-        owner = self.parentWidget()
         owner._position_overlays()
         focus, self._backdrop_focus = self._backdrop_focus, None
         if focus is not None and not getattr(owner, "_closing", False):
