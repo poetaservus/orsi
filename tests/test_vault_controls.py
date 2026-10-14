@@ -1167,7 +1167,7 @@ def test_real_cloud_unlock_identifies_saved_key_and_requires_explicit_choice(qt,
     monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: (manual_prompts.append(True) or "", False))
     try:
         controller.start()
-        assert controller.window.startup_greeting.text() == "Unlock your personal profile"
+        assert not controller.window.startup_greeting.text() and not controller.window.startup_greeting.isVisible()
         assert controller.window._runtime_mode_label() == "Locked"
         page = controller.window.personal_profile_page
         page.password.setText(PASSWORD.decode())

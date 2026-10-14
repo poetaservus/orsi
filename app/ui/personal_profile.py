@@ -545,6 +545,9 @@ class PersonalProfilePage(QWidget):
         if self.location_error is not None:
             self.summary.setText(f"Previous profile location\n{locator.root}")
             return
+        if self.login and locator is not None:
+            self.summary.setText(f"Profile Path:\n{locator.root}")
+            return
         self.summary.setText("Current unencrypted storage. Set up or select a personal profile here." if locator is None else
             f"{'Local' if locator.mode == 'local' else 'Portable'} · {'Encrypted' if locator.encrypted else 'Unencrypted'} · "
             f"{'Unlocked' if self.manager.active else 'Locked'}\n{locator.root}")

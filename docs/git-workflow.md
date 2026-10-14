@@ -1,5 +1,30 @@
 # Git layout and baseline hygiene
 
+## Login panel polish, 14 October 2026
+
+`codex/login-panel-polish` starts from clean main `8cdc851`. Normal login labels
+the profile location `Profile Path:` instead of repeating storage/encryption/lock
+status. More/Less now invalidates and measures the inner page before its container,
+so Less returns the panel to its compact height without a residual scrollbar.
+Login fields and buttons keep neutral borders on focus/press across themes;
+other controls retain their existing theme focus roles. Locked windows suppress
+the background greeting and disabled-composer prompt behind the blur.
+
+The final **22 essential native checks passed** in **50.04 seconds**, with no
+failures/errors/skips. Checks cover More/Less geometry, border pixels on click,
+hidden backdrop text, theme persistence, password/recovery unlock, onboarding
+and saved/manual/cancel credential choices. Native expanded/collapsed/focused/
+pressed and full-window previews were inspected. Evidence is under ignored
+`state/login-polish-final.xml` and `state/login-polish-preview/`. Full-suite and
+live inference gates were not run under the user's essential-test scope. No
+provider requests, authentication-policy changes or private settings migrations.
+
+Ref/worktree inventories are retained under ignored
+`state/backups/login-panel-polish-20261014/`, with prior main preserved at
+`archive/2026-10-14/main-before-login-panel-polish`. Commit, fast-forward local
+main and remove only this merged branch. Other worktrees, historical/unmerged
+tips, private settings and remote refs remain unchanged; no push is part of this task.
+
 ## Minimal themed profile login, 14 October 2026
 
 `codex/minimal-profile-login` starts from clean main `d363b11`. Normal login

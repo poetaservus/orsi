@@ -101,7 +101,7 @@ def themed_stylesheet(widget, source):
                             "surface_pressed" if ":pressed" in selectors else
                             "surface_hover" if ":hover" in selectors else role or "surface")
                 elif "border" in prop:
-                    role = "focus" if ":focus" in selectors else "border"
+                    role = getattr(widget, "_theme_focus_border_role", "focus") if ":focus" in selectors else "border"
                 elif prop == "color":
                     role = ("user_text" if "#userMessage" in selectors else
                             "composer_text" if "#messageInput" in selectors else

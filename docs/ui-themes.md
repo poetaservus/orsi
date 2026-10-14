@@ -155,6 +155,9 @@ includes it.
 The login panel follows the remembered appearance. Its default view contains a
 password field, a compact unlock button and an underlined **More** control.
 More reveals recovery, profile details and alternative profile/restore actions.
+The expanded view labels the location **Profile Path:**. Less shrinks the panel
+back to its compact size. Login fields and buttons retain neutral borders on
+focus, and the locked backdrop does not repeat the login greeting.
 The password and recovery-key Enter shortcuts retain their existing behavior.
 
 After opening a profile, the app remembers its appearance in ignored application

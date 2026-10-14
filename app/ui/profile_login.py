@@ -14,7 +14,9 @@ QWidget#personalProfilePage QLabel#loginProfileSummary {
 QWidget#personalProfilePage QLabel#loginFieldLabel { color: #e4e5eb; font-size: 16px; }
 QWidget#personalProfilePage QLabel#loginOptionsHeading { color: #a2afc1; font-size: 16px; }
 QWidget#personalProfilePage QLineEdit { font-size: 18px; border-radius: 8px; padding: 8px 10px; }
+QWidget#personalProfilePage QLineEdit:focus { border-color: #40536d; outline: none; }
 QWidget#personalProfilePage QPushButton { font-size: 16px; padding: 6px 14px; }
+QWidget#personalProfilePage QPushButton:focus { border-color: #40536d; outline: none; }
 QWidget#personalProfilePage QLabel#profileFeedback {
     background: #252d41; border: 1px solid #61748f; border-radius: 6px;
     padding: 10px 12px; color: #f0c5bb; font-size: 16px;
@@ -24,7 +26,7 @@ QWidget#personalProfilePage QPushButton#loginPrimary {
 }
 QWidget#personalProfilePage QPushButton#loginPrimary:hover { background: #46658a; }
 QWidget#personalProfilePage QPushButton#loginPrimary:pressed { background: #304761; }
-QWidget#personalProfilePage QPushButton#loginPrimary:focus { border-color: #91bfe0; }
+QWidget#personalProfilePage QPushButton#loginPrimary:focus { border-color: #6983a2; outline: none; }
 QWidget#personalProfilePage QPushButton#loginMore,
 QWidget#personalProfilePage QPushButton#loginMore:hover,
 QWidget#personalProfilePage QPushButton#loginMore:pressed,
@@ -46,6 +48,7 @@ class ProfileLoginPanel(QFrame):
         font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
         font.setHintingPreference(QFont.HintingPreference.PreferVerticalHinting)
         self.setFont(font)
+        page._theme_focus_border_role = "border"
         apply_theme_style(page, page._theme_style_source + _LOGIN_PAGE_STYLE)
         # Login is a sibling of the application root, so only its backdrop blurs.
         self.backdrop_blur = QGraphicsBlurEffect(parent._root)
@@ -119,6 +122,11 @@ class ProfileLoginPanel(QFrame):
     def fit_to_parent(self):
         parent = self.parentWidget()
         self.scroll.widget().ensurePolished()
+        # Recompute the page before its container: More/Less changes its hint.
+        page_layout = QWidget.layout(self.page)
+        page_layout.invalidate()
+        page_layout.activate()
+        self.page.updateGeometry()
         self.scroll.widget().layout().activate()
         minimum = 300 if self.page.compact_login else 280
         preferred_height = max(minimum, self.scroll.widget().sizeHint().height() + 56)

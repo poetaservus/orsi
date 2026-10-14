@@ -244,17 +244,19 @@ class ProfileApplication(QObject):
         if locked:
             self.window._profile_locked = True
             if setup_required:
-                greeting, hint, activity = "Create your profile", "Create a profile to chat", "Profile setup required"
+                activity = "Profile setup required"
             elif self.manager.deletion_pending:
-                greeting, hint, activity = "Profile deletion pending", "Finish deleting the profile to continue", "Profile deletion needs a retry"
+                activity = "Profile deletion needs a retry"
             elif self.manager.profile_deleted:
-                greeting, hint, activity = "Choose how to continue", "Choose a profile to chat", "Profile deleted"
+                activity = "Profile deleted"
             elif location_error is not None:
-                greeting, hint, activity = "Choose how to continue", "Choose a profile to chat", "Profile unavailable"
+                activity = "Profile unavailable"
             else:
-                greeting, hint, activity = "Unlock your personal profile", "Unlock your personal profile to chat", "Profile locked · Unlock to continue"
-            self.window.startup_greeting.setText(greeting)
-            self.window.input.setPlaceholderText(hint)
+                activity = "Profile locked · Unlock to continue"
+            self.window._intro_active = False
+            self.window.startup_greeting.clear()
+            self.window.startup_greeting.hide()
+            self.window.input.setPlaceholderText("")
             self.window.activity.set_activity(activity)
             self.window._update_context_window()
             self.window.composer.setEnabled(False)

@@ -45,6 +45,8 @@ def test_login_is_minimal_and_remembers_the_theme_after_lock_and_restart(qt, tmp
         assert buttons(page) == ["Unlock profile", "More"]
         assert [field for field in page.findChildren(QLineEdit) if field.isVisible()] == [page.password]
         assert not page.summary.isVisible() and not page.recovery.isVisible()
+        assert not window.startup_greeting.text() and not window.startup_greeting.isVisible()
+        assert not window.input.placeholderText()
         assert page.more_button.font().underline()
         assert page.unlock_button.width() < page.password.width() / 2
         assert login.height() < 370 and login.width() <= 480
@@ -57,16 +59,32 @@ def test_login_is_minimal_and_remembers_the_theme_after_lock_and_restart(qt, tmp
             bounds = page.more_button.rect().translated(page.more_button.mapTo(login.scroll.viewport(), QPoint()))
             assert login.scroll.viewport().rect().contains(bounds)
         collapsed = login.height()
+        window.activateWindow()
+        qt.processEvents()
+        page.more_button.setFocus()
+        qt.processEvents()
+        field_border = page.password.grab().toImage().pixelColor(page.password.width() // 2, 0)
+        QTest.mouseClick(page.password, Qt.MouseButton.LeftButton)
+        qt.processEvents()
+        assert page.password.hasFocus()
+        assert page.password.grab().toImage().pixelColor(page.password.width() // 2, 0) == field_border
+        button_border = page.unlock_button.grab().toImage().pixelColor(page.unlock_button.width() // 2, 0)
+        QTest.mousePress(page.unlock_button, Qt.MouseButton.LeftButton)
+        qt.processEvents()
+        assert page.unlock_button.grab().toImage().pixelColor(page.unlock_button.width() // 2, 0) == button_border
+        QTest.mouseRelease(page.unlock_button, Qt.MouseButton.LeftButton, pos=QPoint(-10, -10))
         page.password.setText("Preserve this draft")
         page.more_button.click()
         qt.processEvents()
         assert page.recovery.isVisible() and page.summary.isVisible()
+        assert page.summary.text() == f"Profile Path:\n{manager.locator.root}"
         assert login.height() > collapsed
         assert {"New profile…", "Select existing…", "Use current unencrypted storage", "Restore encrypted backup…"} <= set(buttons(page))
         for size in ((760, 600), (1280, 900)):
             window.resize(*size)
             qt.processEvents()
             assert window.rect().contains(login.geometry())
+            assert not window.startup_greeting.isVisible()
             assert login.scroll.horizontalScrollBar().maximum() == 0
             for button in page.findChildren(QPushButton):
                 if button.isVisible():
@@ -79,6 +97,8 @@ def test_login_is_minimal_and_remembers_the_theme_after_lock_and_restart(qt, tmp
         qt.processEvents()
         assert not page.recovery.text() and page.password.text() == "Preserve this draft"
         assert buttons(page) == ["Unlock profile", "More"]
+        assert login.height() == collapsed
+        assert login.scroll.verticalScrollBar().maximum() == 0
         cache = controller.login_appearance.store.path.read_bytes()
         assert json.loads(cache) == {"version": 1, "profile_id": manager.locator.profile_id, "theme_id": theme}
         assert b"Preserve this draft" not in cache
