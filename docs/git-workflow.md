@@ -1,5 +1,26 @@
 # Git layout and baseline hygiene
 
+## Conformist theme, 14 October 2026
+
+`codex/conformist-theme` starts from clean main `356482e`. The new bundled theme
+uses flat charcoal surfaces, one blue accent, Google Fonts DM Sans and Lucide
+outline icons. Font/icon licenses travel with exports, and public portable/Python
+packages include the assets. Existing user selection, response formatting,
+animations, notifications/audio and inference remain unchanged. See
+[the design and essential verification](conformist-theme.md).
+
+The final native essential run passed **124 tests**, with no failures/errors/skips,
+in **44.32 seconds**. Actual DM Sans wrapping and switching, font release,
+license-preserving round trips, packaging, settings, composer/approval motion and
+notification regressions passed. Native previews were visually inspected.
+Full-suite and live inference gates were not run under the user's essential-test scope.
+
+Ref/worktree inventories are preserved under ignored
+`state/backups/conformist-theme-20261014/`, with prior main retained at
+`archive/2026-10-14/main-before-conformist-theme`. Commit, fast-forward local main
+and remove only this merged feature branch. Other worktrees, historical/unmerged
+tips, private preferences and remote refs remain intact; no push is authorized here.
+
 ## Cosmetic UI themes, 14 October 2026
 
 `codex/ui-themes` starts from clean main `32a51bc`. Theme manifests control only

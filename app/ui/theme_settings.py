@@ -6,7 +6,7 @@ from PySide6.QtWidgets import QFileDialog, QHBoxLayout, QLabel, QPushButton
 
 from app.ui.inputs import ScrollSafeComboBox
 from app.ui.theme_runtime import PreparedTheme
-from app.ui.themes import ThemeError, export_folder, import_folder
+from app.ui.themes import BUILTIN_IDS, ThemeError, export_folder, import_folder
 
 
 class ThemeControls:
@@ -87,7 +87,7 @@ class ThemeControls:
         if not parent:
             return
         identity = self.controller.current.identity
-        name = "my-" + identity if identity in {"original", "ocean"} else identity
+        name = "my-" + identity if identity in BUILTIN_IDS else identity
         destination = Path(parent) / name
         number = 2
         while destination.exists():

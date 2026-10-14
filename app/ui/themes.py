@@ -13,6 +13,7 @@ from app.state.storage import JsonStore
 
 
 ASSETS = Path(__file__).with_name("assets")
+BUILTIN_IDS = {"original", "ocean", "conformist"}
 PALETTE_DEFAULTS = {
     "text": "#dce2ee", "text_muted": "#b1b8c8", "text_disabled": "#777d8b",
     "surface": "#243247", "surface_hover": "#2d4059", "surface_pressed": "#1c2a3f",
@@ -79,6 +80,7 @@ def _asset_name(value):
 
 def referenced_assets(manifest):
     assets = set(manifest.get("icons", {}).values())
+    assets.update(manifest.get("licenses", []))
     if manifest.get("font", {}).get("file"):
         assets.add(manifest["font"]["file"])
     if manifest.get("background", {}).get("type") == "image":
@@ -87,12 +89,12 @@ def referenced_assets(manifest):
 
 
 def validate_manifest(manifest, *, builtin=False):
-    _fields(manifest, {"version", "id", "name", "palette", "font", "background", "icons"}, "theme")
+    _fields(manifest, {"version", "id", "name", "palette", "font", "background", "icons", "licenses"}, "theme")
     if type(manifest.get("version")) is not int or manifest["version"] != 1:
         raise ThemeError("This theme format version is not supported.")
     if not isinstance(manifest.get("id"), str) or not _ID.fullmatch(manifest["id"]):
         raise ThemeError("Theme ID must start with a lowercase letter and contain letters, digits, _ or -.")
-    if not builtin and manifest["id"] in {"original", "ocean"}:
+    if not builtin and manifest["id"] in BUILTIN_IDS:
         raise ThemeError("Choose a new ID; built-in themes cannot be replaced.")
     name = manifest.get("name")
     if not isinstance(name, str) or not name.strip() or len(name) > 80 or any(ord(c) < 32 for c in name):
@@ -113,6 +115,12 @@ def validate_manifest(manifest, *, builtin=False):
     for value in icons.values():
         if PurePosixPath(_asset_name(value)).suffix.lower() not in {".svg", ".png"}:
             raise ThemeError("Icons must be static SVG or PNG files.")
+    licenses = manifest.get("licenses", [])
+    if not isinstance(licenses, list) or len(licenses) > 8:
+        raise ThemeError("Include at most eight license text files.")
+    for value in licenses:
+        if PurePosixPath(_asset_name(value)).suffix.lower() != ".txt":
+            raise ThemeError("Licenses must be relative text files.")
     background = manifest.get("background", {})
     _fields(background, {"type", "color", "colors", "direction", "file", "fit", "top_crop"}, "background")
     if background:
@@ -212,15 +220,15 @@ def _read_file(path, limit):
     return data
 
 
-def import_folder(path):
+def import_folder(path, *, builtin=False):
     path = Path(path).absolute()
     if path.is_dir():
         path /= "theme.json"
     try:
-        manifest = validate_manifest(json.loads(_read_file(path, 64 * 1024).decode("utf-8-sig")))
+        manifest = validate_manifest(json.loads(_read_file(path, 64 * 1024).decode("utf-8-sig")), builtin=builtin)
         assets = {name: base64.b64encode(_read_file(path.parent / name, MAX_ASSET)).decode("ascii")
                   for name in referenced_assets(manifest)}
-        return validate_package({"manifest": manifest, "assets": assets})
+        return validate_package({"manifest": manifest, "assets": assets}, builtin=builtin)
     except ThemeError:
         raise
     except (OSError, ValueError, TypeError):
@@ -233,6 +241,10 @@ class ThemeRepository:
         self.store = JsonStore(preferences.path.parent / "themes" / "catalog_v1.json") if preferences else None
         self.packages = {m["id"]: {"manifest": deepcopy(m), "assets": {}} for m in (ORIGINAL, OCEAN)}
         self.error = ""
+        try:
+            self.packages["conformist"] = import_folder(ASSETS / "themes" / "conformist", builtin=True)
+        except ThemeError:
+            self.error = "Conformist could not be loaded. Original and Ocean remain available."
         self._catalog = None
         try:
             if self.store is not None and self.store.path.exists() and self.store.path.stat().st_size > MAX_CATALOG:
@@ -290,8 +302,8 @@ def export_folder(package, destination):
     """Export to a new folder so an export cannot overwrite existing user files."""
     package = deepcopy(package)
     manifest = package["manifest"]
-    manifest["id"] = "my-" + manifest["id"] if manifest["id"] in {"original", "ocean"} else manifest["id"]
-    if manifest["name"] in {"Original", "Ocean"}:
+    manifest["id"] = "my-" + manifest["id"] if manifest["id"] in BUILTIN_IDS else manifest["id"]
+    if manifest["name"] in {"Original", "Ocean", "Conformist"}:
         manifest["name"] = "My " + manifest["name"]
     if not manifest.get("background"):
         manifest["background"] = {"type": "image", "file": "background.png", "fit": "stretch", "top_crop": 68}

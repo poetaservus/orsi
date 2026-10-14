@@ -1,6 +1,7 @@
 """Pilot export must preserve private development data and detect tampering."""
 import json
 from pathlib import Path
+import shutil
 import subprocess
 import zipfile
 
@@ -20,6 +21,8 @@ def inputs(tmp_path):
     icon = source / "app/ui/assets/orsi.ico"
     icon.parent.mkdir(parents=True)
     icon.write_bytes((Path(__file__).resolve().parents[1] / "app/ui/assets/orsi.ico").read_bytes())
+    shutil.copytree(Path(__file__).resolve().parents[1] / "app/ui/assets/themes",
+                    source / "app/ui/assets/themes")
     directory = source / "app/conversation/personalities"
     directory.mkdir(parents=True)
     for personality in (Path(__file__).resolve().parents[1] / "app/conversation/personalities").glob("*.md"):
@@ -64,6 +67,11 @@ def test_export_uses_committed_public_files_and_never_copies_instance_data(input
     assert not (destination / ".git").exists() and not (destination / "tests").exists()
     assert (destination / "runtime/python/Lib/site-packages/demo-1.0.dist-info/licenses/LICENSE").exists()
     assert (destination / "app/ui/assets/orsi.ico").read_bytes() == (source / "app/ui/assets/orsi.ico").read_bytes()
+    conformist = destination / "app/ui/assets/themes/conformist"
+    assert json.loads((conformist / "theme.json").read_text())["name"] == "Conformist"
+    assert (conformist / "fonts/DMSans.ttf").read_bytes() == (source / "app/ui/assets/themes/conformist/fonts/DMSans.ttf").read_bytes()
+    assert "SIL OPEN FONT LICENSE" in (conformist / "fonts/OFL-DM-Sans.txt").read_text()
+    assert "ISC License" in (conformist / "icons/LICENSE-Lucide.txt").read_text()
     # Git archive can apply the host's text line endings; the entire guidance is preserved.
     assert (destination / "app/conversation/personalities/choom.md").read_text(encoding="utf-8") == (
         source / "app/conversation/personalities/choom.md").read_text(encoding="utf-8")

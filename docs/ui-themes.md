@@ -3,6 +3,9 @@
 Settings → Appearance → Theme changes the background, interface palette, user
 bubbles, composer, interface/chat font family and action icons immediately.
 Original preserves the existing appearance. Ocean provides a contrasting example.
+Conformist uses flat charcoal surfaces, one blue accent, bundled Google Fonts
+DM Sans and Lucide outline icons. It works offline and is available to every profile.
+See [Conformist's design and verification](conformist-theme.md).
 See the [essential verification record](ui-themes-verification.md).
 
 Response formatting, Markdown parsing, headings, emphasis, spacing, font sizes,
@@ -23,7 +26,7 @@ The microphone and folder retain their current placeholder behavior.
 
 To share a theme, share the exported folder. No installation, dependency downloads,
 registry changes, code, account connection or restart is needed. Built-in IDs
-`original` and `ocean` are reserved; their exports receive editable `my-` IDs.
+`original`, `ocean` and `conformist` are reserved; their exports receive editable `my-` IDs.
 
 A minimal theme is:
 
@@ -79,7 +82,9 @@ Add only the assets the manifest references:
 A font can name an installed family or supply a TTF/OTF file. Bundled fonts load
 from memory and are released when switching away or closing the profile. Missing
 installed fonts fall back to Saira, with an inline explanation. Keep any font or
-artwork licenses when distributing your theme.
+artwork licenses when distributing your theme. List up to eight relative `.txt`
+paths in an optional `licenses` array; these files are copied on import and export
+alongside the assets. Conformist includes the complete DM Sans and Lucide notices.
 
 Background options:
 

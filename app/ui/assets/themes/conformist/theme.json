@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "id": "conformist",
+  "name": "Conformist",
+  "font": {
+    "family": "DM Sans",
+    "file": "fonts/DMSans.ttf"
+  },
+  "background": {
+    "type": "solid",
+    "color": "#171717"
+  },
+  "palette": {
+    "text": "#ececec",
+    "text_muted": "#a3a3a3",
+    "text_disabled": "#737373",
+    "surface": "#262626",
+    "surface_hover": "#333333",
+    "surface_pressed": "#202020",
+    "border": "#3a3a3a",
+    "focus": "#3b82f6",
+    "accent": "#3b82f6",
+    "selection": "#3b82f6",
+    "selection_text": "#ffffff",
+    "icon": "#d4d4d4",
+    "settings_top": "#202020",
+    "settings_bottom": "#202020",
+    "composer_top": "#262626",
+    "composer_middle": "#262626",
+    "composer_bottom": "#262626",
+    "composer_border": "#3a3a3a",
+    "composer_highlight": "#00000000",
+    "composer_text": "#ececec",
+    "placeholder": "#a3a3a3",
+    "user_bubble_top": "#303030",
+    "user_bubble_bottom": "#303030",
+    "user_bubble_border": "#303030",
+    "user_text": "#ececec",
+    "inline_reference": "#333333",
+    "scrollbar": "#525252",
+    "error": "#ececec",
+    "success": "#ececec"
+  },
+  "icons": {
+    "new_message": "icons/new_message.svg",
+    "settings": "icons/settings.svg",
+    "send": "icons/send.svg",
+    "stop": "icons/stop.svg",
+    "microphone": "icons/microphone.svg",
+    "attach": "icons/attach.svg",
+    "folder": "icons/folder.svg",
+    "copy": "icons/copy.svg",
+    "check": "icons/check.svg"
+  },
+  "licenses": [
+    "fonts/OFL-DM-Sans.txt",
+    "icons/LICENSE-Lucide.txt"
+  ]
+}

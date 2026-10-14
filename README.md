@@ -24,7 +24,7 @@ runtime\python\python.exe -m app.main
 
 ## Current capabilities
 
-- **Settings → Appearance → Theme** selects Original or Ocean, imports custom
+- **Settings → Appearance → Theme** selects Original, Ocean or Conformist, imports custom
   themes, and exports an editable theme folder. Themes change only cosmetic
   values. See [creating and sharing UI themes](docs/ui-themes.md).
 

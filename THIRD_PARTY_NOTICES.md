@@ -1,5 +1,20 @@
 # Third-party notices
 
+## Conformist theme: DM Sans and Lucide
+
+Conformist bundles the unmodified DM Sans variable font from the official
+[Google Fonts repository](https://github.com/google/fonts/tree/5b35b7208dd4100571326fdf37f030b32a524232/ofl/dmsans),
+under the SIL Open Font License 1.1. Its complete copyright notice and license are
+in `app/ui/assets/themes/conformist/fonts/OFL-DM-Sans.txt`.
+
+Its outline icons are adapted from
+[Lucide](https://github.com/lucide-icons/lucide/tree/dab294f313897bacaa968b725b3259fa37c17bd1/icons),
+with fixed stroke colors and a flat accent background on Send. The complete
+ISC and applicable Feather MIT notices are in
+`app/ui/assets/themes/conformist/icons/LICENSE-Lucide.txt`. Both license files
+travel with exported/imported themes. Pinned source URLs and asset hashes are
+recorded in the theme folder's `SOURCES.md`.
+
 ## Offline language hints
 
 The portable runtime installs langid 1.1.6 (BSD license), by Marco Lui and
