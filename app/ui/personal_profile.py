@@ -1,5 +1,5 @@
 """Personal profile controls shared by settings and the locked-profile login."""
-from app.ui.localization import ui_text, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QLabel, QLineEdit, QListWidget, QMenu, QPushButton, QScrollArea, QTabWidget, QTextEdit, QWidget, QFileDialog, QMessageBox
+from app.ui.localization import ui_extra, ui_text, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFormLayout, QLabel, QLineEdit, QListWidget, QMenu, QPushButton, QScrollArea, QTabWidget, QTextEdit, QWidget, QFileDialog, QMessageBox
 
 from pathlib import Path
 import json
@@ -546,7 +546,7 @@ class PersonalProfilePage(QWidget):
             self.summary.setText(ui_text('Profile Path:\n{value_0}', value_0=locator.root))
             return
         self.summary.setText(ui_text('Current unencrypted storage. Set up or select a personal profile here.') if locator is None else
-            ui_text('{value_0} · {value_1} · {value_2}\n{value_3}', value_0='Local' if locator.mode == 'local' else 'Portable', value_1='Encrypted' if locator.encrypted else 'Unencrypted', value_2='Unlocked' if self.manager.active else 'Locked', value_3=locator.root))
+            ui_text('{value_0} · {value_1} · {value_2}\n{value_3}', value_0=ui_extra('Local' if locator.mode == 'local' else 'Portable'), value_1=ui_extra('Encrypted' if locator.encrypted else 'Unencrypted'), value_2=ui_extra('Unlocked' if self.manager.active else 'Locked'), value_3=locator.root))
         if self.manager.bootstrap_error:
             self.summary.setText(ui_text('The saved profile selection could not be read. Select an existing profile to continue.'))
 

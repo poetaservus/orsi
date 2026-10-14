@@ -47,8 +47,9 @@ image preferences save item data rather than translated display labels.
 
 The versioned `.ts` sources and compiled `.qm` catalogs live in
 `app/ui/translations/`. Both Python packages and portable exports include them.
-There are 737 source entries per catalog, including common Qt context-menu and
-dialog actions. No translation network request occurs in the application or
+There are 737 shared source entries per catalog, including common Qt context-menu
+and dialog actions. The Hungarian editorial pilot adds 38 messages in an optional
+context; other catalogs retain their current wording. No translation network request occurs in the application or
 the offline maintenance tool.
 
 Use the bundled Python to run `tools/ui_translations.py --update` after changing
@@ -66,6 +67,12 @@ Core Hungarian/Dutch labels and approval/deletion wording were also revised.
 Native-language review of all draft catalogs, terminology and number agreement
 remains outstanding. These are functional language choices, not a claim of
 native-reviewed translation quality.
+
+Hungarian has since received a complete contextual editorial revision. Its tone,
+terminology, review status and maintenance process are recorded in
+[the Hungarian pilot](hungarian-ui.md). That revision has not been applied to
+other languages. Use `--language hu` to compile/update only Hungarian; compiling
+it checks the separate editorial fingerprints without claiming native approval.
 
 ## Verification and branch
 

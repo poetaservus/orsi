@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "language": "hu",
+  "status": "editorially_revised",
+  "editor": {
+    "type": "Codex",
+    "method": "offline contextual editorial rewrite",
+    "date": "2026-10-14"
+  },
+  "native_review": {
+    "status": "pending",
+    "reviewer": null,
+    "date": null
+  },
+  "baseline_commit": "b87c29b",
+  "style_guide": "docs/hungarian-ui.md",
+  "entry_count": 775,
+  "source_sha256": "b939a8d2a7afe3aae72fce6b0373122cb1e55440f6b81b5c389e1a2f6a4c2394",
+  "translation_sha256": "c680cd84b029ba6abdcae25197ce68627df5d0c06336a789c214db33b94945a3"
+}

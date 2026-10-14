@@ -1,5 +1,5 @@
 from __future__ import annotations
-from app.ui.localization import ui_text, QComboBox, QDialog, QFrame, QLabel, QLineEdit, QMainWindow, QPushButton, QTextEdit, QWidget, QFileDialog, QInputDialog, QMessageBox
+from app.ui.localization import ui_extra, ui_text, QComboBox, QDialog, QFrame, QLabel, QLineEdit, QMainWindow, QPushButton, QTextEdit, QWidget, QFileDialog, QInputDialog, QMessageBox
 
 
 import logging
@@ -1939,7 +1939,7 @@ class MainWindow(QMainWindow):
                 if isinstance(config.context_length, int) else ui_text('Settings applied automatically')
             )
             self.local_model_details.setToolTip(
-                ui_text('Temperature {value_0} · Top-p {value_1} · Top-k {value_2}\n{value_3} · {value_4} cache\nSwitching preserves your conversation. Choose the Qwen vision model for image input.', value_0=config.temperature, value_1=config.top_p, value_2=config.top_k, value_3='GPU acceleration' if config.gpu_layers != 0 else 'CPU', value_4=config.cache_type.upper())
+                ui_text('Temperature {value_0} · Top-p {value_1} · Top-k {value_2}\n{value_3} · {value_4} cache\nSwitching preserves your conversation. Choose the Qwen vision model for image input.', value_0=config.temperature, value_1=config.top_p, value_2=config.top_k, value_3=ui_extra('GPU acceleration') if config.gpu_layers != 0 else 'CPU', value_4=config.cache_type.upper())
             )
             self.local_model_selector.setToolTip(
                 self.local_model_details.text() + "\n" + self.local_model_details.toolTip())

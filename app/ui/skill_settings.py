@@ -1,8 +1,8 @@
 """Settings-only skill import/review, installation and removal."""
-from app.ui.localization import ui_text, QDialog, QLabel, QLineEdit, QListWidget, QPushButton, QWidget, QFileDialog, QMessageBox
+from app.ui.localization import ui_extra, ui_text, QDialog, QLabel, QLineEdit, QListWidget, QPushButton, QWidget, QFileDialog, QMessageBox
 
 from app.ui.theme_runtime import apply_theme_style
-from PySide6.QtCore import QThread, Qt, Signal, Slot
+from PySide6.QtCore import QEvent, QThread, Qt, Signal, Slot
 from PySide6.QtWidgets import (QHBoxLayout, QListWidgetItem, QSizePolicy, QVBoxLayout)
 from html import escape
 
@@ -275,8 +275,8 @@ class SkillSettingsPage(QWidget):
             self.preview_description.setToolTip("<qt>" + escape(description[:512]) + "</qt>")
             self._refresh_preview_source()
             self.preview_source.setToolTip("<qt>" + escape(result.source[:2048]) + "</qt>")
-            skill_label = "skill" if result.skill_count == 1 else "skills"
-            reference_label = "reference" if result.reference_count == 1 else "references"
+            skill_label = ui_extra("skill" if result.skill_count == 1 else "skills")
+            reference_label = ui_extra("reference" if result.reference_count == 1 else "references")
             self.preview_summary.setText(ui_text('{value_0} {value_1} · {value_2} {value_3} · {value_4} KB', value_0=result.skill_count, value_1=skill_label, value_2=result.reference_count, value_3=reference_label, value_4=format(result.total_bytes / 1024,'.1f')))
             for label in (self.preview_name, self.preview_description, self.preview_source, self.preview_summary):
                 label.show()
@@ -304,9 +304,15 @@ class SkillSettingsPage(QWidget):
         self.setEnabled(False)
 
     def _refresh_preview_source(self):
-        if self.prepared is not None:
+        if getattr(self, "prepared", None) is not None:
             self.preview_source.setText(self.preview_source.fontMetrics().elidedText(
-                "Source: " + self.prepared.source[:2048], Qt.TextElideMode.ElideRight, max(0, self.width() - 16)))
+                ui_extra("Source: {location}", location=self.prepared.source[:2048]),
+                Qt.TextElideMode.ElideRight, max(0, self.width() - 16)))
+
+    def changeEvent(self, event):  # noqa: N802
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.LanguageChange:
+            self._refresh_preview_source()
 
     def resizeEvent(self, event):  # noqa: N802
         super().resizeEvent(event)

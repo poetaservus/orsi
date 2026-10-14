@@ -1,5 +1,5 @@
 """Presentation-only settings shell; actions remain owned by MainWindow."""
-from app.ui.localization import ui_text, QComboBox, QFrame, QLabel, QPushButton, QScrollArea, QWidget
+from app.ui.localization import ui_extra, ui_text, QComboBox, QFrame, QLabel, QPushButton, QScrollArea, QWidget
 
 from PySide6.QtCore import QPoint, QRect, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QFont, QKeySequence, QLinearGradient, QPainter, QPen, QShortcut, QPalette
@@ -211,7 +211,7 @@ class SettingsPanel(QFrame):
             ui_text('Auto follows the language of your request. A selected language applies from the next response.'))
         window.response_language_selector.use_description_as_tooltip()
         for language in RESPONSE_LANGUAGES:
-            window.response_language_selector.addItem(language.label, language.code)
+            window.response_language_selector.addItem(ui_extra("Auto") if language.code == "auto" else language.label, language.code)
         self._row(general, ui_text('Response Language'), ui_text('Auto follows your request · Remembered for this profile'),
                   window.response_language_selector)
         window.response_language_hint = QLabel()

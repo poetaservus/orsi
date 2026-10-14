@@ -1,5 +1,5 @@
 from __future__ import annotations
-from app.ui.localization import ui_text, QFrame, QLabel, QPlainTextEdit, QScrollArea, QWidget
+from app.ui.localization import ui_extra, ui_text, QFrame, QLabel, QPlainTextEdit, QScrollArea, QWidget
 
 
 import re
@@ -28,11 +28,17 @@ _CONVERSATION_WIDTH = 1120
 def _elapsed_label(prefix: str, seconds: float) -> str:
     hours, remainder = divmod(int(max(0.0, seconds)), 3600)
     minutes, remaining_seconds = divmod(remainder, 60)
-    duration = f"{remaining_seconds}s"
+    duration = ui_extra("{seconds}s", seconds=remaining_seconds)
     if hours:
-        duration = f"{hours} h {minutes} m {duration}"
+        duration = ui_extra("{hours} h {minutes} m {seconds}s", hours=hours, minutes=minutes, seconds=remaining_seconds)
     elif minutes:
-        duration = f"{minutes} m {duration}"
+        duration = ui_extra("{minutes} m {seconds}s", minutes=minutes, seconds=remaining_seconds)
+    if prefix == "Working":
+        return ui_extra("Working for {duration}", duration=duration)
+    if prefix == "Worked":
+        return ui_extra("Worked for {duration}", duration=duration)
+    if prefix == "Stopped":
+        return ui_extra("Stopped for {duration}", duration=duration)
     return f"{prefix} for {duration}"
 
 

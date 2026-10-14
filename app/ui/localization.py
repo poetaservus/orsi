@@ -18,25 +18,33 @@ TEXT_ROLE = int(Qt.ItemDataRole.UserRole) + 291
 
 
 class UiText(str):
-    def __new__(cls, source, **values):
-        value = super().__new__(cls, cls.render(source, values))
-        value.source, value.values = source, values
+    def __new__(cls, source, *, _context="OrsiUI", **values):
+        value = super().__new__(cls, cls.render(source, values, _context))
+        value.source, value.values, value.context = source, values, _context
         return value
 
     @staticmethod
-    def render(source, values):
-        translated = QCoreApplication.translate("OrsiUI", source)
+    def render(source, values, context="OrsiUI"):
+        translated = QCoreApplication.translate(context, source)
         resolved = {key: value.resolve() if isinstance(value, UiText) else value for key, value in values.items()}
         return translated.format_map(resolved) if values else translated
 
     def resolve(self):
-        return self.render(self.source, self.values)
+        return self.render(self.source, self.values, self.context)
+
+    def binding(self):
+        return {"source": self.source, "values": self.values, "context": self.context}
 
 
 def ui_text(source, **values):
     if isinstance(source, UiText) and not values:
         return source
     return UiText(source, **values)
+
+
+def ui_extra(source, **values):
+    """Explicit UI copy added during a locale pilot; other catalogs fall back to English."""
+    return UiText(source, _context="OrsiUIExtras", **values)
 
 
 def system_language():
@@ -125,8 +133,9 @@ class _Localized:
         if isinstance(self, QtWidgets.QComboBox):
             for index in range(self.count()):
                 text = self.itemData(index, TEXT_ROLE)
-                if isinstance(text, dict) and set(text) == {"source", "values"}:
-                    QtWidgets.QComboBox.setItemText(self, index, UiText.render(text["source"], text["values"]))
+                if isinstance(text, dict) and set(text) in ({"source", "values"}, {"source", "values", "context"}):
+                    QtWidgets.QComboBox.setItemText(self, index, UiText.render(
+                        text["source"], text["values"], text.get("context", "OrsiUI")))
         if isinstance(self, QtWidgets.QTabWidget):
             for index in range(self.count()):
                 text = getattr(self.widget(index), "_ui_tab_text", None)
@@ -178,17 +187,17 @@ class QComboBox(_Localized, QtWidgets.QComboBox):
         text = next((arg for arg in args if isinstance(arg, UiText)), None)
         super().addItem(*args, **kwargs)
         if text is not None:
-            self.setItemData(self.count() - 1, {"source": text.source, "values": text.values}, TEXT_ROLE)
+            self.setItemData(self.count() - 1, text.binding(), TEXT_ROLE)
 
     def setItemText(self, index, text):  # noqa: N802
-        self.setItemData(index, {"source": text.source, "values": text.values} if isinstance(text, UiText) else None, TEXT_ROLE)
+        self.setItemData(index, text.binding() if isinstance(text, UiText) else None, TEXT_ROLE)
         super().setItemText(index, text.resolve() if isinstance(text, UiText) else text)
 
     def insertItem(self, index, *args, **kwargs):  # noqa: N802
         super().insertItem(index, *args, **kwargs)
         text = next((arg for arg in args if isinstance(arg, UiText)), None)
         if text is not None:
-            self.setItemData(index, {"source": text.source, "values": text.values}, TEXT_ROLE)
+            self.setItemData(index, text.binding(), TEXT_ROLE)
 
 
 class QFileDialog(_Localized, QtWidgets.QFileDialog):

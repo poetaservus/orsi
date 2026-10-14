@@ -1,24 +1,25 @@
 """Explicit human acknowledgement of retained uncertain outcomes."""
-from app.ui.localization import ui_text, QCheckBox, QDialog, QLabel, QPlainTextEdit, QPushButton
+from app.ui.localization import ui_extra, ui_text, QCheckBox, QDialog, QLabel, QPlainTextEdit, QPushButton
 
 from datetime import datetime
 
 from app.ui.theme_runtime import apply_theme_style
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QEvent, Qt
+from PySide6.QtGui import QTextCursor
 from PySide6.QtWidgets import (QHBoxLayout, QSizePolicy, QVBoxLayout)
 
 from app.ui.motion import install_smooth_scroll
 
 
 _LABELS = {
-    "filesystem.write_text": "Write file", "filesystem.edit_text": "Edit text",
-    "filesystem.mkdir": "Create folder", "filesystem.move": "Move file",
-    "filesystem.copy": "Copy file", "filesystem.trash": "Send file to Recycle Bin",
-    "shell.run": "Shell command", "application.launch": "Launch app",
-    "project.verify": "Project build or tests", "project.inspect": "App inspection",
-    "filesystem.read_text": "Read file", "filesystem.search": "Search file contents",
-    "filesystem.list": "List folder", "filesystem.find": "Find file",
-    "filesystem.stat": "Read file details", "conversation.read_turn": "Read earlier chat",
+    "filesystem.write_text": ui_extra("Write file"), "filesystem.edit_text": ui_extra("Edit text"),
+    "filesystem.mkdir": ui_extra("Create folder"), "filesystem.move": ui_extra("Move file"),
+    "filesystem.copy": ui_extra("Copy file"), "filesystem.trash": ui_extra("Send file to Recycle Bin"),
+    "shell.run": ui_extra("Shell command"), "application.launch": ui_extra("Launch app"),
+    "project.verify": ui_extra("Project build or tests"), "project.inspect": ui_extra("App inspection"),
+    "filesystem.read_text": ui_extra("Read file"), "filesystem.search": ui_extra("Search file contents"),
+    "filesystem.list": ui_extra("List folder"), "filesystem.find": ui_extra("Find file"),
+    "filesystem.stat": ui_extra("Read file details"), "conversation.read_turn": ui_extra("Read earlier chat"),
 }
 
 
@@ -26,7 +27,7 @@ def _operation_time(timestamp):
     try:
         return f"{datetime.fromtimestamp(timestamp / 1000).astimezone():%Y-%m-%d %H:%M:%S %Z}"
     except (ValueError, OverflowError, OSError):
-        return "Time unavailable"
+        return ui_extra("Time unavailable")
 
 
 class OperationReviewDialog(QDialog):
@@ -37,6 +38,7 @@ class OperationReviewDialog(QDialog):
         self.resize(680, 540)
         self.setMinimumSize(620, 500)
         self._service = service
+        self._operations = tuple(snapshot.operations)
         self._call_ids = tuple(item.call_id for item in snapshot.operations)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
@@ -55,10 +57,7 @@ class OperationReviewDialog(QDialog):
         self.details.setObjectName("interruptedOperationDetails")
         self.details.setReadOnly(True)
         install_smooth_scroll(self.details)
-        self.details.setPlainText("\n\n".join(
-            f"{_LABELS.get(item.capability, item.capability)} · {_operation_time(item.updated_at_ms)}\n"
-            f"Chat: {item.session_id} · Turn: {item.turn_id}\nOperation: {item.call_id}"
-            for item in snapshot.operations) or "No recoverable operation records are available yet.")
+        self._refresh_details()
         layout.addWidget(self.details, 1)
         self.confirm = QCheckBox(
             ui_text('I reviewed these operations and understand the outcomes are uncertain.'), self)
@@ -94,6 +93,29 @@ class OperationReviewDialog(QDialog):
             QPushButton:disabled { color: #8c90a0; border-color: #3c4150; }
         """)
 
+    def _refresh_details(self):
+        if getattr(self, "_operations", None) is None or not hasattr(self, "details"):
+            return
+        cursor = self.details.textCursor()
+        position, anchor = cursor.position(), cursor.anchor()
+        scroll = self.details.verticalScrollBar().value()
+        self.details.setPlainText("\n\n".join(str(ui_extra(
+            "{action} · {time}\nChat: {session_id} · Turn: {turn_id}\nOperation: {call_id}",
+            action=_LABELS.get(item.capability, item.capability), time=_operation_time(item.updated_at_ms),
+            session_id=item.session_id, turn_id=item.turn_id, call_id=item.call_id))
+            for item in self._operations) or str(ui_extra("No recoverable operation records are available yet.")))
+        cursor = self.details.textCursor()
+        last = self.details.document().characterCount() - 1
+        cursor.setPosition(min(anchor, last))
+        cursor.setPosition(min(position, last), QTextCursor.MoveMode.KeepAnchor)
+        self.details.setTextCursor(cursor)
+        self.details.verticalScrollBar().setValue(scroll)
+
+    def changeEvent(self, event):  # noqa: N802
+        super().changeEvent(event)
+        if event.type() == QEvent.Type.LanguageChange:
+            self._refresh_details()
+
     def accept(self):
         if not self.confirm.isEnabled() or not self.confirm.isChecked():
             return
@@ -108,6 +130,7 @@ class OperationReviewDialog(QDialog):
 
     def done(self, result):
         self._call_ids = ()
+        self._operations = None
         self._service = None
         self.details.clear()
         self.confirm.setChecked(False)
