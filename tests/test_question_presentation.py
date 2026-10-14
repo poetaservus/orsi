@@ -7,7 +7,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest
 from PySide6.QtCore import QPoint, Qt
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QLabel
 
 from app.conversation.orchestrator import ConversationService
 from app.conversation.questions import QuestionBatch, present_questions, question_chat_text, question_preview
@@ -16,7 +16,7 @@ from app.inference.completion import CompletionText
 from app.ui.main_window import MainWindow
 from app.ui.questions import QuestionComposer
 from tests.test_attachment_composer import wait_for
-from tests.test_questions import Replies
+from tests.test_questions import Replies, fill, payload
 
 
 INTRO = "Choom, a water sim can mean anything from elegant pond ripples to a tiny fluid-dynamics lab. Let's pin down what Gemini should build:"
@@ -43,6 +43,73 @@ def batch():
 @pytest.fixture(scope="module")
 def app():
     return QApplication.instance() or QApplication([])
+
+
+@pytest.mark.parametrize("size", [(760, 600), (1280, 900)])
+def test_larger_question_text_wraps_and_stays_reachable_across_themes(app, size):
+    value = payload()
+    long_choice = "Read & compare 🌊 detailed examples before choosing the approach that feels most comfortable for this project. " * 2
+    value["questions"][0]["options"][0]["label"] = long_choice
+    value["questions"][2]["options"][0]["label"] = long_choice
+    value["questions"][0]["title"] = "Which kind of work would you like to showcase, and how should visitors explore the details of your favorite projects?"
+    window = MainWindow(None, "SYNTHETIC")
+    window.resize(*size)
+    window.show()
+    panel = window._question_panel = QuestionComposer(QuestionBatch.model_validate_json(json.dumps(value)), window.composer)
+    window._composer_stack.addWidget(panel)
+    window._show_questions()
+    if window._approval_transition is not None:
+        window._approval_transition.setCurrentTime(window._approval_transition.duration())
+    fill(panel)
+    expected = panel.answer_text()
+    try:
+        for theme in ("original", "conformist", "ocean", "original"):
+            window.theme_controller.select(theme)
+            app.processEvents()
+            viewport = panel.scroll.viewport()
+            assert panel.scroll.horizontalScrollBar().maximum() == 0
+            assert panel.body.width() <= viewport.width()
+            assert panel.fields["audience"].editor.font().pixelSize() == 16
+            assert panel.fields["audience"].editor.font().family() == window.theme_controller.current.family
+            assert panel.fields["style"].combo.font().pixelSize() == 16
+            assert panel.hint.font().pixelSize() == 14
+            for field in panel.fields.values():
+                title = field.findChild(QLabel, "questionTitle")
+                assert title.font().pixelSize() == 18
+                assert title.font().family() == window.theme_controller.current.family
+                assert title.height() >= title.heightForWidth(title.width())
+                for button in field.buttons:
+                    assert button.font().pixelSize() == 16
+                    assert button.font().family() == window.theme_controller.current.family
+                    assert button.height() >= button.heightForWidth(button.width())
+                for control in (field.editor, field.combo, *field.buttons):
+                    if control is not None:
+                        panel.scroll.verticalScrollBar().setValue(control.mapTo(panel.body, QPoint()).y())
+                        app.processEvents()
+                        bounds = control.rect().translated(control.mapTo(viewport, QPoint()))
+                        assert viewport.rect().contains(bounds)
+            choice = panel.fields["work"].buttons[0]
+            assert "\n" in choice.text()
+            assert choice.text().replace("\n", " ").replace("&&", "&") == long_choice.rstrip()
+            panel.fields["work"].buttons[1].click()
+            panel.scroll.verticalScrollBar().setValue(choice.mapTo(panel.body, QPoint()).y())
+            app.processEvents()
+            QTest.mouseClick(choice, Qt.MouseButton.LeftButton, pos=QPoint(40, choice.height() - 12))
+            assert choice.isChecked()  # The last wrapped line is part of the choice's hit target.
+            checkbox = panel.fields["features"].buttons[0]
+            panel.scroll.verticalScrollBar().setValue(checkbox.mapTo(panel.body, QPoint()).y())
+            app.processEvents()
+            for expected_checked in (False, True):
+                QTest.mouseClick(checkbox, Qt.MouseButton.LeftButton, pos=QPoint(40, checkbox.height() - 12))
+                assert checkbox.isChecked() is expected_checked
+            assert panel.answer_text() == expected and panel.send.isEnabled()
+            assert panel.rect().contains(panel.send.geometry())
+            assert window.composer.height() <= size[1] - 140
+        if size[1] == 900:
+            assert window.composer.height() > 520
+    finally:
+        window.close()
+        app.processEvents()
 
 
 @pytest.mark.parametrize("language", ["json", "orsi_questions", ""])
@@ -147,7 +214,7 @@ def test_question_transition_grows_and_fades_without_squeezing_inputs(app, tmp_p
         animation.setCurrentTime(120)
         assert start < window.composer.height() < target
         assert 0. < panel.reveal_effect.opacity() < 1.
-        assert panel.height() >= target and panel.fields["delivery"].editor.height() == 72
+        assert panel.height() >= target and panel.fields["delivery"].editor.height() == 96
         assert window.composer.geometry().bottom() == window._content.height() - 43
         animation.setCurrentTime(animation.duration())
         assert window.composer.height() == target and panel.reveal_effect.opacity() == 1.

@@ -1407,7 +1407,7 @@ class MainWindow(QMainWindow):
         return self._question_panel is not None and self._composer_stack.currentWidget() is self._question_panel
 
     def _question_height(self):
-        available = min(520, self.composer.parentWidget().height() - 140)
+        available = min(720, self.composer.parentWidget().height() - 140)
         return self._question_panel.desired_height(available)
 
     def _sync_question_form(self):

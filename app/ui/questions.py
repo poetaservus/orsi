@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 from app.ui.theme_runtime import apply_theme_style
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtCore import QEvent, QSize, Qt, Signal
+from PySide6.QtGui import QKeySequence, QShortcut, QTextLayout, QTextOption
 from PySide6.QtWidgets import (
     QButtonGroup, QCheckBox, QFrame, QHBoxLayout, QLabel, QLineEdit,
-    QPlainTextEdit, QPushButton, QRadioButton, QScrollArea, QVBoxLayout, QWidget, QGraphicsOpacityEffect,
+    QPlainTextEdit, QPushButton, QRadioButton, QScrollArea, QSizePolicy, QStyle, QStyleOptionButton,
+    QVBoxLayout, QWidget, QGraphicsOpacityEffect,
 )
 
 from app.conversation.questions import Question, QuestionBatch, format_answers
@@ -21,6 +22,73 @@ def plain_label(text, parent):
     return label
 
 
+class _WrappingChoice:
+    """Let native choice labels wrap while keeping their keyboard behavior."""
+
+    def __init__(self, text, parent=None):
+        self._label = text
+        super().__init__(text.replace("&", "&&"), parent)
+        policy = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        policy.setHeightForWidth(True)
+        self.setSizePolicy(policy)
+
+    def _lines(self, width):
+        option = QStyleOptionButton()
+        self.initStyleOption(option)
+        option.rect.setWidth(max(1, width))
+        contents = (QStyle.SubElement.SE_RadioButtonContents if isinstance(self, QRadioButton)
+                    else QStyle.SubElement.SE_CheckBoxContents)
+        width = max(1, self.style().subElementRect(contents, option, self).width() - 4)
+        lines = []
+        for paragraph in self._label.split("\n"):
+            encoded = paragraph.encode("utf-16-le")
+            text = QTextLayout(paragraph, self.font())
+            options = QTextOption()
+            options.setWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
+            text.setTextOption(options)
+            text.beginLayout()
+            while (line := text.createLine()).isValid():
+                line.setLineWidth(width)
+                start, end = line.textStart(), line.textStart() + line.textLength()
+                lines.append(encoded[start * 2:end * 2].decode("utf-16-le").rstrip())
+            text.endLayout()
+            if not paragraph:
+                lines.append("")
+        return lines
+
+    def heightForWidth(self, width):  # noqa: N802
+        return max(32, len(self._lines(width)) * self.fontMetrics().lineSpacing() + 8)
+
+    def minimumSizeHint(self):  # noqa: N802
+        return QSize(64, 32)
+
+    def sizeHint(self):  # noqa: N802
+        return QSize(super().sizeHint().width(), self.heightForWidth(self.width()))
+
+    def _wrap(self):
+        text = "\n".join(self._lines(self.width())).replace("&", "&&")
+        if text != self.text():
+            self.setText(text)
+
+    def resizeEvent(self, event):  # noqa: N802
+        self._wrap()
+        super().resizeEvent(event)
+
+    def changeEvent(self, event):  # noqa: N802
+        super().changeEvent(event)
+        if event.type() in (QEvent.Type.FontChange, QEvent.Type.StyleChange):
+            self._wrap()
+            self.updateGeometry()
+
+
+class QuestionRadioButton(_WrappingChoice, QRadioButton):
+    pass
+
+
+class QuestionCheckBox(_WrappingChoice, QCheckBox):
+    pass
+
+
 class QuestionField(QWidget):
     changed = Signal()
 
@@ -31,7 +99,7 @@ class QuestionField(QWidget):
         self.buttons = []
         self.other_button = self.other_text = self.editor = self.combo = None
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 10, 0, 12)
+        layout.setContentsMargins(0, 12, 0, 16)
         layout.setSpacing(8)
         title = plain_label(f"{number}. {question.title}", self)
         title.setObjectName("questionTitle")
@@ -49,7 +117,7 @@ class QuestionField(QWidget):
             self.editor = QPlainTextEdit(self)
             self.editor.setPlaceholderText("Type your answer here…")
             self.editor.setAccessibleName(question.title)
-            self.editor.setFixedHeight(72)
+            self.editor.setFixedHeight(96)
             self.editor.textChanged.connect(self.changed)
             layout.addWidget(self.editor)
         elif question.kind == "dropdown" or question.kind == "single" and len(question.options) > 5:
@@ -63,11 +131,9 @@ class QuestionField(QWidget):
             self.combo.currentIndexChanged.connect(self._changed)
             layout.addWidget(self.combo)
         else:
-            button_type = QCheckBox if question.kind == "multi" else QRadioButton
+            button_type = QuestionCheckBox if question.kind == "multi" else QuestionRadioButton
             for option in question.options:
                 button = button_type(option.label, self)
-                # Qt button labels interpret ampersands as mnemonic markup.
-                button.setText(option.label.replace("&", "&&"))
                 button.setAccessibleName(option.label)
                 button.setToolTip(option.label)
                 self.buttons.append(button)
@@ -129,8 +195,8 @@ class QuestionComposer(QFrame):
         self.setObjectName("questionComposer")
         apply_theme_style(self, QUESTION_STYLE)
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(18, 12, 18, 12)
-        layout.setSpacing(8)
+        layout.setContentsMargins(22, 16, 22, 16)
+        layout.setSpacing(10)
         header = QHBoxLayout()
         title = plain_label("O.R.S.I. / Questions", self)
         title.setObjectName("questionsHeader")
@@ -192,7 +258,7 @@ class QuestionComposer(QFrame):
         self.refresh()
 
     def desired_height(self, available):
-        return min(max(180, available), max(240, self.body.sizeHint().height() + 102))
+        return min(max(180, available), max(280, self.body.sizeHint().height() + 112))
 
     def refresh(self):
         remaining = sum(field.question.required and not field.complete() for field in self.fields.values())
@@ -219,30 +285,32 @@ class QuestionComposer(QFrame):
 
 
 QUESTION_STYLE = """
-QFrame#questionComposer, QFrame#questionComposer QWidget { background: transparent; color: #dedee0; font-size: 12px; }
-QFrame#questionComposer QLabel { border: none; font-size: 12px; }
-QLabel#questionsHeader, QLabel#questionTitle { font-weight: 600; }
-QLabel#questionHint { color: #a8adb6; font-size: 10px; }
+QFrame#questionComposer, QFrame#questionComposer QWidget { background: transparent; color: #dedee0; font-family: Saira; font-size: 16px; }
+QFrame#questionComposer QLabel { border: none; font-size: 16px; }
+QFrame#questionComposer QLabel#questionsHeader { font-size: 14px; font-weight: 600; }
+QFrame#questionComposer QLabel#questionTitle { font-size: 18px; font-weight: 500; }
+QFrame#questionComposer QLabel#questionHint { color: #a8adb6; font-size: 14px; }
 QFrame#questionDivider { background: #373c43; border: none; }
-QFrame#questionComposer QRadioButton, QFrame#questionComposer QCheckBox { spacing: 9px; min-height: 22px; border: none; outline: none; }
+QFrame#questionComposer QRadioButton, QFrame#questionComposer QCheckBox { spacing: 10px; min-height: 32px; border: none; outline: none; }
 QFrame#questionComposer QRadioButton::indicator, QFrame#questionComposer QCheckBox::indicator {
-    width: 14px; height: 14px; border: 1px solid #626b7a; background: #282c32;
+    width: 16px; height: 16px; border: 1px solid #626b7a; background: #282c32;
 }
-QFrame#questionComposer QRadioButton::indicator { border-radius: 8px; }
+QFrame#questionComposer QRadioButton::indicator { border-radius: 9px; }
 QFrame#questionComposer QRadioButton::indicator:checked { background: #eeeeef; border-color: #85888c; }
 QFrame#questionComposer QCheckBox::indicator { border-radius: 3px; }
 QFrame#questionComposer QCheckBox::indicator:checked { background: #eeeeef; border-color: #eeeeef; }
 QFrame#questionComposer QPlainTextEdit, QFrame#questionComposer QLineEdit, QFrame#questionComposer QComboBox {
     background: #292d36; color: #dedee0; border: 1px solid #4b505d; border-radius: 10px; padding: 8px;
 }
-QFrame#questionComposer QComboBox { border-radius: 18px; min-height: 20px; }
+QFrame#questionComposer QLineEdit, QFrame#questionComposer QComboBox { min-height: 26px; }
+QFrame#questionComposer QComboBox { border-radius: 18px; }
 QFrame#questionComposer QComboBox::drop-down { border: none; width: 28px; margin-right: 6px; }
 QFrame#questionComposer QComboBox QAbstractItemView { background: #292d36; selection-background-color: #414753; }
 QFrame#questionComposer QScrollBar:vertical { background: transparent; width: 5px; margin: 0; }
 QFrame#questionComposer QScrollBar::handle:vertical { background: #41444a; border-radius: 2px; min-height: 24px; }
 QFrame#questionComposer QScrollBar::add-line:vertical, QFrame#questionComposer QScrollBar::sub-line:vertical { height: 0; }
 QFrame#questionComposer QScrollBar::add-page:vertical, QFrame#questionComposer QScrollBar::sub-page:vertical { background: transparent; }
-QFrame#questionComposer QPushButton { background: transparent; border: none; padding: 7px 10px; border-radius: 14px; }
+QFrame#questionComposer QPushButton { background: transparent; border: none; font-size: 14px; min-height: 24px; padding: 8px 12px; border-radius: 18px; }
 QFrame#questionComposer QPushButton:hover { background: #454852; }
 QFrame#questionComposer QPushButton:pressed { background: #2c2e35; }
 QFrame#questionComposer QPushButton#questionsSend { background: #373c43; min-width: 55px; }

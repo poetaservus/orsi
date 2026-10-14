@@ -1,5 +1,29 @@
 # Git layout and baseline hygiene
 
+## Readable questionnaire typography, 14 October 2026
+
+`codex/questionnaire-typography` starts from clean main `1c1d51d`. Questionnaire
+titles use 18px type; answers/choices use 16px, with 14px hints and footer text.
+The form follows the selected theme font (including Conformist's DM Sans), with
+larger fields, indicators and spacing. Long native radio/checkbox labels wrap
+without changing their answer values or keyboard behavior. The panel may grow
+to 720px when space permits; compact windows retain vertical scrolling.
+
+All **44 essential native checks passed** in **13.90 seconds**, with no
+failures/errors/skips. Two focused cases also verified clicks on wrapped labels
+after final test additions. Native Conformist/Original, compact, long-choice and
+custom-answer previews were inspected. Evidence is under ignored
+`state/questionnaire-typography-essential.xml`, `state/questionnaire-typography-click.xml`
+and `state/questionnaire-typography-preview/`. Full-suite and live inference gates
+were not run under the user's essential-test scope. Prompts, routing, answer
+validation, response formatting, transition animations and notifications are unchanged.
+
+Ref/worktree inventories are retained under ignored
+`state/backups/questionnaire-typography-20261014/`, with prior main preserved at
+`archive/2026-10-14/main-before-questionnaire-typography`. Commit, fast-forward
+local main and remove only this merged branch. Other worktrees, historical/unmerged
+tips, private settings and remote refs remain unchanged; no push is part of this task.
+
 ## Lean Settings modules, 14 October 2026
 
 `codex/lean-settings` starts from clean main `b4b9e77`. Settings retain module
