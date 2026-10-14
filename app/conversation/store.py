@@ -15,7 +15,7 @@ from app.state.storage import JsonStore
 from app.conversation.attachments import AttachmentStore
 from app.inference.attachments import AttachmentReference, attachment_references
 from app.inference.completion import CompletionMetadata, CompletionText
-from app.conversation.questions import QuestionBatch, present_questions
+from app.conversation.questions import QuestionBatch, present_questions, question_forms_allowed
 from app.agent.contracts import AgentRunResult, AgentRunStatus, SettledCall
 from app.agent.goals import TaskGoal, observe_goal, finish_goal
 from app.settings.agent_limits import MAX_AGENT_CAPABILITY_CALLS, MAX_AGENT_MODEL_REQUESTS
@@ -232,7 +232,16 @@ class ConversationStore:
 
     def visible_messages(self) -> list[ChatMessage]:
         with self._lock:
-            return deepcopy(self._conversation.messages)
+            messages = deepcopy(self._conversation.messages)
+        request = None
+        for message in messages:
+            if message.role == "user":
+                request = message.content
+            elif message.question_batch is not None and request is not None and not question_forms_allowed(request):
+                # Older histories may contain a greeting form. Suppress controls
+                # in the view without migrating or rewriting the saved evidence.
+                message.question_batch = None
+        return messages
 
     def begin_turn(self, text: str, *, attachments=(), cancellation=None) -> str:
         references = attachment_references(attachments)

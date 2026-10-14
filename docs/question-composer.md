@@ -105,6 +105,29 @@ New session/profile clearing removes the view. Unsent partial answers are kept
 in memory while switching composer modes, not separately saved to disk. Existing
 plain/encrypted history storage remains the storage boundary.
 
+## Standalone greetings
+
+Known standalone greetings, social check-ins and thanks keep the ordinary
+composer, even when the assistant emits valid question metadata or asks a
+casual question such as "How can I help?". The same deterministic presentation
+guard covers dedicated/generic JSON forms and skips plain-text extraction
+before any extra model request. Readable reply text and completion state remain
+available; a valid dedicated form-only reply falls back to its readable question text.
+
+Matching covers common English, Hungarian and Dutch social utterances, with
+punctuation, case, emoji and ORSI name variants. It requires the entire user
+turn: greeting-prefixed tasks, unknown text and short clarification answers
+such as "yes", "red" or "HTML" remain eligible for genuine forms. This bounded
+guard does not attempt to classify all casual conversation or every language.
+Earlier saved greeting forms are suppressed in the visible history projection
+without rewriting saved conversations, provider replay or user settings.
+
+`tests/test_greeting_questions.py` covers both form paths through the native
+composer in scripted local/cloud modes, chat-only turns, form-only replies,
+completion preservation, old-history restoration and subsequent task forms.
+Prompts, model profiles/sampling, context, capability routing, tool behavior
+and operational approval policy are unchanged.
+
 ## Essential verification
 
 The user requested essential checks only. Native scripted verification covers

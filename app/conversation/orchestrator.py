@@ -36,7 +36,7 @@ from app.conversation.language_detection import detect_language, reply_locale
 from app.conversation.language_messages import notice, progress_notice, image_notice
 from app.conversation.diagnostics import record_route, record_turn
 from app.conversation.store import ConversationStore, TurnHistoryError
-from app.conversation.questions import present_questions, question_preview
+from app.conversation.questions import present_questions, question_preview, question_forms_allowed
 from app.conversation.question_projection import project_questions, projection_candidate
 from app.conversation.operation_review import InterruptedOperation, OperationReview
 from app.conversation.history_context import bind_history_runtime
@@ -482,9 +482,11 @@ class ConversationService:
                     completion=value.completion, completion_history=value.completion_history)
             else:
                 answer = self._run_agent_turn(text, source, activity, observe_review)
-            answer = present_questions(answer, allow_forms=self._turn_result.status == AgentRunStatus.COMPLETED)
+            answer = present_questions(answer, allow_forms=self._turn_result.status == AgentRunStatus.COMPLETED,
+                                       request=text)
             if (self._turn_result.status == AgentRunStatus.COMPLETED and not image_turn
-                    and self._question_projection_allowed and answer.question_batch is None
+                    and self._question_projection_allowed and question_forms_allowed(text)
+                    and answer.question_batch is None
                     and projection_candidate(answer)):
                 if callable(preview_setter):
                     preview_setter(None)  # Internal form JSON must never stream into chat.

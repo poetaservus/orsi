@@ -22,6 +22,36 @@ QUESTION_GUIDANCE = (
 )
 _ID = r"^[A-Za-z0-9_-]{1,40}$"
 
+# Full-turn matches only: a greeting prefix must never hide a real task or a
+# short clarification answer such as "yes", "red" or "HTML". This conservative
+# presentation veto is independent of model-generated form metadata.
+_GREETING = (
+    r"(?:hey+|hello|hi|hiya|heya|howdy|yo|greetings|"
+    r"(?:good )?(?:morning|afternoon|evening)|"
+    r"szia|sziasztok|helló|jó reggelt|jó napot|jó estét|"
+    r"hallo|hoi|goedemorgen|goedemiddag|goedenavond)"
+)
+_ADDRESSEE = r"(?:orsi|o r s i|choom)"
+_CHECK_IN = (
+    r"(?:how are you(?: doing)?|how (?:s|is) it going|what (?:s|is) up|"
+    r"hogy vagy|hoe gaat het(?: met je)?)"
+)
+_SOCIAL_TURN = re.compile(
+    rf"(?:{_GREETING}(?: there)?(?: {_ADDRESSEE})?(?: {_CHECK_IN})?|"
+    rf"{_CHECK_IN}|(?:thanks|thank you|köszönöm|dank je|dank je wel)(?: {_ADDRESSEE})?)"
+)
+
+
+def question_forms_allowed(request: str) -> bool:
+    """Known standalone social turns keep the ordinary composer, in any reply language.
+
+    Unknown text remains eligible for the existing clarification workflow. Word
+    normalization tolerates punctuation, apostrophes, emoji and ORSI's initials;
+    full matching preserves requests that include both a greeting and a task.
+    """
+    words = " ".join(re.findall(r"[^\W_]+", request.casefold()))
+    return _SOCIAL_TURN.fullmatch(words) is None
+
 
 class QuestionOption(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True, frozen=True, hide_input_in_errors=True)
@@ -161,9 +191,10 @@ def _question_prose(text):
     return any(mark in text for mark in ("?", "？", "؟"))
 
 
-def present_questions(answer: str, *, allow_forms=True) -> CompletionText:
+def present_questions(answer: str, *, allow_forms=True, request: str | None = None) -> CompletionText:
     """Project a completed response; malformed metadata leaves readable chat."""
     value = CompletionText(answer)
+    eligible = request is None or question_forms_allowed(request)
     batch = value.question_batch if allow_forms and not value.completion.incomplete else None
     readable = str(value)
     removed = False
@@ -179,13 +210,13 @@ def present_questions(answer: str, *, allow_forms=True) -> CompletionText:
             if allow_forms and not value.completion.incomplete and complete and not str(value)[end:].strip():
                 batch = parsed or batch
     if not removed:
-        return CompletionText(value, question_batch=batch)
+        return CompletionText(value, question_batch=batch if eligible else None)
     readable = readable.strip()
     return CompletionText(readable or (batch.readable() if batch else
         "Please answer in chat; the question form could not be displayed."),
         value.completion, value.completion_history, status_message=value.status_message,
         openai_response=value.openai_response, generated_images=value.generated_images,
-        question_batch=batch)
+        question_batch=batch if eligible else None)
 
 
 def question_chat_text(answer: str, batch: QuestionBatch | None = None) -> CompletionText:

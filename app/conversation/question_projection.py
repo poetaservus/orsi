@@ -10,7 +10,7 @@ import re
 from threading import Thread
 from time import monotonic
 
-from app.conversation.questions import MAX_QUESTION_BYTES, QuestionBatch, _unique_object
+from app.conversation.questions import MAX_QUESTION_BYTES, QuestionBatch, _unique_object, question_forms_allowed
 from app.conversation.context import calculate_context_budget
 from app.runtime.cancellation import TaskCancelled
 from app.runtime.skills.selection import _stop_request
@@ -66,6 +66,8 @@ def _normalized(text):
 def project_questions(inference, *, request, answer, cancellation, timeout_seconds=PROJECTION_TIMEOUT_SECONDS):
     """One isolated request; fail back to the original reply without retries."""
     cancellation.raise_if_cancelled()
+    if not question_forms_allowed(request):
+        return None
     payload = json.dumps({"current_request": request, "assistant_reply": answer}, ensure_ascii=True)
     if len(payload.encode("utf-8")) > MAX_INPUT_BYTES:
         return None

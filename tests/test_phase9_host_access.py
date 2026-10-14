@@ -279,15 +279,11 @@ def test_greeting_never_receives_filesystem_capabilities(tmp_path: Path):
         tmp_path, model
     )
     try:
-        assert service.run("hey") == "Hey! How can I help?"
+        answer = service.run("hey")
+        assert answer == "Hey! How can I help?"
+        assert answer.question_batch is None
         assert model.requests
-        assert len(model.text_requests) == 1
-        projection = model.text_requests[0]
-        assert projection[0] == {"role": "system", "content": PROJECTION_PROMPT}
-        assert len(projection) == 2 and projection[1]["role"] == "user"
-        assert json.loads(projection[1]["content"]) == {
-            "current_request": "hey", "assistant_reply": "Hey! How can I help?",
-        }
+        assert model.text_requests == []  # Greetings must not invoke form extraction.
         assert runtime.executor.journal.records == ()
     finally:
         service.shutdown()

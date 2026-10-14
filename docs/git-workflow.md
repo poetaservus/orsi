@@ -1,5 +1,49 @@
 # Git layout and baseline hygiene
 
+## Greeting question-form guard, 14 October 2026
+
+`codex/greeting-question-guard` starts from clean main `47343cf`. Known
+standalone greetings, check-ins and thanks keep the ordinary composer across
+dedicated/generic form metadata and plain-text extraction. Greeting-prefixed
+tasks and short clarification answers remain eligible. Old saved greeting
+forms are suppressed in the visible projection without migrating their saved
+content. Matching is conservative and covers common English/Hungarian/Dutch
+social turns; unknown text keeps the existing workflow.
+
+All **127 focused native checks passed** in **23.35 seconds**, including 44 new
+regression cases. The unchanged timeout group and revised host greeting check
+passed all **41 checks** in **5.01 seconds**. The host greeting's acceptance
+prompt, reply and no-filesystem-action assertions remain unchanged; only its
+expectation of a question-extraction request changes. Preliminary new-test
+fixture failures concerned required outcome counts and comparisons spanning
+the store's normal activation/timestamp write; the final fixture verifies
+unchanged saved messages/turns and a read-only visible projection. Earlier
+evidence remains under ignored `state/greeting-guard-*.xml`.
+
+The full native run recorded **3,899 passed, four failures, 61 skips and 15
+passing subtests** in **1,004.63 seconds**. Failures were the obsolete greeting
+extraction expectation, an unchanged 30-millisecond runtime deadline, custom
+login font restoration and a skill-import worker deadline. The greeting and
+runtime groups passed their 41-check recheck. A final four-module recheck
+recorded 58 passed and three UI failures in 105.44 seconds, including a second
+skill-import worker deadline. All three UI failures reproduced identically on
+an untouched source archive of starting main `47343cf` in 34.96 seconds. No
+full run is labeled passing; unrelated login/skill behavior and assertions were
+not changed. Evidence is retained under ignored `state/greeting-guard-full.*`,
+`state/greeting-guard-final-recheck.xml` and `state/greeting-guard-baseline.xml`.
+
+The 61 skips, including opt-in live-model/API gates, remain separate from
+deterministic checks; no live model/API qualification was performed. Prompt
+constants, accepted configuration and existing
+acceptance `run` calls are unchanged; dependency, compilation and whitespace
+checks pass. See [the presentation contract](question-composer.md).
+
+Pre-change refs/worktree inventories are retained under ignored
+`state/backups/greeting-question-guard-20261014/`, and prior main is preserved at
+`archive/2026-10-14/main-before-greeting-question-guard`. After verification,
+commit, fast-forward local main and remove only the merged feature branch.
+Other active worktrees, historical/unmerged tips and remote refs remain intact.
+
 ## Centered login composer and neutral Settings borders, 14 October 2026
 
 `codex/original-settings-borders` starts from clean main `a4146f7`. The locked
