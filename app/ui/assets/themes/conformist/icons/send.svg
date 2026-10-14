@@ -9,7 +9,9 @@
   stroke-linecap="round"
   stroke-linejoin="round"
 >
-  <rect x="1" y="1" width="22" height="22" rx="7" fill="#3b82f6" stroke="none" />
-  <path d="m5 12 7-7 7 7" />
-  <path d="M12 19V5" />
+  <circle cx="12" cy="12" r="11" fill="#3b82f6" stroke="none" />
+  <g transform="translate(12 12) scale(0.7) translate(-12 -12)">
+    <path d="m5 12 7-7 7 7" />
+    <path d="M12 19V5" />
+  </g>
 </svg>

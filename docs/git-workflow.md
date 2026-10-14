@@ -1,5 +1,20 @@
 # Git layout and baseline hygiene
 
+## Conformist circular send icon, 14 October 2026
+
+`codex/conformist-send-circle` starts from clean main `b1390a7`. The Conformist
+send SVG now uses a flat blue circle and a centered arrow at 70% of its previous
+size. Hit targets, behavior and other themes remain unchanged. All **10 essential
+native Conformist/icon checks passed** in **3.81 seconds**; the composer preview
+was visually inspected. Full-suite and live inference gates were not run under
+the user's essential-test scope.
+
+Inventories are retained under ignored
+`state/backups/conformist-send-circle-20261014/`, with prior main at
+`archive/2026-10-14/main-before-conformist-send-circle`. Commit, fast-forward local
+main and remove only this merged branch. Other worktrees, historical/unmerged
+tips, private settings and remote refs remain unchanged; no push is part of this task.
+
 ## Conformist theme, 14 October 2026
 
 `codex/conformist-theme` starts from clean main `356482e`. The new bundled theme

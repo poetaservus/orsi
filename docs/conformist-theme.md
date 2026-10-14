@@ -16,9 +16,15 @@ and syntax palette.
 
 The [Lucide outline icons](https://github.com/lucide-icons/lucide/tree/dab294f313897bacaa968b725b3259fa37c17bd1/icons)
 use a consistent neutral stroke. New message uses square-pen, Settings uses
-sliders, attachments use a paperclip, and Send uses a white upward arrow on a
-flat blue rounded square. Stop, microphone, folder, copy and check share the set.
+sliders, attachments use a paperclip, and Send uses a smaller white upward arrow
+on a flat blue circle. Stop, microphone, folder, copy and check share the set.
 Icon hit targets, enabled/disabled state and actions remain unchanged.
+
+The send-icon follow-up uses an 11-unit-radius circle and scales the centered
+arrow to 70%. Native preview retains the 34 × 34 hit target and 28 × 28 icon box.
+All 10 essential Conformist/icon checks passed in 3.81 seconds; results are in
+ignored `state/conformist-send-circle.xml` and previews in
+`state/conformist-send-circle/`.
 
 The full DM Sans OFL and Lucide/Feather notices are bundled with the assets and
 travel with exported/imported themes through the optional `licenses` manifest
