@@ -1,5 +1,36 @@
 # Git layout and baseline hygiene
 
+## Minimal themed profile login, 14 October 2026
+
+`codex/minimal-profile-login` starts from clean main `d363b11`. Normal login
+shows a password field, a content-sized unlock button and an underlined More
+control. More reveals recovery, profile location and alternative profile/restore
+actions. Inputs use 18px text, with 16px labels/actions and explicit font smoothing.
+Panel styling and painting follow the theme, including Conformist's flat colors
+and DM Sans. Layout adapts to font changes and scrolls in compact windows.
+Setup, unavailable-profile and deletion-retry screens keep their necessary actions.
+
+An ignored public login appearance preference remembers built-in theme identity
+and custom colors/installed font families, keyed to the public profile ID.
+Protected custom assets and other profile contents remain encrypted; unavailable
+custom fonts fall back before unlock. Existing installations initialize this
+preference after one successful unlock. Corrupt appearance files are preserved.
+
+The final **37 essential native checks passed** in **77.97 seconds**, with no
+failures/errors/skips. Real synthetic password/recovery unlocks, cold theme
+restoration, More keyboard access, compact geometry, missing-profile and deletion
+retry flows passed. Native collapsed/expanded/error previews were inspected.
+Evidence is under ignored `state/minimal-login-final.xml` and
+`state/minimal-login-preview/`. Full-suite and live inference gates were not run
+under the user's essential-test scope. No authentication, prompt, inference,
+response-formatting, animation or notification policy changes.
+
+Ref/worktree inventories are retained under ignored
+`state/backups/minimal-profile-login-20261014/`, with prior main preserved at
+`archive/2026-10-14/main-before-minimal-profile-login`. Commit, fast-forward local
+main and remove only this merged branch. Other worktrees, historical/unmerged
+tips, private settings and remote refs remain unchanged; no push is part of this task.
+
 ## Questionnaire header and footer text, 14 October 2026
 
 `codex/questionnaire-chrome-text` starts from clean main `f9a5741`. Questionnaire

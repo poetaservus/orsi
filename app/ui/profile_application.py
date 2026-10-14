@@ -9,6 +9,7 @@ from app.ui.main_window import MainWindow
 from app.ui.personal_profile import PersonalProfilePage, restore_dialog
 from app.ui.profile_loading import ProfileLoadingCover
 from app.ui.profile_login import ProfileLoginPanel
+from app.ui.login_appearance import LoginAppearance
 from app.vault.profiles import ProfileManager, public_error
 
 
@@ -18,6 +19,7 @@ class ProfileApplication(QObject):
         super().__init__(application)
         self.application, self.builder = application, builder
         self.manager = manager or ProfileManager(application_root)
+        self.login_appearance = LoginAppearance(self.manager.bootstrap.path.parent / "login_appearance_v1.json")
         self.legacy_logging = legacy_logging
         self.window_factory = window_factory or MainWindow
         self.initial_geometry = initial_geometry
@@ -216,6 +218,12 @@ class ProfileApplication(QObject):
             self.window.bind_profile(self.manager.session)
         self.window._profile_manager = self.manager
         locked = bool((selected or setup_required) and not self.manager.active)
+        self.window.theme_controller.changed.connect(
+            lambda window=self.window: self._remember_login_appearance(window))
+        if self.manager.active:
+            self._remember_login_appearance(self.window)
+        elif locked and self.manager.locator is not None:
+            self.login_appearance.apply(self.window.theme_controller, self.manager.locator.profile_id)
         location_error = self.manager.selection_error() if locked else None
         page = PersonalProfilePage(self.manager, self.window, message=message, login=locked,
                                    setup_required=setup_required, location_error=location_error)
@@ -273,6 +281,10 @@ class ProfileApplication(QObject):
                 page.password.setFocus()
         self.last_activity = monotonic()
         self.idle_timer.start()
+
+    def _remember_login_appearance(self, window):
+        if window is self.window and self.manager.active and self.manager.locator is not None:
+            self.login_appearance.remember(window.theme_controller.current, self.manager.locator.profile_id)
 
     def _collect_retired(self):
         keep = []

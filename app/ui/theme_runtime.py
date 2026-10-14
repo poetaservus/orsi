@@ -4,7 +4,7 @@ from __future__ import annotations
 import base64
 import re
 
-from PySide6.QtCore import QByteArray, QBuffer, QIODevice, QObject, QRectF, QSize, QSizeF, Qt
+from PySide6.QtCore import QByteArray, QBuffer, QIODevice, QObject, QRectF, QSize, QSizeF, Qt, Signal
 from PySide6.QtGui import QColor, QFontDatabase, QIcon, QImageReader, QLinearGradient, QPainter, QPixmap, QPalette
 from PySide6.QtWidgets import QWidget
 
@@ -296,6 +296,8 @@ def paint_theme_background(widget, painter, target, source):
 
 
 class ThemeController(QObject):
+    changed = Signal()
+
     def __init__(self, window, preferences):
         super().__init__(window)
         self.window = window
@@ -363,6 +365,7 @@ class ThemeController(QObject):
         controls = self.window.settings_panel.theme_controls
         controls.refresh()
         controls.status.setText(self.notice)
+        self.changed.emit()
 
     def clear(self):
         previous = self.current

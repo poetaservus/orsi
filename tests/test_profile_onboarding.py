@@ -86,6 +86,8 @@ def test_create_from_welcome_opens_only_the_selected_profile(qt, tmp_path, mode)
         controller.transition(controller.manager.lock)
         page = controller.window.personal_profile_page
         assert not page.setup_required and "Unlock profile" in buttons(page)
+        assert buttons(page) == ["Unlock profile", "More"]
+        page.more_button.click()
         assert "Restore encrypted backup…" in buttons(page)
         assert page.password.accessibleName() == "Profile password"
         assert any(label.text() == "Unlock your profile" for label in controller.window.login_panel.findChildren(QLabel))

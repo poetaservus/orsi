@@ -1,28 +1,38 @@
 """Profile setup and login, separate from the settings navigation."""
 from PySide6.QtCore import QRectF, Qt
-from PySide6.QtGui import QColor, QLinearGradient, QPainter, QPen
+from PySide6.QtGui import QFont, QLinearGradient, QPainter, QPen
 from PySide6.QtWidgets import QFrame, QGraphicsBlurEffect, QLabel, QScrollArea, QVBoxLayout, QWidget
 
 from app.vault.types import ProfileNotFound, RecoveryRequired
+from app.ui.theme_runtime import apply_theme_style, apply_theme_tree, theme_color
 
 
 _LOGIN_PAGE_STYLE = """
 QWidget#personalProfilePage QLabel#loginProfileSummary {
-    background: #162235; border: 1px solid #35465e; border-radius: 8px;
-    padding: 12px; color: #bccbdc; font-size: 12px;
+    background: transparent; border: none; padding: 0; color: #b9c2d0; font-size: 16px;
 }
-QWidget#personalProfilePage QLabel#loginFieldLabel { color: #e4e5eb; font-size: 14px; }
-QWidget#personalProfilePage QLabel#loginOptionsHeading { color: #a2afc1; font-size: 12px; }
+QWidget#personalProfilePage QLabel#loginFieldLabel { color: #e4e5eb; font-size: 16px; }
+QWidget#personalProfilePage QLabel#loginOptionsHeading { color: #a2afc1; font-size: 16px; }
+QWidget#personalProfilePage QLineEdit { font-size: 18px; border-radius: 8px; padding: 8px 10px; }
+QWidget#personalProfilePage QPushButton { font-size: 16px; padding: 6px 14px; }
 QWidget#personalProfilePage QLabel#profileFeedback {
     background: #252d41; border: 1px solid #61748f; border-radius: 6px;
-    padding: 10px 12px; color: #f0c5bb; font-size: 13px;
+    padding: 10px 12px; color: #f0c5bb; font-size: 16px;
 }
 QWidget#personalProfilePage QPushButton#loginPrimary {
-    background: #3b5675; border-color: #6983a2; color: #f4f6fb; font-size: 15px; font-weight: 500;
+    background: #3b5675; border-color: #6983a2; color: #f4f6fb; font-size: 16px; font-weight: 500;
 }
 QWidget#personalProfilePage QPushButton#loginPrimary:hover { background: #46658a; }
 QWidget#personalProfilePage QPushButton#loginPrimary:pressed { background: #304761; }
 QWidget#personalProfilePage QPushButton#loginPrimary:focus { border-color: #91bfe0; }
+QWidget#personalProfilePage QPushButton#loginMore,
+QWidget#personalProfilePage QPushButton#loginMore:hover,
+QWidget#personalProfilePage QPushButton#loginMore:pressed,
+QWidget#personalProfilePage QPushButton#loginMore:checked {
+    background: transparent; border: none; padding: 2px 0;
+    color: #b9c2d0; font-size: 16px; font-weight: 400; text-decoration: underline;
+}
+QWidget#personalProfilePage QPushButton#loginMore:focus { color: #e4e5eb; }
 """
 
 
@@ -32,19 +42,22 @@ class ProfileLoginPanel(QFrame):
         self.setObjectName("profileLoginPanel")
         self.setAccessibleName("Profile login")
         self.page = page
-        page.setStyleSheet(page.styleSheet() + _LOGIN_PAGE_STYLE)
-        page.layout.setContentsMargins(0, 0, 6, 0)
+        font = self.font()
+        font.setStyleStrategy(QFont.StyleStrategy.PreferAntialias)
+        font.setHintingPreference(QFont.HintingPreference.PreferVerticalHinting)
+        self.setFont(font)
+        apply_theme_style(page, page._theme_style_source + _LOGIN_PAGE_STYLE)
         # Login is a sibling of the application root, so only its backdrop blurs.
         self.backdrop_blur = QGraphicsBlurEffect(parent._root)
         self.backdrop_blur.setBlurRadius(12)
         self.backdrop_blur.setBlurHints(QGraphicsBlurEffect.BlurHint.QualityHint)
         parent._root.setGraphicsEffect(self.backdrop_blur)
-        self.setStyleSheet("""
+        apply_theme_style(self, """
             QFrame#profileLoginPanel { background: transparent; border: none; }
-            QFrame#profileLoginPanel QWidget { font-family: Saira; color: #e4e5eb; }
-            QFrame#profileLoginPanel QLabel { background: transparent; font-size: 14px; }
+            QFrame#profileLoginPanel QWidget { font-family: Saira; color: #e4e5eb; font-size: 16px; }
+            QFrame#profileLoginPanel QLabel { background: transparent; font-size: 16px; }
             QFrame#profileLoginPanel QLabel#loginHeading { font-size: 30px; font-weight: 500; }
-            QFrame#profileLoginPanel QLabel#loginSubtitle { color: #b9c7d9; font-size: 14px; }
+            QFrame#profileLoginPanel QLabel#loginSubtitle { color: #b9c2d0; font-size: 16px; }
             QWidget#loginContent { background: transparent; }
             QFrame#profileLoginPanel QScrollArea,
             QFrame#profileLoginPanel QScrollArea > QWidget > QWidget { background: transparent; border: none; }
@@ -90,18 +103,26 @@ class ProfileLoginPanel(QFrame):
         subtitle.setWordWrap(True)
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
         subtitle.setObjectName("loginSubtitle")
-        header.addWidget(subtitle)
+        if not page.compact_login:
+            header.addWidget(subtitle)
+        else:
+            subtitle.deleteLater()
         body.addLayout(header)
         body.addWidget(page)
         self.scroll.setWidget(content)
         layout.addWidget(self.scroll)
+        apply_theme_tree(self)
+        page.login_layout_changed.connect(self.fit_to_parent)
+        parent.theme_controller.changed.connect(self.fit_to_parent)
         self.fit_to_parent()
 
     def fit_to_parent(self):
         parent = self.parentWidget()
-        preferred_height = (260 if self.page.setup_required else 580 if self.page.location_error is not None
-                            else 700 if self.page.status.text() else 640)
-        self.resize(min(600, parent.width() - 32), min(preferred_height, parent.height() - 72))
+        self.scroll.widget().ensurePolished()
+        self.scroll.widget().layout().activate()
+        minimum = 300 if self.page.compact_login else 280
+        preferred_height = max(minimum, self.scroll.widget().sizeHint().height() + 56)
+        self.resize(min(480, parent.width() - 32), min(preferred_height, parent.height() - 72))
         self.move((parent.width() - self.width()) // 2, max(44, (parent.height() - self.height()) // 2))
 
     def focus_password(self):
@@ -117,8 +138,8 @@ class ProfileLoginPanel(QFrame):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         gradient = QLinearGradient(self.rect().bottomLeft(), self.rect().topRight())
-        gradient.setColorAt(0, QColor("#090c15"))
-        gradient.setColorAt(1, QColor("#1d2637"))
+        gradient.setColorAt(0, theme_color(self, "#090c15", "settings_bottom"))
+        gradient.setColorAt(1, theme_color(self, "#1d2637", "settings_top"))
         painter.setBrush(gradient)
-        painter.setPen(QPen(QColor("#48525f"), 1.0))
+        painter.setPen(QPen(theme_color(self, "#48525f", "border"), 1.0))
         painter.drawRoundedRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5), 16, 16)

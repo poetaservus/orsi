@@ -150,7 +150,22 @@ to the active personal profile. Legacy mode uses ignored application `state/`.
 Encrypted profiles use the existing protected-record interface, including
 in-memory image/font loading, with no plaintext asset cache. Profile backup,
 restore and portable copies retain the catalog. Legacy preference migration also
-includes it. The locked/unlock screen uses the original appearance.
+includes it.
+
+The login panel follows the remembered appearance. Its default view contains a
+password field, a compact unlock button and an underlined **More** control.
+More reveals recovery, profile details and alternative profile/restore actions.
+The password and recovery-key Enter shortcuts retain their existing behavior.
+
+After opening a profile, the app remembers its appearance in ignored application
+`state/login_appearance_v1.json`, linked to the public profile identity. Built-in
+themes are restored from bundled assets before unlocking. Custom theme colors,
+installed font families and solid/gradient backgrounds can be restored too.
+Custom images, embedded fonts and icons remain inside the protected profile;
+an unavailable custom font falls back until unlocking. No passwords, credentials,
+conversations or other profile preferences enter the login appearance file.
+Existing installations need one successful unlock to initialize this preference.
+An unreadable appearance file is preserved and does not block authentication.
 
 Import validates the full package and decodes its assets before saving or applying
 it. Invalid imports leave the current appearance intact. Missing or invalid saved

@@ -180,6 +180,7 @@ class ProfileChoice(QDialog):
 class PersonalProfilePage(QWidget):
     transition_requested = Signal(object)
     reload_requested = Signal(object)
+    login_layout_changed = Signal()
 
     def __init__(self, manager, window, *, message="", login=False, setup_required=False, location_error=None):
         super().__init__()
@@ -189,6 +190,9 @@ class PersonalProfilePage(QWidget):
         self.login = login
         self.setup_required = setup_required
         self.location_error = location_error
+        self.compact_login = bool(login and not setup_required and location_error is None
+                                  and manager.locator is not None and not manager.deletion_pending
+                                  and not manager.profile_deleted)
         message = message or (public_error(location_error) if location_error is not None else "")
         self.tabbed = manager.active and not login and not manager.deletion_pending
         if manager.active:
@@ -261,8 +265,10 @@ class PersonalProfilePage(QWidget):
             if login:
                 self.password.setPlaceholderText("Enter your profile password")
                 self.recovery.setPlaceholderText("Or paste your recovery key")
-                for title, field in (("Password", self.password), ("Recovery key (optional)", self.recovery)):
-                    field.setFixedHeight(44)
+                fields = (("Password", self.password),) if self.compact_login else (
+                    ("Password", self.password), ("Recovery key (optional)", self.recovery))
+                for title, field in fields:
+                    field.setFixedHeight(48)
                     caption = label(title)
                     caption.setObjectName("loginFieldLabel")
                     caption.setBuddy(field)
@@ -277,19 +283,24 @@ class PersonalProfilePage(QWidget):
                 self.unlock_button.setFixedHeight(44)
             self.password.returnPressed.connect(self._unlock)
             self.recovery.returnPressed.connect(self._unlock)
+        if self.compact_login:
+            self._login_more()
         if login:
-            self.layout.addSpacing(10)
-            options = label("Other profile options")
-            options.setObjectName("loginOptionsHeading")
-            self.layout.addWidget(options)
+            if not self.compact_login:
+                self.layout.addSpacing(10)
+                options = label("Other profile options")
+                options.setObjectName("loginOptionsHeading")
+                self.layout.addWidget(options)
             choices = QHBoxLayout()
             actions = (("Select existing…", self._select),) if location_error is not None else (
                 ("New profile…", self._new), ("Select existing…", self._select))
             for title, action in actions:
                 button = QPushButton(title)
-                button.setFixedHeight(36)
+                button.setFixedHeight(40)
+                button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
                 button.clicked.connect(action)
                 choices.addWidget(button)
+            choices.addStretch()
             self.layout.addLayout(choices)
         self._buttons((("Use current unencrypted storage", self._legacy),))
         if not login:
@@ -299,6 +310,41 @@ class PersonalProfilePage(QWidget):
         self.refresh_summary()
         if message:
             self.status.setText(message)
+
+    def _login_more(self):
+        root = self.layout
+        root.removeWidget(self.summary)
+        self.more_button = QPushButton("More", self)
+        self.more_button.setObjectName("loginMore")
+        self.more_button.setCheckable(True)
+        self.more_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.more_button.setAccessibleName("More login options")
+        root.addWidget(self.more_button, 0, Qt.AlignmentFlag.AlignLeft)
+        self.more_options = QWidget(self)
+        self.more_options.setObjectName("loginMoreOptions")
+        self.layout = QVBoxLayout(self.more_options)
+        self.layout.setContentsMargins(0, 12, 0, 0)
+        self.layout.setSpacing(12)
+        caption = label("Recovery key")
+        caption.setObjectName("loginFieldLabel")
+        caption.setBuddy(self.recovery)
+        self.recovery.setFixedHeight(48)
+        self.layout.addWidget(caption)
+        self.layout.addWidget(self.recovery)
+        self.layout.addWidget(self.summary)
+        root.addWidget(self.more_options)
+        self.more_options.hide()
+        self.more_button.toggled.connect(self._toggle_login_more)
+        QWidget.setTabOrder(self.password, self.unlock_button)
+        QWidget.setTabOrder(self.unlock_button, self.more_button)
+        QWidget.setTabOrder(self.more_button, self.recovery)
+
+    def _toggle_login_more(self, expanded):
+        self.more_options.setVisible(expanded)
+        self.more_button.setText("Less" if expanded else "More")
+        if not expanded:
+            self.recovery.clear()
+        self.login_layout_changed.emit()
 
     def _workspace(self, message):
         outer = self.layout
@@ -477,9 +523,10 @@ class PersonalProfilePage(QWidget):
         for title, action in actions:
             button = QPushButton(title)
             button.setAccessibleName(title.removesuffix("…"))
-            button.setFixedHeight(36)
+            button.setFixedHeight(40)
+            button.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
             button.clicked.connect(action)
-            row.addWidget(button)
+            row.addWidget(button, 0, Qt.AlignmentFlag.AlignLeft)
             buttons.append(button)
         self.layout.addLayout(row)
         return buttons
