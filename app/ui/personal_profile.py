@@ -2,6 +2,7 @@
 from pathlib import Path
 import json
 
+from app.ui.theme_runtime import apply_theme_style
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox,
     QFileDialog, QFormLayout, QGridLayout, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
@@ -48,7 +49,7 @@ QWidget#personalProfilePage QLineEdit#profilePath { background: transparent; bor
 def profile_dialog(parent):
     dialog = QDialog(parent)
     dialog.setObjectName("personalProfileDialog")
-    dialog.setStyleSheet(_STYLE)
+    apply_theme_style(dialog, _STYLE)
     return dialog
 
 
@@ -87,7 +88,7 @@ class ProfileChoice(QDialog):
     def __init__(self, manager, *, existing=False, parent=None):
         super().__init__(parent)
         self.setObjectName("personalProfileDialog")
-        self.setStyleSheet(_STYLE)
+        apply_theme_style(self, _STYLE)
         self.setWindowTitle("Select personal profile" if existing else "Set up personal profile")
         self.resize(560, 400)
         layout = QVBoxLayout(self)
@@ -183,7 +184,7 @@ class PersonalProfilePage(QWidget):
     def __init__(self, manager, window, *, message="", login=False, setup_required=False, location_error=None):
         super().__init__()
         self.setObjectName("personalProfilePage")
-        self.setStyleSheet(_STYLE)
+        apply_theme_style(self, _STYLE)
         self.manager, self.window = manager, window
         self.login = login
         self.setup_required = setup_required

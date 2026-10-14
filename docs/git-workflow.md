@@ -1,5 +1,26 @@
 # Git layout and baseline hygiene
 
+## Cosmetic UI themes, 14 October 2026
+
+`codex/ui-themes` starts from clean main `32a51bc`. Theme manifests control only
+cosmetic values and static assets, with live selection/import/export, preserved
+Original appearance and profile-owned portable storage. Response formatting,
+animation behavior, notifications/audio and inference remain unchanged. See the
+[theme contract](ui-themes.md) and [essential verification](ui-themes-verification.md).
+
+Essential regression passed **173 tests and 5 subtests**, with **2 native-only
+skips**, in **58.00 seconds**. Final native theme checks passed **40 tests** in
+**7.71 seconds**. Original's chat capture is pixel-identical to unchanged main.
+The existing native attachment-picker teardown crash reproduces on unchanged
+main and remains separate from the passing offscreen regression. Full-suite and
+live inference gates were not run under the user's essential-test scope.
+
+Ref/worktree inventories are preserved under ignored
+`state/backups/ui-themes-20261014/`, with prior main at
+`archive/2026-10-14/main-before-ui-themes`. Commit, fast-forward local main and
+remove only this merged feature branch. Other worktrees, historical/unmerged
+tips, private settings and remote refs remain intact; no push is authorized here.
+
 ## Main publication and final cleanup, 14 October 2026
 
 The user requested consolidation of all current work on main, publication to

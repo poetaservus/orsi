@@ -4,6 +4,7 @@ from math import ceil
 from PySide6.QtGui import QColor, QFont, QFontMetricsF, QImage, QPainter, QPen, QTextBlockFormat, QTextCharFormat, QTextCursor, QTextDocument, QTextFormat, QTextListFormat
 from PySide6.QtCore import QRectF, Qt
 from PySide6.QtWidgets import QFrame, QTextEdit
+from app.ui.theme_runtime import theme_color
 
 
 _INLINE_REFERENCE = QTextFormat.Property.UserProperty.value + 1
@@ -69,6 +70,8 @@ class MarkdownLabel(QTextEdit):
         font = self.font()
         if self._rendered_font == font:
             return
+        selection = self.textCursor()
+        selection_anchor, selection_position = selection.anchor(), selection.position()
         self.document.setDefaultFont(font)
         self.document.setMarkdown(self._source,
             QTextDocument.MarkdownFeature.MarkdownDialectGitHub
@@ -142,6 +145,11 @@ class MarkdownLabel(QTextEdit):
                 iterator += 1
             block = block.next()
         self._rendered_font = font
+        cursor = QTextCursor(self.document)
+        limit = self.document.characterCount() - 1
+        cursor.setPosition(min(selection_anchor, limit))
+        cursor.setPosition(min(selection_position, limit), QTextCursor.MoveMode.KeepAnchor)
+        self.setTextCursor(cursor)
         self.viewport().update()
 
     def plain_text(self) -> str:
@@ -178,7 +186,7 @@ class MarkdownLabel(QTextEdit):
         painter = QPainter(self.viewport())
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor("#3b3c40"))
+        painter.setBrush(theme_color(self, "#3b3c40", "inline_reference"))
         for rectangle in self._inline_backgrounds():
             painter.drawRoundedRect(rectangle, 6, 6)
         for rectangle, style in self._bullet_markers():

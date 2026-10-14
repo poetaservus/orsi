@@ -1,6 +1,7 @@
 """Explicit human acknowledgement of retained uncertain outcomes."""
 from datetime import datetime
 
+from app.ui.theme_runtime import apply_theme_style
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox, QDialog, QHBoxLayout, QLabel, QPlainTextEdit, QPushButton, QSizePolicy, QVBoxLayout,
@@ -88,7 +89,7 @@ class OperationReviewDialog(QDialog):
         self.acknowledge.clicked.connect(self.accept)
         buttons.addWidget(self.acknowledge)
         layout.addLayout(buttons)
-        self.setStyleSheet("""
+        apply_theme_style(self, """
             QDialog { background: #20232f; color: #eeeeef; }
             QLabel, QCheckBox { color: #eeeeef; }
             QPlainTextEdit { background: #151722; color: #eeeeef; border: 1px solid #494d60; border-radius: 6px; }

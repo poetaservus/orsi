@@ -6,6 +6,7 @@ from html import escape
 
 from PySide6.QtCore import QBuffer, QByteArray, QIODevice, QObject, QRectF, QRunnable, QSize, QThreadPool, Qt, Signal, Slot
 from PySide6.QtGui import QColor, QImage, QImageReader, QPainter, QPainterPath, QPen
+from app.ui.theme_runtime import theme_color
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QScrollArea, QWidget
 from app.ui.motion import install_smooth_scroll
 
@@ -153,7 +154,7 @@ class _ImagePreview(QWidget):
         bounds = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
         clip = QPainterPath()
         clip.addRoundedRect(bounds, 9, 9)
-        painter.fillPath(clip, QColor(19, 23, 32, 130))
+        painter.fillPath(clip, theme_color(self, QColor(19, 23, 32, 130), "surface"))
         painter.setClipPath(clip)
         if image is not None and not image.isNull():
             size = image.size().scaled(self.size(), Qt.AspectRatioMode.KeepAspectRatio)
@@ -161,7 +162,7 @@ class _ImagePreview(QWidget):
                             size.width(), size.height())
             painter.drawImage(target, image)
         else:
-            painter.setPen(QColor("#b1b8c8"))
+            painter.setPen(theme_color(self, "#b1b8c8", "text_muted"))
             font = painter.font()
             font.setPixelSize(11)
             painter.setFont(font)
@@ -170,7 +171,7 @@ class _ImagePreview(QWidget):
             painter.drawText(bounds, Qt.AlignmentFlag.AlignCenter,
                              ("Loading image…" if image is None else "Preview unavailable") + "\n" + name)
         painter.setClipping(False)
-        painter.setPen(QPen(QColor(170, 190, 232, 40), 1))
+        painter.setPen(QPen(theme_color(self, QColor(170, 190, 232, 40), "border"), 1))
         painter.drawPath(clip)
 
 

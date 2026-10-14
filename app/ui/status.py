@@ -4,6 +4,7 @@ import math
 
 from PySide6.QtCore import QElapsedTimer, QRectF, QTimer, Qt, Slot
 from PySide6.QtGui import QColor, QPainter
+from app.ui.theme_runtime import theme_color
 from PySide6.QtWidgets import QLabel, QWidget
 
 
@@ -47,7 +48,7 @@ class ThinkingDots(QWidget):
         for index, x in enumerate((0.0, 12.0, 24.0)):
             pulse = self._pulse(index, seconds)
             height = 5.0 + pulse * 9.0
-            color = QColor("#c7cad2")
+            color = theme_color(self, "#c7cad2", "text_muted")
             color.setAlphaF(.35 + pulse * .65)
             painter.setBrush(color)
             painter.drawRoundedRect(QRectF(x, (self.height() - height) / 2, 5, height), 2.5, 2.5)

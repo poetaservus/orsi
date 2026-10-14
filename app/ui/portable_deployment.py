@@ -1,6 +1,7 @@
 """A cancellable deployment dialog; profile ownership remains with the local app."""
 from pathlib import Path
 
+from app.ui.theme_runtime import apply_theme_style
 from PySide6.QtCore import QThread, QUrl, Signal, Slot
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (QApplication, QCheckBox, QDialog, QFileDialog, QHBoxLayout, QLineEdit,
@@ -55,7 +56,7 @@ class PortableDeploymentDialog(QDialog):
     def __init__(self, manager, window, parent=None):
         super().__init__(parent or window)
         self.setObjectName("personalProfileDialog")
-        self.setStyleSheet(_STYLE + """
+        apply_theme_style(self, _STYLE + """
             QDialog#personalProfileDialog {
                 background: qlineargradient(x1:0, y1:1, x2:1, y2:0, stop:0 #090c15, stop:1 #1d2637);
             }

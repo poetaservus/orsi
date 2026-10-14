@@ -13,6 +13,8 @@ from app.ui.notification_settings import NotificationSoundControl, NotificationS
 from app.ui.inputs import ScrollSafeComboBox
 from app.conversation.personality import PERSONALITIES
 from app.conversation.response_language import RESPONSE_LANGUAGES
+from app.ui.theme_runtime import apply_theme_style, apply_theme_tree, theme_color
+from app.ui.theme_settings import ThemeControls
 
 
 class SettingsPanel(QFrame):
@@ -22,7 +24,7 @@ class SettingsPanel(QFrame):
     def __init__(self, parent):
         super().__init__(parent)
         self.setObjectName("settingsPanel")
-        self.setStyleSheet(_STYLE)
+        apply_theme_style(self, _STYLE)
         self.resize(self.preferred_size)
         self.user_positioned = False
         self._close_pending = False
@@ -120,6 +122,7 @@ class SettingsPanel(QFrame):
         self.navigation_layout.insertWidget(self.navigation_layout.count() - 1, button)
         if page.tabbed:
             self.pages.addWidget(page)
+            apply_theme_tree(page)
             return
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -127,6 +130,7 @@ class SettingsPanel(QFrame):
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setWidget(page)
         self.pages.addWidget(scroll)
+        apply_theme_tree(page)
 
     def populate(self, window):
         general, models, skills, images, appearance = self.page_layouts
@@ -244,8 +248,7 @@ class SettingsPanel(QFrame):
         images.addStretch()
 
         self._heading(appearance, "Appearance", "Display and accessibility preferences.")
-        window.theme_selector = self._placeholder("Theme")
-        self._row(appearance, "Theme", "Choose how O.R.S.I looks · Coming soon", window.theme_selector)
+        self.theme_controls = ThemeControls(self, window, appearance)
         window.gui_language_selector = self._placeholder("GUI Language")
         self._row(appearance, "GUI Language", "Interface display language · Coming soon", window.gui_language_selector)
         self._future(appearance, "Text size", "Adjust interface text size")
@@ -313,10 +316,10 @@ class SettingsPanel(QFrame):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         gradient = QLinearGradient(self.rect().bottomLeft(), self.rect().topRight())
-        gradient.setColorAt(0, QColor("#090c15"))
-        gradient.setColorAt(1, QColor("#1d2637"))
+        gradient.setColorAt(0, theme_color(self, "#090c15", "settings_bottom"))
+        gradient.setColorAt(1, theme_color(self, "#1d2637", "settings_top"))
         painter.setBrush(gradient)
-        painter.setPen(QPen(QColor("#48525f"), 1.0))
+        painter.setPen(QPen(theme_color(self, "#48525f", "border"), 1.0))
         painter.drawRoundedRect(QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5), 16, 16)
 
     def bounded_position(self, position):

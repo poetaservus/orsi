@@ -1,4 +1,5 @@
 """A model-aware effort slider in a compact popup above the composer."""
+from app.ui.theme_runtime import apply_theme_style, theme_color
 from PySide6.QtCore import QEvent, QPoint, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter, QPainterPath
 from PySide6.QtWidgets import QFrame, QLabel, QPushButton, QSlider, QVBoxLayout
@@ -52,21 +53,21 @@ class EffortSlider(QSlider):
         track = QRectF(3, 4, self.width() - 6, 22)
         path = QPainterPath()
         path.addRoundedRect(track, 11, 11)
-        painter.fillPath(path, QColor("#3b4046"))
+        painter.fillPath(path, theme_color(self, "#3b4046", "border"))
         steps = max(1, self.maximum() - self.minimum())
         position = 15 + (self.width() - 30) * (self.sliderPosition() - self.minimum()) / steps
         painter.save()
         painter.setClipPath(path)
-        painter.fillRect(QRectF(3, 4, position - 3, 22), QColor("#2475ef"))
+        painter.fillRect(QRectF(3, 4, position - 3, 22), theme_color(self, "#2475ef", "accent"))
         painter.restore()
         for index in range(self.minimum(), self.maximum() + 1):
             x = 15 + (self.width() - 30) * (index - self.minimum()) / steps
-            painter.setBrush(QColor("#80adf8" if index <= self.sliderPosition() else "#777c83"))
+            painter.setBrush(theme_color(self, "#80adf8" if index <= self.sliderPosition() else "#777c83", "accent" if index <= self.sliderPosition() else "text_disabled"))
             painter.drawEllipse(QPoint(round(x), 15), 2, 2)
-        painter.setBrush(QColor("#ffffff"))
+        painter.setBrush(theme_color(self, "#ffffff", "text"))
         painter.drawEllipse(QPoint(round(position), 15), 14, 14)
         if self.hasFocus():
-            painter.setPen(QColor("#91baff"))
+            painter.setPen(theme_color(self, "#91baff", "focus"))
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawEllipse(QPoint(round(position), 15), 14, 14)
 
@@ -77,8 +78,8 @@ class EffortPopup(QFrame):
     def paintEvent(self, event):  # noqa: N802
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setPen(QColor("#35393f"))
-        painter.setBrush(QColor("#202328"))
+        painter.setPen(theme_color(self, "#35393f", "border"))
+        painter.setBrush(theme_color(self, "#202328", "surface"))
         painter.drawRoundedRect(QRectF(self.rect()).adjusted(.5, .5, -.5, -.5), 16, 16)
 
     def keyPressEvent(self, event):  # noqa: N802
@@ -109,7 +110,7 @@ class ReasoningSelector(QPushButton):
         self.popup.setAttribute(Qt.WidgetAttribute.WA_NoMouseReplay)
         self.popup.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self.popup.setFixedSize(256, 108)
-        self.popup.setStyleSheet(POPUP_STYLE)
+        apply_theme_style(self.popup, POPUP_STYLE)
         layout = QVBoxLayout(self.popup)
         layout.setContentsMargins(12, 12, 12, 10)
         layout.setSpacing(2)

@@ -1,4 +1,5 @@
 """Large image inspection over the blurred chat with its shared composer."""
+from app.ui.theme_runtime import apply_theme_style, apply_theme_tree, theme_color
 from PySide6.QtCore import QLineF, QRectF, QSize, Qt, Signal
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen, QPixmap
 from PySide6.QtWidgets import (
@@ -52,7 +53,7 @@ class _NavigationButton(QPushButton):
         super().paintEvent(event)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setPen(QPen(QColor("#cbd0da" if self.isEnabled() else "#545964"), 1.3,
+        painter.setPen(QPen(theme_color(self, "#cbd0da" if self.isEnabled() else "#545964", "icon" if self.isEnabled() else "text_disabled"), 1.3,
             Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
         painter.translate(self.width() / 2, self.height() / 2)
         if self.action == 'close':
@@ -89,7 +90,7 @@ class _ImageCanvas(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
         if image is None or image.isNull():
-            painter.setPen(QColor("#b1b8c8"))
+            painter.setPen(theme_color(self, "#b1b8c8", "text_muted"))
             painter.drawText(self.rect(), Qt.AlignmentFlag.AlignCenter,
                              "Opening image…" if image is None else "This saved image is unavailable.")
             return
@@ -223,9 +224,10 @@ class ImageViewer(QDialog):
         self.prompt.attachments_requested.connect(lambda _: self.status.setText("Use the chat composer to attach additional files."))
         self.send.clicked.connect(self._submit)
         self.finished.connect(self._clear)
-        self.setStyleSheet(_STYLE + COMPOSER_STYLE)
+        apply_theme_style(self, _STYLE + COMPOSER_STYLE)
         self.setGeometry(self.screen().availableGeometry())
         self._refresh_image()
+        apply_theme_tree(self)
 
     def paintEvent(self, event):  # noqa: N802
         painter = QPainter(self)

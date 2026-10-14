@@ -1,6 +1,7 @@
 """Native mixed question form rendered inside the existing composer."""
 from __future__ import annotations
 
+from app.ui.theme_runtime import apply_theme_style
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
@@ -126,7 +127,7 @@ class QuestionComposer(QFrame):
         self.reveal_effect.setOpacity(1.)
         self.reveal_effect.setEnabled(False)
         self.setObjectName("questionComposer")
-        self.setStyleSheet(QUESTION_STYLE)
+        apply_theme_style(self, QUESTION_STYLE)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(18, 12, 18, 12)
         layout.setSpacing(8)

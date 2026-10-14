@@ -82,6 +82,7 @@ from app.conversation.attachment_processing import SUPPORTED_FILE_FILTER
 from app.ui.reasoning import ReasoningSelector
 from app.settings.personality import PersonalitySettings
 from app.settings.response_language import ResponseLanguageSettings
+from app.ui.theme_runtime import ThemeController, apply_theme_style, paint_theme_background, set_theme_icon
 
 
 log = logging.getLogger(__name__)
@@ -319,6 +320,8 @@ class ChatSurface(QWidget):
         target: QRectF,
         source: QRectF,
     ) -> None:
+        if paint_theme_background(self, painter, target, source):
+            return
         if self._background.isNull():
             gradient = QLinearGradient(
                 target.left() - source.left(),
@@ -375,6 +378,7 @@ class MainWindow(QMainWindow):
         self.inference = inference
         self.startup_error = startup_error
         self._preferences_store = preferences_store
+        self.theme_controller = ThemeController(self, preferences_store)
         self._greeting_message = self._load_greeting_message()
         self._tool_approval_required = self._load_tool_approval_required()
         configure_approval = getattr(service, "set_tool_approval_required", None)
@@ -431,7 +435,7 @@ class MainWindow(QMainWindow):
         self.new_session_button = QPushButton()
         self.new_session_button.setObjectName("topBarButton")
         self.new_session_button.setFixedSize(_TOP_BUTTON_WIDTH, _TOP_BUTTON_HEIGHT)
-        self.new_session_button.setIcon(QIcon(str(_ICON_DIRECTORY / "top_new_session.svg")))
+        set_theme_icon(self.new_session_button, "new_message")
         self.new_session_button.setIconSize(QSize(_TOP_ICON_SIZE, _TOP_ICON_SIZE))
         self.new_session_button.setToolTip("New session — permanently clears this conversation")
         self.new_session_button.setAccessibleName("New session")
@@ -440,7 +444,7 @@ class MainWindow(QMainWindow):
         self.settings_button = SettingsIconButton(svg=_ICON_DIRECTORY / "top_settings.svg")
         self.settings_button.setObjectName("topBarButton")
         self.settings_button.setFixedSize(_TOP_BUTTON_WIDTH, _TOP_BUTTON_HEIGHT)
-        self.settings_button.setIcon(QIcon(str(_ICON_DIRECTORY / "top_settings.svg")))
+        set_theme_icon(self.settings_button, "settings")
         self.settings_button.setIconSize(QSize(_TOP_ICON_SIZE, _TOP_ICON_SIZE))
         self.settings_button.setToolTip("Settings")
         self.settings_button.setAccessibleName("Settings")
@@ -480,7 +484,7 @@ class MainWindow(QMainWindow):
         self.operation_review_button = QPushButton("Review interrupted operations", self.operation_review_banner)
         self.operation_review_button.clicked.connect(self._show_operation_review)
         review_layout.addWidget(self.operation_review_button)
-        self.operation_review_banner.setStyleSheet(
+        apply_theme_style(self.operation_review_banner,
             "QFrame#operationReviewBanner { background: #292d3c; } "
             "QLabel { color: #f0c78b; } "
             "QPushButton { background: #323747; color: #eeeeef; padding: 8px; "
@@ -623,7 +627,7 @@ class MainWindow(QMainWindow):
         self.stop = QPushButton(self.action_slot)
         self.stop.setObjectName("stopButton")
         self.stop.setFixedSize(COMPOSER_CONTROL_SIZE, COMPOSER_CONTROL_SIZE)
-        self.stop.setIcon(QIcon(str(_ICON_DIRECTORY / "stop.svg")))
+        set_theme_icon(self.stop, "stop")
         self.stop.setIconSize(QSize(14, 14))
         self.stop.setToolTip("Stop")
         self.stop.setAccessibleName("Stop")
@@ -658,7 +662,7 @@ class MainWindow(QMainWindow):
                                         input_layout=input_layout, send_button=self.send)
 
         self.setCentralWidget(root)
-        self.setStyleSheet(_STYLE)
+        apply_theme_style(self, _STYLE)
         _apply_ui_font(self.input)
         self.send.clicked.connect(self.submit)
         self.stop.clicked.connect(self.cancel_current_task)
@@ -703,6 +707,8 @@ class MainWindow(QMainWindow):
             self.chat.add_message("Agent", self._agent_error(), True)
         self._refresh_operation_review()
         self._sync_question_form()
+        self.theme_controller.apply_tree(self)
+        self.chat.refresh_theme()
 
     def _refresh_operation_review(self, *, busy=False):
         if getattr(self, "_closing", False):
@@ -808,6 +814,9 @@ class MainWindow(QMainWindow):
         self.settings_panel.hide()
         self.notifications.shutdown()
         self.notification_sound.shutdown()
+        self.theme_controller.clear()
+        self.theme_selector.clear()
+        self.settings_panel.theme_controls.status.clear()
 
     def resizeEvent(self, event) -> None:  # noqa: N802 - Qt API name
         super().resizeEvent(event)
@@ -2155,6 +2164,7 @@ class MainWindow(QMainWindow):
             event.ignore()
             return
         self.chat.set_thinking(False)
+        self.theme_controller.release()
         super().closeEvent(event)
 
     def _sync_inference_selector(self) -> None:

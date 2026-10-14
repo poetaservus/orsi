@@ -3,6 +3,7 @@ from math import sin, pi
 
 from PySide6.QtCore import QEasingCurve, QEvent, QLineF, QObject, QRectF, Qt, QVariantAnimation, Signal
 from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
+from app.ui.theme_runtime import controller_for, theme_color, theme_icon
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import QPushButton, QStyle, QStyleOptionButton, QStylePainter, QWidget
 
@@ -116,11 +117,17 @@ class SettingsIconButton(QPushButton):
         size = self.scale * (0.94 if self.isDown() else 1.0)
         painter.scale(size, size)
         painter.rotate(self.angle)
-        if self.renderer is not None:
+        controller = controller_for(self)
+        action = getattr(self, "_theme_icon_action", None)
+        if action and controller and controller.current.identity != "original":
+            side = self.iconSize().width()
+            pixmap = theme_icon(self, action).pixmap(self.iconSize())
+            painter.drawPixmap(QRectF(-side / 2, -side / 2, side, side), pixmap, QRectF(pixmap.rect()))
+        elif self.renderer is not None:
             side = self.iconSize().width()
             self.renderer.render(painter, QRectF(-side / 2, -side / 2, side, side))
         else:
-            painter.setPen(QPen(QColor("#eeeeef" if self.underMouse() else "#cbd0da"),
+            painter.setPen(QPen(theme_color(self, "#eeeeef" if self.underMouse() else "#cbd0da", "icon"),
                                 1.2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
             painter.drawLine(QLineF(-5, -5, 5, 5))
             painter.drawLine(QLineF(5, -5, -5, 5))

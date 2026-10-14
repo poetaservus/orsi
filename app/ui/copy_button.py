@@ -3,6 +3,7 @@ from pathlib import Path
 from PySide6.QtCore import QSize, QTimer, Qt, Signal
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication, QPushButton
+from app.ui.theme_runtime import theme_icon
 
 
 class CopyButton(QPushButton):
@@ -49,6 +50,11 @@ class CopyButton(QPushButton):
         self.setIcon(self._copy_icon)
         self.setToolTip(self._description)
         self.setAccessibleName(self._description)
+
+    def refresh_theme_icons(self):
+        self._copy_icon = theme_icon(self, "copy")
+        self._check_icon = theme_icon(self, "check")
+        self.setIcon(self._check_icon if self.copy_succeeded else self._copy_icon)
 
     def _finish_feedback(self) -> None:
         self._restore_icon()

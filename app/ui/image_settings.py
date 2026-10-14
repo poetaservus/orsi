@@ -1,4 +1,5 @@
 """Reusable image preferences, independent of chat model profiles."""
+from app.ui.theme_runtime import apply_theme_style
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget
 from app.settings.images import ImageGenerationSettings
@@ -85,7 +86,7 @@ class ImageSettingsDialog(QDialog):
     def __init__(self, settings_store, apply_settings, parent=None):
         super().__init__(parent)
         self.setObjectName("imageSettingsDialog")
-        self.setStyleSheet("QDialog#imageSettingsDialog { background: #343f50; color: #e4e5eb; } "
+        apply_theme_style(self, "QDialog#imageSettingsDialog { background: #343f50; color: #e4e5eb; } "
             "QDialog#imageSettingsDialog QWidget { color: #e4e5eb; font-family: Saira; font-size: 14px; } "
             + settings_control_style("QDialog#imageSettingsDialog"))
         self.setWindowTitle("Image generation")

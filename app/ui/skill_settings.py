@@ -1,4 +1,5 @@
 """Settings-only skill import/review, installation and removal."""
+from app.ui.theme_runtime import apply_theme_style
 from PySide6.QtCore import QThread, Qt, Signal, Slot
 from PySide6.QtWidgets import (
     QDialog, QFileDialog, QHBoxLayout, QLabel, QLineEdit, QListWidget,
@@ -343,7 +344,7 @@ class SkillSettingsDialog(QDialog):
         self.setWindowTitle("Skills")
         self.setMinimumWidth(600)
         self.resize(640, 610)
-        self.setStyleSheet(_STYLE)
+        apply_theme_style(self, _STYLE)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(20, 18, 20, 18)
         self.page = SkillSettingsPage(service, self)

@@ -24,6 +24,7 @@ from app.ui.message_images import MessageImageLoader, MessageImageStrip
 from app.ui.motion import install_smooth_scroll
 from app.inference.completion import CompletionMetadata
 from app.inference.attachments import attachment_references
+from app.ui.theme_runtime import apply_theme_style, apply_theme_tree, theme_color
 
 
 _FENCE_OPEN = re.compile(r"^[ \t]*(`{3,}|~{3,})([^\r\n]*)(?:\r?\n|$)", re.MULTILINE)
@@ -167,7 +168,7 @@ class _Message(QFrame):
             attachment.setObjectName("messageAttachment")
             attachment.setTextFormat(Qt.TextFormat.PlainText)
             attachment.setWordWrap(True)
-            attachment.setStyleSheet("color: #b1b8c8; font-size: 12px; padding: 3px 0;")
+            apply_theme_style(attachment, "color: #b1b8c8; font-size: 12px; padding: 3px 0;")
             attachment.setToolTip(f"{reference.name} · {reference.size_bytes:,} bytes")
             self._text_labels.append(attachment)
             layout.addWidget(attachment)
@@ -229,9 +230,9 @@ class _Message(QFrame):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         bounds = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
         glass = QLinearGradient(bounds.topLeft(), bounds.bottomRight())
-        glass.setColorAt(0, QColor(46, 58, 85, 210))
-        glass.setColorAt(1, QColor(38, 42, 60, 212))
-        painter.setPen(QPen(QColor(170, 190, 232, 55), 1))
+        glass.setColorAt(0, theme_color(self, QColor(46, 58, 85, 210), "user_bubble_top"))
+        glass.setColorAt(1, theme_color(self, QColor(38, 42, 60, 212), "user_bubble_bottom"))
+        painter.setPen(QPen(theme_color(self, QColor(170, 190, 232, 55), "user_bubble_border"), 1))
         painter.setBrush(glass)
         radius = min(12, max(1, self.height() / 2))
         painter.drawRoundedRect(bounds, radius, radius)
@@ -572,6 +573,7 @@ class ChatView(QScrollArea):
 
         # Keep the thinking indicator at the end of the conversation.
         self._layout.insertWidget(self._layout.indexOf(self._thinking_row), row)
+        apply_theme_tree(row)
         message.ensurePolished()
         for label in message._text_labels:
             label.ensurePolished()
@@ -584,6 +586,24 @@ class ChatView(QScrollArea):
         if self._follow_tail:
             QTimer.singleShot(0, self._scroll_to_bottom)
         return band
+
+    def refresh_theme(self):
+        """Reflow existing text after a family change without moving the reader."""
+        if not self._message_bands:
+            return
+        scroll = self.verticalScrollBar()
+        value, follow = scroll.value(), self._follow_tail
+        for band in self._message_bands:
+            band.set_available_width(self._message_area_width())
+        self._layout.activate()
+        self._follow_tail = follow
+        def restore():
+            if follow:
+                self._scroll_to_bottom()
+            else:
+                scroll.setValue(min(value, scroll.maximum()))
+        restore()
+        QTimer.singleShot(0, restore)
 
     def set_message_skill(self, band: _MessageBand, name: str) -> None:
         if band not in self._message_bands:

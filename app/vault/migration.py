@@ -23,7 +23,7 @@ CATEGORIES = {
     "drafts": "Retained drafts and recovery material",
 }
 _PREFERENCES = ("ui_preferences_v1.json", "local_model_selection_v1.json", "cloud_model_selection_v1.json",
-                "image_generation_v1.json", "cloud_rate_limits_v1.json")
+                "image_generation_v1.json", "cloud_rate_limits_v1.json", "themes/catalog_v1.json")
 _TREES = {"personality": ("personality",), "templates": ("templates", "instructions"),
           "documents": ("documents",), "memory": ("memory", "context", "indexes"), "drafts": ("drafts", "recovery")}
 _LIMIT = 512 * 1024 * 1024

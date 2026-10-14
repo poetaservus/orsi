@@ -40,7 +40,9 @@ def test_placeholder_controls_do_not_change_preferences_or_draft(app, tmp_path):
         window.input.setPlainText("Keep this draft")
         window.settings_button.click()
         app.processEvents()
-        for selector in (window.theme_selector, window.gui_language_selector):
+        assert window.theme_selector.isEnabled()
+        assert window.theme_selector.currentData() == "original"
+        for selector in (window.gui_language_selector,):
             assert not selector.isEnabled()
             assert selector.currentText() == "Coming soon"
             assert "Placeholder" in selector.accessibleDescription()

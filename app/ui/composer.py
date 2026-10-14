@@ -5,6 +5,7 @@ from PySide6.QtCore import QEasingCurve, QEvent, QPoint, QRect, QRectF, QSize, Q
 from PySide6.QtGui import QColor, QIcon, QLinearGradient, QPainter, QPainterPath, QPalette
 from PySide6.QtWidgets import QApplication, QFrame, QHBoxLayout, QPushButton, QStyle, QStyleOptionButton, QTextEdit, QWidget
 from app.ui.inputs import ScrollSafeComboBox
+from app.ui.theme_runtime import apply_theme_style, set_theme_icon, theme_color
 
 ASSETS = Path(__file__).with_name("assets")
 COMPOSER_WIDTH = 799
@@ -35,7 +36,7 @@ class ComposerModelSelector(ScrollSafeComboBox):
         popup = self.view().window()
         self._model_popup = popup
         popup.setObjectName("composerModelPopup")
-        popup.setStyleSheet("QFrame#composerModelPopup { background: #292d36; border: 1px solid #4b505d; }")
+        apply_theme_style(popup, "QFrame#composerModelPopup { background: #292d36; border: 1px solid #4b505d; }")
         popup.installEventFilter(self)
         if self.mapToGlobal(QPoint()).y() <= self.screen().availableGeometry().top() + 6:
             return
@@ -75,7 +76,7 @@ def composer_microphone(parent):
     button = QPushButton(parent)
     button.setObjectName("composerMicrophone")
     button.setFixedSize(COMPOSER_CONTROL_SIZE, COMPOSER_CONTROL_SIZE)
-    button.setIcon(QIcon(str(ASSETS / "microphone.svg")))
+    set_theme_icon(button, "microphone")
     button.setIconSize(QSize(22, 22))
     button.setAccessibleName("Microphone (coming soon)")
     button.setToolTip("Microphone (coming soon)")
@@ -120,13 +121,13 @@ class ComposerFrame(QFrame):
         path = QPainterPath()
         path.addRoundedRect(rect, radius, radius)
         fill = QLinearGradient(rect.topLeft(), rect.bottomLeft())
-        fill.setColorAt(0., QColor("#2c3036"))
-        fill.setColorAt(.45, QColor("#2a2e34"))
-        fill.setColorAt(1., QColor("#282c32"))
-        painter.setPen(QColor("#373c43"))
+        fill.setColorAt(0., theme_color(self, "#2c3036", "composer_top"))
+        fill.setColorAt(.45, theme_color(self, "#2a2e34", "composer_middle"))
+        fill.setColorAt(1., theme_color(self, "#282c32", "composer_bottom"))
+        painter.setPen(theme_color(self, "#373c43", "composer_border"))
         painter.setBrush(fill)
         painter.drawPath(path)
-        painter.setPen(QColor(255, 255, 255, 8))
+        painter.setPen(theme_color(self, QColor(255, 255, 255, 8), "composer_highlight"))
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRoundedRect(rect.adjusted(2., 2., -2., -2.), max(1., radius - 2), max(1., radius - 2))
 
@@ -191,7 +192,7 @@ def composer_tools(parent):
         button = ComposerToolButton(tools) if asset == "plus.svg" else QPushButton(tools)
         button.setObjectName(name)
         button.setFixedSize(COMPOSER_CONTROL_SIZE, COMPOSER_CONTROL_SIZE)
-        button.setIcon(QIcon(str(ASSETS / asset)))
+        set_theme_icon(button, "attach" if asset == "plus.svg" else "folder")
         button.setIconSize(QSize(24, 24))
         button.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         button.setToolTip(description)
@@ -217,7 +218,7 @@ def configure_input(input):
 def configure_send(button):
     button.setObjectName("sendButton")
     button.setFixedSize(COMPOSER_CONTROL_SIZE, COMPOSER_CONTROL_SIZE)
-    button.setIcon(QIcon(str(ASSETS / "send.svg")))
+    set_theme_icon(button, "send")
     button.setIconSize(QSize(28, 28))
     button.setToolTip("Send")
     button.setAccessibleName("Send")

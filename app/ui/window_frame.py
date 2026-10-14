@@ -5,6 +5,7 @@ import ctypes
 import sys
 from ctypes import wintypes
 
+from app.ui.theme_runtime import apply_theme_style, theme_color
 from PySide6.QtCore import QLineF, QPoint, QRectF, Qt
 from PySide6.QtGui import QColor, QPainter, QPen
 from PySide6.QtWidgets import QAbstractButton, QApplication, QHBoxLayout, QPushButton, QWidget
@@ -45,7 +46,7 @@ class WindowButton(QPushButton):
         super().paintEvent(event)
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        painter.setPen(QPen(QColor("#cbd0da"), 1.0, Qt.PenStyle.SolidLine,
+        painter.setPen(QPen(theme_color(self, "#cbd0da", "icon"), 1.0, Qt.PenStyle.SolidLine,
             Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
         painter.translate((self.width() - 12) / 2, (self.height() - 12) / 2)
         if self.action == "minimize":
@@ -75,7 +76,7 @@ class WindowControls(QWidget):
         for button in (self.minimize, self.maximize, self.close_button):
             layout.addWidget(button)
         self.setFixedSize(124, 28)
-        self.setStyleSheet("""
+        apply_theme_style(self, """
             QPushButton#windowControl { background: transparent; border: none; border-radius: 5px; }
             QPushButton#windowControl:hover { background: rgba(255,255,255,18); }
             QPushButton#windowControl:pressed { background: rgba(255,255,255,30); }
