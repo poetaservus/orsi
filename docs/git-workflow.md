@@ -1,5 +1,23 @@
 # Git layout and baseline hygiene
 
+## Analyst Flagship package, 15 October 2026
+
+`codex/analyst-flagship-package` starts from clean local main `d582731` and adds
+the user's Desktop `analyst-flagship` v1.1.2 under `skills/analyst-flagship`.
+It is an optional instruction-only package, retaining source/license notices;
+it does not install itself or change the application's runtime behavior.
+The update strengthens initial layout, defined performance status, neutral
+missing comparisons, partial-period labels and numeric presentation.
+
+Frontmatter/link/budget checks and an isolated native import/reference roundtrip
+pass. Live dashboard/model behavior remains for the user's installation test;
+the full suite was not run under the essential-checks-only instruction.
+Inventories and the Desktop snapshot are retained under ignored
+`state/backups/analyst-flagship-publish-20261015/`. Prior main is preserved at
+`archive/2026-10-15/main-before-analyst-flagship-package`. Fast-forward main and
+publish only main under the user's explicit merge-and-push request; preserve
+other worktrees and historical/unmerged refs.
+
 ## Native Excel dashboard objects, 15 October 2026
 
 `codex/excel-dashboard-objects` starts from clean local main `adc5d0f`. It adds
