@@ -1,5 +1,34 @@
 # Git layout and baseline hygiene
 
+## Office approval UI repair, 15 October 2026
+
+`codex/office-approval-ui` starts from clean local main `9d0dfc2`.
+The composer now presents the existing guarded Excel edit, restore and save
+approvals instead of silently denying their unknown presentation keys. Saved
+reviews show their path; unsaved reviews use the bound workbook title and
+operation preview. Permissions, argument binding, schemas, prompts, routing,
+sampling, context policy and private settings remain unchanged. See
+[the repair and verification record](office-approval-ui-repair.md).
+
+All six saved/unsaved presentation cases reproduced the silent rejection before
+repair. The final affected Windows selection passed **96 checks in 51.31 seconds**,
+including actual window/conversation/SDK/stdio approve, deny and approval-OFF
+flows with normal production write policy. The full Windows suite completed
+**4,153 tests and 15 subtests successfully**, with **63 skips, three failures and
+two unchanged Qt deprecation warnings**, in **1,595.18 seconds**. All Office
+checks passed. The complete Git installer and native startup modules passed
+**68 checks in 68.92 seconds** on unchanged follow-up. The three full-run failures
+were not reproduced; their cause remains unresolved and the full run is not
+claimed as clean. See the repair record for exact failures and skipped gates.
+All 45 translation catalogs validate; compilation and whitespace checks pass.
+No real workbook cells were read or changed and no live provider request was
+made. Opt-in live gates remain separate.
+
+Inventories are retained under ignored `state/backups/office-approval-ui-20261015/`.
+Preserve prior main at `archive/2026-10-15/main-before-office-approval-ui`, commit,
+fast-forward local main and remove only the merged feature branch. Other
+worktrees, private settings, historical/unmerged tips and remote refs remain intact.
+
 ## Office conversation catalog and full-suite repair, 15 October 2026
 
 `codex/office-catalog-regression` starts from clean local main `c1f305c`.

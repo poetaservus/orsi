@@ -69,6 +69,10 @@ class MemoryExcel(MemoryOffice):
 
 class ExcelFixture(LiveOffice):
     def control(self, action, data):
+        if action == "fixture-document":
+            self.backend.docs[0]["path"] = data["path"]
+            self.backend.docs[0]["name"] = Path(data["path"]).name
+            return {"changed": True}
         if action == "fixture":
             descriptor = self.backend.plan("excel", self.backend.docs[0], data.get("target", "Sheet1!A1"))[0]
             state = self.backend.capture_excel(descriptor)

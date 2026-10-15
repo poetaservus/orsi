@@ -26,6 +26,9 @@ _SPECS = {
     "filesystem.write_text": ApprovalSpec("Write file?", "path_and_content"),
     "application.launch": ApprovalSpec("Launch application?", "details"),
     "shell.run": ApprovalSpec("Run shell command?", "details"),
+    "office.excel_edit": ApprovalSpec("Apply", "office"),
+    "office.revert": ApprovalSpec("Restore", "office"),
+    "office.save": ApprovalSpec("Save", "office"),
 }
 
 
@@ -47,14 +50,14 @@ class InlineApproval(QFrame):
         title = QLabel(ui_text(spec.title), self)
         title.setObjectName("approvalTitle")
         layout.addWidget(title)
-        if spec.content_kind in {"path", "path_and_content"}:
+        if spec.content_kind in {"path", "path_and_content", "office"} and record.resource:
             path = self._add_preview(layout, "approvalPath", record.resource)
             path.setMaximumHeight(54)
         if spec.content_kind == "path_and_content":
             label = "Exact diff" if record.capability == "filesystem.edit_text" else "File content"
             layout.addWidget(QLabel(ui_text(label), self))
             self._add_preview(layout, "approvalContent", record.approval_preview)
-        elif spec.content_kind == "details":
+        elif spec.content_kind in {"details", "office"}:
             self._add_preview(layout, "approvalDetails", record.approval_preview)
         hint = QLabel(ui_text('Enter to approve · Esc to abort'), self)
         hint.setObjectName("approvalHint")
@@ -110,10 +113,15 @@ class InlineApproval(QFrame):
 def create_inline_approval(parent: QWidget, service, record,
                            on_finished: Callable[[], None]) -> InlineApproval | None:
     spec = _SPECS.get(getattr(record, "capability", None))
-    if spec is None or not getattr(record, "resource", None):
+    if spec is None or (spec.content_kind != "office" and not getattr(record, "resource", None)):
         service.resolve_approval(record.approval_id, False)
         return None
     if spec.content_kind != "path" and not isinstance(getattr(record, "approval_preview", None), str):
+        service.resolve_approval(record.approval_id, False)
+        return None
+    # Explicitly selected unsaved Office documents have no filesystem resource.
+    # Their exact document/patch authority stays bound by the approval manager.
+    if spec.content_kind == "office" and not record.approval_preview.strip():
         service.resolve_approval(record.approval_id, False)
         return None
     if service.approval_status(record.approval_id) != "pending":

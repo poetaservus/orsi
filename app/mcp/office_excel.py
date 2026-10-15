@@ -203,7 +203,8 @@ class ExcelEdits:
                    ("Restore" if name == "office.revert" else "Edit") + f" {len(cells)} Excel cells")
         if name == "office.excel_edit":
             preview += ": " + "; ".join(c.sheet + "!" + c.range for c in arguments.changes)
-        return {"guard": key, "digest": identity, "preview": preview[:2000]}
+        return {"guard": key, "digest": identity,
+                "preview": (binding["document"]["title"] + "\n" + preview)[:2000]}
 
     def execute(self, name, arguments, binding, authority, operation):
         record = self.guards.pop(authority.get("guard"), None)
