@@ -155,7 +155,7 @@ def test_real_stdio_selected_document_flows_through_permissions_executor_and_pri
     try:
         bridge.connect()
         assert {n for n in runtime.registry.model_visible_names if n.startswith("office.")} == {
-            "office.documents", "office.attach", "office.read", "office.excel_edit", "office.save", "office.revert"}
+            "office.documents", "office.attach", "office.read", "office.excel_edit", "office.word_edit", "office.save", "office.revert"}
         values = bridge.list_documents()
         assert len(values) == 2
         assert execute(runtime, "documents", {}, "empty").output["documents"] == []

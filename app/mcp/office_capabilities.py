@@ -143,8 +143,8 @@ class OfficeCapabilityRegistry(CapabilityRegistry):
         office = (office_catalog(_exposure(self.connection, self.model)).model_definitions()
                   if self.resource_policy is not None else ())
         if self.connection.live:
-            from app.mcp.office_excel import EXCEL_TOOLS, READ_TOOLS
-            allowed = EXCEL_TOOLS if "excel" in _exposure(self.connection, self.model).applications else READ_TOOLS
+            from app.mcp.office_excel import live_tools
+            allowed = live_tools(_exposure(self.connection, self.model).applications)
             office = tuple(tool for tool in office if tool.name in allowed)
         return tuple(sorted((*self.base.model_definitions(), *office), key=lambda definition: definition.name))
 

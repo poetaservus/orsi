@@ -46,7 +46,7 @@ class OfficeControls(QWidget):
         heading = QLabel("Office documents")
         heading.setObjectName("settingsGroupTitle")
         layout.addWidget(heading)
-        hint = QLabel("Read open documents and edit Excel cells in Cloud mode. Saving is separate; Excel recovery stays available while connected.")
+        hint = QLabel("Read open documents, edit Excel cells and replace bounded Word text in Cloud mode. Saving is separate; owned recovery stays available while connected.")
         hint.setWordWrap(True)
         hint.setObjectName("settingsDescription")
         layout.addWidget(hint)

@@ -21,6 +21,12 @@ class OfficeUnknown(OfficeUnavailable):
 
 READ_TOOLS = frozenset(("office.documents", "office.attach", "office.read"))
 EXCEL_TOOLS = READ_TOOLS | {"office.excel_edit", "office.revert", "office.save"}
+WORD_TOOLS = READ_TOOLS | {"office.word_edit", "office.revert", "office.save"}
+LIVE_TOOLS = EXCEL_TOOLS | WORD_TOOLS
+
+
+def live_tools(applications):
+    return READ_TOOLS | (EXCEL_TOOLS if "excel" in applications else set()) | (WORD_TOOLS if "word" in applications else set())
 MAX_STATE_BYTES = 8 * 1024 * 1024
 FUNCTIONS = frozenset("SUM AVERAGE MIN MAX COUNT COUNTA ROUND ROUNDUP ROUNDDOWN ABS IF IFERROR AND OR NOT TRUE FALSE CONCAT CONCATENATE LEN LEFT RIGHT MID TRIM UPPER LOWER SUMIF COUNTIF SUMIFS COUNTIFS DATE YEAR MONTH DAY SUMPRODUCT NUMBERVALUE CHAR GETPIVOTDATA".split())
 SHEET_REFERENCE = re.compile(r"('(?:[^']|'')+'|[A-Za-z_][A-Za-z0-9_.]*)!(\$?[A-Za-z]{1,3}\$?[1-9][0-9]{0,6}(?:\s*:\s*\$?[A-Za-z]{1,3}\$?[1-9][0-9]{0,6})?)(?![A-Za-z0-9_.])")

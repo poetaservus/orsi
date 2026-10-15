@@ -1,4 +1,4 @@
-"""Document-bound Office reads and guarded Excel operations on one STA."""
+"""Document-bound Office reads and guarded Excel/Word operations on one STA."""
 from __future__ import annotations
 
 import asyncio
@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from app.mcp.office_com import OfficeUnavailable, WindowsOffice
 from app.mcp.office_contracts import APPLICATIONS, MAX_RESULT_BYTES, canonical_json
-from app.mcp.office_excel import ExcelEdits, EXCEL_TOOLS, READ_TOOLS, OfficeConflict, MAX_STATE_BYTES, same_state, same_value
+from app.mcp.office_excel import ExcelEdits, LIVE_TOOLS, READ_TOOLS, OfficeConflict, MAX_STATE_BYTES, same_state, same_value
 
 
 def token():
@@ -22,6 +22,8 @@ class LiveOffice:
         self.enabled, self.documents, self.sessions, self.cursors = (), {}, {}, {}
         self.snapshots = {}
         self.excel = ExcelEdits(self)
+        from app.mcp.office_word import WordEdits
+        self.word = WordEdits(self)
 
     def _backend(self):
         if self.backend is None:
@@ -70,6 +72,7 @@ class LiveOffice:
             self.cursors.clear()
             self.snapshots.clear()
             self.excel.clear()
+            self.word.clear()
             self.scan()
             return {"applications": list(self.enabled)}
         if action == "documents":
@@ -90,18 +93,18 @@ class LiveOffice:
             return self.binding(document=data.get("document"), session=data.get("session"))
         if action == "mutation":
             from app.mcp.office_contracts import OFFICE_TOOLS
-            contract = next((t for t in OFFICE_TOOLS if t.name == data.get("tool") and t.name in EXCEL_TOOLS - READ_TOOLS), None)
+            contract = next((t for t in OFFICE_TOOLS if t.name == data.get("tool") and t.name in LIVE_TOOLS - READ_TOOLS), None)
             if contract is None:
                 raise OfficeConflict("Unsupported Office mutation.")
             arguments = contract.arguments.model_validate(data.get("arguments"))
             bound = self.binding(session=arguments.session)
             if bound["document"]["document"] != data.get("document") or bound["identity"] != data.get("identity"):
-                raise OfficeConflict("Office conflict: the selected workbook changed.")
-            return self.excel.prepare(contract.name, arguments, bound)
+                raise OfficeConflict("Office conflict: the selected document changed.")
+            return self.edits(bound).prepare(contract.name, arguments, bound)
         raise OfficeUnavailable("Unknown local Office control.")
 
     def call(self, contract, arguments, authority, operation=None):
-        if contract.name not in EXCEL_TOOLS:
+        if contract.name not in LIVE_TOOLS:
             raise OfficeUnavailable("Office editing is not available in this phase.")
         if not isinstance(authority, dict):
             raise OfficeUnavailable("Office execution requires a local document binding.")
@@ -111,8 +114,8 @@ class LiveOffice:
         bound = self.binding(document=document, session=getattr(arguments, "session", None))
         if bound["document"]["document"] != document or bound["identity"] != authority.get("identity"):
             raise OfficeConflict("The approved document identity changed.")
-        if contract.name in EXCEL_TOOLS - READ_TOOLS:
-            return self.excel.execute(contract.name, arguments, bound, authority, operation)
+        if contract.name in LIVE_TOOLS - READ_TOOLS:
+            return self.edits(bound).execute(contract.name, arguments, bound, authority, operation)
         if contract.name == "office.documents":
             if arguments.cursor is not None:
                 raise OfficeUnavailable("The document cursor is unavailable.")
@@ -128,7 +131,15 @@ class LiveOffice:
             return {"session": session, "document": bound["document"]}
         return self.read(arguments, bound)
 
+    def edits(self, binding):
+        kind = binding["document"]["application"]
+        if kind not in {"excel", "word"}:
+            raise OfficeConflict("This Office application is read-only.")
+        return self.word if kind == "word" else self.excel
+
     def read(self, arguments, binding):
+        if binding["document"]["application"] == "word" and hasattr(self.backend, "capture_word"):
+            return self.word.read(arguments, binding)
         if len(self.snapshots) >= 128 and not arguments.cursor:
             raise OfficeUnavailable("The snapshot limit was reached. Refresh the connection.")
         signature = (arguments.session, arguments.target, binding["identity"])
@@ -227,6 +238,7 @@ class LiveOffice:
 
     def close(self):
         self.excel.clear()
+        self.word.clear()
         self.snapshots.clear()
         self.cursors.clear()
         self.sessions.clear()

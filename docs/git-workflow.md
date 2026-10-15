@@ -1,5 +1,27 @@
 # Git layout and baseline hygiene
 
+## Office MCP Word replacement slice, 16 October 2026
+
+`codex/office-mcp-phase5` starts from clean main `33328c8` and implements the
+initial qualified Word replacement slice through actual approval UI, production
+stdio, native readback, guarded restoration and separate Save/Save As. Remaining
+Word actions and PowerPoint mutations stay unavailable. See
+[scope, native findings and focused evidence](office-mcp-phase5.md).
+
+The final focused selections passed 339 checks, including 287 core checks,
+21 connection/permission checks and 31 filesystem-report checks. The report
+module's initial sandboxed failure remains separately recorded. The final native Word
+UI/bridge/persistence gate passed with released owned processes and no forced
+termination. Other focused connection results are retained in the phase record.
+The full suite and live provider/second-host gates were not run per the user's
+essential-tests-only instruction. Prompts, model profiles, routing, sampling,
+context policy and private settings remain unchanged.
+
+Pre-change inventories are under ignored `state/backups/office-mcp-phase5-20261015/`.
+Prior main is retained at `archive/2026-10-15/main-before-office-mcp-phase5`.
+Commit, fast-forward local main and remove only the merged local feature branch;
+preserve other worktrees, historical/unmerged tips and all remote refs.
+
 ## Analyst Flagship package, 15 October 2026
 
 `codex/analyst-flagship-package` starts from clean local main `d582731` and adds

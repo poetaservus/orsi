@@ -21,7 +21,7 @@ from app.mcp.office_contracts import (
     canonical_json, office_catalog,
 )
 from app.mcp.stdio_transport import OwnedStdioTransport
-from app.mcp.office_excel import EXCEL_TOOLS, READ_TOOLS
+from app.mcp.office_excel import LIVE_TOOLS, READ_TOOLS
 from app.runtime.cancellation import CancellationToken, TaskCancelled
 
 
@@ -65,6 +65,7 @@ class OfficeConnection:
         self._generation, self._tool_lists, self._calls = 0, 0, 0
         self._thread = self._loop = self._queue = self._transport = None
         self._sessions, self._used_calls = {}, set()
+        self._failure_diagnostics = {}
 
     def _bundled_transport(self):
         python = self.root / "runtime/python/python.exe"
@@ -90,7 +91,7 @@ class OfficeConnection:
                     "tool_list_requests": self._tool_lists, "tool_calls": self._calls,
                     "discovery_runs": self.discovery.runs,
                     "pid": getattr(self._transport, "pid", None),
-                    "worker_alive": self._thread is not None and self._thread.is_alive()}
+                    "worker_alive": self._thread is not None and self._thread.is_alive(), **self._failure_diagnostics}
 
     def _invalidate_locked(self):
         self._ready = self._enabled = False
@@ -127,6 +128,7 @@ class OfficeConnection:
                 self._started.clear()
                 self._stopped.clear()
                 self._used_calls.clear()
+                self._failure_diagnostics.clear()
                 self._transport = self._transport_factory()
                 self._thread = Thread(target=self._worker, name="orsi-office-mcp", daemon=True)
                 self._thread.start()
@@ -230,6 +232,15 @@ class OfficeConnection:
                     read_timeout_seconds=self.call_timeout,
                     meta=RequestParamsMeta(orsiOperation=request.operation,
                         **({"orsiAuthority": request.authority} if self.live else {})))
+                failure = result.meta or {}
+                if result.is_error and failure.get("orsiStage") in {
+                        "word_save", "word_native_insert", "word_readback", "word_verification"}:
+                    with self._state:
+                        self._failure_diagnostics = {"failure_stage": failure["orsiStage"],
+                            "failure_hresult": failure.get("orsiHresult") if type(failure.get("orsiHresult")) is int else None,
+                            "failure_mismatch": [key for key in failure.get("orsiMismatch", []) if key in {
+                                "start", "end", "pstart", "pend", "text", "target", "paragraph", "dependencies", "paragraph_text", "uniform",
+                                "paragraph_identity", "paragraph_properties", "paragraph_runs"}]}
                 if result.is_error and self.live and (result.meta or {}).get("orsiFailure") == "conflict":
                     if not request.future.done():
                         request.future.set_exception(Error(Code.INVALID_ARGUMENTS,
@@ -254,7 +265,7 @@ class OfficeConnection:
                 if self.live and request.contract.name == "office.save" and request.arguments.get("path"):
                     binding = await self._control_request(client, "binding", {"session": output.session})
                     if binding["path"] != str(Path(request.arguments["path"])):
-                        raise ValueError("The saved workbook identity did not match its destination.")
+                        raise ValueError("The saved document identity did not match its destination.")
                     with self._state:
                         self._selected = (binding["document"]["document"], binding["identity"])
                 if not request.future.done():
@@ -336,7 +347,7 @@ class OfficeConnection:
 
     def resource_policy(self, contract, arguments, context):
         from app.mcp.office_capabilities import OfficeResourceBinding
-        if contract.name not in EXCEL_TOOLS:
+        if contract.name not in LIVE_TOOLS:
             raise Error(Code.DISABLED_CAPABILITY, "Office editing is unavailable in this phase.")
         with self._state:
             selected = self._selected
@@ -356,8 +367,9 @@ class OfficeConnection:
             source = Path(value["path"]) if value["path"] else None
             destination = source
             if contract.name not in READ_TOOLS:
-                if value["document"]["application"] != "excel":
-                    raise Error(Code.DISABLED_CAPABILITY, "Editing and saving currently require an Excel session.")
+                kind = value["document"]["application"]
+                if kind not in {"excel", "word"} or (contract.application is not None and contract.application != kind):
+                    raise Error(Code.DISABLED_CAPABILITY, "This edit requires its exact supported Office application.")
                 if contract.name == "office.save" and arguments.path is not None:
                     destination = Path(arguments.path)
                     if not destination.is_absolute():

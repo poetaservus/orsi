@@ -30,7 +30,7 @@ from tests.test_office_mcp_capabilities import authorize
 from tests.test_office_mcp_connection import ROOT
 
 
-@pytest.mark.parametrize("name", ["office.excel_edit", "office.revert", "office.save"])
+@pytest.mark.parametrize("name", ["office.excel_edit", "office.word_edit", "office.revert", "office.save"])
 @pytest.mark.parametrize("saved", [False, True])
 def test_reviewed_office_actions_display_document_details_without_auto_denial(ui, name, saved):
     app, window, service = ui
@@ -48,7 +48,7 @@ def test_reviewed_office_actions_display_document_details_without_auto_denial(ui
     assert service.decisions == [("one", False)]
 
 
-@pytest.mark.parametrize("name", ["office.word_edit", "office.powerpoint_edit"])
+@pytest.mark.parametrize("name", ["office.powerpoint_edit"])
 def test_unimplemented_office_writes_are_still_denied(ui, name):
     _, window, service = ui
     window._show_approval(record(capability=name))
@@ -73,7 +73,8 @@ def wait_until(condition, timeout=10):
 @pytest.mark.skipif(os.name != "nt", reason="Windows owned MCP and actual Qt approval workflow")
 @pytest.mark.parametrize("saved", [False, True])
 @pytest.mark.parametrize("action", ["approve", "deny", "off"])
-def test_window_conversation_mcp_edit_obeys_actual_review_and_exact_authority(tmp_path, saved, action):
+@pytest.mark.parametrize("kind", ["excel", "word"])
+def test_window_conversation_mcp_edit_obeys_actual_review_and_exact_authority(tmp_path, saved, action, kind):
     app = QApplication.instance() or QApplication([])
     portable = tmp_path / "application"
     (portable / "config").mkdir(parents=True)
@@ -82,9 +83,9 @@ def test_window_conversation_mcp_edit_obeys_actual_review_and_exact_authority(tm
     model.mode, model.context_length = "cloud", 131_072
     policy = HostAccessPolicy.full_local(application_root=portable, user_home=tmp_path, acknowledged=True)
     bridge = OfficeConnection(portable, backend=lambda: model.mode,
-        discovery=OfficeDiscovery(lambda: (OfficeInstallation("excel", "fixture", None),)),
+        discovery=OfficeDiscovery(lambda: (OfficeInstallation(kind, "fixture", None),)),
         _transport_factory=lambda: OwnedStdioTransport(
-            [sys.executable, "-m", "tests.fixtures.office_excel_server"], root=ROOT))
+            [sys.executable, "-m", "tests.fixtures.office_" + kind + "_server"], root=ROOT))
     runtime = build_agent_runtime(model,
         config=AgentFeatureConfig(filesystem_stat_enabled=True, full_local_read_enabled=True,
                                   conversation_context_enabled=True),
@@ -104,17 +105,21 @@ def test_window_conversation_mcp_edit_obeys_actual_review_and_exact_authority(tm
 
     try:
         bridge.connect()
-        target = tmp_path / "numbers.xlsx"
+        target = tmp_path / ("numbers.xlsx" if kind == "excel" else "synthetic.docx")
         if saved:
             target.write_bytes(b"Synthetic workbook file; live edits are not saves.")
             bridge.control("fixture-document", {"path": str(target)})
         document = bridge.list_documents()[0]
         bridge.select_document(document["document"])
-        session = invoke("office.attach", {"application": "excel", "document": document["document"]}, "attach")["session"]
-        snapshot = invoke("office.read", {"session": session, "target": "Sheet1!A1:A2"}, "read")["snapshot"]
+        session = invoke("office.attach", {"application": kind, "document": document["document"]}, "attach")["session"]
+        read_target = "Sheet1!A1:A2" if kind == "excel" else "document"
+        page = invoke("office.read", {"session": session, "target": read_target}, "read")
+        snapshot = page["snapshot"]
+        changes = ([{"sheet": "Sheet1", "range": "A1:A2", "values": [[9], [10]]}] if kind == "excel" else
+                   [{"target": page["items"][0]["target"], "action": "replace_text", "text": "replacement"}])
         model.responses.extend([ModelResponse.calls((ModelCapabilityCall(provider_call_id="edit-cells",
-            capability="office.excel_edit", arguments={"session": session, "snapshot": snapshot,
-                "changes": [{"sheet": "Sheet1", "range": "A1:A2", "values": [[9], [10]]}]}),)),
+            capability="office." + kind + "_edit", arguments={"session": session, "snapshot": snapshot,
+                "changes": changes}),)),
             ModelResponse.text("The synthetic edit is settled.")])
         service = ConversationService(model, ConversationStore(portable / "chat.json"),
             agent_runtime=runtime, portable_root=portable, host_access_policy=policy,
@@ -134,7 +139,8 @@ def test_window_conversation_mcp_edit_obeys_actual_review_and_exact_authority(tm
             panel = window._approval_panel
             assert panel is not None, "The edit was rejected without presenting its approval."
             details = panel.findChild(QPlainTextEdit, "approvalDetails")
-            assert document["title"] in details.toPlainText() and "Sheet1!A1:A2" in details.toPlainText()
+            assert document["title"] in details.toPlainText()
+            assert ("Sheet1!A1:A2" if kind == "excel" else "Word body text:") in details.toPlainText()
             assert bridge.diagnostics["tool_calls"] == 2
             shown_path = panel.findChild(QPlainTextEdit, "approvalPath")
             assert (shown_path.toPlainText() if shown_path else None) == (str(target) if saved else None)
@@ -151,8 +157,11 @@ def test_window_conversation_mcp_edit_obeys_actual_review_and_exact_authority(tm
         settled = service.store.turns()[-1].settled_calls
         assert len(settled) == 1 and settled[0].result.success == (action != "deny")
         assert bridge.diagnostics["tool_calls"] == (2 if action == "deny" else 3)
-        after = invoke("office.read", {"session": session, "target": "Sheet1!A1:A2"}, "after")
-        assert [item["values"][0][0] for item in after["items"]] == ([None, None] if action == "deny" else [9, 10])
+        after = invoke("office.read", {"session": session, "target": read_target}, "after")
+        if kind == "excel":
+            assert [item["values"][0][0] for item in after["items"]] == ([None, None] if action == "deny" else [9, 10])
+        else:
+            assert after["items"][0]["text"] == ("alpha\U0001f642 beta" if action == "deny" else "replacement")
         if saved:
             assert target.read_bytes() == b"Synthetic workbook file; live edits are not saves."
     finally:

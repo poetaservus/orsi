@@ -128,7 +128,7 @@ class ExcelChange(OfficeModel):
 
 class WordChange(OfficeModel):
     target: Identifier
-    action: Literal["replace_text", "insert_after", "apply_style", "edit_table"]
+    action: Literal["replace_text"]
     text: str | None = Field(default=None, max_length=4_096)
     style: str | None = Field(default=None, min_length=1, max_length=128)
     cells: TextMatrix | None = None
@@ -262,7 +262,7 @@ class ExcelEditArguments(EditArguments):
 
 
 class WordEditArguments(EditArguments):
-    changes: list[WordChange] = Field(min_length=1, max_length=MAX_CHANGES)
+    changes: list[WordChange] = Field(min_length=1, max_length=1)
 
     @model_validator(mode="after")
     def check_cells(self):
@@ -441,7 +441,9 @@ OFFICE_TOOLS = tuple(sorted((
                        "Objects are created, not overwritten; revert removes only unchanged owned objects and restores the reserved pivot cells (read them again first). "
                        "No defined names, external data or references. Editing is not saving.",
                        ExcelEditArguments, EditResult, PermissionClass.WRITE, "excel"),
-    OfficeToolContract("office.word_edit", "Apply bounded Word text, style or table edits against a snapshot.",
+    OfficeToolContract("office.word_edit", "Replace one fully read Word body text target (up to 4096 native UTF-16 units) against its snapshot. "
+                       "Requires one paragraph and uniform character formatting; paragraph/cell markers, tables, fields and tracked changes are unsupported. "
+                       "Finish all cursor pages first. Preserves formatting; does not save. Read again before revert; Save As creates a new .docx only.",
                        WordEditArguments, EditResult, PermissionClass.WRITE, "word"),
     OfficeToolContract("office.powerpoint_edit", "Edit slide text, layout or positions against a snapshot.",
                        PowerPointEditArguments, EditResult, PermissionClass.WRITE, "powerpoint"),

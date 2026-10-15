@@ -239,15 +239,26 @@ def _reversal_history_definitions(definitions, expected):
 
 
 def _office_history_definitions(definitions, expected, raw_calls):
-    """Validate pre-dashboard Office evidence without relaxing live decoding.
+    """Validate historical Office evidence without relaxing live decoding.
 
-    Only the two additive optional fields may be absent, and only when both
+    The old reserved Word actions remain history-only. The two additive Excel
+    fields may be absent only when both
     original provider bytes and their settled call omit them. Replay remains
     byte-for-byte; this never grants execution authority or rewrites old calls.
     """
     values = []
     for definition in definitions:
         calls = [call for call in expected if call.capability == definition.name]
+        if definition.name == "office.word_edit" and calls:
+            # The reserved pre-phase-5 schema advertised four actions and 16
+            # changes. This history-only schema validates original evidence;
+            # the live replacement slice remains restricted to one change.
+            schema = deepcopy(definition.input_schema)
+            action = schema["$defs"]["WordChange"]["properties"]["action"]
+            action.pop("const", None)
+            action["enum"] = ["replace_text", "insert_after", "apply_style", "edit_table"]
+            schema["properties"]["changes"]["maxItems"] = 16
+            definition = definition.model_copy(update={"input_schema": schema})
         if definition.name == "office.excel_edit" and calls:
             wire_name = responses_function_tools((definition,))[0]["name"]
             try:
@@ -281,9 +292,10 @@ def _neutral_responses_input(messages: Iterable[dict], definitions: Iterable[Mod
     ids = [call.provider_call_id for call in originals]
     if len(ids) != len(set(ids)):
         raise ValueError("OpenAI transcripts require unique actual call IDs across responses.")
+    history_values = _office_history_definitions(values, originals, [])
     originals = iter(originals)
     schemas = {tool["function"]["name"]: definition.input_schema
-               for tool, definition in zip(native_function_tools(values), values, strict=True)}
+               for tool, definition in zip(native_function_tools(history_values), history_values, strict=True)}
     calls_by_id = {}
     result = []
     for message in native:

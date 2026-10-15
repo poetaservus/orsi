@@ -25,8 +25,9 @@ _OPERATIONS = {
     "shell.run": ("shell command", "shell commands"),
     "skill.read_reference": ("skill reference read", "skill reference reads"),
     "office.excel_edit": ("Excel patch", "Excel patches"),
+    "office.word_edit": ("Word replacement", "Word replacements"),
     "office.revert": ("Office restoration", "Office restorations"),
-    "office.save": ("workbook save", "workbook saves"),
+    "office.save": ("Office document save", "Office document saves"),
 }
 
 
@@ -67,10 +68,10 @@ def recovery_stop_progress(result: AgentRunResult) -> str:
             path = output.get("destination") or output.get("path") or item.call.arguments.get("path")
             name = _target_name(path) or "requested target"
             changes[name, item.call.capability] += 1
-        elif item.result.success and item.call.capability in {"office.excel_edit", "office.revert", "office.save"}:
+        elif item.result.success and item.call.capability in {"office.excel_edit", "office.word_edit", "office.revert", "office.save"}:
             output = item.result.output or {}
             if item.call.capability == "office.save" or output.get("outcome") == "applied":
-                changes["attached workbook", item.call.capability] += 1
+                changes["attached Office document", item.call.capability] += 1
     if changes:
         lines.extend(["", "Settled file operations (task completion is unverified):"])
         for (name, capability), count in list(changes.items())[:8]:

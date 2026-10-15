@@ -13,6 +13,7 @@ from uuid import UUID
 from app.mcp.office_discovery import OFFICE_REGISTRATIONS
 from app.mcp.office_contracts import canonical_json
 from app.mcp.office_excel_drawing import ExcelDrawing, rgb, color
+from app.mcp.office_word_native import WordNative
 
 
 class OfficeUnavailable(RuntimeError):
@@ -36,7 +37,7 @@ class ExcelCells:
         return "cell", self.sheet, self.row + row, self.column + column
 
 
-class WindowsOffice(ExcelDrawing):
+class WindowsOffice(ExcelDrawing, WordNative):
     def __init__(self):
         import pythoncom
         import win32com.client.dynamic
@@ -183,8 +184,22 @@ class WindowsOffice(ExcelDrawing):
                 if not self.same(window.Document, document):
                     raise OfficeUnavailable("The Word selection belongs to another document.")
                 region = window.Selection.Range
+                if int(region.StoryType) != 1:
+                    raise OfficeUnavailable("Word reads support the main body story only.")
             elif target == "document":
                 region = document.Content
+                if int(region.Paragraphs.Count) > 1000:
+                    raise OfficeUnavailable("Read a smaller explicit Word text range.")
+                # Each paragraph is a usable text anchor, excluding its final
+                # structural marker. Tables remain readable, never writable.
+                result = []
+                for i in range(1, int(region.Paragraphs.Count) + 1):
+                    paragraph = region.Paragraphs.Item(i).Range
+                    start, end = int(paragraph.Start), int(paragraph.End)
+                    if end > start:
+                        end -= 1
+                    result.append(self.word_descriptor(document, start, end))
+                return result
             elif re.fullmatch(r"text:[0-9]+:[0-9]+", target):
                 start, end = map(int, target.split(":")[1:])
                 if not 0 <= start <= end <= int(document.Content.End):
@@ -192,7 +207,7 @@ class WindowsOffice(ExcelDrawing):
                 region = document.Range(start, end)
             else:
                 raise OfficeUnavailable("Use selection, document or text:start:end for Word.")
-            return [("word", document, int(region.Start), int(region.End))]
+            return [self.word_descriptor(document, int(region.Start), int(region.End))]
         if target == "selection":
             # Presentation.Windows belongs to the bound document, regardless of focus.
             window = document.Windows.Item(1)
@@ -245,7 +260,9 @@ class WindowsOffice(ExcelDrawing):
             return {"label": "Excel " + descriptor[2] + ": " + str(descriptor[3].Name), "text": part}, (
                 offset + len(part) if offset + len(part) < len(text) else None)
         if kind == "word":
-            start, end = coordinates
+            start, end = coordinates[:2]
+            if len(coordinates) > 2 and (int(coordinates[2].Start), int(coordinates[2].End)) != (start, end):
+                raise OfficeUnavailable("The retained Word read anchor moved. Read again.")
             region = obj.Range(start + offset, min(end, start + offset + chars))
             text = str(region.Text)
             if text and 0xD800 <= ord(text[-1]) <= 0xDBFF and int(region.End) < end:

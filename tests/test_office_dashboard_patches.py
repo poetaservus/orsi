@@ -125,15 +125,16 @@ def test_packed_used_read_obeys_byte_char_and_cell_bounds_and_preserves_edit_cov
         live.close()
 
 
-def test_recovery_report_keeps_successful_office_changes_visible():
-    call = ModelCapabilityCall(provider_call_id="patch", capability="office.excel_edit", arguments={})
+@pytest.mark.parametrize("application,label", [("excel", "Excel patch"), ("word", "Word replacement")])
+def test_recovery_report_keeps_successful_office_changes_visible(application, label):
+    call = ModelCapabilityCall(provider_call_id="patch", capability="office." + application + "_edit", arguments={})
     result = CapabilityResult(call_id="patch", capability=call.capability, success=True, duration_ms=1,
         output={"session": "s", "operation": "patch", "outcome": "applied", "affected_items": 20})
     stopped = AgentRunResult(status=AgentRunStatus.REPEATED_CALL, message="Repeated rejected formatting.",
         steps=2, capability_calls=2, protocol_failures=0,
         settled_calls=(SettledCall(provider_message_id="message", call=call, result=result),))
     report = recovery_stop_progress(stopped)
-    assert "Excel patch" in report and "No successful file changes" not in report
+    assert label in report and "No successful file changes" not in report
 
 
 def test_owned_patch_recalculation_does_not_masquerade_as_a_source_edit():

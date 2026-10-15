@@ -9,7 +9,7 @@ from mcp.server.stdio import stdio_server
 from mcp.types import CallToolResult, ListToolsResult, TextContent, Tool, ReadResourceResult, TextResourceContents
 
 from app.mcp.office_contracts import OFFICE_TOOLS
-from app.mcp.office_excel import OfficeConflict
+from app.mcp.office_excel import OfficeConflict, OfficeUnknown
 
 
 def create_server(*, handler=None, control=None):
@@ -61,6 +61,10 @@ def create_live_server(sta):
         except OfficeConflict as error:
             return CallToolResult(isError=True, content=[TextContent(text="Office conflict; no write was started.")],
                                   meta={"orsiFailure": "conflict", "orsiMessage": "Office conflict: " + str(error)})
+        except OfficeUnknown as error:
+            return CallToolResult(isError=True, content=[TextContent(text="Office mutation outcome is uncertain; no automatic retry.")],
+                meta={"orsiFailure": "unknown", "orsiStage": getattr(error, "stage", None),
+                      "orsiHresult": getattr(error, "hresult", None), "orsiMismatch": getattr(error, "mismatch", [])})
         except Exception:
             return CallToolResult(isError=True, content=[TextContent(
                 text="Office target is unavailable or changed; refresh the selection and read again.")])

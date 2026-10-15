@@ -28,6 +28,7 @@ _SPECS = {
     "shell.run": ApprovalSpec("Run shell command?", "details"),
     "office.excel_edit": ApprovalSpec("Apply", "office"),
     "office.revert": ApprovalSpec("Restore", "office"),
+    "office.word_edit": ApprovalSpec("Edit", "office"),
     "office.save": ApprovalSpec("Save", "office"),
 }
 
