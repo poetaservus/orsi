@@ -52,6 +52,13 @@ class HostWritePolicy:
             location_hint="Choose a file inside an existing directory, below the drive root.",
         )
 
+    def resolve_document_file(self, raw: str) -> Path:
+        return self._resolve_write_path(
+            raw,
+            action="Office document writing",
+            location_hint="Choose a document inside an existing directory, below the drive root.",
+        )
+
     def resolve_copy_source(self, raw: str) -> Path:
         return self._resolve_write_path(
             raw,

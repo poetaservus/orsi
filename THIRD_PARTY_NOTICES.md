@@ -1,5 +1,18 @@
 # Third-party notices
 
+## Portable MCP and Windows automation runtime
+
+The application-local runtime includes the official
+[MCP Python SDK](https://github.com/modelcontextprotocol/python-sdk) 2.3.0 and
+`mcp-types` 2.3.0 under the MIT license, and
+[pywin32](https://github.com/mhammond/pywin32) 312 with its bundled license notices.
+Reviewed runtime additions and their exact versions are in `requirements-mcp.txt`.
+Their complete installed distribution license files remain under
+`runtime/python/Lib/site-packages/`, including each package's `.dist-info/licenses/`
+and pywin32 component notices. Preserve these files when deploying portable nodes.
+`tools/verify_mcp_runtime.py` verifies pins, application-local native imports and
+the presence of bundled license metadata. No library source is vendored in `app/`.
+
 ## Selectable interface fonts
 
 Lora, Merriweather, Outfit, Nunito, DM Sans and Montserrat are bundled unchanged

@@ -1,1 +1,1 @@
-"""Reviewed MCP contracts; transport and production registration come later."""
+"""Reviewed Office MCP contracts, owned stdio runtime and capability adapters."""

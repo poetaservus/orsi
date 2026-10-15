@@ -17,8 +17,10 @@ from app.vault.types import VaultError
 
 
 PUBLIC_FILES = ("ORSI.cmd", "THIRD_PARTY_NOTICES.md", "pyproject.toml", "requirements.txt",
+                "requirements-mcp.txt", "config/office_mcp_v1.json",
                 "config/agent.json", "config/cloud.json", "config/model.json",
-                "tools/verify_openai_runtime.py", "Create shortcut.cmd", "tools/create_shortcut.ps1")
+                "tools/verify_openai_runtime.py", "tools/verify_mcp_runtime.py",
+                "Create shortcut.cmd", "tools/create_shortcut.ps1")
 APP_SUFFIXES = {".py", ".png", ".ico", ".svg", ".ogg", ".ttf", ".txt", ".md"}
 PYTHON_PATHS = ["python312.zip", ".", "Lib\\site-packages", "..\\..", "import site"]
 PROFILE_FOLDER = "profiles/current"

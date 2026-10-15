@@ -1,5 +1,31 @@
 # Git layout and baseline hygiene
 
+## Office MCP phase 2 foundation, 15 October 2026
+
+`codex/office-mcp-phase2` starts from clean local main `1c2354e`.
+It bundles MCP 2.3.0 and pinned runtime additions, uses atomic Windows ownership
+for bounded stdio pipes, and composes reviewed Office capabilities through the
+existing permission, approval, executor and crash-journal paths. Native calls
+and constrained recovery preserve cloud-only Office execution. Default startup
+stays disconnected; live Office discovery and adapters remain phase 3 onward.
+See [the implementation and verification record](office-mcp-phase2.md).
+
+All **105 essential focused checks passed in 41.16 seconds**, without failures,
+errors or skips. Real SDK/stdio fixtures prove persistent calls, exact approvals,
+unknown-outcome review, timeouts, owned process cleanup and a relocated MCP/native
+runtime. Selected existing ownership, cloud fallback, token-accounting and fresh
+node checks pass. Runtime pins, license files, dependency consistency, compilation,
+builder syntax, staged whitespace and the unchanged **7,390-byte /
+2,848-reserve-token** schema budget verify.
+Full-suite, live Office/provider, physical second-host and complete GUI gates were
+not run. Early fixture/collection failures remain separate evidence.
+
+Inventories are retained under ignored
+`state/backups/office-mcp-phase2-20261015/`. Preserve prior main at
+`archive/2026-10-15/main-before-office-mcp-phase2`, commit, fast-forward local main
+and remove only the merged feature branch. Other worktrees, historical/unmerged
+tips, private settings and remote refs remain intact.
+
 ## Office MCP phase 1 contracts, 15 October 2026
 
 `codex/office-mcp-phase1` starts from clean local main `ada5219`.

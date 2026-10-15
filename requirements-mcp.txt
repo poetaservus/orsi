@@ -1,0 +1,20 @@
+# Reviewed MCP 2.3.0 runtime additions; installed only into the portable runtime.
+mcp==2.3.0
+mcp-types==2.3.0
+pywin32==312; sys_platform == "win32"
+httpx2==2.13.1
+httpcore2==2.13.1
+jsonschema==4.26.0
+jsonschema-specifications==2025.9.1
+attrs==26.1.0
+referencing==0.37.0
+rpds-py==2026.9.1
+opentelemetry-api==1.45.1
+pyjwt==2.15.1
+cryptography==50.0.2
+python-multipart==0.0.32
+sse-starlette==3.5.0
+starlette==1.8.0
+truststore==0.10.5
+uvicorn==0.54.0
+click==8.5.0

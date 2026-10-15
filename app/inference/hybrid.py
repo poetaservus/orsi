@@ -531,6 +531,15 @@ class HybridInferenceEngine(InferenceEngine):
             self._activate_local_fallback()
             return result
 
+    def respond_cloud_only(self, messages):
+        """Constrained Office recovery must not fall back to a local model."""
+        if self.mode != "cloud":
+            raise InferenceUnavailable("Office recovery requires cloud inference.")
+        engine = self._engine_for("cloud")
+        result = engine.respond(messages)
+        self._refresh_limits(engine)
+        return result
+
     def respond_with_capabilities(
         self,
         messages: list[dict[str, str]],
@@ -547,6 +556,9 @@ class HybridInferenceEngine(InferenceEngine):
             require_nonempty=True,
         )
         mode = self.mode
+        office_turn = any(definition.name.startswith("office.") for definition in definitions)
+        if office_turn and mode != "cloud":
+            raise InferenceUnavailable("The Office tool catalog expired after a model-mode change.")
         engine = self._engine_for(mode)
         def respond(engine, messages):
             method = engine.review_completion if reviewing else engine.respond_with_capabilities
@@ -560,6 +572,10 @@ class HybridInferenceEngine(InferenceEngine):
             self._refresh_limits(engine)
             return result
         except CloudInferenceError as exc:
+            if office_turn:
+                # An Office turn is explicitly cloud-only. Retain the cloud
+                # error rather than send an Office prompt/catalog to a local model.
+                raise
             if not (
                 self.fallback_to_local
                 and not has_attachments(messages)

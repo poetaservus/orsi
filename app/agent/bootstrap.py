@@ -28,6 +28,8 @@ def build_agent_runtime(
     state_directory: Path,
     host_access_policy: HostAccessPolicy | None = None,
     journal_path=None,
+    office_connection=None,
+    office_resource_policy=None,
 ) -> AgentRuntime | None:
     """Compose the enabled tool catalog, deterministic policy, and agent loop."""
     if not isinstance(config, AgentFeatureConfig):
@@ -74,6 +76,20 @@ def build_agent_runtime(
         **({"protected_roots": policy.protected_roots} if policy.protected_roots else {}),
     )
     permission_gate = build_default_permission_gate(config, policy, permission_roots)
+    if office_connection is not None:
+        from app.mcp.office_capabilities import OfficeCapabilityRegistry, office_permission_rules
+        from app.mcp.office_connection import OfficeConnection
+        from app.security.permissions import PermissionGate
+        from app.security.write_policy import HostWritePolicy
+        if not isinstance(office_connection, OfficeConnection) or office_connection.root != root:
+            raise AgentBootstrapError("The Office connection does not belong to this application root.")
+        if office_resource_policy is not None and not callable(office_resource_policy):
+            raise AgentBootstrapError("The Office resource policy must be a trusted host callback.")
+        registry = OfficeCapabilityRegistry(registry, office_connection, inference,
+            resource_policy=office_resource_policy,
+            write_policy=HostWritePolicy(root, (state_directory, *policy.protected_roots)))
+        # Existing explicit DENY rules retain precedence over Office defaults.
+        permission_gate = PermissionGate((*office_permission_rules(), *permission_gate.rules))
     journal = CapabilityCrashJournal(
         journal_path if journal_path is not None else state_directory / "capability_journal_v1.json"
     )

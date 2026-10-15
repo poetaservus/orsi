@@ -1494,7 +1494,7 @@ class AgentRuntime:
         started: float,
         user_cancellation: CancellationToken,
         deadline_cancellation: _DeadlineCancellationToken,
-        *, _request_usage: _RecoveryUsage | None = None,
+        *, _request_usage: _RecoveryUsage | None = None, cloud_only: bool = False,
     ) -> tuple[str | None, tuple[AgentRunStatus, str] | None]:
         from app.conversation.context import calculate_context_budget
 
@@ -1513,7 +1513,10 @@ class AgentRuntime:
             try:
                 user_cancellation.raise_if_cancelled()
                 deadline_cancellation.raise_if_cancelled()
-                future.set_result(self.model.respond(deepcopy(transcript)))
+                respond = getattr(self.model, "respond_cloud_only", None) if cloud_only else self.model.respond
+                if not callable(respond):
+                    raise InferenceUnavailable("Office recovery requires a cloud-only model adapter.")
+                future.set_result(respond(deepcopy(transcript)))
             except BaseException as exc:
                 future.set_exception(exc)
 
@@ -1577,6 +1580,7 @@ class AgentRuntime:
             user_cancellation,
             deadline_cancellation,
             _request_usage=_request_usage,
+            cloud_only=any(definition.name.startswith("office.") for definition in definitions),
         )
         if stop is not None:
             return None, stop

@@ -168,11 +168,11 @@ class OwnedProcess:
                         self.returncode = code if code is not None else 1
 
 
-def start_owned_process(command, *, cwd, env, stdout=None, stderr=None, windows_command_line=None,
+def start_owned_process(command, *, cwd, env, stdin=None, stdout=None, stderr=None, windows_command_line=None,
                         job_memory_bytes=1024 * 1024 * 1024):
     """Start hidden, with only explicit standard handles inherited (Windows 10+).
 
-    stdout/stderr are optional file descriptors, otherwise discarded. Ownership failure never falls back to
+    stdin/stdout/stderr are optional file descriptors, otherwise discarded. Ownership failure never falls back to
     launching an unguarded process. Neither the command nor environment is logged.
     windows_command_line is for a trusted caller implementing a shell's non-CRT
     quoting. The executable remains command[0]; ordinary callers use argv quoting.
@@ -213,6 +213,10 @@ def start_owned_process(command, *, cwd, env, stdout=None, stderr=None, windows_
             raise ProcessOwnershipError("Could not register atomic owned process ownership.")
         null_fd = os.open(os.devnull, os.O_RDWR)
         descriptors.append(null_fd)
+        input_fd = null_fd
+        if stdin is not None:
+            input_fd = os.dup(stdin)
+            descriptors.append(input_fd)
         output_fd = null_fd
         if stdout is not None:
             output_fd = os.dup(stdout)
@@ -232,7 +236,7 @@ def start_owned_process(command, *, cwd, env, stdout=None, stderr=None, windows_
         startup.startup.cb = C.sizeof(startup)
         startup.startup.flags = 0x101  # STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW
         startup.startup.show = 0  # SW_HIDE
-        startup.startup.stdin = handles[0]
+        startup.startup.stdin = msvcrt.get_osfhandle(input_fd)
         startup.startup.stderr = msvcrt.get_osfhandle(error_fd)
         startup.startup.stdout = msvcrt.get_osfhandle(output_fd)
         startup.attributes = C.cast(attributes, C.c_void_p)

@@ -303,9 +303,11 @@ Normal conversation remains available without any skill selected.
 
 A **skill** is instructions/context, a **tool** is a callable capability, **MCP** is an external
 tool/resource protocol, and a **plugin** is a package that may group those components with hooks,
-configuration and metadata. MCP transport, plugin loading, lifecycle hooks, an umbrella Capability
-Manager and Claude compatibility remain future work. Their implementation must not turn skill
-metadata or Markdown into an execution or authority channel.
+configuration and metadata. The [Office MCP foundation](docs/office-mcp-phase2.md) provides
+reviewed contracts, owned stdio transport and opt-in capability composition through existing
+permissions and journaling. Default startup remains disconnected; live Office adapters follow.
+General plugin loading, lifecycle hooks, an umbrella Capability Manager and Claude compatibility
+remain future work. Skill metadata and Markdown cannot register tools or grant authority.
 
 See [Phase 6.2](docs/skill-runtime-phase6-2.md) for the frozen v1 interfaces and future adapter
 boundaries, and [Phase 6.1](docs/skill-runtime-phase6-1.md) for content-free skill observability.

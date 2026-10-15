@@ -90,12 +90,15 @@ See [the Settings workflow and verification](docs/skill-settings.md).
 
 Skills add instructions/context; tools remain separately registered and authorized callable
 capabilities. MCP is an external tool/resource protocol, while a plugin may bundle skills, tools,
-MCP definitions, hooks and configuration. MCP/plugin loading and Claude compatibility are future
-work. See the [frozen extension boundaries](docs/skill-runtime-phase6-2.md).
+MCP definitions, hooks and configuration. General plugin loading and Claude compatibility are
+future work. See the [frozen extension boundaries](docs/skill-runtime-phase6-2.md).
 
 The [Office MCP phase 1 contract](docs/office-mcp-phase1.md) defines reviewed
 cloud-only tool schemas, exposure rules and a measured offline schema budget.
-Transport, live Office editing and production registration remain later phases.
+The [Office MCP phase 2 foundation](docs/office-mcp-phase2.md) adds a pinned portable
+SDK, owned stdio connections and opt-in capability integration. Default startup
+stays disconnected; host discovery, live Office adapters and connection UI remain
+later phases.
 
 ```text
 ORSI.cmd skill list
