@@ -79,10 +79,11 @@ print('portable MCP and COM imports verified')
         creationflags=subprocess.CREATE_NO_WINDOW)
     assert result.returncode == 0, result.stderr
     assert "imports verified" in result.stdout
-    bridge = OfficeConnection(relocated, backend=lambda: "cloud")
+    from app.mcp.office_discovery import OfficeDiscovery
+    bridge = OfficeConnection(relocated, backend=lambda: "cloud", discovery=OfficeDiscovery(lambda: ()))
     try:
         assert bridge.connect().ready
-        assert not bridge.exposure.eligible  # Default shell has no discovered Office applications.
+        assert not bridge.exposure.eligible  # This fresh-host fixture has no installed Office.
     finally:
         bridge.close()
     assert not bridge.diagnostics["worker_alive"]

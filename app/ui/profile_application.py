@@ -310,7 +310,8 @@ class ProfileApplication(QObject):
     def _collect_retired(self):
         keep = []
         for window in self._retired:
-            threads = (window.thread, window.attachment_tray.thread, window.skill_settings_page.thread)
+            threads = (window.thread, window.attachment_tray.thread, window.skill_settings_page.thread,
+                       window.settings_panel.office_controls.worker)
             session = getattr(window, "_profile_session", None)
             pending = session is not None and session is self.manager.session and bool(session._resources)
             if pending or window is self._legacy_pending or any(thread is not None and thread.isRunning() for thread in threads):

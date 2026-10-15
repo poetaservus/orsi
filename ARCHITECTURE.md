@@ -305,7 +305,11 @@ A **skill** is instructions/context, a **tool** is a callable capability, **MCP*
 tool/resource protocol, and a **plugin** is a package that may group those components with hooks,
 configuration and metadata. The [Office MCP foundation](docs/office-mcp-phase2.md) provides
 reviewed contracts, owned stdio transport and opt-in capability composition through existing
-permissions and journaling. Default startup remains disconnected; live Office adapters follow.
+permissions and journaling. Default startup remains disconnected.
+The [Phase 3 read adapters](docs/office-mcp-phase3.md) discover Office locally once per
+run, keep COM references on a bridge STA, and bind reads to the explicitly selected
+document. Private local controls resolve canonical resources; model results omit paths
+and registry data. Only listing, attachment and bounded reading are exposed in this phase.
 General plugin loading, lifecycle hooks, an umbrella Capability Manager and Claude compatibility
 remain future work. Skill metadata and Markdown cannot register tools or grant authority.
 

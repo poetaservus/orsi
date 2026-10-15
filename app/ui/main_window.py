@@ -765,6 +765,7 @@ class MainWindow(QMainWindow):
         self.hide()
         self.setEnabled(False)
         self.skill_settings_page.revoke_profile()
+        self.settings_panel.office_controls.revoke()
         self._greeting_save_timer.stop()
         self.attachment_tray.shutdown()
         for dialog in (self._attachment_picker, self._image_viewer, self._approval_panel):
@@ -774,13 +775,15 @@ class MainWindow(QMainWindow):
             dialog.reject()
 
     def _drain_profile_view(self):
-        for thread in (self.thread, self.attachment_tray.thread, self.skill_settings_page.thread):
+        for thread in (self.thread, self.attachment_tray.thread, self.skill_settings_page.thread,
+                       self.settings_panel.office_controls.worker):
             if thread is not None and thread.isRunning():
                 thread.quit()
                 if not thread.wait(30000):
                     raise RuntimeError("Profile work is still stopping.")
 
     def _clear_profile_view(self):
+        self.settings_panel.office_controls.clear()
         self._clear_question_form()
         self.operation_review_label.clear()
         self.operation_review_banner.hide()
@@ -2152,6 +2155,11 @@ class MainWindow(QMainWindow):
         self._closing = True
         self.settings_panel.hide()
         self.settings_button.reset()
+        if self.settings_panel.office_controls.worker is not None:
+            self.settings_panel.office_controls.stop()
+            self.setEnabled(False)
+            event.ignore()
+            return
         if self.skill_settings_page.thread is not None:
             # The embedded page owns its import/install worker. Let its transaction
             # finish and join before shutting down the service or closing its parent.

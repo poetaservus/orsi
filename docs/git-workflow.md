@@ -1,5 +1,34 @@
 # Git layout and baseline hygiene
 
+## Office MCP phase 3 live reads, 15 October 2026
+
+`codex/office-mcp-phase3` starts from clean local main `97db799`. It adds
+per-run registered Office discovery, document-bound COM STA adapters, bounded
+read pagination and basic connection/document controls in Settings > Models.
+Only listing, attachment and reading are exposed. Existing host permissions,
+cloud gating and accepted v1 manifests remain authoritative. See
+[the implementation and verification record](office-mcp-phase3.md).
+
+The final essential selection passed **111 focused checks in 69.57 seconds**,
+without failures/errors/skips. Three opt-in live gates passed in 32.28 seconds,
+using synthetic unsaved Excel/Word instances and PowerPoint presentations,
+one-character Unicode pages and focus changes. Native fixture shutdown emitted
+caught RPC diagnostics, retained separately from read correctness. Two known
+fixture processes from earlier failed cleanup were recovered using exact owned
+PIDs and creation times. Existing popup assertions reproduce against unchanged
+main Settings source; they are recorded as baseline failures, not passed checks.
+The sandbox EnumWindows error is separate from passing normal desktop discovery.
+
+The three exposed tools measure **1,824 bytes / 752 reserve tokens**; the full
+accepted manifest remains **7,390 bytes / 2,848 reserve tokens**. Runtime pins,
+licenses, relocation, compilation and whitespace checks pass. The full suite,
+real cloud billing and physical second-host gates were not run.
+
+Inventories are retained under ignored `state/backups/office-mcp-phase3-20261015/`.
+Preserve prior main at `archive/2026-10-15/main-before-office-mcp-phase3`, commit,
+fast-forward local main and remove only the merged feature branch. Other
+worktrees, private settings, historical/unmerged tips and remote refs remain intact.
+
 ## Office MCP phase 2 foundation, 15 October 2026
 
 `codex/office-mcp-phase2` starts from clean local main `1c2354e`.

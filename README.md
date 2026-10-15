@@ -97,8 +97,10 @@ The [Office MCP phase 1 contract](docs/office-mcp-phase1.md) defines reviewed
 cloud-only tool schemas, exposure rules and a measured offline schema budget.
 The [Office MCP phase 2 foundation](docs/office-mcp-phase2.md) adds a pinned portable
 SDK, owned stdio connections and opt-in capability integration. Default startup
-stays disconnected; host discovery, live Office adapters and connection UI remain
-later phases.
+stays disconnected. [Phase 3](docs/office-mcp-phase3.md) adds cached host discovery,
+document selection in Settings > Models, and bounded reads of live Excel, Word
+and PowerPoint documents, including unsaved changes. Choose Cloud mode, Connect,
+select an open document and click Use document. Editing and saving follow in later phases.
 
 ```text
 ORSI.cmd skill list

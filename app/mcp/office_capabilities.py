@@ -131,6 +131,8 @@ class OfficeCapabilityRegistry(CapabilityRegistry):
     def model_definitions(self):
         office = (office_catalog(_exposure(self.connection, self.model)).model_definitions()
                   if self.resource_policy is not None else ())
+        if self.connection.live:
+            office = tuple(tool for tool in office if tool.name in ("office.documents", "office.attach", "office.read"))
         return tuple(sorted((*self.base.model_definitions(), *office), key=lambda definition: definition.name))
 
     @property

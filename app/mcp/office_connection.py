@@ -26,22 +26,24 @@ from app.runtime.cancellation import CancellationToken, TaskCancelled
 
 @dataclass
 class _Request:
-    contract: OfficeToolContract
+    contract: OfficeToolContract | None
     arguments: dict
     exposure: OfficeExposure
     operation: str
     future: Future = field(default_factory=Future)
     sent: bool = False
+    control: tuple | None = None
+    authority: dict | None = None
 
 
 class OfficeConnection:
     """One app-owned connection, explicit cloud activation, no persisted handles.
 
-    Applications is the trusted enabled/discovered intersection supplied by later
-    live discovery. It defaults empty, so the phase 2 shell exposes no user tools.
+    Live connections discover locally and require explicit document selection.
+    Trusted injected transports keep the phase 2 fixture interface.
     """
     def __init__(self, root: Path, *, backend: Callable[[], str], applications=(),
-                 call_timeout=10.0, startup_timeout=10.0, _transport_factory=None):
+                 call_timeout=10.0, startup_timeout=10.0, _transport_factory=None, discovery=None):
         self.root = Path(root).resolve(strict=True)
         self._backend = backend
         self._applications = OfficeExposure(applications=tuple(applications)).applications
@@ -51,6 +53,11 @@ class OfficeConnection:
             raise ValueError("Office connection settings are invalid.")
         self.call_timeout, self.startup_timeout = float(call_timeout), float(startup_timeout)
         self._transport_factory = _transport_factory or self._bundled_transport
+        from app.mcp.office_discovery import OfficeDiscovery
+        self.live = _transport_factory is None or discovery is not None
+        self.discovery = discovery or OfficeDiscovery()
+        self._selected = None
+        self._authority = {}
         self._state, self._connect_lock, self._dispatch_lock = RLock(), Lock(), Lock()
         self._started, self._stopped = Event(), Event()
         self._enabled = self._ready = self._closed = False
@@ -80,6 +87,7 @@ class OfficeConnection:
         with self._state:
             return {"generation": self._generation, "ready": self.exposure.ready,
                     "tool_list_requests": self._tool_lists, "tool_calls": self._calls,
+                    "discovery_runs": self.discovery.runs,
                     "pid": getattr(self._transport, "pid", None),
                     "worker_alive": self._thread is not None and self._thread.is_alive()}
 
@@ -87,6 +95,8 @@ class OfficeConnection:
         self._ready = self._enabled = False
         self._generation += 1
         self._sessions.clear()
+        self._selected = None
+        self._authority.clear()
 
     def _signal_stop(self):
         if self._loop is not None and self._queue is not None:
@@ -106,6 +116,8 @@ class OfficeConnection:
                     return self.exposure
                 if self._thread is not None and self._thread.is_alive():
                     raise Error(Code.EXECUTOR_BUSY, "The Office connection is still stopping.")
+                if self.live:
+                    self._applications = tuple(item.application for item in self.discovery.get())
                 accepted = json.loads((self.root / "config/office_mcp_v1.json").read_text(encoding="utf-8"))
                 if accepted != accepted_office_manifest() or not office_budget_report()["within_budget"]:
                     raise Error(Code.INVALID_ARGUMENTS, "The accepted Office contract or budget does not match.")
@@ -182,6 +194,8 @@ class OfficeConnection:
 
     async def _connected(self, client):
         await self._check_server(client)
+        if self.live:
+            await self._control_request(client, "configure", {"applications": list(self._applications)})
         with self._state:
             if not self._enabled or self._backend() != "cloud":
                 return
@@ -194,15 +208,34 @@ class OfficeConnection:
             with self._state:
                 if request.future.cancelled():
                     continue
-                if self.exposure != request.exposure or not self.exposure.eligible:
+                if self.exposure != request.exposure or (not self.exposure.eligible and request.control is None):
                     request.future.set_exception(Error(Code.DISABLED_CAPABILITY, "The Office exposure changed."))
                     continue
                 request.sent = True
-                self._calls += 1
+                if request.control is None:
+                    self._calls += 1
             try:
+                if request.control is not None:
+                    try:
+                        output = await self._control_request(client, *request.control)
+                    except Error as error:
+                        if not request.future.done():
+                            request.future.set_exception(error)
+                        continue
+                    if not request.future.done():
+                        request.future.set_result(output)
+                    continue
                 result = await client.call_tool(request.contract.name, request.arguments,
                     read_timeout_seconds=self.call_timeout,
-                    meta=RequestParamsMeta(orsiOperation=request.operation))
+                    meta=RequestParamsMeta(orsiOperation=request.operation,
+                        **({"orsiAuthority": request.authority} if self.live else {})))
+                if result.is_error and self.live and request.contract.permission == PermissionClass.READ:
+                    if not request.future.done():
+                        request.future.set_exception(Error(Code.INVALID_ARGUMENTS,
+                            "Office target is unavailable or changed. Refresh and read again. "
+                            "Targets: selection; Excel SheetName!A1:B2; Word document or text:start:end; "
+                            "PowerPoint slides or slide:index."))
+                    continue
                 if result.is_error or result.result_type != "complete":
                     raise ValueError("The Office tool did not complete.")
                 output = request.contract.validate_result(
@@ -217,9 +250,100 @@ class OfficeConnection:
                 with self._state:
                     self._invalidate_locked()
                 if not request.future.done():
-                    code = Code.OUTCOME_UNKNOWN if request.contract.permission == PermissionClass.WRITE else Code.INVALID_OUTPUT
+                    code = Code.OUTCOME_UNKNOWN if request.contract is not None and request.contract.permission == PermissionClass.WRITE else Code.INVALID_OUTPUT
                     request.future.set_exception(Error(code, "Office execution failed; no automatic retry is permitted."))
                 break
+
+    async def _control_request(self, client, action, data):
+        result = await client.read_resource("orsi-office://local/" + action,
+            meta=RequestParamsMeta(orsiControl=data), cache_mode="bypass")
+        if len(result.contents) != 1 or len(result.contents[0].text.encode()) > 48000:
+            raise ValueError("Invalid local Office response.")
+        output = json.loads(result.contents[0].text)
+        if not isinstance(output, dict) or "error" in output:
+            raise Error(Code.INVALID_ARGUMENTS, "Office target is unavailable; refresh the connection or selection.")
+        return output
+
+    def control(self, action, data=None, cancellation=None):
+        """Private app operation; never part of model tools or conversation results."""
+        cancellation = cancellation or CancellationToken()
+        deadline, acquired = monotonic() + self.call_timeout, False
+        try:
+            while not acquired:
+                acquired = self._dispatch_lock.acquire(timeout=0.01)
+                cancellation.raise_if_cancelled()
+                if monotonic() >= deadline:
+                    raise Error(Code.EXECUTOR_BUSY, "The Office connection is busy.")
+            cancellation.raise_if_cancelled()
+            expected = self.exposure
+            if not self.live or not expected.ready or expected.backend != "cloud":
+                raise Error(Code.DISABLED_CAPABILITY, "Office controls require a ready cloud connection.")
+            request = _Request(None, {}, expected, "", control=(action, data or {}))
+            self._loop.call_soon_threadsafe(self._queue.put_nowait, request)
+            while True:
+                try:
+                    return request.future.result(timeout=0.01)
+                except FutureTimeout:
+                    if cancellation.is_cancelled or monotonic() >= deadline or self._stopped.is_set():
+                        request.future.cancel()
+                        self.disconnect()
+                        cancellation.raise_if_cancelled()
+                        raise Error(Code.TIMED_OUT, "The Office control exceeded its deadline.")
+        finally:
+            if acquired:
+                self._dispatch_lock.release()
+
+    def list_documents(self, *, refresh=True, cancellation=None):
+        result, offset = [], 0
+        for _ in range(6):
+            page = self.control("documents", {"refresh": refresh and offset == 0, "offset": offset}, cancellation)
+            result.extend(item["document"] for item in page["documents"])
+            offset = page["next"]
+            if offset is None:
+                return result
+        raise Error(Code.INVALID_OUTPUT, "The Office document list exceeded its bound.")
+
+    def select_document(self, document, cancellation=None):
+        value = self.control("binding", {"document": document}, cancellation)
+        with self._state:
+            self._selected = (document, value["identity"])
+            self._sessions.clear()
+            self._authority.clear()
+            self._generation += 1
+        return value["document"]
+
+    def refresh(self, cancellation=None):
+        self.disconnect()
+        self.discovery.get(refresh=True)
+        self.connect(cancellation)
+        return self.list_documents(cancellation=cancellation)
+
+    def resource_policy(self, contract, arguments, context):
+        from app.mcp.office_capabilities import OfficeResourceBinding
+        if contract.name not in ("office.documents", "office.attach", "office.read"):
+            raise Error(Code.DISABLED_CAPABILITY, "Office editing is unavailable in this phase.")
+        with self._state:
+            selected = self._selected
+        if selected is None:
+            if contract.name != "office.documents":
+                raise Error(Code.PERMISSION_DENIED, "Choose a document in Office settings first.")
+            authority = {"document": None}
+            binding = OfficeResourceBinding(None, "office-metadata")
+        else:
+            value = self.control("binding", {"document": selected[0],
+                **({"session": arguments.session} if hasattr(arguments, "session") else {})}, context.cancellation)
+            if (value["document"]["document"], value["identity"]) != selected:
+                raise Error(Code.PERMISSION_DENIED, "The selected Office document changed. Select it again.")
+            if hasattr(arguments, "document") and arguments.document != selected[0]:
+                raise Error(Code.PERMISSION_DENIED, "Select this exact Office document first.")
+            authority = {"document": selected[0], "identity": selected[1]}
+            binding = OfficeResourceBinding(Path(value["path"]) if value["path"] else None,
+                value["identity"], "Read selected " + value["document"]["application"] + " document")
+        with self._state:
+            self._authority[context.call_id] = authority
+            if len(self._authority) > 128:
+                self._authority.pop(next(iter(self._authority)))
+        return binding
 
     def call(self, contract: OfficeToolContract, arguments, *, expected: OfficeExposure,
              operation: str, cancellation: CancellationToken):
@@ -244,6 +368,10 @@ class OfficeConnection:
                 if len(self._used_calls) >= 512:
                     raise Error(Code.EXECUTOR_UNAVAILABLE, "The Office connection record limit was reached; reconnect explicitly.")
                 self._used_calls.add(operation)
+                if self.live:
+                    request.authority = self._authority.pop(operation, None)
+                    if request.authority is None:
+                        raise Error(Code.PERMISSION_DENIED, "Office execution requires a checked local document binding.")
                 self._loop.call_soon_threadsafe(self._queue.put_nowait, request)
             while True:
                 try:
@@ -265,16 +393,30 @@ class OfficeConnection:
                 self._dispatch_lock.release()
 
     def disconnect(self):
-        with self._state:
-            self._invalidate_locked()
-            self._signal_stop()
-            transport, thread = self._transport, self._thread
-        if transport is not None:
-            transport.abort()
-        if thread is not None:
-            thread.join(timeout=6.0)
-            if thread.is_alive():
-                raise Error(Code.EXECUTOR_UNAVAILABLE, "The Office worker did not release before its shutdown deadline.")
+        # An idle live bridge can release its COM references on the owning STA
+        # before process teardown. Busy/hung operations retain the bounded abort path.
+        acquired = self._dispatch_lock.acquire(blocking=False) if self.live else False
+        try:
+            if acquired and self.exposure.ready and self.exposure.backend == "cloud":
+                request = _Request(None, {}, self.exposure, "", control=("release", {}))
+                try:
+                    self._loop.call_soon_threadsafe(self._queue.put_nowait, request)
+                    request.future.result(timeout=min(2.0, self.call_timeout))
+                except Exception:
+                    request.future.cancel()
+            with self._state:
+                self._invalidate_locked()
+                self._signal_stop()
+                transport, thread = self._transport, self._thread
+            if transport is not None:
+                transport.abort()
+            if thread is not None:
+                thread.join(timeout=6.0)
+                if thread.is_alive():
+                    raise Error(Code.EXECUTOR_UNAVAILABLE, "The Office worker did not release before its shutdown deadline.")
+        finally:
+            if acquired:
+                self._dispatch_lock.release()
 
     def close(self):
         with self._state:

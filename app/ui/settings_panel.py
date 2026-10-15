@@ -265,6 +265,9 @@ class SettingsPanel(QFrame):
         window.cloud_model_row = self._row(models, window.cloud_model_label,
             ui_text('Choose your cloud model.'), window.cloud_model_selector)
         models.addWidget(window.cloud_model_details)
+        from app.ui.office_settings import OfficeControls
+        self.office_controls = OfficeControls(window, self)
+        models.addWidget(self.office_controls)
         models_page.addStretch()
 
         self._heading(skills, ui_text('Skills'), ui_text('Preview, install and manage skills here.'))

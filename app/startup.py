@@ -217,6 +217,7 @@ def build_application(
             return None, {"hostname": socket.gethostname() or "Windows PC"}, \
                 "Conversation outcomes could not be restored safely. History was preserved; review it before continuing.", inference
         agent_runtime = None
+        office_connection = None
         host_access_policy = None
         agent_error = agent_config_error
         try:
@@ -233,12 +234,16 @@ def build_application(
                 if protected_roots:
                     from dataclasses import replace
                     host_access_policy = replace(host_access_policy, protected_roots=protected_roots)
+                from app.mcp.office_connection import OfficeConnection
+                office_connection = OfficeConnection(PATHS.root, backend=lambda: inference.mode)
                 agent_runtime = build_agent_runtime(
                     inference,
                     config=agent_config,
                     portable_root=PATHS.root,
                     state_directory=PATHS.state,
                     host_access_policy=host_access_policy,
+                    office_connection=office_connection,
+                    office_resource_policy=office_connection.resource_policy,
                     **({"journal_path": state / "capability_journal_v1.json"} if profile_session is not None else {}),
                 )
         except Exception:
@@ -277,6 +282,7 @@ def build_application(
             )
             # Every launch starts empty; archive prior turns and their image references.
             service.new_session(preserve_history=True)
+            service.office_connection = office_connection if agent_runtime is not None else None
         except (TurnHistoryError, OSError):
             log.exception("Durable conversation outcomes could not be reconciled safely.")
             if agent_runtime is not None:
