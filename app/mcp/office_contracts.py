@@ -342,9 +342,17 @@ OFFICE_TOOLS = tuple(sorted((
                        DocumentsArguments, DocumentsResult, PermissionClass.READ),
     OfficeToolContract("office.attach", "Attach to an exact open document without launching or saving.",
                        AttachArguments, AttachResult, PermissionClass.READ),
-    OfficeToolContract("office.read", "Read a bounded selection or target; returns an edit snapshot.",
+    OfficeToolContract("office.read", "Read a bounded target; returns an edit snapshot. Excel: start workbook-wide requests "
+                       "with target=workbook for worksheet names and used extents, then use each returned SheetName!used "
+                       "target to read the full used range. Explicit SheetName!A1:B2 and selection are also supported. "
+                       "Results are pages, not the whole target: repeat the same session/target with cursor until null. "
+                       "Never derive whole-sheet KPIs from a preview or unfinished page sequence. "
+                       "Word: document or text:start:end. PowerPoint: slides or slide:index.",
                        ReadArguments, ReadResult, PermissionClass.READ),
-    OfficeToolContract("office.excel_edit", "Apply a bounded Excel patch against a matching snapshot.",
+    OfficeToolContract("office.excel_edit", "Apply a bounded Excel patch against a complete matching cell snapshot. "
+                       "Use this exact tool name. Existing sheets only; no worksheet creation. Supports values, "
+                       "local formulas, number_format, bold and italic; no fills, cross-sheet formulas, defined names "
+                       "or external references. Read every target cell first. Editing is not saving.",
                        ExcelEditArguments, EditResult, PermissionClass.WRITE, "excel"),
     OfficeToolContract("office.word_edit", "Apply bounded Word text, style or table edits against a snapshot.",
                        WordEditArguments, EditResult, PermissionClass.WRITE, "word"),

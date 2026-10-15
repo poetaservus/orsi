@@ -137,6 +137,12 @@ class LiveOffice:
             if value is None or value[:3] != signature:
                 raise OfficeUnavailable("The read cursor belongs to another target or session.")
             _, _, _, plan, index, offset, guard, previous_snapshot = value
+            if binding["document"]["application"] == "excel" and arguments.target.endswith("!used"):
+                current = self.backend.plan(*self.documents[binding["document"]["document"]], arguments.target)
+                if (len(current) != len(plan) or current.rows != plan.rows or current.columns != plan.columns
+                        or current.row != plan.row or current.column != plan.column
+                        or not self.backend.same(current.sheet, plan.sheet)):
+                    raise OfficeUnavailable("The worksheet used range changed. Read it again.")
             if guard is not None:
                 descriptor, old_offset, count, digest = guard
                 piece, _ = self.backend.piece(descriptor, old_offset, count)

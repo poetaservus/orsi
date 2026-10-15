@@ -6,6 +6,7 @@ import sys
 import time
 
 from app.mcp.office_contracts import excel_range_shape
+from app.mcp.office_com import ExcelCells
 from app.mcp.office_live import LiveOffice, OfficeSTA
 from app.mcp.office_server import create_live_server, serve
 from tests.fixtures.office_live_server import MemoryOffice
@@ -20,9 +21,14 @@ class MemoryExcel(MemoryOffice):
 
     def plan(self, kind, doc, target):
         self.check()
+        if target == "workbook":
+            return [("worksheet", name) for name in self.sheets]
         sheet, address = target.rsplit("!", 1) if target != "selection" else ("Sheet1", "A1")
         sheet = sheet.strip("'").replace("''", "'")
         obj = self.sheets[sheet]
+        if address == "used":
+            return ExcelCells(obj, 1, 1, max((r for r, c in obj), default=1),
+                              max((c for r, c in obj), default=1))
         rows, columns = excel_range_shape(address)
         match = re.match(r"\$?([A-Za-z]+)\$?([0-9]+)", address)
         left = 0
@@ -40,6 +46,16 @@ class MemoryExcel(MemoryOffice):
         self.check()
 
     def piece(self, descriptor, offset, chars):
+        if descriptor[0] == "worksheet":
+            import json
+            name = descriptor[1]
+            cells = self.sheets[name]
+            rows, columns = max((r for r, c in cells), default=1), max((c for r, c in cells), default=1)
+            text = json.dumps({"sheet": name, "rows": rows, "columns": columns,
+                               "read_target": "'" + name.replace("'", "''") + "'!used"})
+            part = text[offset:offset + chars]
+            return {"label": "Worksheet: " + name, "text": part}, (
+                offset + len(part) if offset + len(part) < len(text) else None)
         state = self.capture_excel(descriptor)
         if isinstance(state["value"], str) and len(state["value"]) > chars:
             text = state["value"][offset:offset + chars]
@@ -69,6 +85,13 @@ class MemoryExcel(MemoryOffice):
 
 class ExcelFixture(LiveOffice):
     def control(self, action, data):
+        if action == "fixture-cells":
+            sheet = self.backend.sheets[data["sheet"]]
+            for r, row in enumerate(data["values"], 1):
+                for c, value in enumerate(row, 1):
+                    sheet[(r, c)] = {"value": value, "formula": "", "number_format": "General",
+                                     "bold": False, "italic": False}
+            return {"changed": True}
         if action == "fixture-document":
             self.backend.docs[0]["path"] = data["path"]
             self.backend.docs[0]["name"] = Path(data["path"]).name

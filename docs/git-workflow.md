@@ -1,5 +1,29 @@
 # Git layout and baseline hygiene
 
+## Office workbook range repair, 15 October 2026
+
+`codex/office-range-discovery` starts from clean local main `ed4aa49`. The existing
+Office reader discovers worksheet extents and reads complete used ranges through
+bounded pages. A turn-local completion check prevents a started full-range read
+from being reported complete with unread pages. Office edit descriptions expose
+the supported subset; semantic-limit stops retain the underlying settled Office
+error. No native worksheet creation, cross-sheet formulas, approval bypass or
+model/prompt/routing/context changes are introduced. See
+[the repair record](office-workbook-range-repair.md).
+
+The necessary affected selection passed **215 checks in 42.76 seconds**. The
+final eight new regressions passed in **4.68 seconds**. One synthetic native
+Excel gate read **288 cells across nine pages** through the production bridge
+and released its owned processes. No real workbook was edited or saved and no
+provider requests were made. Manifest, schema budget, compilation and whitespace
+checks pass. The full suite was not rerun per the user's latest instruction to
+run only necessary tests; live model/provider and second-host gates remain unrun.
+
+Inventories are retained under ignored `state/backups/office-range-discovery-20261015/`.
+Preserve prior main at `archive/2026-10-15/main-before-office-range-discovery`,
+commit, fast-forward local main and remove only its merged feature branch.
+Other worktrees, private settings, historical/unmerged tips and remote refs remain intact.
+
 ## Office approval UI repair, 15 October 2026
 
 `codex/office-approval-ui` starts from clean local main `9d0dfc2`.

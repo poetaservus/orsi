@@ -10,6 +10,8 @@ compact prompt validator. The [conversation repair and full-suite record](office
 documents that integration fix and the broader regression qualification.
 The [Office approval UI repair](office-approval-ui-repair.md) adds the missing
 composer reviews for Excel edit, restore and save, including unsaved workbooks.
+The [workbook range repair](office-workbook-range-repair.md) adds worksheet/used-range
+discovery, full-read continuation checks and clearer Office edit diagnostics.
 
 ## User workflow and supported edits
 

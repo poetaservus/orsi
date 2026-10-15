@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import ctypes
 import gc
+import json
 import math
 from pathlib import Path
 import re
@@ -14,6 +15,23 @@ from app.mcp.office_discovery import OFFICE_REGISTRATIONS
 
 class OfficeUnavailable(RuntimeError):
     """Only fixed, content-free messages cross the bridge boundary."""
+
+
+class ExcelCells:
+    """Frozen range coordinates without allocating one COM descriptor per cell."""
+
+    def __init__(self, sheet, row, column, rows, columns):
+        self.sheet, self.row, self.column = sheet, row, column
+        self.rows, self.columns = rows, columns
+
+    def __len__(self):
+        return self.rows * self.columns
+
+    def __getitem__(self, index):
+        if not 0 <= index < len(self):
+            raise IndexError(index)
+        row, column = divmod(index, self.columns)
+        return "cell", self.sheet, self.row + row, self.column + column
 
 
 class WindowsOffice:
@@ -129,6 +147,11 @@ class WindowsOffice:
         """Freeze explicit COM references/coordinates, never an ActiveDocument proxy."""
         self.check_thread()
         if kind == "excel":
+            if target == "workbook":
+                if int(document.Worksheets.Count) > 256:
+                    raise OfficeUnavailable("The workbook exceeds the worksheet discovery limit.")
+                return [("worksheet", document.Worksheets.Item(i))
+                        for i in range(1, int(document.Worksheets.Count) + 1)]
             if target == "selection":
                 selected = document.Application.Selection
                 if not self.same(selected.Parent.Parent, document) or int(selected.Areas.Count) != 1:
@@ -141,6 +164,10 @@ class WindowsOffice:
                 if name.startswith("'") and name.endswith("'"):
                     name = name[1:-1].replace("''", "'")
                 sheet = document.Worksheets.Item(name)
+                if address == "used":
+                    used = sheet.UsedRange
+                    return ExcelCells(sheet, int(used.Row), int(used.Column),
+                                      int(used.Rows.Count), int(used.Columns.Count))
             from app.mcp.office_contracts import excel_range_shape
             rows, columns = excel_range_shape(address)
             first = sheet.Range(address).Cells.Item(1, 1)
@@ -197,6 +224,16 @@ class WindowsOffice:
         """Return at most chars characters; offsets freeze a paged target."""
         self.check_thread()
         kind, obj, *coordinates = descriptor
+        if kind == "worksheet":
+            used = obj.UsedRange
+            name = str(obj.Name)
+            text = json.dumps({"sheet": name, "used_range": str(used.Address),
+                "read_target": "'" + name.replace("'", "''") + "'!used",
+                "rows": int(used.Rows.Count), "columns": int(used.Columns.Count)},
+                ensure_ascii=False, separators=(",", ":"))
+            part = text[offset:offset + chars]
+            return {"label": "Worksheet: " + name, "text": part}, (
+                offset + len(part) if offset + len(part) < len(text) else None)
         if kind == "word":
             start, end = coordinates
             region = obj.Range(start + offset, min(end, start + offset + chars))

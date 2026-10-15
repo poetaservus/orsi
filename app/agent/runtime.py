@@ -41,6 +41,7 @@ from app.agent.file_resolution import filename_disambiguation_feedback
 from app.agent.read_progress import ReadProgressTracker
 from app.agent.project_progress import ProjectProgressTracker
 from app.agent.edit_progress import EditProgressTracker
+from app.agent.office_read_progress import OfficeReadProgress
 from app.agent.repair_loop import RepairLoopTracker
 from app.agent.goals import TaskGoal, observe_goal, finish_goal, goal_feedback, evidence_report
 from app.agent.task_completion import (CompletionReview, task_context_message,
@@ -502,6 +503,7 @@ class AgentRuntime:
         read_progress = ReadProgressTracker()
         project_progress = ProjectProgressTracker()
         edit_progress = EditProgressTracker()
+        office_read_progress = OfficeReadProgress()
         repair_loop = RepairLoopTracker()
         used_call_ids: set[str] = set()
         advertised_names = {item.name for item in definitions}
@@ -695,6 +697,19 @@ class AgentRuntime:
                         "The model response could not be retained durably. No new tool calls were executed.",
                         steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
             if response.kind == ModelResponseKind.ASSISTANT_TEXT:
+                if proposed_answer is None and not assessment_text:
+                    unfinished = office_read_progress.before_final()
+                    if unfinished is not None:
+                        retry, message = unfinished
+                        if not retry:
+                            return self._stopped(AgentRunStatus.INCOMPLETE, "The workbook read remains unfinished.",
+                                partial_text=office_read_progress.unfinished_summary(), steps=steps, capability_calls=capability_calls,
+                                protocol_failures=protocol_failures)
+                        self._retain_response_text(transcript, response)
+                        transcript.append({"role": "system", "content": message})
+                        if not self._transcript_within_limit(transcript):
+                            return self._transcript_limited(steps, capability_calls, protocol_failures)
+                        continue
                 filename_feedback = filename_disambiguation_feedback(
                     transcript,
                     advertised_names,
@@ -1011,6 +1026,7 @@ class AgentRuntime:
                 if call.capability in {"project.verify", "project.inspect"} and repeat_rejection is None:
                     project_receipts.setdefault(call_fingerprint(call), []).append(outcome.result.call_id)
                 read_progress.observe(call, outcome.result, repeated)
+                office_read_progress.observe(call, outcome.result)
                 project_progress.observe(call, outcome.result, repeated)
                 diagnosis_feedback = repair_loop.observe(call, outcome.result, step=steps)
                 if diagnosis_feedback:
@@ -1027,8 +1043,11 @@ class AgentRuntime:
                 }:
                     recovery.semantic_corrections += 1
                     if recovery.semantic_corrections >= self.limits.max_semantic_corrections:
+                        message = "The agent stopped after reaching its semantic-correction limit."
+                        if call.capability.startswith("office."):
+                            message = (message + " " + call.capability + ": " + outcome.result.error.message)[:500]
                         return self._stopped(AgentRunStatus.SEMANTIC_CORRECTION_LIMIT,
-                            "The agent stopped after reaching its semantic-correction limit.",
+                            message,
                             steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
                 if edit_observation.stop_message is not None:
                     return self._stopped(AgentRunStatus.REPEATED_CALL, edit_observation.stop_message,

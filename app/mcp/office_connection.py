@@ -239,7 +239,8 @@ class OfficeConnection:
                     if not request.future.done():
                         request.future.set_exception(Error(Code.INVALID_ARGUMENTS,
                             "Office target is unavailable or changed. Refresh and read again. "
-                            "Targets: selection; Excel SheetName!A1:B2; Word document or text:start:end; "
+                            "Targets: selection; Excel workbook (sheet names/extents), SheetName!used or SheetName!A1:B2; "
+                            "finish cursor pages; Word document or text:start:end; "
                             "PowerPoint slides or slide:index."))
                     continue
                 if result.is_error or result.result_type != "complete":
