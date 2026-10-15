@@ -1,5 +1,34 @@
 # Git layout and baseline hygiene
 
+## Typesetter Flagship package, 16 October 2026
+
+`codex/typesetter-flagship` starts from clean local main `0dfe35b`. It adds an
+optional MIT Word instruction package and primary-source research, following
+the user's frontend/analyst flagship architecture. Twelve progressive references
+cover typography, composition, anti-slop and anti-premium-slop, editable Word
+structure, preservation, pagination, accessibility, and evidence. The package
+does not install itself or add Word tool capabilities. See
+[the research and qualification record](typesetter-flagship.md).
+
+Frontmatter/link/budget checks and isolated native import/reference roundtrip
+pass; 84 bounded pages reproduce every reference byte. The affected selection
+passed **249 tests**. The full native Windows run recorded **4,226 passed,
+48 failed, 67 skipped**, and **15 passing subtests**, in **1,605.49 seconds**.
+Forty-seven failures reproduce an unchanged baseline catalog coverage defect
+(missing `Edit`); one installer CLI I/O failure passed unchanged in isolation.
+An intervening installer-module recheck's two other I/O failures also passed
+their targeted recheck; their cause remains unresolved. The full suite is not
+claimed clean. Skipped live gates and unrun document-quality evaluations remain
+separate from package verification. No application code, model profiles,
+prompts, routing, tools, context policy, or private settings are changed.
+
+Inventories, pinned research, and validation evidence are retained under ignored
+`state/backups/typesetter-flagship-20261016/` and `state/typesetter-flagship-*`.
+Prior main is preserved at `archive/2026-10-16/main-before-typesetter-flagship`.
+Commit the bounded package, fast-forward local main, and remove only the merged
+feature branch. Preserve all other worktrees and historical/unmerged refs. No
+remote publication or remote cleanup is authorized by this task.
+
 ## Remaining Office MCP Word actions, 16 October 2026
 
 `codex/office-word-actions` starts from clean main `3d984d7` and completes the

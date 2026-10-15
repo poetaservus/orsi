@@ -122,6 +122,13 @@ Scripts, assets and dependencies are not installed or executed. The default glob
 an active skill supplies its main instructions and a compact document inventory; supporting
 text is loaded only when the model requests it. Verified excerpts can carry into follow-ups
 for the same package/version, within the existing model context limits.
+
+Optional authored packages include [Analyst Flagship](skills/analyst-flagship/SKILL.md)
+for Excel dashboards and [Typesetter Flagship](skills/typesetter-flagship/SKILL.md)
+for Word document design, editing, and visual review. Import their directories
+through the existing skill workflow. They add guidance within available tool
+capabilities. See [Typesetter research, scope, and verification](docs/typesetter-flagship.md).
+
 Live [qualification results](docs/skill-reference-qualification-v1.md) show reliable retrieval
 on Luna's enabled-reader tasks, inconsistent local-model compliance, and an unresolved
 disabled-reader fallback. The reference feature remains unqualified for general release.
