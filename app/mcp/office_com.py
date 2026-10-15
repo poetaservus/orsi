@@ -4,6 +4,7 @@ from __future__ import annotations
 import ctypes
 import gc
 import math
+from pathlib import Path
 import re
 from threading import get_ident
 from uuid import UUID
@@ -213,7 +214,7 @@ class WindowsOffice:
             if not isinstance(value, (str, int, float, bool, type(None))) or (
                     isinstance(value, float) and not math.isfinite(value)):
                 raise OfficeUnavailable("The cell value cannot be represented safely.")
-            formula = str(cell.Formula) if bool(cell.HasFormula) else ""
+            formula = str(self.excel_property(cell, "Formula2")) if bool(cell.HasFormula) else ""
             label = f"{str(obj.Name)}!{str(cell.Address)}"[:220]
             size = len(value) if isinstance(value, str) else 0
             if offset == 0 and size + len(formula) <= chars:
@@ -249,4 +250,77 @@ class WindowsOffice:
         self.check_thread()
         gc.collect()
         self.com.CoUninitialize()
-        # Never Quit, Close or Save a user-owned Office object.
+        # Never Quit or Close a user-owned Office object.
+
+    def excel_writable(self, document):
+        from app.mcp.office_excel import OfficeConflict
+        self.check_thread()
+        if bool(document.ReadOnly) or bool(document.HasVBProject) or bool(getattr(document, "AutoSaveOn", False)):
+            raise OfficeConflict("Use a writable, macro-free workbook with AutoSave disabled.")
+        if int(document.Excel4MacroSheets.Count) or int(document.Excel4IntlMacroSheets.Count):
+            raise OfficeConflict("Excel macro sheets are not supported.")
+
+    def excel_property(self, obj, name, *values):
+        """Use invariant Excel format/formula syntax on non-English Office hosts."""
+        self.check_thread()
+        member = obj._oleobj_.GetIDsOfNames(name)
+        flags = self.com.DISPATCH_PROPERTYPUT if values else self.com.DISPATCH_PROPERTYGET
+        return obj._oleobj_.Invoke(member, 1033, flags, not values, *values)
+
+    def capture_excel(self, descriptor):
+        from app.mcp.office_excel import OfficeConflict
+        self.check_thread()
+        _, sheet, row, column = descriptor
+        cell = sheet.Cells.Item(row, column)
+        spill = False
+        try:
+            spill = bool(cell.HasSpill)
+        except (AttributeError, self.com.com_error):
+            pass  # Older Excel has no dynamic arrays.
+        if (bool(sheet.ProtectContents) or bool(cell.MergeCells) or bool(cell.HasArray) or spill
+                or cell.ListObject is not None or int(cell.Hyperlinks.Count)):
+            raise OfficeConflict("Protected, merged, array, spilled, table or hyperlink cells are not supported.")
+        value = cell.Value2
+        formula = str(self.excel_property(cell, "Formula2")) if bool(cell.HasFormula) else ""
+        bold, italic, number_format = cell.Font.Bold, cell.Font.Italic, self.excel_property(cell, "NumberFormat")
+        if (not isinstance(value, (str, int, float, bool, type(None))) or
+                isinstance(value, float) and not math.isfinite(value) or
+                bold is None or italic is None or not isinstance(number_format, str) or
+                len(formula) > 4096 or isinstance(value, str) and len(value) > 4096):
+            raise OfficeConflict("This cell cannot be captured for bounded restoration.")
+        return {"value": value, "formula": formula, "number_format": number_format,
+                "bold": bool(bold), "italic": bool(italic)}
+
+    def write_excel(self, descriptor, state, fields):
+        self.check_thread()
+        _, sheet, row, column = descriptor
+        cell = sheet.Cells.Item(row, column)
+        if "formula" in fields and state["formula"]:
+            self.excel_property(cell, "Formula2", state["formula"])
+            cell.Calculate()
+            # Excel can inherit a referenced cell's format while inserting a
+            # formula. Preserve the approved target format explicitly.
+            self.excel_property(cell, "NumberFormat", state["number_format"])
+        elif "value" in fields or "formula" in fields:
+            # Text format prevents equals, plus, minus and apostrophe strings
+            # from becoming formulas or being silently reinterpreted by Excel.
+            if isinstance(state["value"], str):
+                self.excel_property(cell, "NumberFormat", "@")
+            cell.Value2 = state["value"]
+            self.excel_property(cell, "NumberFormat", state["number_format"])
+        if "number_format" in fields:
+            self.excel_property(cell, "NumberFormat", state["number_format"])
+        if "bold" in fields:
+            cell.Font.Bold = state["bold"]
+        if "italic" in fields:
+            cell.Font.Italic = state["italic"]
+
+    def save_excel(self, document, save, overwrite):
+        self.check_thread()
+        path = Path(save["path"])
+        if save["save_as"]:
+            document.SaveAs(str(path), 51)  # xlOpenXMLWorkbook; macro-free preflight.
+        else:
+            document.Save()
+        if not bool(document.Saved) or Path(str(document.FullName)).resolve(strict=True) != path or not path.is_file():
+            raise OfficeUnavailable("Excel did not verify saving to the approved destination.")

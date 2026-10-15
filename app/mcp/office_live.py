@@ -1,4 +1,4 @@
-"""Document-bound read service and private local controls; no Office mutations."""
+"""Document-bound Office reads and guarded Excel operations on one STA."""
 from __future__ import annotations
 
 import asyncio
@@ -9,6 +9,7 @@ from uuid import uuid4
 
 from app.mcp.office_com import OfficeUnavailable, WindowsOffice
 from app.mcp.office_contracts import APPLICATIONS, MAX_RESULT_BYTES, canonical_json
+from app.mcp.office_excel import ExcelEdits, EXCEL_TOOLS, READ_TOOLS, OfficeConflict, MAX_STATE_BYTES, same_state, same_value
 
 
 def token():
@@ -20,6 +21,7 @@ class LiveOffice:
         self.factory, self.backend = backend_factory, None
         self.enabled, self.documents, self.sessions, self.cursors = (), {}, {}, {}
         self.snapshots = {}
+        self.excel = ExcelEdits(self)
 
     def _backend(self):
         if self.backend is None:
@@ -67,6 +69,7 @@ class LiveOffice:
             self.sessions.clear()
             self.cursors.clear()
             self.snapshots.clear()
+            self.excel.clear()
             self.scan()
             return {"applications": list(self.enabled)}
         if action == "documents":
@@ -85,10 +88,20 @@ class LiveOffice:
             return {"documents": values, "next": offset + 50 if offset + 50 < len(keys) else None}
         if action == "binding":
             return self.binding(document=data.get("document"), session=data.get("session"))
+        if action == "mutation":
+            from app.mcp.office_contracts import OFFICE_TOOLS
+            contract = next((t for t in OFFICE_TOOLS if t.name == data.get("tool") and t.name in EXCEL_TOOLS - READ_TOOLS), None)
+            if contract is None:
+                raise OfficeConflict("Unsupported Office mutation.")
+            arguments = contract.arguments.model_validate(data.get("arguments"))
+            bound = self.binding(session=arguments.session)
+            if bound["document"]["document"] != data.get("document") or bound["identity"] != data.get("identity"):
+                raise OfficeConflict("Office conflict: the selected workbook changed.")
+            return self.excel.prepare(contract.name, arguments, bound)
         raise OfficeUnavailable("Unknown local Office control.")
 
-    def call(self, contract, arguments, authority):
-        if contract.name not in ("office.documents", "office.attach", "office.read"):
+    def call(self, contract, arguments, authority, operation=None):
+        if contract.name not in EXCEL_TOOLS:
             raise OfficeUnavailable("Office editing is not available in this phase.")
         if not isinstance(authority, dict):
             raise OfficeUnavailable("Office execution requires a local document binding.")
@@ -97,7 +110,9 @@ class LiveOffice:
             return {"documents": [], "cursor": None}
         bound = self.binding(document=document, session=getattr(arguments, "session", None))
         if bound["document"]["document"] != document or bound["identity"] != authority.get("identity"):
-            raise OfficeUnavailable("The approved document identity changed.")
+            raise OfficeConflict("The approved document identity changed.")
+        if contract.name in EXCEL_TOOLS - READ_TOOLS:
+            return self.excel.execute(contract.name, arguments, bound, authority, operation)
         if contract.name == "office.documents":
             if arguments.cursor is not None:
                 raise OfficeUnavailable("The document cursor is unavailable.")
@@ -114,14 +129,14 @@ class LiveOffice:
         return self.read(arguments, bound)
 
     def read(self, arguments, binding):
-        if len(self.snapshots) >= 128:
+        if len(self.snapshots) >= 128 and not arguments.cursor:
             raise OfficeUnavailable("The snapshot limit was reached. Refresh the connection.")
         signature = (arguments.session, arguments.target, binding["identity"])
         if arguments.cursor:
             value = self.cursors.get(arguments.cursor)
             if value is None or value[:3] != signature:
                 raise OfficeUnavailable("The read cursor belongs to another target or session.")
-            _, _, _, plan, index, offset, guard = value
+            _, _, _, plan, index, offset, guard, previous_snapshot = value
             if guard is not None:
                 descriptor, old_offset, count, digest = guard
                 piece, _ = self.backend.piece(descriptor, old_offset, count)
@@ -130,8 +145,9 @@ class LiveOffice:
         else:
             plan = self.backend.plan(*self.documents[binding["document"]["document"]], arguments.target)
             index = offset = 0
-        snapshot = token()
-        items, consumed, guard, targets = [], 0, None, {}
+        snapshot = previous_snapshot if arguments.cursor and binding["document"]["application"] == "excel" else token()
+        prior = self.snapshots.get(snapshot)
+        items, consumed, guard, targets = [], 0, None, dict(prior[2]) if prior else {}
         # A conservative byte allowance handles JSON escaping and 4-byte Unicode.
         while index < len(plan) and len(items) < min(arguments.max_items, 32) and consumed < arguments.max_chars:
             count = min(arguments.max_chars - consumed, 1200)
@@ -147,7 +163,20 @@ class LiveOffice:
             if len(canonical_json(candidate).encode()) > MAX_RESULT_BYTES:
                 break
             items.append(item)
-            targets[item["target"]] = (plan[index], offset, count, digest)
+            entry = (plan[index], offset, count, digest)
+            if isinstance(plan[index], tuple) and plan[index][0] == "cell" and hasattr(self.backend, "capture_excel"):
+                try:
+                    state = self.backend.capture_excel(plan[index])
+                except OfficeUnavailable:
+                    state = None
+                if state is not None:
+                    for old in targets.values():
+                        if len(old) >= 6 and old[0][2:] == plan[index][2:] and self.backend.same(old[0][1], plan[index][1]) and not same_state(old[5], state):
+                            raise OfficeConflict("Office conflict: the paged cell changed during the read.")
+                    if piece.get("values") is not None and (not same_value(piece["values"][0][0], state["value"]) or piece["formulas"] != [[state["formula"]]]):
+                        raise OfficeConflict("Office conflict: the cell changed while its snapshot was captured.")
+                    entry += (state if next_offset is None else None, state)
+            targets[item["target"]] = entry
             consumed += characters
             guard = (plan[index], offset, count, digest)
             if next_offset is None:
@@ -161,14 +190,20 @@ class LiveOffice:
             if len(self.cursors) >= 128 and arguments.cursor not in self.cursors:
                 raise OfficeUnavailable("The read cursor limit was reached. Refresh the connection.")
             cursor = token()
-            self.cursors[cursor] = (*signature, plan, index, offset, guard)
+            self.cursors[cursor] = (*signature, plan, index, offset, guard, snapshot)
         if arguments.cursor:
             self.cursors.pop(arguments.cursor, None)
+        def size(entries):
+            return sum(len(canonical_json(entry[5]).encode()) for entry in entries.values() if len(entry) >= 6)
+        retained = sum(size(value[2]) for key, value in self.snapshots.items() if key != snapshot)
+        if retained + size(targets) > MAX_STATE_BYTES:
+            raise OfficeUnavailable("The Excel snapshot memory limit was reached. Refresh the connection.")
         self.snapshots[snapshot] = (arguments.session, binding["identity"], targets)
         return {"session": arguments.session, "application": binding["document"]["application"],
                 "snapshot": snapshot, "items": items, "cursor": cursor}
 
     def close(self):
+        self.excel.clear()
         self.snapshots.clear()
         self.cursors.clear()
         self.sessions.clear()

@@ -9,6 +9,7 @@ from mcp.server.stdio import stdio_server
 from mcp.types import CallToolResult, ListToolsResult, TextContent, Tool, ReadResourceResult, TextResourceContents
 
 from app.mcp.office_contracts import OFFICE_TOOLS
+from app.mcp.office_excel import OfficeConflict
 
 
 def create_server(*, handler=None, control=None):
@@ -35,6 +36,8 @@ def create_server(*, handler=None, control=None):
         data = params.meta.get("orsiControl", {}) if params.meta else {}
         try:
             result = await control(action, data)
+        except OfficeConflict as error:
+            result = {"error": "Office conflict: " + str(error), "code": "conflict"}
         except Exception:
             # COM/SDK exceptions may embed paths or document contents.
             result = {"error": "Office target is unavailable; refresh the connection or selection."}
@@ -52,9 +55,12 @@ def create_live_server(sta):
     async def handler(contract, arguments, meta):
         authority = meta.get("orsiAuthority") if meta else None
         try:
-            output = await sta.invoke("call", contract, arguments, authority)
+            output = await sta.invoke("call", contract, arguments, authority, meta.get("orsiOperation") if meta else None)
             contract.validate_result(arguments, output)
             return CallToolResult(content=[], structuredContent=output)
+        except OfficeConflict as error:
+            return CallToolResult(isError=True, content=[TextContent(text="Office conflict; no write was started.")],
+                                  meta={"orsiFailure": "conflict", "orsiMessage": "Office conflict: " + str(error)})
         except Exception:
             return CallToolResult(isError=True, content=[TextContent(
                 text="Office target is unavailable or changed; refresh the selection and read again.")])

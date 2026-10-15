@@ -27,6 +27,7 @@ class OfficeResourceBinding:
     resource: Path | None
     identity: str
     preview: str | None = None
+    source_resource: Path | None = None
 
     def __post_init__(self):
         if (self.resource is not None and (not isinstance(self.resource, Path) or not self.resource.is_absolute())):
@@ -35,6 +36,8 @@ class OfficeResourceBinding:
             raise ValueError("Office resource bindings require a bounded live identity.")
         if self.preview is not None and (not isinstance(self.preview, str) or len(self.preview) > 2000):
             raise ValueError("Office previews must be bounded text.")
+        if self.source_resource is not None and (not isinstance(self.source_resource, Path) or not self.source_resource.is_absolute()):
+            raise ValueError("Office source resources must be absolute paths.")
 
 
 def _exposure(connection, model):
@@ -81,6 +84,14 @@ class OfficeCapability(Capability):
         if isinstance(arguments, SaveArguments) and arguments.path is not None:
             if binding.resource != self.write_policy.resolve_document_file(arguments.path):
                 raise Error(Code.PERMISSION_DENIED, "Save As must be bound to its exact destination.")
+        if self.permission == PermissionClass.WRITE and binding.source_resource is not None:
+            if self.write_policy.resolve_document_file(str(binding.source_resource)) != binding.source_resource:
+                raise Error(Code.PERMISSION_DENIED, "The Office source resource identity is not canonical.")
+        if self.connection.live and self.permission == PermissionClass.WRITE:
+            mutation = self.connection.prepare_mutation(self.contract, arguments, context)
+            binding = OfficeResourceBinding(binding.resource,
+                sha256(canonical_json([binding.identity, mutation["digest"]]).encode()).hexdigest(),
+                mutation["preview"], binding.source_resource)
         identity = sha256(canonical_json({"exposure": exposure.model_dump(mode="json"),
             "binding": binding.identity, "arguments": arguments.model_dump(mode="json")}).encode()).hexdigest()
         return exposure, binding, identity
@@ -132,7 +143,9 @@ class OfficeCapabilityRegistry(CapabilityRegistry):
         office = (office_catalog(_exposure(self.connection, self.model)).model_definitions()
                   if self.resource_policy is not None else ())
         if self.connection.live:
-            office = tuple(tool for tool in office if tool.name in ("office.documents", "office.attach", "office.read"))
+            from app.mcp.office_excel import EXCEL_TOOLS, READ_TOOLS
+            allowed = EXCEL_TOOLS if "excel" in _exposure(self.connection, self.model).applications else READ_TOOLS
+            office = tuple(tool for tool in office if tool.name in allowed)
         return tuple(sorted((*self.base.model_definitions(), *office), key=lambda definition: definition.name))
 
     @property

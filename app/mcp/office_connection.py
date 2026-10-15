@@ -21,6 +21,7 @@ from app.mcp.office_contracts import (
     canonical_json, office_catalog,
 )
 from app.mcp.stdio_transport import OwnedStdioTransport
+from app.mcp.office_excel import EXCEL_TOOLS, READ_TOOLS
 from app.runtime.cancellation import CancellationToken, TaskCancelled
 
 
@@ -229,6 +230,11 @@ class OfficeConnection:
                     read_timeout_seconds=self.call_timeout,
                     meta=RequestParamsMeta(orsiOperation=request.operation,
                         **({"orsiAuthority": request.authority} if self.live else {})))
+                if result.is_error and self.live and (result.meta or {}).get("orsiFailure") == "conflict":
+                    if not request.future.done():
+                        request.future.set_exception(Error(Code.INVALID_ARGUMENTS,
+                            str((result.meta or {}).get("orsiMessage", "Office conflict: read the target again before changing it."))[:500]))
+                    continue
                 if result.is_error and self.live and request.contract.permission == PermissionClass.READ:
                     if not request.future.done():
                         request.future.set_exception(Error(Code.INVALID_ARGUMENTS,
@@ -244,6 +250,12 @@ class OfficeConnection:
                     raise ValueError("The Office receipt belongs to another operation.")
                 if isinstance(request.contract.arguments.model_validate(request.arguments), AttachArguments):
                     self._sessions[output.session] = output.document.application
+                if self.live and request.contract.name == "office.save" and request.arguments.get("path"):
+                    binding = await self._control_request(client, "binding", {"session": output.session})
+                    if binding["path"] != str(Path(request.arguments["path"])):
+                        raise ValueError("The saved workbook identity did not match its destination.")
+                    with self._state:
+                        self._selected = (binding["document"]["document"], binding["identity"])
                 if not request.future.done():
                     request.future.set_result(output.model_dump(mode="json"))
             except BaseException:
@@ -261,7 +273,10 @@ class OfficeConnection:
             raise ValueError("Invalid local Office response.")
         output = json.loads(result.contents[0].text)
         if not isinstance(output, dict) or "error" in output:
-            raise Error(Code.INVALID_ARGUMENTS, "Office target is unavailable; refresh the connection or selection.")
+            message = (str(output.get("error", "Office conflict: read a fresh complete snapshot."))[:500]
+                       if isinstance(output, dict) and output.get("code") == "conflict" else
+                       "Office target is unavailable; refresh the connection or selection.")
+            raise Error(Code.INVALID_ARGUMENTS, message)
         return output
 
     def control(self, action, data=None, cancellation=None):
@@ -320,7 +335,7 @@ class OfficeConnection:
 
     def resource_policy(self, contract, arguments, context):
         from app.mcp.office_capabilities import OfficeResourceBinding
-        if contract.name not in ("office.documents", "office.attach", "office.read"):
+        if contract.name not in EXCEL_TOOLS:
             raise Error(Code.DISABLED_CAPABILITY, "Office editing is unavailable in this phase.")
         with self._state:
             selected = self._selected
@@ -337,13 +352,31 @@ class OfficeConnection:
             if hasattr(arguments, "document") and arguments.document != selected[0]:
                 raise Error(Code.PERMISSION_DENIED, "Select this exact Office document first.")
             authority = {"document": selected[0], "identity": selected[1]}
-            binding = OfficeResourceBinding(Path(value["path"]) if value["path"] else None,
-                value["identity"], "Read selected " + value["document"]["application"] + " document")
+            source = Path(value["path"]) if value["path"] else None
+            destination = source
+            if contract.name not in READ_TOOLS:
+                if value["document"]["application"] != "excel":
+                    raise Error(Code.DISABLED_CAPABILITY, "Editing and saving currently require an Excel session.")
+                if contract.name == "office.save" and arguments.path is not None:
+                    destination = Path(arguments.path)
+                    if not destination.is_absolute():
+                        raise Error(Code.PERMISSION_DENIED, "Save As requires an absolute local destination.")
+            binding = OfficeResourceBinding(destination, value["identity"],
+                "Selected " + value["document"]["application"] + " document", source)
         with self._state:
             self._authority[context.call_id] = authority
             if len(self._authority) > 128:
                 self._authority.pop(next(iter(self._authority)))
         return binding
+
+    def prepare_mutation(self, contract, arguments, context):
+        with self._state:
+            authority = dict(self._authority.get(context.call_id, {}))
+        value = self.control("mutation", {**authority, "tool": contract.name,
+            "arguments": arguments.model_dump(mode="json")}, context.cancellation)
+        with self._state:
+            self._authority[context.call_id] = {**authority, "guard": value["guard"]}
+        return value
 
     def call(self, contract: OfficeToolContract, arguments, *, expected: OfficeExposure,
              operation: str, cancellation: CancellationToken):

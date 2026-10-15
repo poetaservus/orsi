@@ -309,7 +309,15 @@ permissions and journaling. Default startup remains disconnected.
 The [Phase 3 read adapters](docs/office-mcp-phase3.md) discover Office locally once per
 run, keep COM references on a bridge STA, and bind reads to the explicitly selected
 document. Private local controls resolve canonical resources; model results omit paths
-and registry data. Only listing, attachment and bounded reading are exposed in this phase.
+and registry data. Phase 3 provides listing, attachment and bounded reading.
+The [Phase 4 Excel adapter](docs/office-mcp-phase4.md) adds bounded patches,
+guarded restoration and separate saving through the existing approval/execution path.
+Complete cell snapshots bind content, supported formatting and worksheet identity;
+private single-use guards recheck them after approval and immediately before writing.
+Recovery contents stay in bridge memory. Save checks source and destination permissions.
+Proven pre-write conflicts remain known failures; uncertain or partial mutations enter
+the existing journal gate and cannot be replayed automatically. Office COM provides
+no atomic transaction across cells. Word and PowerPoint remain read-only.
 General plugin loading, lifecycle hooks, an umbrella Capability Manager and Claude compatibility
 remain future work. Skill metadata and Markdown cannot register tools or grant authority.
 

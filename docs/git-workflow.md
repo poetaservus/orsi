@@ -1,5 +1,31 @@
 # Git layout and baseline hygiene
 
+## Office MCP phase 4 Excel editing, 15 October 2026
+
+`codex/office-mcp-phase4` starts from clean local main `3e6a9d0`. It adds
+bounded Excel value/formula/format patches, conflict checks, guarded in-memory
+restoration and separate approved Save/Save As. Existing permissions, exact
+approvals, cloud gating, uncertainty journaling and accepted v1 manifests remain
+authoritative. See [the implementation and verification record](office-mcp-phase4.md).
+
+The final essential selection passed **134 focused checks in 64.94 seconds**,
+without failures, errors or skips. One opt-in live Excel gate passed in
+**12.01 seconds**, covering synthetic content, focus binding, conflicts,
+restoration, invariant formulas/formats, Save As and save/reopen. Caught Windows
+RPC diagnostics during native fixture shutdown remain in the live log and are
+separate from passing edit correctness. No full-suite run was performed.
+
+The six exposed tools measure **4,520 bytes / 1,795 reserve tokens**; the full
+accepted manifest remains **7,390 bytes / 2,848 reserve tokens**. Runtime pins,
+licenses, relocation, compilation and whitespace checks pass. Live provider
+billing, physical second-host qualification and later Word/PowerPoint writes
+remain unverified gates.
+
+Inventories are retained under ignored `state/backups/office-mcp-phase4-20261015/`.
+Preserve prior main at `archive/2026-10-15/main-before-office-mcp-phase4`, commit,
+fast-forward local main and remove only the merged feature branch. Other
+worktrees, private settings, historical/unmerged tips and remote refs remain intact.
+
 ## Office MCP phase 3 live reads, 15 October 2026
 
 `codex/office-mcp-phase3` starts from clean local main `97db799`. It adds

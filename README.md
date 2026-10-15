@@ -100,7 +100,10 @@ SDK, owned stdio connections and opt-in capability integration. Default startup
 stays disconnected. [Phase 3](docs/office-mcp-phase3.md) adds cached host discovery,
 document selection in Settings > Models, and bounded reads of live Excel, Word
 and PowerPoint documents, including unsaved changes. Choose Cloud mode, Connect,
-select an open document and click Use document. Editing and saving follow in later phases.
+select an open document and click Use document. [Phase 4](docs/office-mcp-phase4.md)
+adds bounded Excel value, formula and formatting patches, guarded restoration,
+and separate approved saving. The initial write adapter supports ordinary
+macro-free workbooks and Save As to a new `.xlsx` file. Word and PowerPoint remain read-only.
 
 ```text
 ORSI.cmd skill list
