@@ -1,5 +1,28 @@
 # Git layout and baseline hygiene
 
+## Office MCP phase 1 contracts, 15 October 2026
+
+`codex/office-mcp-phase1` starts from clean local main `ada5219`.
+It adds strict Office argument/result contracts, cloud-only exposure snapshots,
+an accepted schema manifest and offline budget verification. No transport,
+production Office capability, Office automation or provider request is enabled.
+See [the contract and verification record](office-mcp-phase1.md).
+
+All **104 essential focused checks passed in 0.86 seconds**, with no failures,
+errors or skips. The complete eight-tool schema measures **7,390 UTF-8 bytes**
+and **2,848 conservative reserve tokens**, below the accepted **9,000-byte /
+3,500-reserve-token** ceiling. Local/disabled/not-ready exposure has zero Office
+schema overhead. These are offline estimates, not billed provider usage. The
+accepted-manifest verifier, compilation and staged whitespace review pass.
+Full-suite and live gates were not run, following the
+user's explicit essential-focused-tests-only default.
+
+Ref/worktree inventories are retained under ignored
+`state/backups/office-mcp-phase1-20261015/`. Preserve prior main at
+`archive/2026-10-15/main-before-office-mcp-phase1`, commit, fast-forward local
+main and remove only the merged feature branch. Other worktrees, historical/
+unmerged tips, private settings and remote refs remain intact.
+
 ## Dropdown choices and sliding module highlight, 15 October 2026
 
 `codex/settings-dropdown-motion` starts from clean local main `2cdc6ec`.

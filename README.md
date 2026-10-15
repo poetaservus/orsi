@@ -93,6 +93,10 @@ capabilities. MCP is an external tool/resource protocol, while a plugin may bund
 MCP definitions, hooks and configuration. MCP/plugin loading and Claude compatibility are future
 work. See the [frozen extension boundaries](docs/skill-runtime-phase6-2.md).
 
+The [Office MCP phase 1 contract](docs/office-mcp-phase1.md) defines reviewed
+cloud-only tool schemas, exposure rules and a measured offline schema budget.
+Transport, live Office editing and production registration remain later phases.
+
 ```text
 ORSI.cmd skill list
 ORSI.cmd skill install "C:\path\to\small-skill"
