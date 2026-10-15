@@ -297,6 +297,10 @@ class WindowsOffice:
         if int(document.Excel4MacroSheets.Count) or int(document.Excel4IntlMacroSheets.Count):
             raise OfficeConflict("Excel macro sheets are not supported.")
 
+    def excel_sheet(self, document, name):
+        self.check_thread()
+        return document.Worksheets.Item(name)
+
     def excel_property(self, obj, name, *values):
         """Use invariant Excel format/formula syntax on non-English Office hosts."""
         self.check_thread()

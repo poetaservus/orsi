@@ -346,13 +346,16 @@ OFFICE_TOOLS = tuple(sorted((
                        "with target=workbook for worksheet names and used extents, then use each returned SheetName!used "
                        "target to read the full used range. Explicit SheetName!A1:B2 and selection are also supported. "
                        "Results are pages, not the whole target: repeat the same session/target with cursor until null. "
+                       "Used-range items pack row segments into typed matrices; labels identify their exact cell ranges. "
                        "Never derive whole-sheet KPIs from a preview or unfinished page sequence. "
                        "Word: document or text:start:end. PowerPoint: slides or slide:index.",
                        ReadArguments, ReadResult, PermissionClass.READ),
     OfficeToolContract("office.excel_edit", "Apply a bounded Excel patch against a complete matching cell snapshot. "
                        "Use this exact tool name. Existing sheets only; no worksheet creation. Supports values, "
-                       "local formulas, number_format, bold and italic; no fills, cross-sheet formulas, defined names "
-                       "or external references. Read every target cell first. Editing is not saving.",
+                       "formulas referencing cells in this workbook (including other sheets), number_format, bold and italic. "
+                       "Use linked formulas for dashboards, not static totals. SUMPRODUCT and NUMBERVALUE are supported. "
+                       "Overlapping ranges may combine disjoint fields or identical assignments; conflicting assignments fail. "
+                       "No fills, defined names or external references. Read every target cell first. Editing is not saving.",
                        ExcelEditArguments, EditResult, PermissionClass.WRITE, "excel"),
     OfficeToolContract("office.word_edit", "Apply bounded Word text, style or table edits against a snapshot.",
                        WordEditArguments, EditResult, PermissionClass.WRITE, "word"),

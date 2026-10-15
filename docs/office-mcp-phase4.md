@@ -12,6 +12,9 @@ The [Office approval UI repair](office-approval-ui-repair.md) adds the missing
 composer reviews for Excel edit, restore and save, including unsaved workbooks.
 The [workbook range repair](office-workbook-range-repair.md) adds worksheet/used-range
 discovery, full-read continuation checks and clearer Office edit diagnostics.
+The [dashboard patch repair](office-dashboard-patch-repair.md) supersedes the
+original overlap and cross-sheet restrictions below, adds bounded same-workbook
+formula references, and packs full-range reads into fewer exchanges.
 
 ## User workflow and supported edits
 

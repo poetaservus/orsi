@@ -45,6 +45,10 @@ class MemoryExcel(MemoryOffice):
     def excel_writable(self, document):
         self.check()
 
+    def excel_sheet(self, document, name):
+        self.check()
+        return next(sheet for key, sheet in self.sheets.items() if key.casefold() == name.casefold())
+
     def piece(self, descriptor, offset, chars):
         if descriptor[0] == "worksheet":
             import json
@@ -60,7 +64,13 @@ class MemoryExcel(MemoryOffice):
         if isinstance(state["value"], str) and len(state["value"]) > chars:
             text = state["value"][offset:offset + chars]
             return {"label": "Synthetic cell", "text": text}, offset + len(text) if offset + len(text) < len(state["value"]) else None
-        return {"label": "Synthetic cell", "values": [[state["value"]]], "formulas": [[state["formula"]]]}, None
+        name = next(key for key, sheet in self.sheets.items() if sheet is descriptor[1])
+        row, column = descriptor[2:]
+        address = ""
+        while column:
+            column, letter = divmod(column - 1, 26)
+            address = chr(65 + letter) + address
+        return {"label": name + "!" + address + str(row), "values": [[state["value"]]], "formulas": [[state["formula"]]]}, None
 
     def write_excel(self, descriptor, state, fields):
         self.check()

@@ -1,5 +1,30 @@
 # Git layout and baseline hygiene
 
+## Office dashboard patches and read packing, 15 October 2026
+
+`codex/office-dashboard-patches` starts from clean local main `2b771b9`. Compatible
+overlapping value/formula/format assignments compose into one write per cell;
+conflicting assignments still reject before writes. Bounded same-workbook
+formula references bind retained worksheet identities, including for approval
+and restoration. Used-range row matrices reduce a 288-cell read from nine to
+three model/tool exchanges. Stop reports retain successful Office operations.
+No model/system prompt, routing, context, schema, manifest, preference or approval
+changes are introduced. See [the repair record](office-dashboard-patch-repair.md).
+
+The final necessary selection passed **315 checks in 54.09 seconds**. One native
+synthetic dashboard qualification passed in **15.94 seconds**, including source
+updates, linked KPIs, compatible formatting, restoration and owned-process
+release. It made zero provider requests and changed no user workbook. An initial
+native finding corrected recalculation during patch restoration; its uncertain
+test journal was preserved. Manifest, budget, compilation and whitespace checks
+pass. The full suite and live model/latency gates were not run per the user's
+focused-test instruction.
+
+Inventories are retained under ignored `state/backups/office-dashboard-patches-20261015/`.
+Preserve prior main at `archive/2026-10-15/main-before-office-dashboard-patches`,
+commit, fast-forward local main and remove only its merged feature branch.
+Other worktrees, private settings, historical/unmerged tips and remote refs remain intact.
+
 ## Office workbook range repair, 15 October 2026
 
 `codex/office-range-discovery` starts from clean local main `ed4aa49`. The existing

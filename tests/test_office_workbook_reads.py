@@ -55,14 +55,16 @@ def test_full_used_range_pages_include_every_cell_past_row_15_and_patch_limit(ro
             snapshots.add(output["snapshot"])
             pages += 1
             for item in output["items"]:
-                descriptor = live.snapshots[output["snapshot"]][2][item["target"]][0]
-                assert descriptor[2:] not in seen
-                seen[descriptor[2:]] = item["values"][0][0]
+                for row in item["values"]:
+                    for value in row:
+                        assert value not in seen
+                        seen[value] = value
             cursor = output["cursor"]
             if cursor is None:
                 break
-        assert len(seen) == rows * 8 and seen[(rows, 8)] == rows * 10 + 8
-        assert len(snapshots) == 1 and pages == rows * 8 // 32
+        assert len(seen) == rows * 8 and rows * 10 + 8 in seen
+        assert len(snapshots) == 1 and pages == (rows * 8 + 99) // 100
+        assert len(live.snapshots[next(iter(snapshots))][2]) == rows * 8
         assert live.backend.writes == 0
     finally:
         live.close()
@@ -153,7 +155,7 @@ def test_actual_runtime_does_not_settle_a_premature_full_workbook_answer(tmp_pat
             assert bridge.diagnostics["tool_calls"] == 2  # attach + first read; no automatic dispatch
         else:
             assert result.status == AgentRunStatus.COMPLETED and result.assistant_text == "All 36 rows have been read."
-            assert model.pages == 8 and bridge.diagnostics["tool_calls"] == 10
+            assert model.pages == 2 and bridge.diagnostics["tool_calls"] == 4
     finally:
         runtime.shutdown()
     assert not bridge.diagnostics["worker_alive"]
@@ -175,7 +177,7 @@ def test_unsupported_office_edits_report_the_real_cause_without_weakening_semant
         for i in (1, 2):
             model.responses.append(ModelResponse.calls((ModelCapabilityCall(provider_call_id="unsupported" + str(i),
                 capability="office.excel_edit", arguments={"session": session, "snapshot": snapshot,
-                    "changes": [{"sheet": "Sheet1", "range": "A" + str(i), "formulas": [["=Other!A1"]]}]}),)))
+                    "changes": [{"sheet": "Sheet1", "range": "A" + str(i), "formulas": [["=[outside.xlsx]Other!A1"]]}]}),)))
         result = runtime.run([{"role": "system", "content": "Use the supported tools."},
             {"role": "user", "content": "Update the workbook."}], session_id="semantic-session",
             turn_id="semantic-turn", portable_root=ROOT, allowed_read_roots=(ROOT,))

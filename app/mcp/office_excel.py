@@ -22,7 +22,8 @@ class OfficeUnknown(OfficeUnavailable):
 READ_TOOLS = frozenset(("office.documents", "office.attach", "office.read"))
 EXCEL_TOOLS = READ_TOOLS | {"office.excel_edit", "office.revert", "office.save"}
 MAX_STATE_BYTES = 8 * 1024 * 1024
-FUNCTIONS = frozenset("SUM AVERAGE MIN MAX COUNT COUNTA ROUND ROUNDUP ROUNDDOWN ABS IF IFERROR AND OR NOT TRUE FALSE CONCAT CONCATENATE LEN LEFT RIGHT MID TRIM UPPER LOWER SUMIF COUNTIF SUMIFS COUNTIFS DATE YEAR MONTH DAY".split())
+FUNCTIONS = frozenset("SUM AVERAGE MIN MAX COUNT COUNTA ROUND ROUNDUP ROUNDDOWN ABS IF IFERROR AND OR NOT TRUE FALSE CONCAT CONCATENATE LEN LEFT RIGHT MID TRIM UPPER LOWER SUMIF COUNTIF SUMIFS COUNTIFS DATE YEAR MONTH DAY SUMPRODUCT NUMBERVALUE CHAR".split())
+SHEET_REFERENCE = re.compile(r"('(?:[^']|'')+'|[A-Za-z_][A-Za-z0-9_.]*)!(\$?[A-Za-z]{1,3}\$?[1-9][0-9]{0,6}(?:\s*:\s*\$?[A-Za-z]{1,3}\$?[1-9][0-9]{0,6})?)(?![A-Za-z0-9_.])")
 
 
 def digest(value):
@@ -40,14 +41,31 @@ def same_state(left, right):
     return left.keys() == right.keys() and all(same_value(left[key], right[key]) for key in left)
 
 
-def validate_formula(formula):
+def validate_formula(formula, sheet_resolver=None):
+    references = {}
     if formula == "":
-        return
+        return references
     if not formula.startswith("="):
         raise OfficeConflict("Use values for literal content; formulas must start with equals.")
     # The initial adapter supports local cell references and a small set of pure
     # built-in functions. No defined names, external links, DDE, UDFs or network functions.
     remaining = re.sub(r'"(?:[^"]|"")*"', '0', formula[1:])
+    def qualified(match):
+        if sheet_resolver is None or (match.start() and remaining[match.start() - 1] in ":!]"):
+            raise OfficeConflict("This formula is outside the supported local Excel subset.")
+        name, address = match.groups()
+        name = name[1:-1].replace("''", "'") if name.startswith("'") else name
+        # Excel rejects these characters in worksheet names. In particular, a
+        # quoted external-workbook path must never be mistaken for a local sheet.
+        if any(c in name for c in "[]:*?/\\"):
+            raise OfficeConflict("External and 3D Excel references are not supported.")
+        references[name] = sheet_resolver(name)
+        try:
+            excel_range_shape(address.replace(" ", ""))
+        except ValueError:
+            raise OfficeConflict("A formula reference exceeds the bounded worksheet range limit.") from None
+        return address
+    remaining = SHEET_REFERENCE.sub(qualified, remaining)
     if re.search(r'[^A-Za-z0-9_$.,:() +*/^%&<>=\-]', remaining):
         raise OfficeConflict("This formula is outside the supported local Excel subset.")
     remaining = remaining.replace("$", "")
@@ -69,6 +87,7 @@ def validate_formula(formula):
             excel_range_shape(address)
         except ValueError:
             raise OfficeConflict("A formula reference exceeds the bounded local range limit.") from None
+    return references
 
 
 def formula_key(formula):
@@ -93,11 +112,13 @@ class ExcelEdits:
     def __init__(self, live):
         self.live = live
         self.guards, self.recoveries = OrderedDict(), {}
+        self.sheet_references = {}
         self.blocked = False
 
     def clear(self):
         self.guards.clear()
         self.recoveries.clear()
+        self.sheet_references.clear()
         # A blocked service cannot become writable again by clearing handles.
 
     def coverage(self, arguments, binding):
@@ -117,21 +138,38 @@ class ExcelEdits:
         backend = self.live.backend
         document = self.live.documents[binding["document"]["document"]][1]
         backend.excel_writable(document)
-        cells, save = [], None
+        cells, save, references = [], None, {}
+        def resolve_sheet(name):
+            try:
+                sheet = backend.excel_sheet(document, name)
+            except Exception:
+                raise OfficeConflict("A referenced worksheet is unavailable in the attached workbook.") from None
+            for key, (owner, retained) in self.sheet_references.items():
+                if owner == binding["document"]["document"]:
+                    try:
+                        if backend.same(sheet, retained):
+                            return key
+                    except Exception:
+                        pass  # Deleted sheets can leave disconnected retained COM references.
+            if len(self.sheet_references) >= 1024:
+                raise OfficeConflict("The worksheet reference limit was reached. Reconnect explicitly.")
+            key = uuid4().hex
+            self.sheet_references[key] = (binding["document"]["document"], sheet)
+            return key
         if name == "office.excel_edit":
             coverage = self.coverage(arguments, binding)
             for change in arguments.changes:
                 plan = backend.plan("excel", document, "'" + change.sheet.replace("'", "''") + "'!" + change.range)
                 for index, descriptor in enumerate(plan):
-                    if any(descriptor[2:] == c[0][2:] and backend.same(descriptor[1], c[0][1]) for c in cells):
-                        raise OfficeConflict("Overlapping Excel changes require separate snapshots and calls.")
+                    prior_index = next((i for i, c in enumerate(cells) if descriptor[2:] == c[0][2:]
+                                        and backend.same(descriptor[1], c[0][1])), None)
                     old = self.matching(descriptor, coverage)
                     if old is None:
                         raise OfficeConflict("Office conflict: the snapshot does not cover every requested cell completely.")
                     current = backend.capture_excel(descriptor)
                     if not same_state(current, old[4]):
                         raise OfficeConflict("Office conflict: the cell content or formatting changed since the read.")
-                    validate_formula(current["formula"])
+                    references.update(validate_formula(current["formula"], resolve_sheet))
                     expected = dict(current)
                     columns = len(change.values[0]) if change.values is not None else (
                               len(change.formulas[0]) if change.formulas is not None else 1)
@@ -145,7 +183,7 @@ class ExcelEdits:
                         fields.update(("value", "formula"))
                     if change.formulas is not None:
                         formula = change.formulas[row][column]
-                        validate_formula(formula)
+                        references.update(validate_formula(formula, resolve_sheet))
                         expected["formula"] = formula
                         if not formula:
                             expected["value"] = None
@@ -156,12 +194,25 @@ class ExcelEdits:
                         if value is not None:
                             expected[field] = value
                             fields.add(field)
-                    cells.append((descriptor, current, expected, sorted(fields)))
+                    if prior_index is None:
+                        cells.append((descriptor, current, expected, sorted(fields)))
+                    else:
+                        previous = cells[prior_index]
+                        if any(not same_value(previous[2][f], expected[f]) for f in fields & set(previous[3])):
+                            raise OfficeConflict("Conflicting assignments to the same Excel cell. Combine compatible fields "
+                                                 "in one change; choose one value or formula for each cell.")
+                        merged = dict(previous[2])
+                        merged.update({f: expected[f] for f in fields})
+                        cells[prior_index] = (previous[0], previous[1], merged, sorted(set(previous[3]) | fields))
         elif name == "office.revert":
             record = self.recoveries.get(arguments.recovery)
             if record is None or record[:2] != (arguments.session, binding["document"]["document"]):
                 raise OfficeConflict("This Excel recovery is unavailable for the session.")
             coverage = self.coverage(arguments, binding)
+            for sheet_name, key in record[3].items():
+                if resolve_sheet(sheet_name) != key:
+                    raise OfficeConflict("A referenced worksheet changed after the owned edit.")
+                references[sheet_name] = key
             for descriptor, before, after in record[2]:
                 old = self.matching(descriptor, coverage)
                 current = backend.capture_excel(descriptor)
@@ -194,9 +245,9 @@ class ExcelEdits:
         retained = sum(len(canonical_json([[b, a] for _, b, a in rec[2]]).encode()) for rec in self.recoveries.values())
         if state_bytes + retained > MAX_STATE_BYTES:
             raise OfficeConflict("The bounded Excel recovery memory limit was reached.")
-        identity = digest([binding["identity"], name, arguments.model_dump(mode="json"), states, save])
+        identity = digest([binding["identity"], name, arguments.model_dump(mode="json"), states, save, references])
         key = uuid4().hex
-        self.guards[key] = (identity, name, arguments.model_dump(mode="json"), binding["identity"], cells, save, state_bytes)
+        self.guards[key] = (identity, name, arguments.model_dump(mode="json"), binding["identity"], cells, save, state_bytes, references)
         while len(self.guards) > 128 or sum(value[6] for value in self.guards.values()) > MAX_STATE_BYTES:
             self.guards.popitem(last=False)
         preview = ("Save all current workbook changes" if save else
@@ -211,10 +262,21 @@ class ExcelEdits:
         if self.blocked or record is None or record[1:4] != (
                 name, arguments.model_dump(mode="json"), binding["identity"]):
             raise OfficeConflict("Office conflict: the approved patch binding is unavailable.")
-        _, _, _, _, cells, save, _ = record
+        _, _, _, _, cells, save, _, references = record
         backend = self.live.backend
         document = self.live.documents[binding["document"]["document"]][1]
         backend.excel_writable(document)
+        def check_references():
+            for sheet_name, key in references.items():
+                try:
+                    current = backend.excel_sheet(document, sheet_name)
+                    retained = self.sheet_references[key][1]
+                    matches = backend.same(current, retained)
+                except Exception:
+                    matches = False
+                if not matches:
+                    raise OfficeConflict("Office conflict: a referenced worksheet changed after approval.")
+        check_references()
         # Preflight every cell before touching any cell. Recheck each again at its write.
         for descriptor, before, _, _ in cells:
             if not same_state(backend.capture_excel(descriptor), before):
@@ -232,10 +294,18 @@ class ExcelEdits:
                 backend.save_excel(document, save, arguments.overwrite)
                 output = {"session": arguments.session, "operation": operation, "saved": True}
             else:
+                recalculation_started = False
                 for descriptor, before, expected, fields in changed:
-                    if not same_state(backend.capture_excel(descriptor), before):
+                    check_references()
+                    current = backend.capture_excel(descriptor)
+                    # Earlier cells in this approved patch can recalculate a later
+                    # formula. Its expression and formatting remain the editable
+                    # source; literal values still require an exact match.
+                    checked = set(before) - ({"value"} if before["formula"] and recalculation_started else set())
+                    if any(not same_value(current[f], before[f]) for f in checked):
                         raise OfficeUnknown("An Excel target changed during a patch.")
                     backend.write_excel(descriptor, expected, fields)
+                    recalculation_started |= bool({"value", "formula"} & set(fields))
                 verified = []
                 for descriptor, before, expected, fields in changed:
                     after = backend.capture_excel(descriptor)
@@ -247,7 +317,7 @@ class ExcelEdits:
                         raise OfficeUnknown("Excel verification did not match the requested patch.")
                     verified.append((descriptor, before, after))
                 recovery = uuid4().hex
-                self.recoveries[recovery] = (arguments.session, binding["document"]["document"], verified)
+                self.recoveries[recovery] = (arguments.session, binding["document"]["document"], verified, references)
                 if name == "office.revert":
                     self.recoveries.pop(arguments.recovery, None)
                 self.live.snapshots.pop(arguments.snapshot, None)

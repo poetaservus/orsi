@@ -154,8 +154,11 @@ class LiveOffice:
         snapshot = previous_snapshot if arguments.cursor and binding["document"]["application"] == "excel" else token()
         prior = self.snapshots.get(snapshot)
         items, consumed, guard, targets = [], 0, None, dict(prior[2]) if prior else {}
+        packed = binding["document"]["application"] == "excel" and arguments.target.endswith("!used")
+        read_count, last_descriptor = 0, None
         # A conservative byte allowance handles JSON escaping and 4-byte Unicode.
-        while index < len(plan) and len(items) < min(arguments.max_items, 32) and consumed < arguments.max_chars:
+        while (index < len(plan) and consumed < arguments.max_chars and
+               (read_count < arguments.max_items if packed else len(items) < min(arguments.max_items, 32))):
             count = min(arguments.max_chars - consumed, 1200)
             piece, next_offset = self.backend.piece(plan[index], offset, count)
             digest = sha256(canonical_json(piece).encode()).hexdigest()
@@ -164,11 +167,25 @@ class LiveOffice:
             if characters > count or (next_offset is not None and next_offset <= offset):
                 raise OfficeUnavailable("The Office adapter exceeded its read bound.")
             item = {"target": token(), **piece}
+            if packed:
+                item = {"text": None, "values": None, "formulas": None, "style": None, "geometry": None, **item}
+            candidate_items = [*items, item]
+            descriptor = plan[index]
+            if (packed and items and item.get("values") is not None and item.get("formulas") is not None
+                    and items[-1].get("values") is not None and last_descriptor is not None
+                    and descriptor[1] is last_descriptor[1] and descriptor[2] == last_descriptor[2]
+                    and descriptor[3] == last_descriptor[3] + 1):
+                combined = {**items[-1], "label": items[-1]["label"].split(":", 1)[0] + ":" + item["label"].rsplit("!", 1)[-1],
+                    "values": [items[-1]["values"][0] + item["values"][0]],
+                    "formulas": [items[-1]["formulas"][0] + item["formulas"][0]]}
+                candidate_items = [*items[:-1], combined]
             candidate = {"session": arguments.session, "application": binding["document"]["application"],
-                         "snapshot": snapshot, "items": [*items, item], "cursor": "0" * 32}
+                         "snapshot": snapshot, "items": candidate_items, "cursor": "0" * 32}
             if len(canonical_json(candidate).encode()) > MAX_RESULT_BYTES:
                 break
-            items.append(item)
+            items = candidate_items
+            read_count += 1
+            last_descriptor = descriptor if item.get("values") is not None else None
             entry = (plan[index], offset, count, digest)
             if isinstance(plan[index], tuple) and plan[index][0] == "cell" and hasattr(self.backend, "capture_excel"):
                 try:

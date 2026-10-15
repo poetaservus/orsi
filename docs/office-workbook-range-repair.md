@@ -1,5 +1,10 @@
 # Office workbook range discovery and completion repair, 15 October 2026
 
+The later [dashboard patch repair](office-dashboard-patch-repair.md) adds
+same-workbook formula references, compatible overlapping patches and packed
+used-range reads. It supersedes this record's original cross-sheet restriction
+and nine-page read representation.
+
 This bounded change starts from local main `ed4aa49` on
 `codex/office-range-discovery`. A workbook-wide read followed by dashboard
 generation used a prefix ending at row 15. Inspection confirmed populated data
