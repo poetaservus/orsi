@@ -28,7 +28,7 @@ def test_native_discovery_quotes_sheet_names_and_freezes_large_used_ranges_lazil
     piece, cursor = backend.piece(metadata[0], 0, 8192)
     result = json.loads(piece["text"])
     assert cursor is None and result == {"sheet": "Orders' 2026", "used_range": "$C$5:$J$100004",
-        "read_target": "'Orders'' 2026'!used", "rows": 100_000, "columns": 8}
+        "read_target": "'Orders'' 2026'!used", "objects_target": "'Orders'' 2026'!objects", "rows": 100_000, "columns": 8}
     plan = backend.plan("excel", document, result["read_target"])
     assert isinstance(plan, ExcelCells) and len(plan) == 800_000
     assert plan[0] == ("cell", sheet, 5, 3) and plan[-1 + len(plan)] == ("cell", sheet, 100004, 10)

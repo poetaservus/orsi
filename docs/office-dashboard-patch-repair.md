@@ -1,5 +1,9 @@
 # Office dashboard patches and read packing, 15 October 2026
 
+Native chart/shape/PivotTable/slicer creation and fills were added subsequently;
+see [native Excel dashboard creation](excel-dashboard-objects.md). The boundaries
+below describe the earlier cell-patch phase.
+
 This bounded change starts from local main `2b771b9` on
 `codex/office-dashboard-patches`. A user-created destination worksheet received
 static KPI values, then a rejected overlapping Excel patch was repeated until

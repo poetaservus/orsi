@@ -1,5 +1,30 @@
 # Git layout and baseline hygiene
 
+## Native Excel dashboard objects, 15 October 2026
+
+`codex/excel-dashboard-objects` starts from clean local main `adc5d0f`. It adds
+native chart, shape, PivotTable and slicer creation plus solid cell fills through
+the existing guarded Excel edit contract. Complete same-session snapshots,
+document identity, approvals, uncertain-outcome handling and owned recovery apply.
+Object discovery and GETPIVOTDATA support usable filter-linked dashboards. A
+narrow read-only history compatibility adapter preserves earlier Office call
+evidence after the additive schema change. See
+[the feature and qualification record](excel-dashboard-objects.md).
+
+The final essential connector/approval/protocol selection passed **304 checks in
+69.40 seconds**. Both native synthetic direct/stdio gates passed in **35.01
+seconds**, qualifying construction, actual slicer filtering, persistence,
+recovery and clean process release. The full suite was not run per the
+user's explicit essential-tests-only instruction. Provider/model, second-host
+and large/OLAP-workbook gates remain separate. Model settings, prompts, routing,
+context policy, private preferences and installed skills are unchanged.
+
+Pre-change refs/worktree/status inventories are retained under ignored
+`state/backups/excel-dashboard-objects-20261015/`. Prior main is preserved at
+`archive/2026-10-15/main-before-excel-dashboard-objects`. Commit, fast-forward
+local main and remove only the merged feature branch after verification.
+Other worktrees and remote refs remain intact.
+
 ## Office dashboard patches and read packing, 15 October 2026
 
 `codex/office-dashboard-patches` starts from clean local main `2b771b9`. Compatible

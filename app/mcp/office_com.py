@@ -11,6 +11,8 @@ from threading import get_ident
 from uuid import UUID
 
 from app.mcp.office_discovery import OFFICE_REGISTRATIONS
+from app.mcp.office_contracts import canonical_json
+from app.mcp.office_excel_drawing import ExcelDrawing, rgb, color
 
 
 class OfficeUnavailable(RuntimeError):
@@ -34,7 +36,7 @@ class ExcelCells:
         return "cell", self.sheet, self.row + row, self.column + column
 
 
-class WindowsOffice:
+class WindowsOffice(ExcelDrawing):
     def __init__(self):
         import pythoncom
         import win32com.client.dynamic
@@ -164,6 +166,8 @@ class WindowsOffice:
                 if name.startswith("'") and name.endswith("'"):
                     name = name[1:-1].replace("''", "'")
                 sheet = document.Worksheets.Item(name)
+                if address == "objects":
+                    return self.excel_object_plan(document, sheet)
                 if address == "used":
                     used = sheet.UsedRange
                     return ExcelCells(sheet, int(used.Row), int(used.Column),
@@ -229,10 +233,16 @@ class WindowsOffice:
             name = str(obj.Name)
             text = json.dumps({"sheet": name, "used_range": str(used.Address),
                 "read_target": "'" + name.replace("'", "''") + "'!used",
+                "objects_target": "'" + name.replace("'", "''") + "'!objects",
                 "rows": int(used.Rows.Count), "columns": int(used.Columns.Count)},
                 ensure_ascii=False, separators=(",", ":"))
             part = text[offset:offset + chars]
             return {"label": "Worksheet: " + name, "text": part}, (
+                offset + len(part) if offset + len(part) < len(text) else None)
+        if kind == "excel_drawing":
+            text = canonical_json(self.excel_object_metadata(descriptor))
+            part = text[offset:offset + chars]
+            return {"label": "Excel " + descriptor[2] + ": " + str(descriptor[3].Name), "text": part}, (
                 offset + len(part) if offset + len(part) < len(text) else None)
         if kind == "word":
             start, end = coordinates
@@ -308,7 +318,10 @@ class WindowsOffice:
         flags = self.com.DISPATCH_PROPERTYPUT if values else self.com.DISPATCH_PROPERTYGET
         return obj._oleobj_.Invoke(member, 1033, flags, not values, *values)
 
-    def capture_excel(self, descriptor):
+    def capture_excel_source(self, descriptor):
+        return self.capture_excel(descriptor, readonly=True)
+
+    def capture_excel(self, descriptor, *, readonly=False):
         from app.mcp.office_excel import OfficeConflict
         self.check_thread()
         _, sheet, row, column = descriptor
@@ -318,7 +331,7 @@ class WindowsOffice:
             spill = bool(cell.HasSpill)
         except (AttributeError, self.com.com_error):
             pass  # Older Excel has no dynamic arrays.
-        if (bool(sheet.ProtectContents) or bool(cell.MergeCells) or bool(cell.HasArray) or spill
+        if not readonly and (bool(sheet.ProtectContents) or bool(cell.MergeCells) or bool(cell.HasArray) or spill
                 or cell.ListObject is not None or int(cell.Hyperlinks.Count)):
             raise OfficeConflict("Protected, merged, array, spilled, table or hyperlink cells are not supported.")
         value = cell.Value2
@@ -329,8 +342,16 @@ class WindowsOffice:
                 bold is None or italic is None or not isinstance(number_format, str) or
                 len(formula) > 4096 or isinstance(value, str) and len(value) > 4096):
             raise OfficeConflict("This cell cannot be captured for bounded restoration.")
-        return {"value": value, "formula": formula, "number_format": number_format,
-                "bold": bool(bold), "italic": bool(italic)}
+        state = {"value": value, "formula": formula, "number_format": number_format,
+                 "bold": bool(bold), "italic": bool(italic)}
+        try:
+            fill = self.capture_excel_fill(cell.Interior)
+        except (self.com.com_error, TypeError, ValueError):
+            if readonly:
+                return state
+            raise OfficeConflict("This cell's native fill cannot be captured for restoration.") from None
+        return {**state, "_fill": fill,
+                "fill_color": "none" if fill["pattern"] == -4142 else color(fill["color"])}
 
     def write_excel(self, descriptor, state, fields):
         self.check_thread()
@@ -355,6 +376,15 @@ class WindowsOffice:
             cell.Font.Bold = state["bold"]
         if "italic" in fields:
             cell.Font.Italic = state["italic"]
+        if "fill_color" in fields:
+            if "_fill" in fields:
+                self.restore_excel_fill(cell.Interior, state["_fill"])
+            elif state["fill_color"] == "none":
+                cell.Interior.Pattern = -4142
+            else:
+                cell.Interior.Pattern = 1
+                cell.Interior.Color = rgb(state["fill_color"])
+                cell.Interior.TintAndShade = 0
 
     def save_excel(self, document, save, overwrite):
         self.check_thread()

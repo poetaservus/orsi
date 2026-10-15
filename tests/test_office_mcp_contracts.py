@@ -161,7 +161,7 @@ def test_save_as_is_explicit_and_never_enables_overwrite_by_default():
     ("office.documents", {"application": None, "cursor": None, "limit": None}),
     ("office.read", {"session": "s", "target": None, "cursor": None, "max_items": None, "max_chars": None}),
     ("office.excel_edit", {"session": "s", "snapshot": "r", "changes": [{"sheet": "Sheet1", "range": "A1:B1", "values": [[True, 1.5]],
-        "formulas": None, "number_format": None, "bold": None, "italic": None}]}),
+        "formulas": None, "number_format": None, "bold": None, "italic": None, "fill_color": None}], "objects": None}),
     ("office.word_edit", {"session": "s", "snapshot": "r", "changes": [{"target": "p1", "action": "replace_text",
         "text": "", "style": None, "cells": None}]}),
     ("office.powerpoint_edit", {"session": "s", "snapshot": "r", "changes": [{"action": "add_slide", "target": None,

@@ -189,7 +189,7 @@ class LiveOffice:
             entry = (plan[index], offset, count, digest)
             if isinstance(plan[index], tuple) and plan[index][0] == "cell" and hasattr(self.backend, "capture_excel"):
                 try:
-                    state = self.backend.capture_excel(plan[index])
+                    state = getattr(self.backend, "capture_excel_source", self.backend.capture_excel)(plan[index])
                 except OfficeUnavailable:
                     state = None
                 if state is not None:

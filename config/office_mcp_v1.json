@@ -5,8 +5,8 @@
   "max_changes": 16,
   "max_result_bytes": 16384,
   "schema_budget": {
-    "max_reserve_tokens": 3500,
-    "max_wire_bytes": 9000,
+    "max_reserve_tokens": 5300,
+    "max_wire_bytes": 14500,
     "token_method": "ORSI offline reserve: ceil(wire_bytes / 3) + 48 per tool"
   },
   "schema_version": 1,
@@ -27,7 +27,7 @@
     },
     {
       "application": "excel",
-      "input_schema_sha256": "1cb94fe60520bdad42a9d28932ec8ca966e687abc0774c036283a8179ef9c544",
+      "input_schema_sha256": "098f05a29633cffc655e9d2ba6e058d51722cce936c58643a198f3ceefcd4a70",
       "name": "office.excel_edit",
       "output_schema_sha256": "0ca4db16737e5c418149a84e7c43a686845bd9bd5611cb2d7c9301b78904fd16",
       "permission": "write"

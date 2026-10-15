@@ -22,6 +22,7 @@ APPLICATIONS = ("excel", "word", "powerpoint")
 OfficeApplication = Literal["excel", "word", "powerpoint"]
 Identifier = Annotated[str, Field(min_length=1, max_length=96, pattern=r"^[A-Za-z0-9_-]+$")]
 Cell = Annotated[str, Field(max_length=4_096)] | int | float | bool | None
+Color = Annotated[str, Field(pattern=r"^#[0-9A-Fa-f]{6}$")]
 Matrix = Annotated[list[Annotated[list[Cell], Field(min_length=1, max_length=MAX_CELLS)]],
                    Field(min_length=1, max_length=MAX_CELLS)]
 TextMatrix = Annotated[list[Annotated[list[Annotated[str, Field(max_length=4_096)]],
@@ -108,13 +109,14 @@ class ExcelChange(OfficeModel):
     number_format: str | None = Field(default=None, min_length=1, max_length=128)
     bold: bool | None = None
     italic: bool | None = None
+    fill_color: Color | Literal["none"] | None = None
 
     @model_validator(mode="after")
     def check_change(self):
         if self.values is not None and self.formulas is not None:
             raise ValueError("Literal values and formulas require separate changes.")
         if all(getattr(self, field) is None for field in
-               ("values", "formulas", "number_format", "bold", "italic")):
+               ("values", "formulas", "number_format", "bold", "italic", "fill_color")):
             raise ValueError("An Excel change must specify an operation.")
         shape = excel_range_shape(self.range)
         for matrix in (self.values, self.formulas):
@@ -170,13 +172,91 @@ class EditArguments(OfficeModel):
     snapshot: Identifier
 
 
+class ExcelSource(OfficeModel):
+    snapshot: Identifier
+    sheet: str = Field(min_length=1, max_length=128)
+    range: str = Field(min_length=1, max_length=256)
+
+    @model_validator(mode="after")
+    def check_range(self):
+        excel_range_shape(self.range)
+        return self
+
+
+class ExcelChart(OfficeModel):
+    kind: Literal["chart"]
+    sheet: str = Field(min_length=1, max_length=128)
+    name: Identifier
+    geometry: Geometry
+    source: ExcelSource
+    chart_type: Literal["column", "bar", "line", "line_markers", "area", "pie", "doughnut", "scatter", "stacked_column"]
+    title: str = Field(default="", max_length=256)
+    legend: bool = True
+    colors: list[Color] = Field(default_factory=list, max_length=8)
+
+
+class ExcelShape(OfficeModel):
+    kind: Literal["shape"]
+    sheet: str = Field(min_length=1, max_length=128)
+    name: Identifier
+    geometry: Geometry
+    shape_type: Literal["rectangle", "rounded_rectangle", "oval", "chevron", "up_arrow", "down_arrow"] = "rounded_rectangle"
+    text: str | None = Field(default=None, max_length=4096)
+    link: ExcelSource | None = None
+    fill_color: Color | Literal["none"] = "#E7EEF5"
+    line_color: Color | Literal["none"] = "none"
+    font_color: Color = "#172B4D"
+    font_size: float = Field(default=20, ge=6, le=100)
+    bold: bool = False
+
+    @model_validator(mode="after")
+    def check_link(self):
+        if self.link is not None and (self.text is not None or excel_range_shape(self.link.range) != (1, 1)):
+            raise ValueError("A linked shape requires one source cell and no static text.")
+        return self
+
+
+class ExcelPivot(OfficeModel):
+    kind: Literal["pivot"]
+    sheet: str = Field(min_length=1, max_length=128)
+    name: Identifier
+    destination: str = Field(min_length=1, max_length=256)
+    source: ExcelSource
+    rows: list[Annotated[str, Field(min_length=1, max_length=128)]] = Field(min_length=1, max_length=4)
+    value_field: str = Field(min_length=1, max_length=128)
+    aggregate: Literal["sum", "count", "average", "min", "max"] = "sum"
+    number_format: str = Field(default="#,##0.00", min_length=1, max_length=128)
+
+    @model_validator(mode="after")
+    def check_destination(self):
+        excel_range_shape(self.destination)
+        if len(set(self.rows)) != len(self.rows) or self.value_field in self.rows:
+            raise ValueError("Pivot row fields and value field must be distinct.")
+        return self
+
+
+class ExcelSlicer(OfficeModel):
+    kind: Literal["slicer"]
+    sheet: str = Field(min_length=1, max_length=128)
+    name: Identifier
+    geometry: Geometry
+    source: ExcelSource
+    field: str = Field(min_length=1, max_length=128)
+    caption: str = Field(default="", max_length=128)
+    columns: int = Field(default=1, ge=1, le=4)
+    style: Literal["light", "dark"] = "light"
+
+
 class ExcelEditArguments(EditArguments):
-    changes: list[ExcelChange] = Field(min_length=1, max_length=MAX_CHANGES)
+    changes: list[ExcelChange] = Field(default_factory=list, max_length=MAX_CHANGES)
+    objects: list[ExcelChart | ExcelShape | ExcelPivot | ExcelSlicer] = Field(default_factory=list, max_length=8)
 
     @model_validator(mode="after")
     def check_cells(self):
-        if sum(rows * columns for rows, columns in
-               (excel_range_shape(c.range) for c in self.changes)) > MAX_CELLS:
+        if not self.changes and not self.objects:
+            raise ValueError("An Excel patch must contain changes or objects.")
+        addresses = [c.range for c in self.changes] + [o.destination for o in self.objects if isinstance(o, ExcelPivot)]
+        if sum(rows * columns for rows, columns in (excel_range_shape(a) for a in addresses)) + len(self.objects) > MAX_CELLS:
             raise ValueError("The Excel patch exceeds the cell limit.")
         return self
 
@@ -344,18 +424,22 @@ OFFICE_TOOLS = tuple(sorted((
                        AttachArguments, AttachResult, PermissionClass.READ),
     OfficeToolContract("office.read", "Read a bounded target; returns an edit snapshot. Excel: start workbook-wide requests "
                        "with target=workbook for worksheet names and used extents, then use each returned SheetName!used "
-                       "target to read the full used range. Explicit SheetName!A1:B2 and selection are also supported. "
+                       "target to read the full used range. SheetName!objects discovers chart/shape/slicer metadata and exact PivotTable output rectangles. Explicit SheetName!A1:B2 and selection are also supported. "
                        "Results are pages, not the whole target: repeat the same session/target with cursor until null. "
                        "Used-range items pack row segments into typed matrices; labels identify their exact cell ranges. "
                        "Never derive whole-sheet KPIs from a preview or unfinished page sequence. "
                        "Word: document or text:start:end. PowerPoint: slides or slide:index.",
                        ReadArguments, ReadResult, PermissionClass.READ),
     OfficeToolContract("office.excel_edit", "Apply a bounded Excel patch against a complete matching cell snapshot. "
-                       "Use this exact tool name. Existing sheets only; no worksheet creation. Supports values, "
-                       "formulas referencing cells in this workbook (including other sheets), number_format, bold and italic. "
-                       "Use linked formulas for dashboards, not static totals. SUMPRODUCT and NUMBERVALUE are supported. "
+                       "Use this exact tool name. Existing sheets only. Supports values, local formulas, number_format, bold, italic and fill_color (#RRGGBB/none). "
+                       "Use linked formulas for dashboards, not static totals. SUMPRODUCT, NUMBERVALUE and GETPIVOTDATA are supported. "
                        "Overlapping ranges may combine disjoint fields or identical assignments; conflicting assignments fail. "
-                       "No fills, defined names or external references. Read every target cell first. Editing is not saving.",
+                       "objects creates up to 8 uniquely named native charts, shapes (optional linked cell), PivotTables and slicers. "
+                       "Geometry is in worksheet points. Read destination A1 for drawing-sheet identity; read every pivot destination cell (blank reserved rectangle) and every source range completely. "
+                       "Each source carries its own read snapshot. Charts use header/label columns; slicer source is an existing local PivotTable's full output rectangle. "
+                       "Pivot reserve needs at least 2*(source rows-1)*row-field count+8 rows and row-field count+1 columns; no more than 1000 cells per patch. "
+                       "Objects are created, not overwritten; revert removes only unchanged owned objects and restores the reserved pivot cells (read them again first). "
+                       "No defined names, external data or references. Editing is not saving.",
                        ExcelEditArguments, EditResult, PermissionClass.WRITE, "excel"),
     OfficeToolContract("office.word_edit", "Apply bounded Word text, style or table edits against a snapshot.",
                        WordEditArguments, EditResult, PermissionClass.WRITE, "word"),

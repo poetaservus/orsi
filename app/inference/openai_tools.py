@@ -174,8 +174,10 @@ def responses_input(messages: Iterable[dict], definitions: Iterable[ModelCapabil
             raw_calls = [item for item in replay.items() if item["type"] == "function_call"]
             if raw_calls:
                 expected = tuple(ModelCapabilityCall.model_validate(call) for call in message.get("capability_calls", []))
-                response = normalize_responses_calls(_inspection_history_calls(raw_calls, definitions),
-                    _reversal_history_definitions(definitions, expected), CompletionMetadata())
+                history_definitions = _office_history_definitions(
+                    _reversal_history_definitions(definitions, expected), expected, raw_calls)
+                response = normalize_responses_calls(_inspection_history_calls(raw_calls, history_definitions),
+                    history_definitions, CompletionMetadata())
                 if response.protocol_failure is not None or response.capability_calls != expected:
                     raise ValueError("OpenAI call evidence does not match its settled transcript.")
             elif "capability_calls" in message:
@@ -232,6 +234,33 @@ def _reversal_history_definitions(definitions, expected):
                 if all(field not in call.arguments for call in calls):
                     schema.get("properties", {}).pop(field, None)
             definition = definition.model_copy(update={"input_schema": schema})
+        values.append(definition)
+    return tuple(values)
+
+
+def _office_history_definitions(definitions, expected, raw_calls):
+    """Validate pre-dashboard Office evidence without relaxing live decoding.
+
+    Only the two additive optional fields may be absent, and only when both
+    original provider bytes and their settled call omit them. Replay remains
+    byte-for-byte; this never grants execution authority or rewrites old calls.
+    """
+    values = []
+    for definition in definitions:
+        calls = [call for call in expected if call.capability == definition.name]
+        if definition.name == "office.excel_edit" and calls:
+            wire_name = responses_function_tools((definition,))[0]["name"]
+            try:
+                raw = [json.loads(call["arguments"]) for call in raw_calls if call["name"] == wire_name]
+                bodies = [call.arguments for call in calls] + raw
+                schema = deepcopy(definition.input_schema)
+                if all("objects" not in body for body in bodies):
+                    schema["properties"].pop("objects", None)
+                if all("fill_color" not in change for body in bodies for change in body.get("changes") or []):
+                    schema.get("$defs", {}).get("ExcelChange", {}).get("properties", {}).pop("fill_color", None)
+                definition = definition.model_copy(update={"input_schema": schema})
+            except (KeyError, TypeError, ValueError):
+                pass  # Ordinary strict evidence validation rejects malformed data.
         values.append(definition)
     return tuple(values)
 

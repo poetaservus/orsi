@@ -22,7 +22,7 @@ class OfficeUnknown(OfficeUnavailable):
 READ_TOOLS = frozenset(("office.documents", "office.attach", "office.read"))
 EXCEL_TOOLS = READ_TOOLS | {"office.excel_edit", "office.revert", "office.save"}
 MAX_STATE_BYTES = 8 * 1024 * 1024
-FUNCTIONS = frozenset("SUM AVERAGE MIN MAX COUNT COUNTA ROUND ROUNDUP ROUNDDOWN ABS IF IFERROR AND OR NOT TRUE FALSE CONCAT CONCATENATE LEN LEFT RIGHT MID TRIM UPPER LOWER SUMIF COUNTIF SUMIFS COUNTIFS DATE YEAR MONTH DAY SUMPRODUCT NUMBERVALUE CHAR".split())
+FUNCTIONS = frozenset("SUM AVERAGE MIN MAX COUNT COUNTA ROUND ROUNDUP ROUNDDOWN ABS IF IFERROR AND OR NOT TRUE FALSE CONCAT CONCATENATE LEN LEFT RIGHT MID TRIM UPPER LOWER SUMIF COUNTIF SUMIFS COUNTIFS DATE YEAR MONTH DAY SUMPRODUCT NUMBERVALUE CHAR GETPIVOTDATA".split())
 SHEET_REFERENCE = re.compile(r"('(?:[^']|'')+'|[A-Za-z_][A-Za-z0-9_.]*)!(\$?[A-Za-z]{1,3}\$?[1-9][0-9]{0,6}(?:\s*:\s*\$?[A-Za-z]{1,3}\$?[1-9][0-9]{0,6})?)(?![A-Za-z0-9_.])")
 
 
@@ -110,10 +110,12 @@ def file_stamp(path):
 
 class ExcelEdits:
     def __init__(self, live):
+        from app.mcp.office_excel_objects import ExcelObjects
         self.live = live
         self.guards, self.recoveries = OrderedDict(), {}
         self.sheet_references = {}
         self.blocked = False
+        self.objects = ExcelObjects(self)
 
     def clear(self):
         self.guards.clear()
@@ -138,7 +140,7 @@ class ExcelEdits:
         backend = self.live.backend
         document = self.live.documents[binding["document"]["document"]][1]
         backend.excel_writable(document)
-        cells, save, references = [], None, {}
+        cells, save, references, object_plans, object_recovery = [], None, {}, [], []
         def resolve_sheet(name):
             try:
                 sheet = backend.excel_sheet(document, name)
@@ -189,9 +191,13 @@ class ExcelEdits:
                             expected["value"] = None
                             fields.add("value")
                         fields.add("formula")
-                    for field in ("number_format", "bold", "italic"):
+                    for field in ("number_format", "bold", "italic", "fill_color"):
                         value = getattr(change, field)
                         if value is not None:
+                            if field == "fill_color":
+                                value = value.upper() if value != "none" else value
+                                if "fill_color" not in current:
+                                    raise OfficeConflict("This Excel backend cannot capture native fills for restoration.")
                             expected[field] = value
                             fields.add(field)
                     if prior_index is None:
@@ -204,6 +210,7 @@ class ExcelEdits:
                         merged = dict(previous[2])
                         merged.update({f: expected[f] for f in fields})
                         cells[prior_index] = (previous[0], previous[1], merged, sorted(set(previous[3]) | fields))
+            object_plans = self.objects.prepare(arguments, binding, cells)
         elif name == "office.revert":
             record = self.recoveries.get(arguments.recovery)
             if record is None or record[:2] != (arguments.session, binding["document"]["document"]):
@@ -213,12 +220,14 @@ class ExcelEdits:
                 if resolve_sheet(sheet_name) != key:
                     raise OfficeConflict("A referenced worksheet changed after the owned edit.")
                 references[sheet_name] = key
+            object_recovery = record[4] if len(record) > 4 else []
+            self.objects.check_recovery(object_recovery, document)
             for descriptor, before, after in record[2]:
                 old = self.matching(descriptor, coverage)
                 current = backend.capture_excel(descriptor)
                 if old is None or not same_state(old[4], current) or not same_state(current, after):
                     raise OfficeConflict("Office conflict: later cell changes prevent restoration.")
-                cells.append((descriptor, current, before, ["value", "formula", "number_format", "bold", "italic"]))
+                cells.append((descriptor, current, before, sorted(before)))
         elif name == "office.save":
             destination = arguments.path or binding["path"]
             if destination is None:
@@ -241,19 +250,29 @@ class ExcelEdits:
         if len(self.recoveries) >= 64 and name == "office.excel_edit":
             raise OfficeConflict("The Excel recovery limit was reached. Reconnect explicitly.")
         states = [[list(d[2:]), before, expected, fields] for d, before, expected, fields in cells]
-        state_bytes = len(canonical_json(states).encode())
-        retained = sum(len(canonical_json([[b, a] for _, b, a in rec[2]]).encode()) for rec in self.recoveries.values())
+        object_states = self.objects.signature(object_plans) + [r["state"] for r in object_recovery]
+        state_bytes = len(canonical_json([states, object_states]).encode())
+        if object_plans:
+            # Reserve both before/after cells plus bounded native metadata, not
+            # just the smaller pre-creation source snapshot.
+            state_bytes = state_bytes * 2 + 128_000 * len(object_plans)
+        retained = sum(len(canonical_json([[[b, a] for _, b, a in rec[2]],
+            [r["state"] for r in rec[4]] if len(rec) > 4 else []]).encode()) for rec in self.recoveries.values())
         if state_bytes + retained > MAX_STATE_BYTES:
             raise OfficeConflict("The bounded Excel recovery memory limit was reached.")
-        identity = digest([binding["identity"], name, arguments.model_dump(mode="json"), states, save, references])
+        identity = digest([binding["identity"], name, arguments.model_dump(mode="json"), states, save, references, object_states])
         key = uuid4().hex
-        self.guards[key] = (identity, name, arguments.model_dump(mode="json"), binding["identity"], cells, save, state_bytes, references)
+        self.guards[key] = (identity, name, arguments.model_dump(mode="json"), binding["identity"], cells, save, state_bytes, references, object_plans, object_recovery)
         while len(self.guards) > 128 or sum(value[6] for value in self.guards.values()) > MAX_STATE_BYTES:
             self.guards.popitem(last=False)
         preview = ("Save all current workbook changes" if save else
                    ("Restore" if name == "office.revert" else "Edit") + f" {len(cells)} Excel cells")
         if name == "office.excel_edit":
             preview += ": " + "; ".join(c.sheet + "!" + c.range for c in arguments.changes)
+            if object_plans:
+                preview += "\nCreate " + "; ".join(p["spec"].kind + " " + p["spec"].sheet + "!" + p["spec"].name for p in object_plans)
+        if object_recovery:
+            preview += "\nRemove " + "; ".join(r["spec"].kind + " " + r["spec"].sheet + "!" + r["spec"].name for r in object_recovery)
         return {"guard": key, "digest": identity,
                 "preview": (binding["document"]["title"] + "\n" + preview)[:2000]}
 
@@ -262,7 +281,7 @@ class ExcelEdits:
         if self.blocked or record is None or record[1:4] != (
                 name, arguments.model_dump(mode="json"), binding["identity"]):
             raise OfficeConflict("Office conflict: the approved patch binding is unavailable.")
-        _, _, _, _, cells, save, _, references = record
+        _, _, _, _, cells, save, _, references, object_plans, object_recovery = record
         backend = self.live.backend
         document = self.live.documents[binding["document"]["document"]][1]
         backend.excel_writable(document)
@@ -277,6 +296,8 @@ class ExcelEdits:
                 if not matches:
                     raise OfficeConflict("Office conflict: a referenced worksheet changed after approval.")
         check_references()
+        self.objects.check(object_plans, document, inventory=True)
+        self.objects.check_recovery(object_recovery, document)
         # Preflight every cell before touching any cell. Recheck each again at its write.
         for descriptor, before, _, _ in cells:
             if not same_state(backend.capture_excel(descriptor), before):
@@ -286,7 +307,7 @@ class ExcelEdits:
         if not isinstance(operation, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,96}", operation):
             raise OfficeConflict("The Office operation identity is invalid.")
         changed = [c for c in cells if any(not same_value(c[1][f], c[2][f]) for f in c[3])]
-        if save is None and not changed:
+        if save is None and not changed and not object_plans and not object_recovery:
             return {"session": arguments.session, "operation": operation, "outcome": "unchanged", "affected_items": 0}
         self.blocked = True
         try:
@@ -294,6 +315,10 @@ class ExcelEdits:
                 backend.save_excel(document, save, arguments.overwrite)
                 output = {"session": arguments.session, "operation": operation, "saved": True}
             else:
+                self.objects.remove(object_recovery, document)
+                removed_pivot_cells = [d for r in object_recovery if r["spec"].kind == "pivot"
+                    for d in backend.plan("excel", document,
+                        "'" + r["spec"].sheet.replace("'", "''") + "'!" + r["spec"].destination)]
                 recalculation_started = False
                 for descriptor, before, expected, fields in changed:
                     check_references()
@@ -301,8 +326,16 @@ class ExcelEdits:
                     # Earlier cells in this approved patch can recalculate a later
                     # formula. Its expression and formatting remain the editable
                     # source; literal values still require an exact match.
-                    checked = set(before) - ({"value"} if before["formula"] and recalculation_started else set())
-                    if any(not same_value(current[f], before[f]) for f in checked):
+                    check_before = dict(before)
+                    if any(self.objects.overlaps(descriptor, d) for d in removed_pivot_cells):
+                        check_before.update(value=None, formula="")
+                        # Removing a native PivotTable resets its data-cell
+                        # number formats. Admit only the captured original
+                        # format as an alternative to the applied format.
+                        if same_value(current["number_format"], expected["number_format"]):
+                            check_before["number_format"] = expected["number_format"]
+                    checked = set(check_before) - ({"value"} if before["formula"] and recalculation_started else set())
+                    if any(not same_value(current[f], check_before[f]) for f in checked):
                         raise OfficeUnknown("An Excel target changed during a patch.")
                     backend.write_excel(descriptor, expected, fields)
                     recalculation_started |= bool({"value", "formula"} & set(fields))
@@ -310,21 +343,36 @@ class ExcelEdits:
                 for descriptor, before, expected, fields in changed:
                     after = backend.capture_excel(descriptor)
                     checked = set(expected) - {"formula"}
+                    if "fill_color" in fields and "_fill" not in fields:
+                        checked.discard("_fill")
                     if "formula" in fields and expected["formula"]:
                         checked.discard("value")
                     if any(not same_value(after[f], expected[f]) for f in checked) or (
                             formula_key(after["formula"]) != formula_key(expected["formula"])):
                         raise OfficeUnknown("Excel verification did not match the requested patch.")
                     verified.append((descriptor, before, after))
+                created = []
+                for plan in object_plans:
+                    self.objects.check([plan], document, late=True)
+                    item, pivot_cells = self.objects.create(plan, document)
+                    created.append(item)
+                    verified.extend(pivot_cells)
+                # Native state is captured after all creations, since later
+                # objects can legitimately add relationships to earlier ones.
+                for item in created:
+                    item["state"] = backend.capture_excel_object(document, item["spec"], item["object"], item["auxiliary"])
                 recovery = uuid4().hex
-                self.recoveries[recovery] = (arguments.session, binding["document"]["document"], verified, references)
+                recoverable = name == "office.excel_edit" or not object_recovery
+                if recoverable:
+                    self.recoveries[recovery] = (arguments.session, binding["document"]["document"], verified, references, created)
                 if name == "office.revert":
                     self.recoveries.pop(arguments.recovery, None)
                 self.live.snapshots.pop(arguments.snapshot, None)
                 self.live.cursors = {key: value for key, value in self.live.cursors.items()
                                      if value[-1] != arguments.snapshot}
                 output = {"session": arguments.session, "operation": operation, "outcome": "applied",
-                          "affected_items": len(changed), "recovery": recovery}
+                          "affected_items": len(changed) + len(object_plans) + len(object_recovery),
+                          "recovery": recovery if recoverable else None}
             self.blocked = False
             return output
         except Exception:
