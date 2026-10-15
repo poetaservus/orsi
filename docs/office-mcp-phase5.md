@@ -1,5 +1,9 @@
 # Office MCP phase 5: qualified Word replacement slice
 
+The [16 October Word actions extension](office-mcp-word-actions.md) now qualifies
+`insert_after`, `apply_style` and `edit_table`. This record retains the original
+replacement milestone and its historical limits/evidence.
+
 Started from local main `33328c8` on `codex/office-mcp-phase5`, 15–16 October
 2026. The initial vertical slice in phase 5.1 is implemented: exact text
 replacement, actual approval UI, production stdio/native execution, readback,

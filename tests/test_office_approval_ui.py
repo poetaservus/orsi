@@ -73,8 +73,10 @@ def wait_until(condition, timeout=10):
 @pytest.mark.skipif(os.name != "nt", reason="Windows owned MCP and actual Qt approval workflow")
 @pytest.mark.parametrize("saved", [False, True])
 @pytest.mark.parametrize("action", ["approve", "deny", "off"])
-@pytest.mark.parametrize("kind", ["excel", "word"])
+@pytest.mark.parametrize("kind", ["excel", "word", "word_insert", "word_style", "word_table"])
 def test_window_conversation_mcp_edit_obeys_actual_review_and_exact_authority(tmp_path, saved, action, kind):
+    variant = kind
+    kind = kind.split("_", 1)[0]
     app = QApplication.instance() or QApplication([])
     portable = tmp_path / "application"
     (portable / "config").mkdir(parents=True)
@@ -112,11 +114,15 @@ def test_window_conversation_mcp_edit_obeys_actual_review_and_exact_authority(tm
         document = bridge.list_documents()[0]
         bridge.select_document(document["document"])
         session = invoke("office.attach", {"application": kind, "document": document["document"]}, "attach")["session"]
-        read_target = "Sheet1!A1:A2" if kind == "excel" else "document"
+        read_target = "Sheet1!A1:A2" if kind == "excel" else "table:1" if variant == "word_table" else "document"
         page = invoke("office.read", {"session": session, "target": read_target}, "read")
         snapshot = page["snapshot"]
         changes = ([{"sheet": "Sheet1", "range": "A1:A2", "values": [[9], [10]]}] if kind == "excel" else
                    [{"target": page["items"][0]["target"], "action": "replace_text", "text": "replacement"}])
+        if variant.startswith("word_"):
+            from tests.test_office_word_actions import PAYLOADS
+            word_action = {"word_insert": "insert_after", "word_style": "apply_style", "word_table": "edit_table"}[variant]
+            changes = [{"target": page["items"][0]["target"], "action": word_action, **PAYLOADS[word_action]}]
         model.responses.extend([ModelResponse.calls((ModelCapabilityCall(provider_call_id="edit-cells",
             capability="office." + kind + "_edit", arguments={"session": session, "snapshot": snapshot,
                 "changes": changes}),)),
@@ -140,7 +146,8 @@ def test_window_conversation_mcp_edit_obeys_actual_review_and_exact_authority(tm
             assert panel is not None, "The edit was rejected without presenting its approval."
             details = panel.findChild(QPlainTextEdit, "approvalDetails")
             assert document["title"] in details.toPlainText()
-            assert ("Sheet1!A1:A2" if kind == "excel" else "Word body text:") in details.toPlainText()
+            assert ("Sheet1!A1:A2" if kind == "excel" else "Word body text:" if variant == "word" else
+                    "Word body text" if variant == "word_insert" else "Word paragraph style" if variant == "word_style" else "Word table") in details.toPlainText()
             assert bridge.diagnostics["tool_calls"] == 2
             shown_path = panel.findChild(QPlainTextEdit, "approvalPath")
             assert (shown_path.toPlainText() if shown_path else None) == (str(target) if saved else None)
@@ -160,8 +167,14 @@ def test_window_conversation_mcp_edit_obeys_actual_review_and_exact_authority(tm
         after = invoke("office.read", {"session": session, "target": read_target}, "after")
         if kind == "excel":
             assert [item["values"][0][0] for item in after["items"]] == ([None, None] if action == "deny" else [9, 10])
-        else:
+        elif variant == "word":
             assert after["items"][0]["text"] == ("alpha\U0001f642 beta" if action == "deny" else "replacement")
+        elif variant == "word_insert":
+            assert after["items"][0]["text"] == "alpha\U0001f642 beta" + ("" if action == "deny" else " after \U0001f642")
+        elif variant == "word_table":
+            import json
+            cells = json.loads(after["items"][0]["text"])["cells"]
+            assert cells[0][0] == ("One" if action == "deny" else "Longer <&>")
         if saved:
             assert target.read_bytes() == b"Synthetic workbook file; live edits are not saves."
     finally:

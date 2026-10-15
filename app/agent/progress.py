@@ -25,7 +25,7 @@ _OPERATIONS = {
     "shell.run": ("shell command", "shell commands"),
     "skill.read_reference": ("skill reference read", "skill reference reads"),
     "office.excel_edit": ("Excel patch", "Excel patches"),
-    "office.word_edit": ("Word replacement", "Word replacements"),
+    "office.word_edit": ("Word edit", "Word edits"),
     "office.revert": ("Office restoration", "Office restorations"),
     "office.save": ("Office document save", "Office document saves"),
 }

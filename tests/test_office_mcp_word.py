@@ -135,10 +135,10 @@ def test_replacement_keeps_inherited_paragraph_runs_separate_from_materialized_r
     assert updated["target"][2][0][0] == state["target"][2][0][0]
 
 
-def test_reserved_actions_multiple_changes_and_cross_application_edits_reject():
+def test_wrong_payloads_multiple_changes_and_cross_application_edits_reject():
     live, authority, session = service()
     page = read(live, authority, session)
-    for action in ("insert_after", "apply_style", "edit_table"):
+    for action in ("apply_style", "edit_table"):
         args = patch(session, page)
         args["changes"][0]["action"] = action
         with pytest.raises(ValueError):
@@ -234,7 +234,5 @@ def test_original_word_history_replays_exactly_but_does_not_expand_live_schema(l
     history = [{"role": "user", "content": "Synthetic historical Word edit"}, *history_for(replay, response.capability_calls)]
     projected = responses_input(history, definitions)
     assert projected[1] == output[0]
-    if legacy_action != "replace_text":
-        assert not normalize_responses_calls(output, (current,), CompletionMetadata()).capability_calls
     live_action = responses_function_tools((current,))[0]["parameters"]["$defs"]["WordChange"]["properties"]["action"]
-    assert live_action["enum"] == ["replace_text"]
+    assert live_action["enum"] == ["replace_text", "insert_after", "apply_style", "edit_table"]

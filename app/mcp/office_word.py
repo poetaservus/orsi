@@ -1,4 +1,4 @@
-"""Qualified Word replacement slice, exact approvals and owned restoration."""
+"""Guarded Word actions, exact approvals and owned restoration."""
 from __future__ import annotations
 
 from collections import OrderedDict
@@ -124,10 +124,11 @@ class WordEdits:
         document = self.live.documents[binding["document"]["document"]][1]
         backend.word_writable(document)
         descriptor = before = expected = save = None
+        action = "replace_text"
         if name == "office.word_edit":
             entries = self.coverage(arguments, binding)
             if len(arguments.changes) != 1:
-                raise OfficeConflict("This Word slice supports one exact replacement per patch.")
+                raise OfficeConflict("Word patches support one exact action at a time.")
             change = arguments.changes[0]
             entry = next((e for e in entries if e["target"] == change.target and e["complete"]), None)
             if entry is None or entry["state"] is None:
@@ -135,17 +136,30 @@ class WordEdits:
             descriptor, before = entry["descriptor"], entry["state"]
             if backend.capture_word(descriptor) != before:
                 raise OfficeConflict("Office conflict: Word text, formatting or anchor changed since the read.")
-            expected = replacement(before, change.text)
+            action = change.action
+            if action == "edit_table":
+                from app.mcp.office_word_tables import table_replacement
+                expected = table_replacement(before, change.cells)
+            elif before.get("kind") == "table":
+                raise OfficeConflict("Use edit_table for a structured table snapshot.")
+            elif action == "apply_style":
+                expected = backend.styled_word(descriptor, before, change.style)
+            else:
+                if action == "insert_after" and not change.text:
+                    raise OfficeConflict("Insertion text must be nonempty.")
+                expected = replacement(before, before["text"] + change.text if action == "insert_after" else change.text)
         elif name == "office.revert":
             entries = self.coverage(arguments, binding)
             recovery = self.recoveries.get(arguments.recovery)
             if recovery is None or recovery[:2] != (arguments.session, binding["document"]["document"]):
                 raise OfficeConflict("This Word recovery is unavailable for the session.")
-            descriptor, expected, before = recovery[2:]
+            descriptor, expected, before = recovery[2:5]
+            action = recovery[5] if len(recovery) > 5 else "replace_text"
             current = backend.capture_word(descriptor)
             covered = any(e["complete"] and e["state"] is not None and
                 e["state"]["start"] <= before["start"] < before["end"] <= e["state"]["end"] and
-                e["state"]["paragraph"] == before["paragraph"] and e["state"]["dependencies"] == before["dependencies"] and
+                (e["state"] == before if before.get("kind") == "table" else
+                 e["state"].get("paragraph") == before["paragraph"] and e["state"]["dependencies"] == before["dependencies"]) and
                 backend.same(e["descriptor"][1], descriptor[1]) for e in entries)
             if not covered or current != before:
                 raise OfficeConflict("Office conflict: later Word changes or incomplete reads prevent restoration.")
@@ -169,18 +183,21 @@ class WordEdits:
             raise OfficeConflict("The Word recovery memory limit was reached.")
         identity = digest([binding["identity"], name, arguments.model_dump(mode="json"), before, expected, save])
         key = uuid4().hex
-        self.guards[key] = (name, arguments.model_dump(mode="json"), binding["identity"], descriptor, before, expected, save, size)
+        self.guards[key] = (name, arguments.model_dump(mode="json"), binding["identity"], descriptor, before, expected, save, size, action)
         while len(self.guards) > 128 or sum(r[7] for r in self.guards.values()) > MAX_STATE_BYTES:
             self.guards.popitem(last=False)
         preview = "Save all current Word document changes" if save else (
             ("Restore" if name == "office.revert" else "Replace") + f" Word body text:{before['start']}:{before['end']} (UTF-16); preserve formatting")
+        if save is None and name != "office.revert" and action != "replace_text":
+            preview = {"insert_after": "Insert after Word body text", "apply_style": "Apply Word paragraph style " + (arguments.changes[0].style or ""),
+                       "edit_table": "Edit Word table"}[action] + f" at {before['start']}:{before['end']}; preserve unrelated text and structure"
         return {"guard": key, "digest": identity, "preview": (binding["document"]["title"] + "\n" + preview)[:2000]}
 
     def execute(self, name, arguments, binding, authority, operation):
         record = self.guards.pop(authority.get("guard"), None)
         if self.blocked or record is None or record[:3] != (name, arguments.model_dump(mode="json"), binding["identity"]):
             raise OfficeConflict("Office conflict: the exact approved Word operation is unavailable.")
-        _, _, _, descriptor, before, expected, save, _ = record
+        _, _, _, descriptor, before, expected, save, _, action = record
         backend = self.live.backend
         document = self.live.documents[binding["document"]["document"]][1]
         backend.word_writable(document)
@@ -202,24 +219,30 @@ class WordEdits:
                 self.snapshots.clear()
                 self.cursors.clear()
             else:
-                after_descriptor = backend.write_word(descriptor, expected)
+                writer = backend.write_word_style if action == "apply_style" else (
+                    backend.write_word_table if action == "edit_table" else backend.write_word)
+                after_descriptor = writer(descriptor, expected)
                 stage = "word_readback"
                 after = backend.capture_word(after_descriptor)
-                if after != expected:
+                compared = set(expected) - ({"target", "uniform"} if action == "apply_style" else set())
+                if any(after.get(key) != expected[key] for key in compared):
                     stage = "word_verification"
                     mismatch = [key for key in expected if after.get(key) != expected[key]]
-                    if "paragraph" in mismatch:
+                    if "paragraph" in mismatch and "paragraph" in expected:
                         for index, field in enumerate(("paragraph_identity", "paragraph_properties", "paragraph_runs")):
                             if after["paragraph"][index] != expected["paragraph"][index]:
                                 mismatch.append(field)
                     raise OfficeUnknown("Word readback did not preserve the approved text and formatting.")
                 recovery = uuid4().hex
-                self.recoveries[recovery] = (arguments.session, binding["document"]["document"], after_descriptor, before, after)
+                self.recoveries[recovery] = (arguments.session, binding["document"]["document"], after_descriptor, before, after, action)
                 if name == "office.revert":
                     self.recoveries.pop(arguments.recovery, None)
                 self.snapshots.pop(arguments.snapshot, None)
                 self.cursors = {key: value for key, value in self.cursors.items() if value[3] != arguments.snapshot}
                 output = {"session": arguments.session, "operation": operation, "outcome": "applied", "affected_items": 1, "recovery": recovery}
+                if action == "edit_table":
+                    output["affected_items"] = sum(b["text"] != a["text"] or b["paragraph"] != a["paragraph"]
+                        for b, a in zip(before["cells"], after["cells"], strict=True))
             self.blocked = False
             return output
         except Exception as error:

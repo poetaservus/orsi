@@ -128,7 +128,7 @@ class ExcelChange(OfficeModel):
 
 class WordChange(OfficeModel):
     target: Identifier
-    action: Literal["replace_text"]
+    action: Literal["replace_text", "insert_after", "apply_style", "edit_table"]
     text: str | None = Field(default=None, max_length=4_096)
     style: str | None = Field(default=None, min_length=1, max_length=128)
     cells: TextMatrix | None = None
@@ -266,7 +266,7 @@ class WordEditArguments(EditArguments):
 
     @model_validator(mode="after")
     def check_cells(self):
-        if sum(_matrix_cells(c.cells) for c in self.changes) > MAX_CELLS:
+        if sum(_matrix_cells(c.cells) for c in self.changes) > 64:
             raise ValueError("The Word patch exceeds the cell limit.")
         return self
 
@@ -428,7 +428,7 @@ OFFICE_TOOLS = tuple(sorted((
                        "Results are pages, not the whole target: repeat the same session/target with cursor until null. "
                        "Used-range items pack row segments into typed matrices; labels identify their exact cell ranges. "
                        "Never derive whole-sheet KPIs from a preview or unfinished page sequence. "
-                       "Word: document or text:start:end. PowerPoint: slides or slide:index.",
+                       "Word: document, text:start:end, styles, tables or table:index. PowerPoint: slides or slide:index.",
                        ReadArguments, ReadResult, PermissionClass.READ),
     OfficeToolContract("office.excel_edit", "Apply a bounded Excel patch against a complete matching cell snapshot. "
                        "Use this exact tool name. Existing sheets only. Supports values, local formulas, number_format, bold, italic and fill_color (#RRGGBB/none). "
@@ -441,9 +441,9 @@ OFFICE_TOOLS = tuple(sorted((
                        "Objects are created, not overwritten; revert removes only unchanged owned objects and restores the reserved pivot cells (read them again first). "
                        "No defined names, external data or references. Editing is not saving.",
                        ExcelEditArguments, EditResult, PermissionClass.WRITE, "excel"),
-    OfficeToolContract("office.word_edit", "Replace one fully read Word body text target (up to 4096 native UTF-16 units) against its snapshot. "
-                       "Requires one paragraph and uniform character formatting; paragraph/cell markers, tables, fields and tracked changes are unsupported. "
-                       "Finish all cursor pages first. Preserves formatting; does not save. Read again before revert; Save As creates a new .docx only.",
+    OfficeToolContract("office.word_edit", "One fully read Word action per patch: replace_text or insert_after in a uniform body run (4096 UTF-16 units); "
+                       "apply_style to a complete paragraph using a discovered style; edit_table replaces the exact matrix of a discovered simple fixed-layout table (64 cells). "
+                       "Finish cursor pages. No structural markers, merged cells, fields or tracked changes. Preserves direct formatting; save separately. Read again before revert; Save As creates a new .docx.",
                        WordEditArguments, EditResult, PermissionClass.WRITE, "word"),
     OfficeToolContract("office.powerpoint_edit", "Edit slide text, layout or positions against a snapshot.",
                        PowerPointEditArguments, EditResult, PermissionClass.WRITE, "powerpoint"),

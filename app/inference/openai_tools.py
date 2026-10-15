@@ -241,7 +241,7 @@ def _reversal_history_definitions(definitions, expected):
 def _office_history_definitions(definitions, expected, raw_calls):
     """Validate historical Office evidence without relaxing live decoding.
 
-    The old reserved Word actions remain history-only. The two additive Excel
+    Older Word patches may contain 16 actions rather than one. The two additive Excel
     fields may be absent only when both
     original provider bytes and their settled call omit them. Replay remains
     byte-for-byte; this never grants execution authority or rewrites old calls.
@@ -252,7 +252,7 @@ def _office_history_definitions(definitions, expected, raw_calls):
         if definition.name == "office.word_edit" and calls:
             # The reserved pre-phase-5 schema advertised four actions and 16
             # changes. This history-only schema validates original evidence;
-            # the live replacement slice remains restricted to one change.
+            # live patches remain restricted to one action.
             schema = deepcopy(definition.input_schema)
             action = schema["$defs"]["WordChange"]["properties"]["action"]
             action.pop("const", None)

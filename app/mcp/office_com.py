@@ -179,6 +179,22 @@ class WindowsOffice(ExcelDrawing, WordNative):
             return [("cell", sheet, int(first.Row) + r, int(first.Column) + c)
                     for r in range(rows) for c in range(columns)]
         if kind == "word":
+            if target == "styles":
+                return [("word_info", document, 0, 0, canonical_json(self.word_styles(document)))]
+            if target == "tables":
+                if int(document.Tables.Count) > 32:
+                    raise OfficeUnavailable("Read a smaller document for bounded Word table discovery.")
+                return [("word_info", document, 0, 0, canonical_json({"table": i,
+                    "start": int(document.Tables.Item(i).Range.Start), "end": int(document.Tables.Item(i).Range.End),
+                    "read_target": f"table:{i}", "uniform": bool(document.Tables.Item(i).Uniform),
+                    "fixed_layout": not bool(document.Tables.Item(i).AllowAutoFit)}))
+                    for i in range(1, int(document.Tables.Count) + 1)]
+            if re.fullmatch(r"table:[1-9][0-9]*", target):
+                from app.mcp.office_word_tables import descriptor
+                index = int(target.split(":")[1])
+                if index > min(32, int(document.Tables.Count)):
+                    raise OfficeUnavailable("The Word table index is outside the discovery bound.")
+                return [descriptor(self, document, index)]
             if target == "selection":
                 window = document.ActiveWindow
                 if not self.same(window.Document, document):
@@ -243,6 +259,16 @@ class WindowsOffice(ExcelDrawing, WordNative):
         """Return at most chars characters; offsets freeze a paged target."""
         self.check_thread()
         kind, obj, *coordinates = descriptor
+        if kind in {"word_info", "word_table"}:
+            if kind == "word_info":
+                text = descriptor[4]
+                label = "Word discovery"
+            else:
+                from app.mcp.office_word_tables import capture_table, table_text
+                text = table_text(capture_table(self, descriptor))
+                label = f"table:{descriptor[7]} (complete structured matrix)"
+            part = text[offset:offset + chars]
+            return {"label": label, "text": part}, offset + len(part) if offset + len(part) < len(text) else None
         if kind == "worksheet":
             used = obj.UsedRange
             name = str(obj.Name)

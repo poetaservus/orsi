@@ -1,5 +1,26 @@
 # Git layout and baseline hygiene
 
+## Remaining Office MCP Word actions, 16 October 2026
+
+`codex/office-word-actions` starts from clean main `3d984d7` and completes the
+pending bounded Word insertion, paragraph-style and existing-table actions.
+Structured table/style discovery, exact native ranges, direct-format
+preservation, approved dispatch, guarded recovery and separate saving share
+the existing connection. See [scope and qualification](office-mcp-word-actions.md).
+
+The final essential selection passed 301 checks; both synthetic native
+UI/bridge/preservation gates passed, with released owned processes and no forced
+fixture termination. No provider calls or user document edits occurred. The
+full suite and provider/second-host gates were not run per the user's instruction.
+Model profiles, prompts, routing, sampling, context policy and private settings
+remain unchanged. PowerPoint mutations remain phase 6 work.
+
+Inventories are retained under ignored
+`state/backups/office-mcp-word-actions-20261016/`. Prior main is preserved at
+`archive/2026-10-16/main-before-office-word-actions`. Commit, fast-forward local
+main and remove only the merged feature branch. Preserve other worktrees,
+historical/unmerged tips and all remote refs.
+
 ## Office MCP Word replacement slice, 16 October 2026
 
 `codex/office-mcp-phase5` starts from clean main `33328c8` and implements the

@@ -125,7 +125,7 @@ def test_packed_used_read_obeys_byte_char_and_cell_bounds_and_preserves_edit_cov
         live.close()
 
 
-@pytest.mark.parametrize("application,label", [("excel", "Excel patch"), ("word", "Word replacement")])
+@pytest.mark.parametrize("application,label", [("excel", "Excel patch"), ("word", "Word edit")])
 def test_recovery_report_keeps_successful_office_changes_visible(application, label):
     call = ModelCapabilityCall(provider_call_id="patch", capability="office." + application + "_edit", arguments={})
     result = CapabilityResult(call_id="patch", capability=call.capability, success=True, duration_ms=1,

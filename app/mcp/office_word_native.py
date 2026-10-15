@@ -16,6 +16,7 @@ PKG = "{http://schemas.microsoft.com/office/2006/xmlPackage}"
 MAX_WORD_UNITS = 4096
 MAX_PARAGRAPH_UNITS = 8192
 MAX_XML_BYTES = 256 * 1024
+WORD_STYLES = {"Normal": -1, "Heading 1": -2, "Heading 2": -3, "Title": -63, "Subtitle": -75}
 
 
 def reject(message):
@@ -81,6 +82,16 @@ def semantics(xml):
     if len(paragraphs) != 1 or paragraphs[0].tag != W + "p":
         reject("Word replacements require one ordinary body paragraph.")
     paragraph = paragraphs[0]
+    semantic = paragraph_semantic(paragraph, default_styles(xml))
+    return semantic, dependencies(xml)
+
+
+def default_styles(xml):
+    return {s.attrib.get(W + "styleId") for s in ET.fromstring(xml).findall(".//" + W + "style")
+            if s.attrib.get(W + "type") == "paragraph" and s.attrib.get(W + "default") == "1"}
+
+
+def paragraph_semantic(paragraph, defaults=()):
     runs = []
     for child in paragraph:
         if child.tag in {W + "pPr", W + "proofErr"}:
@@ -91,13 +102,30 @@ def semantics(xml):
     ppr = paragraph.find(W + "pPr")
     if ppr is not None and ppr.find(W + "sectPr") is not None:
         reject("Section boundaries cannot be replaced.")
-    dependencies = []
+    properties = tree(ppr)
+    if properties is not None:
+        properties[3] = [c for c in properties[3] if not (c[0] == W + "pStyle" and c[1].get(W + "val") in defaults)]
+        if not properties[1] and not properties[3]:
+            properties = None
+    return [tree(paragraph)[1], properties, compact(runs)]
+
+
+def dependencies(xml):
+    root = ET.fromstring(xml)
+    values = []
     for part in root.findall(PKG + "part"):
         name = part.attrib.get(PKG + "name", "")
         if name.startswith(("/word/styles", "/word/theme/", "/word/fontTable", "/word/numbering")):
-            dependencies.append([name, tree(part.find(PKG + "xmlData"))])
-    dependency = sha256(canonical_json(sorted(dependencies)).encode()).hexdigest()
-    return [tree(paragraph)[1], tree(ppr), compact(runs)], dependency
+            if name.startswith("/word/styles"):
+                # Word unhides a built-in style and its linked character style
+                # on first use. semiHidden controls the gallery, not rendering.
+                # Keep names, links, locks and every formatting property exact.
+                for parent in part.iter():
+                    for child in list(parent):
+                        if child.tag == W + "semiHidden":
+                            parent.remove(child)
+            values.append([name, tree(part.find(PKG + "xmlData"))])
+    return sha256(canonical_json(sorted(values)).encode()).hexdigest()
 
 
 def replacement(state, text):
@@ -172,6 +200,11 @@ class WordNative:
 
     def capture_word(self, descriptor):
         self.check_thread()
+        if descriptor[0] == "word_table":
+            from app.mcp.office_word_tables import capture_table
+            return capture_table(self, descriptor)
+        if descriptor[0] != "word":
+            reject("Word metadata is not an edit anchor.")
         _, document, start, end, retained = descriptor
         if (not self.same(retained.Document, document) or int(retained.StoryType) != 1 or
                 (int(retained.Start), int(retained.End)) != (start, end)):
@@ -197,6 +230,67 @@ class WordNative:
                 "target": target, "paragraph": full, "dependencies": dependencies,
                 "paragraph_text": str(paragraph.Text), "uniform": len(target[2]) == 1 and
                     len(intersecting_runs(full[2], start - pstart, end - pstart)) == 1}
+
+    def word_styles(self, document):
+        self.check_thread()
+        return [{"style": name, "local_name": str(document.Styles.Item(number).NameLocal)}
+                for name, number in WORD_STYLES.items()]
+
+    def styled_word(self, descriptor, before, name):
+        self.check_thread()
+        if name not in WORD_STYLES or (before["start"], before["end"]) != (before["pstart"], before["pend"] - 1):
+            reject("Apply a discovered paragraph style to a complete paragraph text target.")
+        document = descriptor[1]
+        local = str(document.Styles.Item(WORD_STYLES[name]).NameLocal)
+        xml = str(document.Range(before["pstart"], before["pend"]).WordOpenXML)
+        if dependencies(xml) != before["dependencies"]:
+            reject("Word style definitions changed. Read again before applying a style.")
+        candidates = [style for style in ET.fromstring(xml).findall(".//" + W + "style")
+            if style.attrib.get(W + "type") == "paragraph" and style.find(W + "name") is not None and
+            style.find(W + "name").attrib.get(W + "val", "").casefold() in {name.casefold(), local.casefold()}]
+        if len(candidates) != 1:
+            reject("The requested style is not present in the captured native definitions. Use an existing discovered style.")
+        style_id = candidates[0].attrib[W + "styleId"]
+        expected = deepcopy(before)
+        props = expected["paragraph"][1] or [W + "pPr", {}, "", []]
+        props[3] = [child for child in props[3] if child[0] != W + "pStyle"]
+        if style_id not in default_styles(xml):
+            props[3].insert(0, [W + "pStyle", {W + "val": style_id}, "", []])
+        expected["paragraph"][1] = props if props[1] or props[3] else None
+        # Native range exports materialize the new inherited style. Full
+        # paragraph XML plus unchanged dependency definitions proves that
+        # derived representation; retain its actual readback for recovery.
+        return expected
+
+    def write_word_style(self, descriptor, state):
+        from app.mcp.office_word_xml import packet, paragraph_xml
+        self.check_thread()
+        region = descriptor[1].Range(state["pstart"], state["pend"])
+        xml = str(region.WordOpenXML)
+        style_id = next((c[1][W + "val"] for c in (state["paragraph"][1] or [None, {}, "", []])[3] if c[0] == W + "pStyle"), None)
+        if style_id is None:
+            style = descriptor[1].Styles.Item(-1)
+        else:
+            nodes = [s for s in ET.fromstring(xml).findall(".//" + W + "style") if s.attrib.get(W + "styleId") == style_id]
+            if len(nodes) != 1:
+                reject("The retained Word paragraph style definition is unavailable.")
+            name = nodes[0].find(W + "name").attrib[W + "val"]
+            builtin = next((number for label, number in WORD_STYLES.items() if label.casefold() == name.casefold()), None)
+            style = descriptor[1].Styles.Item(builtin if builtin is not None else name)
+        region.Style = style
+        # Assigning a Word paragraph style resets direct paragraph formatting.
+        # Reapply the approved native pPr and runs, with the new style reference,
+        # after the setter (also needed to force Normal on partial imports).
+        # The existing paragraph mark stays in place and final readback must
+        # prove both the style change and every preserved direct property.
+        region.End = int(region.End) - 1
+        self.word_writable(descriptor[1])
+        region.InsertXML(packet(xml, "<w:body>" + paragraph_xml(state["paragraph"]) + "</w:body>"))
+        return self.word_descriptor(descriptor[1], state["start"], state["end"])
+
+    def write_word_table(self, descriptor, state):
+        from app.mcp.office_word_tables import write_table
+        return write_table(self, descriptor, state)
 
     def write_word(self, descriptor, state):
         self.check_thread()
@@ -234,29 +328,8 @@ class WordNative:
         changed = re.sub(r"<w:pPr\b[^>]*>.*?</w:pPr>|<w:pPr\s*/>", "", changed, flags=re.DOTALL)
         if properties is not None:
             changed = re.sub(r"<w:p\b[^>]*>", lambda m: m.group() + properties.group(), changed, count=1)
-        # Preserve native namespace declarations, including prefixes referenced
-        # only by mc:Ignorable. Generic XML serialization drops those bindings.
-        packet = xml[:body.start()] + changed + xml[body.end():]
-        # Word also exports header/footer parts and their relationships for a
-        # partial body range. Even an unused header part can make the importer
-        # introduce a section break. Import only text-format dependencies.
-        allowed = {"/_rels/.rels", "/word/document.xml", "/word/_rels/document.xml.rels",
-                   "/word/styles.xml", "/word/stylesWithEffects.xml", "/word/fontTable.xml",
-                   "/word/numbering.xml", "/word/theme/theme1.xml"}
-        def keep_part(match):
-            name = re.search(r'pkg:name="([^"]+)"', match.group())
-            if name is None or name[1] not in allowed:
-                return ""
-            part = match.group()
-            if name[1].endswith(".rels"):
-                def keep_relationship(relation):
-                    kind = re.search(r'Type="([^"]+)"', relation.group())
-                    return relation.group() if kind and kind[1].rsplit("/", 1)[-1] in {
-                        "officeDocument", "styles", "stylesWithEffects", "fontTable", "numbering", "theme"} else ""
-                part = re.sub(r"<Relationship\b[^>]*/>", keep_relationship, part)
-            return part
-        packet = re.sub(r"<pkg:part\b[^>]*>.*?</pkg:part>", keep_part, packet, flags=re.DOTALL)
-        descriptor[4].InsertXML(packet)
+        from app.mcp.office_word_xml import packet
+        descriptor[4].InsertXML(packet(xml, changed))
         return self.word_descriptor(descriptor[1], state["start"], state["end"])
 
     def save_word(self, document, save):
