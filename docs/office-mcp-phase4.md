@@ -5,6 +5,10 @@ manifests, model profiles, prompts, sampling, routing and context policy are
 unchanged. Default startup remains disconnected; Word and PowerPoint remain
 read-only.
 
+A later conversation-level check exposed a missing Office-name entry in the
+compact prompt validator. The [conversation repair and full-suite record](office-mcp-conversation-repair.md)
+documents that integration fix and the broader regression qualification.
+
 ## User workflow and supported edits
 
 In Settings > Models, choose Cloud mode, Connect, select an open Excel workbook

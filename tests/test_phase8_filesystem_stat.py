@@ -409,6 +409,8 @@ def test_application_bootstrap_wires_agent_only_when_enabled(monkeypatch, tmp_pa
         assert inference is model
         assert service.agent_enabled
         assert service.agent_runtime.registry.model_visible_names == ("filesystem.stat",)
+        assert not service.office_connection.exposure.eligible
+        assert service.run("hello") == "ready"
     finally:
         service.shutdown()
 

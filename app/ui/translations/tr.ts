@@ -51,10 +51,6 @@
       <translation>Ek bilgi</translation>
     </message>
     <message>
-      <source>Adjust interface text size</source>
-      <translation>Arayüz metin boyutunu ayarlayın</translation>
-    </message>
-    <message>
       <source>Agent</source>
       <translation>Aracı</translation>
     </message>
@@ -1407,6 +1403,10 @@ Toplam jetonlar: {value_4}</translation>
     <message>
       <source>No skills installed</source>
       <translation>Hiçbir beceri yüklü değil</translation>
+    </message>
+    <message>
+      <source>No skills installed.</source>
+      <translation>Hiçbir beceri yüklü değil.</translation>
     </message>
     <message>
       <source>No supported local models found</source>

@@ -51,10 +51,6 @@
       <translation>Aanvullende informatie</translation>
     </message>
     <message>
-      <source>Adjust interface text size</source>
-      <translation>Pas de tekstgrootte van de interface aan</translation>
-    </message>
-    <message>
       <source>Agent</source>
       <translation>Agent</translation>
     </message>
@@ -1407,6 +1403,10 @@ Totale tokens: {value_4}</translation>
     <message>
       <source>No skills installed</source>
       <translation>Geen vaardigheden geïnstalleerd</translation>
+    </message>
+    <message>
+      <source>No skills installed.</source>
+      <translation>Geen vaardigheden geïnstalleerd.</translation>
     </message>
     <message>
       <source>No supported local models found</source>

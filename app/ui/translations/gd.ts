@@ -51,10 +51,6 @@
       <translation>Fiosrachadh a bharrachd</translation>
     </message>
     <message>
-      <source>Adjust interface text size</source>
-      <translation>Atharraich meud teacsa eadar-aghaidh</translation>
-    </message>
-    <message>
       <source>Agent</source>
       <translation>Àidseant</translation>
     </message>
@@ -1407,6 +1403,10 @@ TTokens: {value_4}</translation>
     <message>
       <source>No skills installed</source>
       <translation>Cha deach sgilean a chuir a-steach</translation>
+    </message>
+    <message>
+      <source>No skills installed.</source>
+      <translation>Cha deach sgilean a chuir a-steach.</translation>
     </message>
     <message>
       <source>No supported local models found</source>

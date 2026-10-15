@@ -1,5 +1,35 @@
 # Git layout and baseline hygiene
 
+## Office conversation catalog and full-suite repair, 15 October 2026
+
+`codex/office-catalog-regression` starts from clean local main `c1f305c`.
+The compact conversation prompt now accepts exactly the reviewed Office contract
+names, allowing ordinary chat while Office is connected. Startup defaults a
+missing inference mode to local. Profile number editors fit enlarged Settings
+text; the attachment picker again uses its intended plain native dialog.
+Stale UI fixtures, cleanup and bundled translation coverage are corrected.
+Prompt wording, acceptance prompts, profiles, sampling, routing, context,
+Office schemas, permissions and approvals remain unchanged. See
+[the repair and verification record](office-mcp-conversation-repair.md).
+
+The exact conversation error was reproduced before repair. The final affected
+selection passed **100 checks in 103.09 seconds**. The fresh full suite on Qt's
+Windows platform passed **4,141 tests and 15 subtests**, with **63 skips**, no
+failures/errors, in **1,448.80 seconds**. Two unchanged test-only Qt activation
+deprecation warnings remain. The initial full run's 77 failures and preliminary
+native picker-driving interruptions are retained separately. The native Shell
+picker is isolated at the synthetic fixture boundary; actual Shell-chrome
+interaction and opt-in live provider/model/Office gates are not claimed.
+
+All 45 catalogs validate and compile; unrelated translated wording is preserved.
+Hungarian editorial fingerprints reflect punctuation/source maintenance while
+native-language review remains pending. Compilation and whitespace checks pass.
+
+Inventories are retained under ignored `state/backups/catalog-full-suite-20261015/`.
+Preserve prior main at `archive/2026-10-15/main-before-office-catalog-regression`,
+commit, fast-forward local main and remove only the merged feature branch.
+Other worktrees, private settings, historical/unmerged tips and remote refs remain intact.
+
 ## Office MCP phase 4 Excel editing, 15 October 2026
 
 `codex/office-mcp-phase4` starts from clean local main `3e6a9d0`. It adds

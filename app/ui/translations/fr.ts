@@ -51,10 +51,6 @@
       <translation>informations supplémentaires</translation>
     </message>
     <message>
-      <source>Adjust interface text size</source>
-      <translation>Ajuster la taille du texte de l'interface</translation>
-    </message>
-    <message>
       <source>Agent</source>
       <translation>agent</translation>
     </message>
@@ -1407,6 +1403,10 @@ Totot de jetons : {value_4}</translation>
     <message>
       <source>No skills installed</source>
       <translation>aucune compétence installée</translation>
+    </message>
+    <message>
+      <source>No skills installed.</source>
+      <translation>aucune compétence installée.</translation>
     </message>
     <message>
       <source>No supported local models found</source>

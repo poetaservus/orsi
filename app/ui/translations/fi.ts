@@ -51,10 +51,6 @@
       <translation>Lisätietoja</translation>
     </message>
     <message>
-      <source>Adjust interface text size</source>
-      <translation>Säädä käyttöliittymän tekstin kokoa</translation>
-    </message>
-    <message>
       <source>Agent</source>
       <translation>Agentti</translation>
     </message>
@@ -1407,6 +1403,10 @@ Tokenit yhteensä: {value_4}</translation>
     <message>
       <source>No skills installed</source>
       <translation>Taitoja ei ole asennettu</translation>
+    </message>
+    <message>
+      <source>No skills installed.</source>
+      <translation>Taitoja ei ole asennettu.</translation>
     </message>
     <message>
       <source>No supported local models found</source>

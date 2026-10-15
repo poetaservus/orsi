@@ -51,10 +51,6 @@
       <translation>Lisateave</translation>
     </message>
     <message>
-      <source>Adjust interface text size</source>
-      <translation>kohandage liidese teksti suurust</translation>
-    </message>
-    <message>
       <source>Agent</source>
       <translation>agent</translation>
     </message>
@@ -1407,6 +1403,10 @@ Tokeneid kokku: {value_4}</translation>
     <message>
       <source>No skills installed</source>
       <translation>oskusi pole installitud</translation>
+    </message>
+    <message>
+      <source>No skills installed.</source>
+      <translation>oskusi pole installitud.</translation>
     </message>
     <message>
       <source>No supported local models found</source>

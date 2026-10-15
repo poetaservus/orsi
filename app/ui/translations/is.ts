@@ -51,10 +51,6 @@
       <translation>Viðbótarupplýsingar</translation>
     </message>
     <message>
-      <source>Adjust interface text size</source>
-      <translation>Stilltu textastærð viðmóts</translation>
-    </message>
-    <message>
       <source>Agent</source>
       <translation>Umboðsmaður</translation>
     </message>
@@ -1407,6 +1403,10 @@ Tákn: {value_4}</translation>
     <message>
       <source>No skills installed</source>
       <translation>Engin færni uppsett</translation>
+    </message>
+    <message>
+      <source>No skills installed.</source>
+      <translation>Engin færni uppsett.</translation>
     </message>
     <message>
       <source>No supported local models found</source>

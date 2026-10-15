@@ -51,10 +51,6 @@
       <translation>Papildoma informacija</translation>
     </message>
     <message>
-      <source>Adjust interface text size</source>
-      <translation>koreguokite sąsajos teksto dydį</translation>
-    </message>
-    <message>
       <source>Agent</source>
       <translation>agentas</translation>
     </message>
@@ -1407,6 +1403,10 @@ Iš viso prieigos raktų: {value_4}</translation>
     <message>
       <source>No skills installed</source>
       <translation>Įgūdžiai neįdiegti</translation>
+    </message>
+    <message>
+      <source>No skills installed.</source>
+      <translation>Įgūdžiai neįdiegti.</translation>
     </message>
     <message>
       <source>No supported local models found</source>

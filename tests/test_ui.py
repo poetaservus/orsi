@@ -66,28 +66,35 @@ class UiTests(unittest.TestCase):
 
     def test_corner_controls_remain_visible_without_a_retracting_header(self):
         window = MainWindow(None, "TEST-HOST")
-        window.resize(1280, 800)
-        window.show()
-        QApplication.processEvents()
+        try:
+            window.resize(1280, 800)
+            window.show()
+            QApplication.processEvents()
 
-        self.assertFalse(hasattr(window, "history_button"))
-        self.assertNotIn(
-            "History",
-            [button.accessibleName() for button in window.app_controls.findChildren(QWidget)],
-        )
+            self.assertFalse(hasattr(window, "history_button"))
+            self.assertNotIn(
+                "History",
+                [button.accessibleName() for button in window.app_controls.findChildren(QWidget)],
+            )
 
-        self.assertFalse(hasattr(window, "topbar"))
-        self.assertFalse(hasattr(window, "_topbar_hide_timer"))
-        self.assertTrue(window.new_session_button.isVisible())
-        self.assertTrue(window.settings_button.isVisible())
-        QApplication.sendEvent(window.app_controls, QEvent(QEvent.Type.Leave))
-        QApplication.processEvents()
-        self.assertEqual(window.app_controls.pos(), QPoint(8, 8))
-        window.settings_button.click()
-        self.assertTrue(window.settings_panel.isVisible())
-        window.settings_button.click()
-        self.assertFalse(window.settings_panel.isVisible())
-        window.close()
+            self.assertFalse(hasattr(window, "topbar"))
+            self.assertFalse(hasattr(window, "_topbar_hide_timer"))
+            self.assertTrue(window.new_session_button.isVisible())
+            self.assertTrue(window.settings_button.isVisible())
+            QApplication.sendEvent(window.app_controls, QEvent(QEvent.Type.Leave))
+            QApplication.processEvents()
+            self.assertEqual(window.app_controls.pos(), QPoint(8, 8))
+            window.settings_button.click()
+            self.assertTrue(window.settings_panel.isVisible())
+            self.assertFalse(window.settings_button.isEnabled())
+            window.settings_panel.close_button.click()
+            animation = window.settings_panel.close_button.animation
+            self.assertEqual(animation.state(), animation.State.Running)
+            animation.setCurrentTime(animation.duration())
+            self.assertFalse(window.settings_panel.isVisible())
+            self.assertTrue(window.settings_button.isEnabled())
+        finally:
+            window.close()
 
     def test_context_window_bar_uses_conversation_estimate(self):
         class FakeService:

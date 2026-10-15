@@ -15,6 +15,11 @@
   "baseline_commit": "b87c29b",
   "style_guide": "docs/hungarian-ui.md",
   "entry_count": 775,
-  "source_sha256": "b939a8d2a7afe3aae72fce6b0373122cb1e55440f6b81b5c389e1a2f6a4c2394",
-  "translation_sha256": "c680cd84b029ba6abdcae25197ce68627df5d0c06336a789c214db33b94945a3"
+  "source_sha256": "50c4b86071917e9299fc74aaf5b4c747ee37b4184489cbb5a96a028799f3fc98",
+  "translation_sha256": "70d6d406bae43b5b2c29908fedb188fa7e62f5b15ae06179ded14bdd4c46c983",
+  "maintenance": {
+    "date": "2026-10-15",
+    "baseline_commit": "c1f305c",
+    "method": "Reused the reviewed installed-skills wording with terminal punctuation; removed the obsolete text-size tooltip source. Other translations preserved. Native review remains pending."
+  }
 }

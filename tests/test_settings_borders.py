@@ -89,10 +89,21 @@ def test_original_shared_controls_keep_neutral_borders_in_native_states(qt, root
             QTest.keyClick(widget, Qt.Key.Key_Space)
             assert widget.isChecked()
             QTest.qWait(150)
-            assert_no_cyan_border(widget, indicator)
+            if widget is switch:
+                # The enabled track is intentionally blue; focus must not add
+                # a separate native selection outline to that custom painting.
+                widget._slide.setCurrentTime(widget._slide.duration())
+                qt.processEvents()
+                focused = widget.grab().toImage()
+                widget.clearFocus()
+                qt.processEvents()
+                assert widget.grab().toImage() == focused
+            else:
+                assert_no_cyan_border(widget, indicator)
             widget.setEnabled(False)
             qt.processEvents()
-            assert_no_cyan_border(widget, indicator)
+            if widget is not switch:
+                assert_no_cyan_border(widget, indicator)
     finally:
         root.close()
         qt.processEvents()

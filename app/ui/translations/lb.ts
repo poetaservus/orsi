@@ -51,10 +51,6 @@
       <translation>Zousätzlech Informatiounen</translation>
     </message>
     <message>
-      <source>Adjust interface text size</source>
-      <translation>Ajustéieren Interface Text Gréisst</translation>
-    </message>
-    <message>
       <source>Agent</source>
       <translation>Agent</translation>
     </message>
@@ -1407,6 +1403,10 @@ total Tokens: {value_4}</translation>
     <message>
       <source>No skills installed</source>
       <translation>Keng Kompetenzen installéiert</translation>
+    </message>
+    <message>
+      <source>No skills installed.</source>
+      <translation>Keng Kompetenzen installéiert.</translation>
     </message>
     <message>
       <source>No supported local models found</source>

@@ -51,10 +51,6 @@
       <translation>Додаткова інформація</translation>
     </message>
     <message>
-      <source>Adjust interface text size</source>
-      <translation>Налаштувати розмір тексту інтерфейсу</translation>
-    </message>
-    <message>
       <source>Agent</source>
       <translation>Агент</translation>
     </message>
@@ -1407,6 +1403,10 @@ Total tokens: {value_4}</source>
     <message>
       <source>No skills installed</source>
       <translation>навичок не встановлено</translation>
+    </message>
+    <message>
+      <source>No skills installed.</source>
+      <translation>навичок не встановлено.</translation>
     </message>
     <message>
       <source>No supported local models found</source>

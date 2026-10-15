@@ -51,10 +51,6 @@
       <translation>Dodatne informacije</translation>
     </message>
     <message>
-      <source>Adjust interface text size</source>
-      <translation>Prilagodite velikost besedila vmesnika</translation>
-    </message>
-    <message>
       <source>Agent</source>
       <translation>Agent</translation>
     </message>
@@ -1407,6 +1403,10 @@ Skupno žetoni: {value_4}</translation>
     <message>
       <source>No skills installed</source>
       <translation>Ni nameščenih veščin</translation>
+    </message>
+    <message>
+      <source>No skills installed.</source>
+      <translation>Ni nameščenih veščin.</translation>
     </message>
     <message>
       <source>No supported local models found</source>

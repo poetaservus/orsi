@@ -51,10 +51,6 @@
       <translation>Informacje dodatkowe</translation>
     </message>
     <message>
-      <source>Adjust interface text size</source>
-      <translation>Dostosuj rozmiar tekstu interfejsu</translation>
-    </message>
-    <message>
       <source>Agent</source>
       <translation>Agent</translation>
     </message>
@@ -1407,6 +1403,10 @@ Tokeny ogółem: {value_4}</translation>
     <message>
       <source>No skills installed</source>
       <translation>Nie zainstalowano żadnych umiejętności</translation>
+    </message>
+    <message>
+      <source>No skills installed.</source>
+      <translation>Nie zainstalowano żadnych umiejętności.</translation>
     </message>
     <message>
       <source>No supported local models found</source>

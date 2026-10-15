@@ -51,10 +51,6 @@
       <translation>Լրացուցիչ տեղեկություններ</translation>
     </message>
     <message>
-      <source>Adjust interface text size</source>
-      <translation>Կարգավորեք ինտերֆեյսի տեքստի չափը</translation>
-    </message>
-    <message>
       <source>Agent</source>
       <translation>Գործակալ</translation>
     </message>
@@ -1407,6 +1403,10 @@ Total tokens: {value_4}</source>
     <message>
       <source>No skills installed</source>
       <translation>Տեղադրված հմտություններ չկան</translation>
+    </message>
+    <message>
+      <source>No skills installed.</source>
+      <translation>Տեղադրված հմտություններ չկան.</translation>
     </message>
     <message>
       <source>No supported local models found</source>

@@ -51,10 +51,6 @@
       <translation>Informació addicional</translation>
     </message>
     <message>
-      <source>Adjust interface text size</source>
-      <translation>ajusta la mida del text de la interfície</translation>
-    </message>
-    <message>
       <source>Agent</source>
       <translation>Agent</translation>
     </message>
@@ -1407,6 +1403,10 @@ TTotal de fitxes: {value_4}</translation>
     <message>
       <source>No skills installed</source>
       <translation>No hi ha habilitats instal·lades</translation>
+    </message>
+    <message>
+      <source>No skills installed.</source>
+      <translation>No hi ha habilitats instal·lades.</translation>
     </message>
     <message>
       <source>No supported local models found</source>

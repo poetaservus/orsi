@@ -51,10 +51,6 @@
       <translation>Informații suplimentare</translation>
     </message>
     <message>
-      <source>Adjust interface text size</source>
-      <translation>Ajustați dimensiunea textului interfeței</translation>
-    </message>
-    <message>
       <source>Agent</source>
       <translation>Agent</translation>
     </message>
@@ -1407,6 +1403,10 @@ TJetoane totale: {value_4}</translation>
     <message>
       <source>No skills installed</source>
       <translation>Nu există abilități instalate</translation>
+    </message>
+    <message>
+      <source>No skills installed.</source>
+      <translation>Nu există abilități instalate.</translation>
     </message>
     <message>
       <source>No supported local models found</source>

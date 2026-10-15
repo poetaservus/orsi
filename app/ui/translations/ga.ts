@@ -51,10 +51,6 @@
       <translation>Eolas breise</translation>
     </message>
     <message>
-      <source>Adjust interface text size</source>
-      <translation>Coigeartaigh méid téacs an chomhéadain</translation>
-    </message>
-    <message>
       <source>Agent</source>
       <translation>Gníomhaire</translation>
     </message>
@@ -1407,6 +1403,10 @@ Ttokens: {value_4}</translation>
     <message>
       <source>No skills installed</source>
       <translation>Níl aon scileanna suiteáilte</translation>
+    </message>
+    <message>
+      <source>No skills installed.</source>
+      <translation>Níl aon scileanna suiteáilte.</translation>
     </message>
     <message>
       <source>No supported local models found</source>

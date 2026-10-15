@@ -51,10 +51,6 @@
       <translation>Informacion shtesë</translation>
     </message>
     <message>
-      <source>Adjust interface text size</source>
-      <translation>Rregulloni madhësinë e tekstit të ndërfaqes</translation>
-    </message>
-    <message>
       <source>Agent</source>
       <translation>Agjent</translation>
     </message>
@@ -1407,6 +1403,10 @@ Tokenet totale: {value_4}</translation>
     <message>
       <source>No skills installed</source>
       <translation>Nuk ka aftësi të instaluara</translation>
+    </message>
+    <message>
+      <source>No skills installed.</source>
+      <translation>Nuk ka aftësi të instaluara.</translation>
     </message>
     <message>
       <source>No supported local models found</source>

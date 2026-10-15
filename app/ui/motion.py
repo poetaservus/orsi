@@ -1,8 +1,8 @@
 """Small presentation animations that leave layout and input ownership intact."""
-from app.ui.localization import ui_text, QPlainTextEdit, QFileDialog
+from app.ui.localization import ui_text, QPlainTextEdit
 
 from PySide6.QtCore import QEasingCurve, QEvent, QObject, QPropertyAnimation, Qt, Signal
-from PySide6.QtWidgets import (QApplication, QAbstractItemView)
+from PySide6.QtWidgets import (QApplication, QAbstractItemView, QFileDialog)
 
 
 class OpeningFade(QObject):

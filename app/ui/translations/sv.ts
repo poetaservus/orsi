@@ -51,10 +51,6 @@
       <translation>Ytterligare information</translation>
     </message>
     <message>
-      <source>Adjust interface text size</source>
-      <translation>Justera gränssnittets textstorlek</translation>
-    </message>
-    <message>
       <source>Agent</source>
       <translation>Agent</translation>
     </message>
@@ -1407,6 +1403,10 @@ Total: {value_4}</translation>
     <message>
       <source>No skills installed</source>
       <translation>Inga färdigheter installerade</translation>
+    </message>
+    <message>
+      <source>No skills installed.</source>
+      <translation>Inga färdigheter installerade.</translation>
     </message>
     <message>
       <source>No supported local models found</source>

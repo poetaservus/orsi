@@ -51,10 +51,6 @@
       <translation>Dodatne informacije</translation>
     </message>
     <message>
-      <source>Adjust interface text size</source>
-      <translation>Podesite veličinu teksta sučelja</translation>
-    </message>
-    <message>
       <source>Agent</source>
       <translation>Agent</translation>
     </message>
@@ -1407,6 +1403,10 @@ Ukupni tokeni: {value_4}</translation>
     <message>
       <source>No skills installed</source>
       <translation>Nisu instalirane vještine</translation>
+    </message>
+    <message>
+      <source>No skills installed.</source>
+      <translation>Nisu instalirane vještine.</translation>
     </message>
     <message>
       <source>No supported local models found</source>

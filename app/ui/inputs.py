@@ -18,7 +18,9 @@ class CompactNumberInput(QSpinBox):
         self.setStyleSheet(
             "QSpinBox::up-button, QSpinBox::down-button { subcontrol-position: top left; }"
         )
-        self.setFixedSize(72, 36)
+        # Settings uses a larger font than standalone profile dialogs. Leave
+        # enough space for its 25px glyph metrics plus padding and borders.
+        self.setFixedSize(72, 40)
 
     def wheelEvent(self, event):  # noqa: N802
         event.ignore()

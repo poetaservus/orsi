@@ -51,10 +51,6 @@
       <translation>Дополнительная информация</translation>
     </message>
     <message>
-      <source>Adjust interface text size</source>
-      <translation>настройка размера текста интерфейса.</translation>
-    </message>
-    <message>
       <source>Agent</source>
       <translation>Агент</translation>
     </message>
@@ -1406,6 +1402,10 @@ Total tokens: {value_4}</source>
     </message>
     <message>
       <source>No skills installed</source>
+      <translation>Навыки не установлены.</translation>
+    </message>
+    <message>
+      <source>No skills installed.</source>
       <translation>Навыки не установлены.</translation>
     </message>
     <message>

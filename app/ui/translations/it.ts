@@ -51,10 +51,6 @@
       <translation>Informazioni aggiuntive</translation>
     </message>
     <message>
-      <source>Adjust interface text size</source>
-      <translation>regola la dimensione del testo dell'interfaccia</translation>
-    </message>
-    <message>
       <source>Agent</source>
       <translation>Agente</translation>
     </message>
@@ -1407,6 +1403,10 @@ Tetken totali: {value_4}</translation>
     <message>
       <source>No skills installed</source>
       <translation>nessuna competenza installata</translation>
+    </message>
+    <message>
+      <source>No skills installed.</source>
+      <translation>nessuna competenza installata.</translation>
     </message>
     <message>
       <source>No supported local models found</source>

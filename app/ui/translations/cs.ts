@@ -51,10 +51,6 @@
       <translation>Další informace</translation>
     </message>
     <message>
-      <source>Adjust interface text size</source>
-      <translation>Upravte velikost textu rozhraní</translation>
-    </message>
-    <message>
       <source>Agent</source>
       <translation>Agent</translation>
     </message>
@@ -1407,6 +1403,10 @@ Celkové tokeny: {value_4}</translation>
     <message>
       <source>No skills installed</source>
       <translation>Nejsou nainstalovány žádné dovednosti</translation>
+    </message>
+    <message>
+      <source>No skills installed.</source>
+      <translation>Nejsou nainstalovány žádné dovednosti.</translation>
     </message>
     <message>
       <source>No supported local models found</source>

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from app.security.host_access import HostReadScope
 from app.conversation.questions import QUESTION_GUIDANCE
+from app.mcp.office_contracts import OFFICE_TOOLS
 
 
 CORE_INSTRUCTIONS = """You are O.R.S.I., an AI assistant.
@@ -159,6 +160,10 @@ _SHELL_SESSION_GUIDANCE = (
 _SUPPORTED_CAPABILITIES = (
     _READ_CAPABILITIES | _WRITE_CAPABILITIES | _EXECUTE_CAPABILITIES | {"skill.read_reference", "conversation.read_turn"}
 )
+# Native Office definitions already carry their reviewed contracts. The compact
+# policy must accept those names without enabling arbitrary MCP tools or changing
+# the legacy filesystem-only prompt's catalog.
+_OFFICE_CAPABILITIES = frozenset(tool.name for tool in OFFICE_TOOLS)
 _COUNT_WORDS = {
     1: "one",
     2: "two",
@@ -652,7 +657,7 @@ def compact_agent_system_prompt(
         raise TypeError("Compact agent prompts require a non-empty capability tuple.")
     if len(set(capability_names)) != len(capability_names) or not set(
         capability_names
-    ).issubset(_SUPPORTED_CAPABILITIES):
+    ).issubset(set(_SUPPORTED_CAPABILITIES) | _OFFICE_CAPABILITIES):
         raise ValueError("The compact agent prompt received an unsupported catalog.")
     if user_home is not None and not isinstance(user_home, str):
         raise TypeError("Compact agent user-home context must be text when supplied.")

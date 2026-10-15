@@ -51,10 +51,6 @@
       <translation>Ytterligere informasjon</translation>
     </message>
     <message>
-      <source>Adjust interface text size</source>
-      <translation>Juster grensesnittets tekststørrelse</translation>
-    </message>
-    <message>
       <source>Agent</source>
       <translation>Agent</translation>
     </message>
@@ -1407,6 +1403,10 @@ Totale tokens: {value_4}</translation>
     <message>
       <source>No skills installed</source>
       <translation>Ingen ferdigheter installert</translation>
+    </message>
+    <message>
+      <source>No skills installed.</source>
+      <translation>Ingen ferdigheter installert.</translation>
     </message>
     <message>
       <source>No supported local models found</source>

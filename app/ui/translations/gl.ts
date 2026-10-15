@@ -51,10 +51,6 @@
       <translation>información adicional</translation>
     </message>
     <message>
-      <source>Adjust interface text size</source>
-      <translation>axusta o tamaño do texto da interface</translation>
-    </message>
-    <message>
       <source>Agent</source>
       <translation>axente</translation>
     </message>
@@ -1407,6 +1403,10 @@ Fichas totais: {value_4}</translation>
     <message>
       <source>No skills installed</source>
       <translation>non hai habilidades instaladas</translation>
+    </message>
+    <message>
+      <source>No skills installed.</source>
+      <translation>non hai habilidades instaladas.</translation>
     </message>
     <message>
       <source>No supported local models found</source>

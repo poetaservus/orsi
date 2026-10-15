@@ -51,10 +51,6 @@
       <translation>Əlavə məlumat</translation>
     </message>
     <message>
-      <source>Adjust interface text size</source>
-      <translation>İnterfeys mətn ölçüsünü tənzimləyin</translation>
-    </message>
-    <message>
       <source>Agent</source>
       <translation>Agent</translation>
     </message>
@@ -1407,6 +1403,10 @@ Giriş nişanları: {value_2}
     <message>
       <source>No skills installed</source>
       <translation>Heç bir bacarıq quraşdırılmayıb</translation>
+    </message>
+    <message>
+      <source>No skills installed.</source>
+      <translation>Heç bir bacarıq quraşdırılmayıb.</translation>
     </message>
     <message>
       <source>No supported local models found</source>

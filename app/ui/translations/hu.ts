@@ -79,12 +79,6 @@
       <extracomment>Application-owned interface copy. Use concise informal Hungarian; preserve placeholders, paths, identifiers and literal technical tokens. See docs/hungarian-ui.md for terminology and review status.</extracomment>
     </message>
     <message>
-      <location filename="../settings_panel.py" line="302" />
-      <source>Adjust interface text size</source>
-      <translation>A felület szövegméretének beállítása</translation>
-      <extracomment>Application-owned interface copy. Use concise informal Hungarian; preserve placeholders, paths, identifiers and literal technical tokens. See docs/hungarian-ui.md for terminology and review status.</extracomment>
-    </message>
-    <message>
       <location filename="../main_window.py" line="2054" />
       <location filename="../main_window.py" line="698" />
       <location filename="../main_window.py" line="1360" />
@@ -2183,6 +2177,10 @@ Kimeneti tokenek: {value_3}
       <source>No skills installed</source>
       <translation>Nincs telepített képesség</translation>
       <extracomment>Application-owned interface copy. Use concise informal Hungarian; preserve placeholders, paths, identifiers and literal technical tokens. See docs/hungarian-ui.md for terminology and review status.</extracomment>
+    </message>
+    <message>
+      <source>No skills installed.</source>
+      <translation>Nincs telepített képesség.</translation>
     </message>
     <message>
       <location filename="../main_window.py" line="528" />

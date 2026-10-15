@@ -157,6 +157,8 @@ def test_native_dropdown_keyboard_busy_and_failed_save(tmp_path, monkeypatch, si
         window.resize(*size)
         window.show()
         window.settings_button.click()
+        window.settings_panel.page_transition.cancel()
+        app.processEvents()  # Settle the enlarged page before calculating scroll bounds.
         scroll = window.settings_panel.pages.currentWidget()
         selector = window.response_language_selector
         scroll.ensureWidgetVisible(selector)

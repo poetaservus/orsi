@@ -51,10 +51,6 @@
       <translation>Informazzjoni addizzjonali</translation>
     </message>
     <message>
-      <source>Adjust interface text size</source>
-      <translation>Aġġusta d-daqs tat-test tal-interface</translation>
-    </message>
-    <message>
       <source>Agent</source>
       <translation>Aġent</translation>
     </message>
@@ -1407,6 +1403,10 @@ Ttokens totali: {value_4}</translation>
     <message>
       <source>No skills installed</source>
       <translation>L-ebda ħiliet installati</translation>
+    </message>
+    <message>
+      <source>No skills installed.</source>
+      <translation>L-ebda ħiliet installati.</translation>
     </message>
     <message>
       <source>No supported local models found</source>

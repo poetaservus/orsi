@@ -51,10 +51,6 @@
       <translation>Informazio gehigarria</translation>
     </message>
     <message>
-      <source>Adjust interface text size</source>
-      <translation>Doitu interfazearen testuaren tamaina</translation>
-    </message>
-    <message>
       <source>Agent</source>
       <translation>Agentea</translation>
     </message>
@@ -1407,6 +1403,10 @@ TTokens guztira: {value_4}</translation>
     <message>
       <source>No skills installed</source>
       <translation>Ez dago trebetasunik instalatu</translation>
+    </message>
+    <message>
+      <source>No skills installed.</source>
+      <translation>Ez dago trebetasunik instalatu.</translation>
     </message>
     <message>
       <source>No supported local models found</source>

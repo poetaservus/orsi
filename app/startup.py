@@ -235,7 +235,7 @@ def build_application(
                     from dataclasses import replace
                     host_access_policy = replace(host_access_policy, protected_roots=protected_roots)
                 from app.mcp.office_connection import OfficeConnection
-                office_connection = OfficeConnection(PATHS.root, backend=lambda: inference.mode)
+                office_connection = OfficeConnection(PATHS.root, backend=lambda: getattr(inference, "mode", "local"))
                 agent_runtime = build_agent_runtime(
                     inference,
                     config=agent_config,

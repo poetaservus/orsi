@@ -50,7 +50,11 @@ def wait_for(predicate, timeout=10):
 
 
 @pytest.fixture
-def windows(tmp_path):
+def windows(tmp_path, monkeypatch):
+    # These tests supply synthetic OS selections/cancellation. Keep the actual
+    # native dialog configuration and Qt signals, without opening Shell UI that
+    # cannot be reliably driven by QFileDialog.accept()/reject() from a test.
+    monkeypatch.setattr(QFileDialog, "open", lambda self: None)
     app = QApplication.instance() or QApplication([])
     values = []
     def make(mode="local", enabled=False):
@@ -91,8 +95,8 @@ def test_plus_opens_single_file_picker_in_local_and_prepares_draft(windows, tmp_
     assert dialog.fileMode() == QFileDialog.FileMode.ExistingFile
     assert type(dialog) is QFileDialog
     assert not dialog.testOption(QFileDialog.Option.DontUseNativeDialog)
-    dialog.selectFile(str(path))
-    dialog.accept()
+    monkeypatch.setattr(dialog, "selectedFiles", lambda: [str(path)])
+    dialog.done(QFileDialog.DialogCode.Accepted)
     wait_for(lambda: not window.attachment_tray.is_processing)
     assert window._attachment_picker is None and window.attachment_tray.ready and window.attachment_tray.count == 1
     ref = window.attachment_tray.references[0]

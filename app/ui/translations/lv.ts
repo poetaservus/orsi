@@ -51,10 +51,6 @@
       <translation>papildu informācija</translation>
     </message>
     <message>
-      <source>Adjust interface text size</source>
-      <translation>pielāgojiet interfeisa teksta lielumu</translation>
-    </message>
-    <message>
       <source>Agent</source>
       <translation>aģents</translation>
     </message>
@@ -1407,6 +1403,10 @@ Kopējais marķieris: {value_4}</translation>
     <message>
       <source>No skills installed</source>
       <translation>nav instalētas prasmes</translation>
+    </message>
+    <message>
+      <source>No skills installed.</source>
+      <translation>nav instalētas prasmes.</translation>
     </message>
     <message>
       <source>No supported local models found</source>

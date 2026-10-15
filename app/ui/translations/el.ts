@@ -51,10 +51,6 @@
       <translation>Πρόσθετες πληροφορίες</translation>
     </message>
     <message>
-      <source>Adjust interface text size</source>
-      <translation>Προσαρμόστε το μέγεθος κειμένου της διεπαφής</translation>
-    </message>
-    <message>
       <source>Agent</source>
       <translation>Πράκτορας</translation>
     </message>
@@ -1407,6 +1403,10 @@ Total tokens: {value_4}</source>
     <message>
       <source>No skills installed</source>
       <translation>Δεν έχουν εγκατασταθεί δεξιότητες</translation>
+    </message>
+    <message>
+      <source>No skills installed.</source>
+      <translation>Δεν έχουν εγκατασταθεί δεξιότητες.</translation>
     </message>
     <message>
       <source>No supported local models found</source>
