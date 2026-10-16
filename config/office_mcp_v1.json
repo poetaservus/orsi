@@ -62,7 +62,7 @@
     },
     {
       "application": "word",
-      "input_schema_sha256": "2a9c72aaa6065e7fd2262cfd0633470e6af5a951d9421764e40a84533926f95d",
+      "input_schema_sha256": "d9c44f8647ec8137ff49a109b15f814d49c21517245b82bc65d3bcec27badc9a",
       "name": "office.word_compose",
       "output_schema_sha256": "0ca4db16737e5c418149a84e7c43a686845bd9bd5611cb2d7c9301b78904fd16",
       "permission": "write"

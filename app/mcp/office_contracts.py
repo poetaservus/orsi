@@ -23,11 +23,17 @@ OfficeApplication = Literal["excel", "word", "powerpoint"]
 Identifier = Annotated[str, Field(min_length=1, max_length=96, pattern=r"^[A-Za-z0-9_-]+$")]
 Cell = Annotated[str, Field(max_length=4_096)] | int | float | bool | None
 Color = Annotated[str, Field(pattern=r"^#[0-9A-Fa-f]{6}$")]
+_WORD_TEXT_PATTERN = r"^[^\x00-\x1F]*$"
+WordText = Annotated[str, Field(max_length=4_096, pattern=_WORD_TEXT_PATTERN)]
+WordWidth = Annotated[float, Field(ge=5, le=400)]
+WordMargin = Annotated[float, Field(ge=5, le=80)]
 Matrix = Annotated[list[Annotated[list[Cell], Field(min_length=1, max_length=MAX_CELLS)]],
                    Field(min_length=1, max_length=MAX_CELLS)]
 TextMatrix = Annotated[list[Annotated[list[Annotated[str, Field(max_length=4_096)]],
                                    Field(min_length=1, max_length=MAX_CELLS)]],
                        Field(min_length=1, max_length=MAX_CELLS)]
+WordTextMatrix = Annotated[list[Annotated[list[WordText], Field(min_length=1, max_length=256)]],
+                           Field(min_length=1, max_length=256)]
 _A1_RANGE = re.compile(r"^\$?([A-Za-z]{1,3})\$?([1-9][0-9]{0,6})(?::\$?([A-Za-z]{1,3})\$?([1-9][0-9]{0,6}))?$")
 
 
@@ -158,7 +164,7 @@ class WordFormat(OfficeModel):
 
 class WordParagraph(OfficeModel):
     kind: Literal["paragraph"] = "paragraph"
-    text: str = Field(max_length=4096)
+    text: WordText
     style: Literal["Normal", "Heading 1", "Heading 2", "Title", "Subtitle"] = "Normal"
     format: WordFormat | None = None
     page_break_before: bool = False
@@ -166,8 +172,8 @@ class WordParagraph(OfficeModel):
 
 class WordTable(OfficeModel):
     kind: Literal["table"] = "table"
-    cells: TextMatrix
-    widths_mm: list[float] = Field(min_length=1, max_length=16)
+    cells: WordTextMatrix = Field(description="Rectangular; at most 256 cells in total.")
+    widths_mm: list[WordWidth] = Field(min_length=1, max_length=16)
     header: bool = True
     header_fill: Color = "#E8EDF2"
     border_color: Color = "#CBD5E1"
@@ -177,8 +183,6 @@ class WordTable(OfficeModel):
     def check_table(self):
         if _matrix_cells(self.cells) > 256 or len(self.widths_mm) != len(self.cells[0]):
             raise ValueError("Word tables need one column width per column and at most 256 cells.")
-        if any(not 5 <= width <= 400 for width in self.widths_mm):
-            raise ValueError("Word column widths must be between 5 and 400 millimetres.")
         return self
 
 
@@ -189,7 +193,7 @@ class WordPageBreak(OfficeModel):
 class WordPageLayout(OfficeModel):
     width_mm: float = Field(default=210, ge=100, le=420)
     height_mm: float = Field(default=297, ge=100, le=420)
-    margins_mm: list[float] = Field(default_factory=lambda: [20, 20, 20, 20],
+    margins_mm: list[WordMargin] = Field(default_factory=lambda: [20, 20, 20, 20],
         min_length=4, max_length=4, description="Top, right, bottom, left; millimetres.")
     header_mm: float = Field(default=10, ge=0, le=50)
     footer_mm: float = Field(default=10, ge=0, le=50)
@@ -210,8 +214,8 @@ class WordComposeArguments(OfficeModel):
     blocks: list[WordParagraph | WordTable | WordPageBreak] = Field(min_length=1, max_length=96)
     layout: WordPageLayout = Field(default_factory=WordPageLayout)
     format: WordFormat = Field(default_factory=WordFormat)
-    header: str = Field(default="", max_length=512)
-    footer: str = Field(default="", max_length=512)
+    header: str = Field(default="", max_length=512, pattern=_WORD_TEXT_PATTERN)
+    footer: str = Field(default="", max_length=512, pattern=_WORD_TEXT_PATTERN)
     page_numbers: Literal["none", "page", "page_of_total"] = "page_of_total"
 
     @model_validator(mode="after")
@@ -542,10 +546,13 @@ OFFICE_TOOLS = tuple(sorted((
                        "apply_style to a complete paragraph using a discovered style; edit_table replaces the exact matrix of a discovered simple fixed-layout table (64 cells). "
                        "Finish cursor pages. No structural markers, merged cells, fields or tracked changes. Preserves direct formatting; save separately. Read again before revert; Save As creates a new .docx.",
                        WordEditArguments, EditResult, PermissionClass.WRITE, "word"),
-    OfficeToolContract("office.word_compose", "Replace the attached report's complete body and running matter with native Word paragraphs, heading styles, editable tables and page breaks. "
-                       "Read target=authoring completely first, including blank documents. This replaces all existing body/header/footer content; approval and owned recovery apply. "
-                       "Set typography, spacing, millimetre page layout, headers/footers and automatic page numbers. No text boxes. "
-                       "After writing, read target=layout for page count and target=render:1:3 for up to three rendered pages per call; inspect every page and correct layout before saving separately.",
+    OfficeToolContract("office.word_compose", "Replace ALL attached report body/header/footer content with native paragraphs, heading styles, editable tables and page breaks. "
+                       "Read target=authoring completely first, including blanks; approval and owned recovery apply. "
+                       "Set typography, spacing, millimetre layout, headers/footers and page numbers. No text boxes. "
+                       "Use separate paragraph blocks; no newlines, tabs or controls in text/cells/header/footer. "
+                       "Rectangular tables need one width per column; total widths must fit page width minus left/right margins (default 170 mm). "
+                       "Header/footer distances must be below top/bottom margins. "
+                       "After editing, read target=layout for actual page count and target=render:1:3 (up to three pages per call); inspect every page and correct layout, then save separately.",
                        WordComposeArguments, EditResult, PermissionClass.WRITE, "word"),
     OfficeToolContract("office.powerpoint_edit", "Edit slide text, layout or positions against a snapshot.",
                        PowerPointEditArguments, EditResult, PermissionClass.WRITE, "powerpoint"),

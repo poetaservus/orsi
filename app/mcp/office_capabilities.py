@@ -8,11 +8,13 @@ from pathlib import Path
 from threading import RLock
 
 from app.capabilities.contracts import (
-    Capability, CapabilityErrorCode as Code, CapabilityExecutionError as Error,
+    Capability, CapabilityArgumentError, CapabilityErrorCode as Code, CapabilityExecutionError as Error,
     ExecutionIsolation, PermissionClass,
 )
 from app.capabilities.registry import CapabilityRegistration, CapabilityRegistry
-from app.mcp.office_contracts import OFFICE_TOOLS, OfficeExposure, SaveArguments, canonical_json, office_catalog
+from app.mcp.office_contracts import (
+    OFFICE_TOOLS, OfficeExposure, SaveArguments, WordComposeArguments, canonical_json, office_catalog,
+)
 from app.security.permissions import PermissionDecision, PermissionRule
 from app.security.write_policy import HostWritePolicy
 
@@ -47,6 +49,81 @@ def _exposure(connection, model):
     return value
 
 
+def _compose_branch(label):
+    for branch in ("WordParagraph", "WordTable", "WordPageBreak"):
+        if label == branch or label.startswith("function-after[") and f", {branch}]" in label:
+            return branch
+    return None
+
+
+def _compose_error_details(raw, details):
+    """Discard errors from union alternatives the supplied block kind excludes."""
+    blocks = raw.get("blocks", []) if isinstance(raw, dict) else []
+    branches = {"paragraph": "WordParagraph", "table": "WordTable", "page_break": "WordPageBreak"}
+    focused = []
+    for detail in details:
+        location = detail.get("location", [])
+        if (len(location) >= 3 and location[0] == "blocks" and location[1].isdecimal()
+                and isinstance(blocks, list) and int(location[1]) < len(blocks)):
+            block = blocks[int(location[1])]
+            expected = branches.get(block.get("kind")) if isinstance(block, dict) and isinstance(block.get("kind"), str) else None
+            branch = _compose_branch(location[2])
+            if expected and branch and branch != expected:
+                continue
+        focused.append(detail)
+    return focused or details
+
+
+def _compose_error_message(details):
+    """Explain bounded constraints without echoing input values or unknown keys."""
+    schema = WordComposeArguments.model_json_schema()
+    fields = set(schema["properties"])
+    for child in schema.get("$defs", {}).values():
+        fields.update(child.get("properties", {}))
+    rules = {
+        "missing": "required field is missing",
+        "extra_forbidden": "unexpected field; use the advertised schema",
+        "literal_error": "use an advertised choice",
+        "string_type": "must be text", "list_type": "must be a list",
+        "model_type": "must be an object", "float_type": "must be a number",
+        "bool_type": "must be true or false",
+    }
+    known = {
+        "The Office payload exceeds its byte limit.",
+        "Word tables need one column width per column and at most 256 cells.",
+        "Word layout requires usable body space and header/footer distances inside the margins.",
+        "Word table widths exceed the printable body width.",
+        "The Word document exceeds its bounded content limit.",
+        "Use separate Word paragraph/page-break blocks; text cannot contain control markers.",
+        "Word page breaks must separate content blocks.",
+        "Office matrices must be rectangular.", "Office matrices exceed the cell limit.",
+    }
+    numeric = {"greater_than", "greater_than_equal", "less_than", "less_than_equal", "multiple_of",
+               "string_too_long", "string_too_short", "too_long", "too_short"}
+    hints = []
+    for detail in details:
+        parts = [part for part in detail.get("location", []) if _compose_branch(part) is None]
+        label = ".".join(part if part in fields or part.isdecimal() and len(part) <= 5 else "field"
+                         for part in parts) or "arguments"
+        kind, message = detail.get("type"), detail.get("message", "")
+        if kind == "value_error":
+            message = message.removeprefix("Value error, ")
+            hint = message if message in known else "does not match the advertised schema"
+        elif kind == "string_pattern_mismatch":
+            hint = ("use separate paragraph blocks; text cannot contain newlines, tabs or controls"
+                    if (parts and parts[-1] in {"text", "header", "footer"}) or "cells" in parts
+                    else "must match the advertised pattern")
+        else:
+            hint = message if kind in numeric else rules.get(kind, "does not match the advertised schema")
+        value = f"{label}: {hint}"
+        if value not in hints:
+            hints.append(value)
+        if len(hints) == 3:
+            break
+    return ("Invalid Word composition arguments. " + "; ".join(hints)[:380].rstrip(".")
+            + ". No Word write was dispatched. Correct the arguments before retrying.")
+
+
 class OfficeCapability(Capability):
     execution_isolation = ExecutionIsolation.IN_PROCESS_COOPERATIVE
     timeout_seconds = 40.0
@@ -57,6 +134,17 @@ class OfficeCapability(Capability):
         self.arguments_model, self.permission = contract.arguments, contract.permission
         self.resource_policy, self.write_policy = resource_policy, write_policy
         self._prepared, self._lock = OrderedDict(), RLock()
+
+    def validate_arguments(self, raw_arguments):
+        try:
+            return super().validate_arguments(raw_arguments)
+        except CapabilityArgumentError as exc:
+            if self.name != "office.word_compose":
+                raise
+            details = _compose_error_details(raw_arguments, exc.failure.details)
+            raise CapabilityArgumentError(exc.failure.model_copy(update={
+                "message": _compose_error_message(details), "details": details,
+            })) from None
 
     def _current_binding(self, arguments, context):
         context.cancellation.raise_if_cancelled()

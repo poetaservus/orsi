@@ -1,5 +1,19 @@
 # Git layout and baseline hygiene
 
+## Word composition validation, 16 October 2026
+
+`codex/word-compose-validation` starts from local main `363b271` in the existing
+isolated Word checkout. It exposes existing report composition constraints in
+the schema/tool description and provides bounded field-specific diagnostics
+before any native write. See [scope and qualification](office-word-compose-validation.md).
+The unchanged prompt and write/approval/recovery/loop policies remain in force.
+The active checkout's pending full-suite repair and private settings are preserved.
+
+After qualification, commit, fast-forward local main and remove only the merged
+feature branch. Retain the recovery inventory/bundle under ignored
+state/backups/word-compose-validation-20261016. Preserve other worktrees and
+historical/unmerged refs; no remote operation is authorized.
+
 ## Native Word report authoring, 16 October 2026
 
 `codex/word-authoring` starts from local main `cdd7f5b` in a separate checkout.
