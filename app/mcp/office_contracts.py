@@ -143,6 +143,102 @@ class WordChange(OfficeModel):
         return self
 
 
+class WordFormat(OfficeModel):
+    font: str | None = Field(default=None, min_length=1, max_length=128, pattern=r"^[^\x00-\x1F\x7F<>]+$")
+    size: float | None = Field(default=None, ge=6, le=72, multiple_of=.5)
+    color: Color | None = None
+    bold: bool | None = None
+    italic: bool | None = None
+    alignment: Literal["left", "center", "right", "justify"] | None = None
+    space_before: float | None = Field(default=None, ge=0, le=72)
+    space_after: float | None = Field(default=None, ge=0, le=72)
+    line_multiple: float | None = Field(default=None, ge=1, le=2)
+    keep_with_next: bool | None = None
+
+
+class WordParagraph(OfficeModel):
+    kind: Literal["paragraph"] = "paragraph"
+    text: str = Field(max_length=4096)
+    style: Literal["Normal", "Heading 1", "Heading 2", "Title", "Subtitle"] = "Normal"
+    format: WordFormat | None = None
+    page_break_before: bool = False
+
+
+class WordTable(OfficeModel):
+    kind: Literal["table"] = "table"
+    cells: TextMatrix
+    widths_mm: list[float] = Field(min_length=1, max_length=16)
+    header: bool = True
+    header_fill: Color = "#E8EDF2"
+    border_color: Color = "#CBD5E1"
+    format: WordFormat | None = None
+
+    @model_validator(mode="after")
+    def check_table(self):
+        if _matrix_cells(self.cells) > 256 or len(self.widths_mm) != len(self.cells[0]):
+            raise ValueError("Word tables need one column width per column and at most 256 cells.")
+        if any(not 5 <= width <= 400 for width in self.widths_mm):
+            raise ValueError("Word column widths must be between 5 and 400 millimetres.")
+        return self
+
+
+class WordPageBreak(OfficeModel):
+    kind: Literal["page_break"] = "page_break"
+
+
+class WordPageLayout(OfficeModel):
+    width_mm: float = Field(default=210, ge=100, le=420)
+    height_mm: float = Field(default=297, ge=100, le=420)
+    margins_mm: list[float] = Field(default_factory=lambda: [20, 20, 20, 20],
+        min_length=4, max_length=4, description="Top, right, bottom, left; millimetres.")
+    header_mm: float = Field(default=10, ge=0, le=50)
+    footer_mm: float = Field(default=10, ge=0, le=50)
+
+    @model_validator(mode="after")
+    def check_area(self):
+        top, right, bottom, left = self.margins_mm
+        if (any(not 5 <= margin <= 80 for margin in self.margins_mm)
+                or self.width_mm - left - right < 40 or self.height_mm - top - bottom < 40
+                or self.header_mm >= top or self.footer_mm >= bottom):
+            raise ValueError("Word layout requires usable body space and header/footer distances inside the margins.")
+        return self
+
+
+class WordComposeArguments(OfficeModel):
+    session: Identifier
+    snapshot: Identifier
+    blocks: list[WordParagraph | WordTable | WordPageBreak] = Field(min_length=1, max_length=96)
+    layout: WordPageLayout = Field(default_factory=WordPageLayout)
+    format: WordFormat = Field(default_factory=WordFormat)
+    header: str = Field(default="", max_length=512)
+    footer: str = Field(default="", max_length=512)
+    page_numbers: Literal["none", "page", "page_of_total"] = "page_of_total"
+
+    @model_validator(mode="after")
+    def check_document(self):
+        text = [self.header, self.footer]
+        usable = self.layout.width_mm - self.layout.margins_mm[1] - self.layout.margins_mm[3]
+        cells = 0
+        for block in self.blocks:
+            if isinstance(block, WordParagraph):
+                text.append(block.text)
+            elif isinstance(block, WordTable):
+                text.extend(value for row in block.cells for value in row)
+                cells += _matrix_cells(block.cells)
+                if sum(block.widths_mm) > usable + .05:
+                    raise ValueError("Word table widths exceed the printable body width.")
+        if (cells > 512 or sum(isinstance(block, WordTable) for block in self.blocks) > 32
+                or sum(len(value) for value in text) > 24000):
+            raise ValueError("The Word document exceeds its bounded content limit.")
+        if any(any(ord(char) < 32 for char in value) for value in text):
+            raise ValueError("Use separate Word paragraph/page-break blocks; text cannot contain control markers.")
+        if (isinstance(self.blocks[0], WordPageBreak) or isinstance(self.blocks[-1], WordPageBreak)
+                or any(isinstance(a, WordPageBreak) and isinstance(b, WordPageBreak)
+                       for a, b in zip(self.blocks, self.blocks[1:]))):
+            raise ValueError("Word page breaks must separate content blocks.")
+        return self
+
+
 class Geometry(OfficeModel):
     left: float = Field(ge=0, le=100_000)
     top: float = Field(ge=0, le=100_000)
@@ -428,7 +524,8 @@ OFFICE_TOOLS = tuple(sorted((
                        "Results are pages, not the whole target: repeat the same session/target with cursor until null. "
                        "Used-range items pack row segments into typed matrices; labels identify their exact cell ranges. "
                        "Never derive whole-sheet KPIs from a preview or unfinished page sequence. "
-                       "Word: document, text:start:end, styles, tables or table:index. PowerPoint: slides or slide:index.",
+                       "Word: document, text:start:end, styles, tables or table:index; authoring reads complete report content/layout for word_compose, "
+                       "layout returns native page count; render:first:last returns up to three actual page images for visual inspection. PowerPoint: slides or slide:index.",
                        ReadArguments, ReadResult, PermissionClass.READ),
     OfficeToolContract("office.excel_edit", "Apply a bounded Excel patch against a complete matching cell snapshot. "
                        "Use this exact tool name. Existing sheets only. Supports values, local formulas, number_format, bold, italic and fill_color (#RRGGBB/none). "
@@ -445,6 +542,11 @@ OFFICE_TOOLS = tuple(sorted((
                        "apply_style to a complete paragraph using a discovered style; edit_table replaces the exact matrix of a discovered simple fixed-layout table (64 cells). "
                        "Finish cursor pages. No structural markers, merged cells, fields or tracked changes. Preserves direct formatting; save separately. Read again before revert; Save As creates a new .docx.",
                        WordEditArguments, EditResult, PermissionClass.WRITE, "word"),
+    OfficeToolContract("office.word_compose", "Replace the attached report's complete body and running matter with native Word paragraphs, heading styles, editable tables and page breaks. "
+                       "Read target=authoring completely first, including blank documents. This replaces all existing body/header/footer content; approval and owned recovery apply. "
+                       "Set typography, spacing, millimetre page layout, headers/footers and automatic page numbers. No text boxes. "
+                       "After writing, read target=layout for page count and target=render:1:3 for up to three rendered pages per call; inspect every page and correct layout before saving separately.",
+                       WordComposeArguments, EditResult, PermissionClass.WRITE, "word"),
     OfficeToolContract("office.powerpoint_edit", "Edit slide text, layout or positions against a snapshot.",
                        PowerPointEditArguments, EditResult, PermissionClass.WRITE, "powerpoint"),
     OfficeToolContract("office.save", "Save the attached document; optional explicit Save As destination.",

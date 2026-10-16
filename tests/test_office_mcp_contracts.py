@@ -251,7 +251,7 @@ def test_budget_and_accepted_manifest_need_no_network_processes_or_credentials(m
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     report = verify(ROOT / "config/office_mcp_v1.json")
     assert report["passed"] and not report["billed_tokens_measured"]
-    assert report["cases"]["cloud_all"]["tool_count"] == 8
+    assert report["cases"]["cloud_all"]["tool_count"] == 9
     for case in ("local", "cloud_disabled", "cloud_not_ready"):
         assert report["cases"][case]["schema_wire_bytes"] == report["cases"][case]["schema_reserve_tokens"] == 0
     assert report["verification_model_requests"] == 0

@@ -1,5 +1,23 @@
 # Git layout and baseline hygiene
 
+## Native Word report authoring, 16 October 2026
+
+`codex/word-authoring` starts from local main `cdd7f5b` in a separate checkout.
+It adds native report body composition, typography/layout, tables, running
+matter, page fields and actual page rendering through the existing guarded
+Word connection. See [scope and qualification](office-word-authoring.md).
+The active checkout's unfinished full-suite repair is preserved. Qualification
+passed 210 focused checks and three native Word gates. The full run recorded
+4,215 passed, 51 failed and 99 skipped; 50 failures match the prior baseline,
+and the additional unchanged discovery rename failure passed its 32-test recheck.
+The full run is not claimed clean. Separate provider/model gates remain unrun.
+Recovery inventories and a verified complete-history bundle are under ignored
+state/backups/word-authoring-20261016; prior main is archived before integration.
+
+After qualification, commit the bounded change, fast-forward local main and
+remove only its merged feature branch. Preserve other worktrees, unmerged tips
+and private settings. No remote publication or branch cleanup is authorized.
+
 ## Typesetter Flagship package, 16 October 2026
 
 `codex/typesetter-flagship` starts from clean local main `0dfe35b`. It adds an

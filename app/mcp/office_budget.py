@@ -8,12 +8,12 @@ from app.mcp.office_contracts import (
 )
 
 
-# These ceilings apply to the full eight-tool Office v1 catalog, not each app.
+# These ceilings apply to the full Office catalog, not each app.
 # Dashboard creation adds four typed native object payloads to excel_edit.
 # The ceiling is measured against that expanded catalog, without changing the
 # model's context limit or any execution/approval policy.
-MAX_SCHEMA_WIRE_BYTES = 14_500
-MAX_SCHEMA_RESERVE_TOKENS = 5_300
+MAX_SCHEMA_WIRE_BYTES = 20_000
+MAX_SCHEMA_RESERVE_TOKENS = 7_200
 
 
 def measure_office_catalog(exposure: OfficeExposure) -> dict:

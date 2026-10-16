@@ -179,6 +179,11 @@ class WindowsOffice(ExcelDrawing, WordNative):
             return [("cell", sheet, int(first.Row) + r, int(first.Column) + c)
                     for r in range(rows) for c in range(columns)]
         if kind == "word":
+            if target == "authoring":
+                return [("word_document", document, 0, int(document.Content.End))]
+            if target == "layout":
+                from app.mcp.office_word_render import layout_view
+                return [("word_info", document, 0, 0, canonical_json(layout_view(document)))]
             if target == "styles":
                 return [("word_info", document, 0, 0, canonical_json(self.word_styles(document)))]
             if target == "tables":
@@ -259,6 +264,12 @@ class WindowsOffice(ExcelDrawing, WordNative):
         """Return at most chars characters; offsets freeze a paged target."""
         self.check_thread()
         kind, obj, *coordinates = descriptor
+        if kind == "word_document":
+            from app.mcp.office_word_document import capture_document
+            text = canonical_json(capture_document(self, obj)["view"])
+            part = text[offset:offset + chars]
+            return {"label": "Complete report authoring snapshot", "text": part}, (
+                offset + len(part) if offset + len(part) < len(text) else None)
         if kind in {"word_info", "word_table"}:
             if kind == "word_info":
                 text = descriptor[4]

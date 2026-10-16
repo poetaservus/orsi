@@ -7,6 +7,10 @@ The application-local runtime includes the official
 `mcp-types` 2.3.0 under the MIT license, and
 [pywin32](https://github.com/mhammond/pywin32) 312 with its bundled license notices.
 Reviewed runtime additions and their exact versions are in `requirements-mcp.txt`.
+Word print-export rasterization uses [pypdfium2](https://github.com/pypdfium2-team/pypdfium2)
+5.14.0 with its bundled PDFium binary and complete distribution license notices,
+and [Pillow](https://github.com/python-pillow/Pillow) 12.3.0 with its HPND/PIL notices.
+The Windows renderer wheel is verified against its published SHA-256 before installation.
 Their complete installed distribution license files remain under
 `runtime/python/Lib/site-packages/`, including each package's `.dist-info/licenses/`
 and pywin32 component notices. Preserve these files when deploying portable nodes.

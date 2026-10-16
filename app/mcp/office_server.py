@@ -10,6 +10,7 @@ from mcp.types import CallToolResult, ListToolsResult, TextContent, Tool, ReadRe
 
 from app.mcp.office_contracts import OFFICE_TOOLS
 from app.mcp.office_excel import OfficeConflict, OfficeUnknown
+from app.mcp.office_word_render import WordRenderUnavailable
 
 
 def create_server(*, handler=None, control=None):
@@ -65,6 +66,9 @@ def create_live_server(sta):
             return CallToolResult(isError=True, content=[TextContent(text="Office mutation outcome is uncertain; no automatic retry.")],
                 meta={"orsiFailure": "unknown", "orsiStage": getattr(error, "stage", None),
                       "orsiHresult": getattr(error, "hresult", None), "orsiMismatch": getattr(error, "mismatch", [])})
+        except WordRenderUnavailable as error:
+            return CallToolResult(isError=True, content=[TextContent(text="Word page rendering is unavailable.")],
+                meta={"orsiFailure": "read_setup", "orsiMessage": str(error)})
         except Exception:
             return CallToolResult(isError=True, content=[TextContent(
                 text="Office target is unavailable or changed; refresh the selection and read again.")])

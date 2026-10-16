@@ -29,6 +29,7 @@ _SPECS = {
     "office.excel_edit": ApprovalSpec("Apply", "office"),
     "office.revert": ApprovalSpec("Restore", "office"),
     "office.word_edit": ApprovalSpec("Edit", "office"),
+    "office.word_compose": ApprovalSpec("Edit", "office"),
     "office.save": ApprovalSpec("Save", "office"),
 }
 

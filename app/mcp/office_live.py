@@ -91,6 +91,9 @@ class LiveOffice:
             return {"documents": values, "next": offset + 50 if offset + 50 < len(keys) else None}
         if action == "binding":
             return self.binding(document=data.get("document"), session=data.get("session"))
+        if action == "word-render-image":
+            binding = self.binding(session=data.get("session"))
+            return self.word.renders.chunk(data, binding)
         if action == "mutation":
             from app.mcp.office_contracts import OFFICE_TOOLS
             contract = next((t for t in OFFICE_TOOLS if t.name == data.get("tool") and t.name in LIVE_TOOLS - READ_TOOLS), None)

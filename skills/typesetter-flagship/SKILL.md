@@ -9,7 +9,7 @@ description: >-
   spreadsheet dashboards, slide decks, or PDF-only design unrelated to Word.
 license: MIT
 metadata:
-  version: "1.0.0"
+  version: "1.0.1"
   author: O.R.S.I.
 ---
 

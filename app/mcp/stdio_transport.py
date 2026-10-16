@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 from threading import RLock
+from tempfile import TemporaryDirectory
 
 import anyio
 from mcp.shared.message import SessionMessage
@@ -126,6 +127,10 @@ class OwnedStdioTransport:
         self._lock = RLock()
         self._fds = []
         self._closed = False
+        self._temporary = None
+        self._temporary_identity = None
+        self._temporary_parent = None
+        self.temporary_released = True
 
     @property
     def pid(self):
@@ -135,6 +140,28 @@ class OwnedStdioTransport:
         with self._lock:
             if self.process is not None:
                 self.process.close()
+            self._release_temporary()
+
+    def _release_temporary(self):
+        if self._temporary is None:
+            return
+        path = Path(self._temporary.name)
+        try:
+            if path.exists():
+                current = path.stat()
+                if (path.resolve() != path.absolute() or not path.is_relative_to(self._temporary_parent)
+                        or (current.st_dev, current.st_ino) != self._temporary_identity):
+                    self._temporary._finalizer.detach()
+                    self._temporary = None
+                    self.temporary_released = False
+                    return
+            self._temporary.cleanup()
+            self._temporary = None
+            self.temporary_released = True
+        except OSError:
+            # An external Word export can briefly outlive a cancelled COM call.
+            # Retain ownership and retry on the final transport close.
+            self.temporary_released = False
 
     @asynccontextmanager
     async def open(self):
@@ -145,8 +172,16 @@ class OwnedStdioTransport:
             parent_out, child_out = os.pipe()
             self._fds = [child_in, parent_in, parent_out, child_out]
             try:
+                environment = bridge_environment(self.root)
+                self._temporary_parent = Path(environment["TEMP"]).resolve(strict=True)
+                self._temporary = TemporaryDirectory(prefix="office-", dir=self._temporary_parent)
+                temporary = Path(self._temporary.name)
+                identity = temporary.stat()
+                self._temporary_identity = (identity.st_dev, identity.st_ino)
+                self.temporary_released = False
+                environment["TEMP"] = environment["TMP"] = str(temporary)
                 self.process = start_owned_process(self.command, cwd=self.root,
-                    env=bridge_environment(self.root), stdin=child_in, stdout=child_out)
+                    env=environment, stdin=child_in, stdout=child_out)
                 os.close(child_in)
                 self._fds.remove(child_in)
                 os.close(child_out)
@@ -156,6 +191,7 @@ class OwnedStdioTransport:
                     os.close(fd)
                 self._fds.clear()
                 self._closed = True
+                self._release_temporary()
                 raise
         try:
             yield _ReadPipe(parent_out, self.abort), _WritePipe(parent_in)

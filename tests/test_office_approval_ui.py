@@ -30,7 +30,7 @@ from tests.test_office_mcp_capabilities import authorize
 from tests.test_office_mcp_connection import ROOT
 
 
-@pytest.mark.parametrize("name", ["office.excel_edit", "office.word_edit", "office.revert", "office.save"])
+@pytest.mark.parametrize("name", ["office.excel_edit", "office.word_edit", "office.word_compose", "office.revert", "office.save"])
 @pytest.mark.parametrize("saved", [False, True])
 def test_reviewed_office_actions_display_document_details_without_auto_denial(ui, name, saved):
     app, window, service = ui

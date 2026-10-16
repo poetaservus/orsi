@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 def verify(root: Path) -> dict:
     root = root.resolve(strict=True)
-    runtime = root / "runtime/python"
+    runtime = (root / "runtime/python").resolve(strict=True)
     requirements = (root / "requirements-mcp.txt").read_text(encoding="utf-8").splitlines()
     pins = {line.split("==")[0]: line.split("==")[1].split(";")[0].strip()
             for line in requirements if "==" in line and not line.startswith("#")}
@@ -29,7 +29,10 @@ def verify(root: Path) -> dict:
     import pythoncom
     import pywintypes
     import win32api
-    modules = (mcp, pythoncom, pywintypes, win32api)
+    from PIL import Image
+    import pypdfium2
+    import pypdfium2_raw
+    modules = (mcp, pythoncom, pywintypes, win32api, Image, pypdfium2, pypdfium2_raw)
     local = all(Path(module.__file__).resolve().is_relative_to(runtime) for module in modules)
     if not local:
         raise RuntimeError("MCP or Windows automation imports escaped the portable runtime.")

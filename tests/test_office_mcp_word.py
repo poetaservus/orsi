@@ -166,7 +166,7 @@ def test_production_stdio_permissions_recovery_and_unknown_journal(tmp_path):
     try:
         bridge.connect()
         assert {n for n in runtime.registry.model_visible_names if n.startswith("office.")} == {
-            "office.documents", "office.attach", "office.read", "office.word_edit", "office.revert", "office.save"}
+            "office.documents", "office.attach", "office.read", "office.word_edit", "office.word_compose", "office.revert", "office.save"}
         document = bridge.list_documents()[0]
         bridge.select_document(document["document"])
         session = execute(runtime, "attach", {"application": "word", "document": document["document"]}, "attach").output["session"]

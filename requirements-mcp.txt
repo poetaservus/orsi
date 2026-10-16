@@ -2,6 +2,8 @@
 mcp==2.3.0
 mcp-types==2.3.0
 pywin32==312; sys_platform == "win32"
+Pillow==12.3.0
+pypdfium2==5.14.0
 httpx2==2.13.1
 httpcore2==2.13.1
 jsonschema==4.26.0

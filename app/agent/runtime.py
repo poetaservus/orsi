@@ -1092,6 +1092,11 @@ class AgentRuntime:
                         message = inspection_image_message(self.registry.resolve(call.capability), result, self.model)
                         if message is not None:
                             transcript.append(message)
+                    elif call.capability == "office.read" and result.success:
+                        from app.agent.office_images import word_image_message
+                        message = word_image_message(self.registry.resolve(call.capability), call, result, self.model)
+                        if message is not None:
+                            transcript.append(message)
             except (TypeError, ValueError):
                 return self._transcript_limited(
                     steps,

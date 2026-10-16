@@ -91,6 +91,7 @@ class OfficeConnection:
                     "tool_list_requests": self._tool_lists, "tool_calls": self._calls,
                     "discovery_runs": self.discovery.runs,
                     "pid": getattr(self._transport, "pid", None),
+                    "temporary_released": getattr(self._transport, "temporary_released", True),
                     "worker_alive": self._thread is not None and self._thread.is_alive(), **self._failure_diagnostics}
 
     def _invalidate_locked(self):
@@ -234,7 +235,8 @@ class OfficeConnection:
                         **({"orsiAuthority": request.authority} if self.live else {})))
                 failure = result.meta or {}
                 if result.is_error and failure.get("orsiStage") in {
-                        "word_save", "word_native_insert", "word_readback", "word_verification"}:
+                        "word_save", "word_native_insert", "word_readback", "word_verification",
+                        "word_document_write", "word_document_readback"}:
                     with self._state:
                         self._failure_diagnostics = {"failure_stage": failure["orsiStage"],
                             "failure_hresult": failure.get("orsiHresult") if type(failure.get("orsiHresult")) is int else None,
@@ -248,6 +250,10 @@ class OfficeConnection:
                     continue
                 if result.is_error and self.live and request.contract.permission == PermissionClass.READ:
                     if not request.future.done():
+                        if failure.get("orsiFailure") == "read_setup":
+                            request.future.set_exception(Error(Code.INVALID_ARGUMENTS,
+                                str(failure.get("orsiMessage", "Render a fresh Word page group."))[:500]))
+                            continue
                         request.future.set_exception(Error(Code.INVALID_ARGUMENTS,
                             "Office target is unavailable or changed. Refresh and read again. "
                             "Targets: selection; Excel workbook (sheet names/extents), SheetName!used or SheetName!A1:B2; "
@@ -329,6 +335,36 @@ class OfficeConnection:
             if offset is None:
                 return result
         raise Error(Code.INVALID_OUTPUT, "The Office document list exceeded its bound.")
+
+    def render_images(self, output):
+        """Retrieve approved render pixels through bounded private resource pages."""
+        import base64
+        from app.mcp.office_word_render import MAX_PAGE_BYTES, MAX_RENDER_BYTES
+        if output.get("application") != "word" or output.get("cursor") is not None:
+            raise ValueError("Invalid Word render result.")
+        items = output.get("items", [])
+        if not 1 <= len(items) <= 3:
+            raise ValueError("Invalid Word render image count.")
+        result, total = [], 0
+        for item in items:
+            metadata = json.loads(item["text"])
+            size = metadata["bytes"]
+            if type(size) is not int or not 0 < size <= MAX_PAGE_BYTES:
+                raise ValueError("Invalid Word image size.")
+            blob = bytearray()
+            while len(blob) < size:
+                page = self.control("word-render-image", {"session": output["session"],
+                    "snapshot": output["snapshot"], "page": metadata["page"], "offset": len(blob)})
+                chunk = base64.b64decode(page["data"], validate=True)
+                if (page["offset"] != len(blob) or page["total"] != size or not 0 < len(chunk) <= 24000
+                        or page["next"] != len(blob) + len(chunk) or page["next"] > size):
+                    raise ValueError("Invalid Word image chunk.")
+                blob.extend(chunk)
+            total += len(blob)
+            if total > MAX_RENDER_BYTES or sha256(blob).hexdigest() != metadata["sha256"]:
+                raise ValueError("Word render image integrity failed.")
+            result.append((metadata["page"], bytes(blob)))
+        return result
 
     def select_document(self, document, cancellation=None):
         value = self.control("binding", {"document": document}, cancellation)

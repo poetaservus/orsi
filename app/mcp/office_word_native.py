@@ -200,6 +200,9 @@ class WordNative:
 
     def capture_word(self, descriptor):
         self.check_thread()
+        if descriptor[0] == "word_document":
+            from app.mcp.office_word_document import capture_document
+            return capture_document(self, descriptor[1])
         if descriptor[0] == "word_table":
             from app.mcp.office_word_tables import capture_table
             return capture_table(self, descriptor)

@@ -18,9 +18,21 @@ circumvent an approval denial or unsupported-document guard.
 
 ## O.R.S.I. live Word baseline
 
-As inspected on 16 October 2026, the qualified live surface is a bounded edit
-surface, not a complete document-generation/typesetting engine. Recheck current
-schemas rather than treating this dated summary as permanent API documentation:
+Recheck current schemas rather than treating this dated summary as permanent
+API documentation. The 16 October 2026 report-authoring extension adds:
+
+- `office.word_compose`: replace an explicitly approved ordinary report with
+  native body paragraphs and heading styles, editable tables, page breaks,
+  typography, page dimensions/margins, headers/footers and PAGE/NUMPAGES fields.
+  Read `authoring` completely first, including every cursor page; blank documents
+  are supported. The approval replaces all body and running-matter content.
+- `office.read` with `layout`: native page count and bounded table-width checks.
+  With `render:first:last`, inspect up to three complete rendered pages per call
+  and continue until every page has been reviewed. Pixels are native Word output;
+  page count alone does not establish visual quality. Correct concrete defects
+  before separately saving the document. Use genuine paragraphs for report text.
+
+The existing bounded actions remain:
 
 - `replace_text`: an exact, completely read uniform range inside one paragraph.
 - `insert_after`: plain text appended inside that same paragraph; no new paragraph.
@@ -30,8 +42,10 @@ schemas rather than treating this dated summary as permanent API documentation:
   fixed rectangular table; no creation, resizing, merging, or table redesign.
 - Saving is separate and governed by the host's exact save/Save As policy.
 
-Do not infer new-document creation, font/margin editing, native lists, section
-creation, images, headers/footers, TOC creation, or rendering from those actions.
+Do not infer launching new documents, native lists, multiple-section creation,
+images or TOC creation from these actions. Composition requires an attached
+ordinary one-section document. Existing photos and text boxes remain outside
+its supported authoring subset; do not discard them to bypass a refusal.
 Existing review/field/drawing structures can make a document unsupported for
 writes. Treat host refusals as boundaries. Complete all needed read pages, use
 returned coordinates and units, and refresh state after an identity-changing
