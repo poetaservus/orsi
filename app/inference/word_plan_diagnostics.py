@@ -73,5 +73,33 @@ def record_word_plan(stage, value):
     if stage not in _STAGES:
         raise ValueError("Unknown Word diagnostic stage.")
     shape = word_plan_shape(value)
-    log.info("word_compose stage=%s shape=%s", stage, json.dumps(shape, separators=(",", ":")))
+    log.info("word_compose stage=%s shape=%s", stage, json.dumps(shape, separators=(",", ":")),
+             extra={"orsi_word_diagnostic": {"stage": stage, "shape": shape}})
     return shape
+
+
+def safe_word_event(value):
+    """Persist only known structure, independently of logging text/extras."""
+    if not isinstance(value, dict) or not isinstance(value.get("stage"), str) or value["stage"] not in _STAGES:
+        return None
+    source = value.get("shape")
+    if not isinstance(source, dict):
+        return None
+    shape = {}
+    for key in ("blocks", "sampled_blocks", "planned_pages", "paragraphs", "tables", "page_breaks", "empty_blocks",
+                "body_text_chars", "header_chars", "footer_chars", "justified_blocks", "page_break_before"):
+        number = source.get(key)
+        if type(number) is int and 0 <= number <= _LIMIT:
+            shape[key] = number
+    kinds = source.get("kinds")
+    if isinstance(kinds, list):
+        shape["kinds"] = [kind if isinstance(kind, str) and kind in {"paragraph", "table", "page_break", "empty", "other"}
+                          else "other" for kind in kinds[:96]]
+    lengths = source.get("block_text_chars")
+    if isinstance(lengths, list):
+        shape["block_text_chars"] = [min(number, _LIMIT) if type(number) is int and number >= 0 else 0 for number in lengths[:96]]
+    tables = source.get("table_shapes")
+    if isinstance(tables, list):
+        shape["table_shapes"] = [{key: min(table[key], _LIMIT) for key in ("rows", "columns", "cells", "text_chars")
+            if type(table.get(key)) is int and table[key] >= 0} for table in tables[:96] if isinstance(table, dict)]
+    return {"event": "word_compose_structure", "stage": value["stage"], "shape": shape}

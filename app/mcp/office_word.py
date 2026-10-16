@@ -35,8 +35,9 @@ class WordEdits:
             canonical_json([[d[2], d[3], offset, count, fingerprint] for d, offset, count, fingerprint in snapshot["pages"]]).encode())
 
     def read(self, arguments, binding):
+        from app.mcp.office_read_diagnostics import read_call
         if arguments.target.startswith("render:"):
-            return self.renders.read(arguments, binding)
+            return read_call("word_render", self.renders.read, arguments, binding)
         backend = self.live.backend
         signature = (arguments.session, arguments.target, binding["identity"])
         if arguments.cursor:
@@ -51,11 +52,11 @@ class WordEdits:
             if len(self.snapshots) >= 128:
                 raise OfficeConflict("The Word snapshot limit was reached. Reconnect explicitly.")
             document = self.live.documents[binding["document"]["document"]][1]
-            plan = backend.plan("word", document, arguments.target)
+            plan = read_call("word_plan", backend.plan, "word", document, arguments.target)
             entries = []
             for descriptor in plan:
                 try:
-                    state = backend.capture_word(descriptor)
+                    state = read_call("word_capture", backend.capture_word, descriptor)
                 except OfficeUnavailable:
                     state = None  # Unsupported targets remain bounded read-only views.
                 entries.append({"descriptor": descriptor, "target": uuid4().hex,
@@ -67,17 +68,17 @@ class WordEdits:
         # Recheck every observed fragment and formatting snapshot, not only the
         # last page. Retained native ranges reject shifted duplicate text.
         for entry in record["entries"]:
-            if entry["state"] is not None and not same_document(backend.capture_word(entry["descriptor"]), entry["state"]):
+            if entry["state"] is not None and not same_document(read_call("word_capture", backend.capture_word, entry["descriptor"]), entry["state"]):
                 raise OfficeConflict("Office conflict: the Word target changed during its read.")
         for descriptor, old_offset, count, fingerprint in record["pages"]:
-            piece, _ = backend.piece(descriptor, old_offset, count)
+            piece, _ = read_call("word_piece", backend.piece, descriptor, old_offset, count)
             if digest(piece) != fingerprint:
                 raise OfficeConflict("Office conflict: an earlier Word read fragment changed.")
         items, consumed, pages = [], 0, []
         while index < len(record["entries"]) and consumed < arguments.max_chars and len(items) < min(arguments.max_items, 32):
             entry = record["entries"][index]
             count = min(arguments.max_chars - consumed, 1200)
-            piece, next_offset = backend.piece(entry["descriptor"], offset, count)
+            piece, next_offset = read_call("word_piece", backend.piece, entry["descriptor"], offset, count)
             text = piece.get("text") or ""
             if len(text) > count or (next_offset is not None and next_offset <= offset):
                 raise OfficeUnavailable("The Word reader exceeded its bound.")
@@ -273,6 +274,13 @@ class WordEdits:
                     after = backend.capture_word(after_descriptor)
                     if name == "office.revert" and not same_document(after, expected):
                         raise OfficeUnknown("Word report restoration did not match its complete owned snapshot.")
+                    if same_document(before, after):
+                        self.snapshots.clear()
+                        self.cursors.clear()
+                        self.renders.clear()
+                        self.blocked = False
+                        return {"session": arguments.session, "operation": operation,
+                                "outcome": "unchanged", "affected_items": 0}
                     recovery = uuid4().hex
                     self.recoveries[recovery] = (arguments.session, binding["document"]["document"],
                         after_descriptor, before, after, action)

@@ -31,6 +31,14 @@ class MemoryWord(MemoryOffice):
 
     def plan(self, kind, document, target):
         self.check()
+        if self.mode == "read_failure":
+            from app.mcp.office_com import OfficeUnavailable
+            if target == "invalid":
+                raise OfficeUnavailable("Use selection, document or text:start:end for Word.")
+            if target == "layout":
+                error = RuntimeError("SECRET-COM-DESCRIPTION")
+                error.hresult = -2147352567
+                raise error
         if target in {"styles", "tables"}:
             from app.mcp.office_contracts import canonical_json
             return [("word_info", document, 0, 0, canonical_json(

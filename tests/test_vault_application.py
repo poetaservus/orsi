@@ -471,6 +471,24 @@ def test_file_tools_exclude_vault_direct_parent_walk_traversal_and_hardlinks(pro
         alias.unlink()
 
 
+def test_profile_keeps_allowlisted_office_diagnostics_in_encrypted_storage(profile):
+    from app.vault.logging import ProfileLogHandler
+    session, vault = profile
+    handler = ProfileLogHandler(session)
+    try:
+        record = logging.LogRecord("app.mcp.office_read_diagnostics", logging.ERROR, MARKER, 1,
+                                  MARKER + SECRET, (), None)
+        record.orsi_read_diagnostic = {"target_kind": "render", "stage": "word_render", "reason": "native",
+            "first": 4, "last": 6, "hresult": -2147352567, "message": MARKER, "session": SECRET}
+        handler.emit(record)
+        events = json.loads(vault.read("diagnostics/events_v1.json"))
+        assert events[0]["target_kind"] == "render" and events[0]["first"] == 4
+        assert events[0]["hresult"] == -2147352567
+        assert MARKER not in json.dumps(events) and SECRET not in json.dumps(events)
+    finally:
+        handler.close()
+
+
 def test_actual_startup_uses_profile_state_and_never_environment_or_legacy_preferences(profile, monkeypatch, tmp_path):
     import app.startup as startup
     from tests.test_openai_phase1 import config

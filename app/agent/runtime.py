@@ -42,6 +42,7 @@ from app.agent.read_progress import ReadProgressTracker
 from app.agent.project_progress import ProjectProgressTracker
 from app.agent.edit_progress import EditProgressTracker
 from app.agent.office_read_progress import OfficeReadProgress
+from app.agent.office_read_repetition import OfficeReadRepetition
 from app.agent.repair_loop import RepairLoopTracker
 from app.agent.goals import TaskGoal, observe_goal, finish_goal, goal_feedback, evidence_report
 from app.agent.task_completion import (CompletionReview, task_context_message,
@@ -504,6 +505,7 @@ class AgentRuntime:
         project_progress = ProjectProgressTracker()
         edit_progress = EditProgressTracker()
         office_read_progress = OfficeReadProgress()
+        office_read_repetition = OfficeReadRepetition()
         repair_loop = RepairLoopTracker()
         used_call_ids: set[str] = set()
         advertised_names = {item.name for item in definitions}
@@ -924,9 +926,15 @@ class AgentRuntime:
                             "Another identical request will stop this turn.",
                             details=[{"prior_receipt_ids": project_receipts.get(fingerprint, [])[-2:]}])
                         continue
+                    message = "The agent stopped after repeating an identical capability call."
+                    call = calls[fingerprints.index(fingerprint)]
+                    if call.capability == "office.read":
+                        from app.mcp.office_read_diagnostics import record_read_failure
+                        shape = record_read_failure(call.arguments, {"stage": "repeat_guard", "reason": "identical_call"})
+                        message += f" office.read target={shape['target_kind']}; this call was not dispatched."
                     return self._stopped(
                         AgentRunStatus.REPEATED_CALL,
-                        "The agent stopped after repeating an identical capability call.",
+                        message,
                         steps=steps,
                         capability_calls=capability_calls + len(calls),
                         protocol_failures=protocol_failures,
@@ -1027,6 +1035,7 @@ class AgentRuntime:
                     project_receipts.setdefault(call_fingerprint(call), []).append(outcome.result.call_id)
                 read_progress.observe(call, outcome.result, repeated)
                 office_read_progress.observe(call, outcome.result)
+                office_read_repetition.observe(call, outcome.result, repeated)
                 project_progress.observe(call, outcome.result, repeated)
                 diagnosis_feedback = repair_loop.observe(call, outcome.result, step=steps)
                 if diagnosis_feedback:

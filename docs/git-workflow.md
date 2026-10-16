@@ -1,5 +1,23 @@
 # Git layout and baseline hygiene
 
+## Office read recovery, 17 October 2026
+
+`codex/office-read-recovery` starts from clean local main `183d660`. It renews
+successful initial Office reads only after matching settled document changes,
+preserves unchanged-call stops, and retains bounded failure/plan diagnostics in
+profile storage. Exact approval, recovery, prompts, model settings and retry
+limits retain their existing policies. The historical failed read remains
+unidentified; see [scope and verification](office-read-recovery.md).
+
+Only 95 essential focused checks were run and passed, including the actual
+owned bridge/executor path with synthetic Word state and scripted responses.
+No live model/native Word document acceptance or full suite was run. No user
+document was edited. Recovery inventories and a verified complete-history bundle
+are under ignored `state/backups/office-read-recovery-20261017/`. Preserve prior
+main at `archive/2026-10-17/main-before-office-read-recovery`, commit, fast-forward
+local main and remove only the merged bounded branch. Preserve other worktrees,
+historical/unmerged tips, private settings and all remote refs.
+
 ## Word complete-body pages and live proposal qualification, 16 October 2026
 
 `codex/word-compose-complete-body` starts from clean local main `b79137d`.

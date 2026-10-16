@@ -23,6 +23,7 @@ from app.mcp.office_contracts import (
 from app.mcp.stdio_transport import OwnedStdioTransport
 from app.mcp.office_excel import LIVE_TOOLS, READ_TOOLS
 from app.runtime.cancellation import CancellationToken, TaskCancelled
+from app.mcp.office_read_diagnostics import record_read_failure, read_failure_message
 
 
 DEFAULT_CALL_TIMEOUT = 10.0
@@ -249,6 +250,12 @@ class OfficeConnection:
                     meta=RequestParamsMeta(orsiOperation=request.operation,
                         **({"orsiAuthority": request.authority} if self.live else {})))
                 failure = result.meta or {}
+                if result.is_error and self.live and request.contract.name == "office.read":
+                    diagnostic = failure.get("orsiReadDiagnostic")
+                    diagnostic = diagnostic if isinstance(diagnostic, dict) else {}
+                    diagnostic = record_read_failure(request.arguments, diagnostic)
+                    with self._state:
+                        self._failure_diagnostics["read_failure"] = diagnostic
                 if result.is_error and failure.get("orsiStage") in {
                         "word_save", "word_native_insert", "word_readback", "word_verification",
                         "word_document_write", "word_document_readback"}:
@@ -268,6 +275,11 @@ class OfficeConnection:
                         if failure.get("orsiFailure") == "read_setup":
                             request.future.set_exception(Error(Code.INVALID_ARGUMENTS,
                                 str(failure.get("orsiMessage", "Render a fresh Word page group."))[:500]))
+                            continue
+                        if request.contract.name == "office.read":
+                            request.future.set_exception(Error(
+                                Code.INVALID_OUTPUT if failure.get("orsiFailure") == "read_execution" else Code.INVALID_ARGUMENTS,
+                                read_failure_message(request.arguments, diagnostic)))
                             continue
                         request.future.set_exception(Error(Code.INVALID_ARGUMENTS,
                             "Office target is unavailable or changed. Refresh and read again. "

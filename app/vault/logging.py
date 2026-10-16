@@ -3,6 +3,8 @@ from collections import deque
 import logging
 
 from app.state.storage import JsonStore
+from app.inference.word_plan_diagnostics import safe_word_event
+from app.mcp.office_read_diagnostics import safe_read_event
 
 
 class ProfileLogHandler(logging.Handler):
@@ -18,8 +20,14 @@ class ProfileLogHandler(logging.Handler):
         if not (record.name == "app" or record.name.startswith("app.")):
             return
         try:
-            self._events.append({"event": "application_diagnostic", "level":
-                "error" if record.levelno >= logging.ERROR else "warning" if record.levelno >= logging.WARNING else "info"})
+            event = None
+            if record.name == "app.inference.word_plan_diagnostics":
+                event = safe_word_event(getattr(record, "orsi_word_diagnostic", None))
+            elif record.name == "app.mcp.office_read_diagnostics":
+                event = safe_read_event(getattr(record, "orsi_read_diagnostic", None))
+            event = event or {"event": "application_diagnostic"}
+            self._events.append({**event, "level": "error" if record.levelno >= logging.ERROR else
+                "warning" if record.levelno >= logging.WARNING else "info"})
             self._store.save(list(self._events))
         except Exception:
             pass

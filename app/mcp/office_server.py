@@ -8,7 +8,9 @@ from mcp.server.lowlevel import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import CallToolResult, ListToolsResult, TextContent, Tool, ReadResourceResult, TextResourceContents
 
-from app.mcp.office_contracts import OFFICE_TOOLS
+from app.mcp.office_contracts import OFFICE_TOOLS, ReadArguments
+from app.mcp.office_com import OfficeUnavailable
+from app.mcp.office_read_diagnostics import failure_data, read_failure_message
 from app.mcp.office_excel import OfficeConflict, OfficeUnknown
 from app.mcp.office_word_render import WordRenderUnavailable
 
@@ -55,21 +57,31 @@ def create_server(*, handler=None, control=None):
 def create_live_server(sta):
     async def handler(contract, arguments, meta):
         authority = meta.get("orsiAuthority") if meta else None
+        stage = "read_execute"
         try:
             output = await sta.invoke("call", contract, arguments, authority, meta.get("orsiOperation") if meta else None)
+            stage = "result_validation"
             contract.validate_result(arguments, output)
             return CallToolResult(content=[], structuredContent=output)
         except OfficeConflict as error:
             return CallToolResult(isError=True, content=[TextContent(text="Office conflict; no write was started.")],
-                                  meta={"orsiFailure": "conflict", "orsiMessage": "Office conflict: " + str(error)})
+                meta={"orsiFailure": "conflict", "orsiMessage": "Office conflict: " + str(error),
+                      **({"orsiReadDiagnostic": failure_data(error, stage)} if isinstance(arguments, ReadArguments) else {})})
         except OfficeUnknown as error:
             return CallToolResult(isError=True, content=[TextContent(text="Office mutation outcome is uncertain; no automatic retry.")],
                 meta={"orsiFailure": "unknown", "orsiStage": getattr(error, "stage", None),
                       "orsiHresult": getattr(error, "hresult", None), "orsiMismatch": getattr(error, "mismatch", [])})
         except WordRenderUnavailable as error:
             return CallToolResult(isError=True, content=[TextContent(text="Word page rendering is unavailable.")],
-                meta={"orsiFailure": "read_setup", "orsiMessage": str(error)})
-        except Exception:
+                meta={"orsiFailure": "read_setup", "orsiMessage": str(error),
+                      "orsiReadDiagnostic": {**failure_data(error, stage), "reason": "render_setup"}})
+        except Exception as error:
+            if isinstance(arguments, ReadArguments):
+                diagnostic = failure_data(error, stage)
+                return CallToolResult(isError=True, content=[TextContent(
+                    text=read_failure_message(arguments.model_dump(), diagnostic))],
+                    meta={"orsiFailure": "read_unavailable" if isinstance(error, OfficeUnavailable) else "read_execution",
+                          "orsiReadDiagnostic": diagnostic})
             return CallToolResult(isError=True, content=[TextContent(
                 text="Office target is unavailable or changed; refresh the selection and read again.")])
 
