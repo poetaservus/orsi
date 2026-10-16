@@ -745,6 +745,10 @@ Wolne miejsce na dysku: {value_4}</translation>
       <translation>Gotowe</translation>
     </message>
     <message>
+      <source>Edit</source>
+      <translation>Edytuj</translation>
+    </message>
+    <message>
       <source>Encrypt personal storage</source>
       <translation>Szyfruj pamięć osobistą</translation>
     </message>

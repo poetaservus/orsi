@@ -745,6 +745,10 @@ Disk free space: {value_4}</source>
       <translation>დასრულებულია</translation>
     </message>
     <message>
+      <source>Edit</source>
+      <translation>რედაქტირება</translation>
+    </message>
+    <message>
       <source>Encrypt personal storage</source>
       <translation>პირადი შენახვის დაშიფვრა</translation>
     </message>

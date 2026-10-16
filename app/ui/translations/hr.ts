@@ -745,6 +745,10 @@ Slobodan prostor na disku: {value_4}</translation>
       <translation>Gotovo</translation>
     </message>
     <message>
+      <source>Edit</source>
+      <translation>Uredi</translation>
+    </message>
+    <message>
       <source>Encrypt personal storage</source>
       <translation>Šifrirajte osobnu pohranu</translation>
     </message>

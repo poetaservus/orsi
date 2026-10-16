@@ -745,6 +745,10 @@ Disk àite an-asgaidh: {value_4}</translation>
       <translation>Dèanta</translation>
     </message>
     <message>
+      <source>Edit</source>
+      <translation>Deasaich</translation>
+    </message>
+    <message>
       <source>Encrypt personal storage</source>
       <translation>Cuir a-steach stòradh pearsanta</translation>
     </message>

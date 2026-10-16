@@ -745,6 +745,10 @@ Spatiu liber pe disc: {value_4}</translation>
       <translation>Gata</translation>
     </message>
     <message>
+      <source>Edit</source>
+      <translation>Editează</translation>
+    </message>
+    <message>
       <source>Encrypt personal storage</source>
       <translation>Criptați stocarea personală</translation>
     </message>

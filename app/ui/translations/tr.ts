@@ -745,6 +745,10 @@ Disk boş alanı: {value_4}</translation>
       <translation>Bitti</translation>
     </message>
     <message>
+      <source>Edit</source>
+      <translation>Düzenle</translation>
+    </message>
+    <message>
       <source>Encrypt personal storage</source>
       <translation>Kişisel depolamayı şifreleyin</translation>
     </message>

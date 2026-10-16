@@ -745,6 +745,10 @@ Disk boş yer: {value_4}</translation>
       <translation>Hazırdır</translation>
     </message>
     <message>
+      <source>Edit</source>
+      <translation>Redaktə et</translation>
+    </message>
+    <message>
       <source>Encrypt personal storage</source>
       <translation>Şəxsi yaddaşı şifrələyin</translation>
     </message>

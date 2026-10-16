@@ -1,5 +1,52 @@
 # Git layout and baseline hygiene
 
+## Full-suite repair, 16 October 2026
+
+`codex/full-suite-repair` starts from clean local main `cdd7f5b`. It repairs
+missing Word approval-title translations, settings popup sizing/painting, and
+Windows skill cleanup/publication races. Portable font and cold-start UI
+fixtures retain their behavioral assertions. See
+[the repair and qualification record](full-suite-repair.md).
+
+The affected installer/rollback/ownership/state selection passed **182 tests**.
+The two intermittent cases passed 30 and 200 repeated runs, and five native
+held-reader/identity regressions were added. Native shell fixtures now observe
+actual readiness and completion; 66 affected checks pass. The final completed
+active-checkout suite recorded 4,339 passed, one failed and 70 skipped, plus 15
+passing subtests. The sole failure was an intermittent Windows directory-rename
+denial in unchanged reference-reader validation; its 73-test module passed
+unchanged on recheck. The user requested stopping further full runs. The full
+suite is not claimed clean. Initial failed runs and separately skipped live
+gates remain explicit in the repair record. Model profiles, prompts, capability routing/permissions,
+sampling, context policy and private runtime settings are unchanged.
+
+Pre-change inventories and a verified complete-history bundle are retained under
+ignored `state/backups/full-suite-repair-20261016/`. Prior main is preserved at
+`archive/2026-10-16/main-before-full-suite-repair`. After verification, commit,
+fast-forward local main and remove only the merged local feature branch. Preserve
+other worktrees and historical/unmerged tips. No remote publication or cleanup
+is authorized by this task.
+
+## Word page breaks and failed-worker cleanup, 16 October 2026
+
+`codex/word-page-breaks` starts from main `e240296` in the active checkout,
+preserving the pending full-suite repair. It normalizes redundant report page
+separators before approval and finishes invalidated Office worker cleanup before
+returning failed receipts. Original uncertain-write classification and no-retry
+protections remain. See [scope, failures and qualification](office-word-page-breaks.md).
+The final focused Office selection passes 148 checks; the native Word report
+gate passes with production settings, three pages, genuine editable text/table,
+rendering, recovery, save/reopen and owned-process release. Its three PNGs match
+the visually reviewed pages exactly. The full-suite results and unresolved
+Windows rename denial are recorded above. No further tests are required by this
+wrap-up after the user's stop request.
+
+Commit Word and full-suite repairs separately, then fast-forward local main to
+both qualified changes and remove only their merged feature branches. Preserve
+all other worktrees, historical refs and private settings. Recovery is retained
+under ignored `state/backups/word-page-breaks-20261016/`; no remote action is
+authorized.
+
 ## Word report confirmation, 16 October 2026
 
 `codex/word-write-completion` starts from main `d7b5688` in the isolated Word

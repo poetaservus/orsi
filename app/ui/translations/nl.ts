@@ -745,6 +745,10 @@ Vrije schijfruimte: {value_4}</translation>
       <translation>Klaar</translation>
     </message>
     <message>
+      <source>Edit</source>
+      <translation>Bewerken</translation>
+    </message>
+    <message>
       <source>Encrypt personal storage</source>
       <translation>Versleutel persoonlijke opslag</translation>
     </message>

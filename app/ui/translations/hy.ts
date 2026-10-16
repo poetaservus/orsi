@@ -745,6 +745,10 @@ Disk free space: {value_4}</source>
       <translation>Կատարված է</translation>
     </message>
     <message>
+      <source>Edit</source>
+      <translation>Խմբագրել</translation>
+    </message>
+    <message>
       <source>Encrypt personal storage</source>
       <translation>Գաղտնագրեք անձնական պահեստը</translation>
     </message>

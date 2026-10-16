@@ -745,6 +745,10 @@ Prosti prostor na disku: {value_4}</translation>
       <translation>Končano</translation>
     </message>
     <message>
+      <source>Edit</source>
+      <translation>Uredi</translation>
+    </message>
+    <message>
       <source>Encrypt personal storage</source>
       <translation>Šifrirajte osebno shrambo</translation>
     </message>

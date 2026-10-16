@@ -745,6 +745,10 @@ Disk free space: {value_4}</source>
       <translation>Готово</translation>
     </message>
     <message>
+      <source>Edit</source>
+      <translation>Уреди</translation>
+    </message>
+    <message>
       <source>Encrypt personal storage</source>
       <translation>Шифрирајте лична меморија</translation>
     </message>

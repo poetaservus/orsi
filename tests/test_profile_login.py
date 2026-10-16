@@ -8,6 +8,7 @@ from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QLabel, QLineEdit, QPushButton
 
 from app.ui.profile_application import ProfileApplication
+from app.ui.fonts import load_font
 from app.vault.profiles import ProfileManager
 from tests.test_profile_onboarding import buttons, close_controller
 from tests.test_vault_controls import PASSWORD, build_synthetic, qt
@@ -154,7 +155,8 @@ def test_custom_login_colors_are_remembered_without_copying_private_assets(qt, t
     manager = owner(tmp_path)
     controller = ProfileApplication(qt, manager.application_root, build_synthetic, manager=manager)
     marker = "PRIVATE-THEME-ASSET-3168"
-    value = package(name=marker, font={"family": "Segoe UI"},
+    family = load_font("outfit")  # Public bundled font is available on every Qt backend.
+    value = package(name=marker, font={"family": family},
                     palette={"settings_top": "#182121", "settings_bottom": "#182121"},
                     icons={"send": "private-icon.svg"})
     value["assets"]["private-icon.svg"] = base64.b64encode(
@@ -167,7 +169,7 @@ def test_custom_login_colors_are_remembered_without_copying_private_assets(qt, t
         controller.transition(manager.lock)
         appearance = controller.window.theme_controller.current
         assert appearance.identity == "login-appearance"
-        assert appearance.family == "Segoe UI" and appearance.palette["settings_top"] == "#182121"
+        assert appearance.family == family and appearance.palette["settings_top"] == "#182121"
         cached = controller.login_appearance.store.path.read_bytes()
         assert marker.encode() not in cached and b"private-icon.svg" not in cached
         assert b"assets" not in cached and b"custom" not in cached

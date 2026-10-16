@@ -745,6 +745,10 @@ Disk fräi Plaz: {value_4}</translation>
       <translation>fäerdeg</translation>
     </message>
     <message>
+      <source>Edit</source>
+      <translation>Änneren</translation>
+    </message>
+    <message>
       <source>Encrypt personal storage</source>
       <translation>Perséinlech Späichere verschlësselen</translation>
     </message>

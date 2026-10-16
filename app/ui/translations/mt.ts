@@ -745,6 +745,10 @@ Spazju ħieles tad-disk: {value_4}</translation>
       <translation>Magħmul</translation>
     </message>
     <message>
+      <source>Edit</source>
+      <translation>Editja</translation>
+    </message>
+    <message>
       <source>Encrypt personal storage</source>
       <translation>Kriptaġġ ħażna personali</translation>
     </message>

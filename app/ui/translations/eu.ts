@@ -745,6 +745,10 @@ Diskoko espazio librea: {value_4}</translation>
       <translation>Eginda</translation>
     </message>
     <message>
+      <source>Edit</source>
+      <translation>Editatu</translation>
+    </message>
+    <message>
       <source>Encrypt personal storage</source>
       <translation>enkriptatu biltegiratze pertsonala</translation>
     </message>

@@ -1144,6 +1144,12 @@ Szabad lemezterület: {value_4}</translation>
       <extracomment>Application-owned interface copy. Use concise informal Hungarian; preserve placeholders, paths, identifiers and literal technical tokens. See docs/hungarian-ui.md for terminology and review status.</extracomment>
     </message>
     <message>
+      <location filename="../approvals.py" line="31" />
+      <source>Edit</source>
+      <translation>Szerkesztés</translation>
+      <extracomment>Title of the Word edit approval preview; execution still requires separate approval.</extracomment>
+    </message>
+    <message>
       <location filename="../personal_profile.py" line="100" />
       <source>Encrypt personal storage</source>
       <translation>Személyes tárhely titkosítása</translation>

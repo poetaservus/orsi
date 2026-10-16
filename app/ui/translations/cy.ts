@@ -745,6 +745,10 @@ Disk gofod rhydd: {value_4}</translation>
       <translation>Wedi'i wneud</translation>
     </message>
     <message>
+      <source>Edit</source>
+      <translation>Golygu</translation>
+    </message>
+    <message>
       <source>Encrypt personal storage</source>
       <translation>Amgryptio storfa bersonol</translation>
     </message>

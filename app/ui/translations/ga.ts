@@ -745,6 +745,10 @@ Disk free space: {value_4}</translation>
       <translation>Críochnaithe</translation>
     </message>
     <message>
+      <source>Edit</source>
+      <translation>Cuir in eagar</translation>
+    </message>
+    <message>
       <source>Encrypt personal storage</source>
       <translation>Criptigh stóráil phearsanta</translation>
     </message>

@@ -745,6 +745,10 @@ Disk free space: {value_4}</source>
       <translation>Valmis</translation>
     </message>
     <message>
+      <source>Edit</source>
+      <translation>Muuda</translation>
+    </message>
+    <message>
       <source>Encrypt personal storage</source>
       <translation>krüptige isiklik salvestusruum</translation>
     </message>

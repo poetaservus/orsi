@@ -745,6 +745,10 @@ Disklaust pláss: {value_4}</translation>
       <translation>Búið</translation>
     </message>
     <message>
+      <source>Edit</source>
+      <translation>Breyta</translation>
+    </message>
+    <message>
       <source>Encrypt personal storage</source>
       <translation>Dulkóða persónulega geymslu</translation>
     </message>

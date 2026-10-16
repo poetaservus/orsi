@@ -745,6 +745,10 @@ Diska brīvā vieta: {value_4}</translation>
       <translation>Gatavs</translation>
     </message>
     <message>
+      <source>Edit</source>
+      <translation>Rediģēt</translation>
+    </message>
+    <message>
       <source>Encrypt personal storage</source>
       <translation>šifrējiet personīgo krātuvi</translation>
     </message>

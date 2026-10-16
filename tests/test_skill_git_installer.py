@@ -8,7 +8,7 @@ import shutil
 import stat
 import subprocess
 import sys
-from threading import Thread
+from threading import Event, Thread
 from time import monotonic, sleep
 
 import pytest
@@ -331,6 +331,52 @@ def test_cleanup_readonly_and_handle_release(tmp_path):
         file.write_bytes(b"owned")
         file.chmod(stat.S_IREAD)
     assert not workspace.exists()
+
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_cleanup_waits_for_shared_reader_delete_completion(tmp_path, monkeypatch, nested):
+    from app.execution.windows_filesystem import _kernel
+    api = _kernel()
+    release = Event()
+    errors = []
+    original = Path.rmdir
+    root = blocked = reader = None
+
+    def rmdir(path):
+        try:
+            return original(path)
+        except OSError as error:
+            if path == blocked and getattr(error, "winerror", None) == 145:
+                errors.append(error.winerror)
+                release.set()
+            raise
+
+    monkeypatch.setattr(Path, "rmdir", rmdir)
+    try:
+        with module._workspace() as root:
+            blocked = root / "nested" if nested else root
+            blocked.mkdir(exist_ok=True)
+            file = blocked / "pending.bin"
+            file.write_bytes(b"owned")
+            handle = api.CreateFileW(str(file), 0x80000000, 0x7, None, 3, 0x00200000, None)
+            assert handle != C.c_void_p(-1).value
+
+            def close_reader():
+                release.wait(5)
+                api.CloseHandle(handle)
+
+            reader = Thread(target=close_reader)
+            reader.start()
+        assert errors and not root.exists()
+    finally:
+        release.set()
+        if reader is not None:
+            reader.join(5)
+            assert not reader.is_alive()
+        if root is not None and root.exists():
+            assert root.is_relative_to(tmp_path / "downloads")
+            module._clean_contents(root)
+            root.rmdir()
 
 
 def test_cleanup_failure_prevents_publication(tmp_path, monkeypatch):

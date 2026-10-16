@@ -745,6 +745,10 @@ Disk free space: {value_4}</source>
       <translation>Έγινε</translation>
     </message>
     <message>
+      <source>Edit</source>
+      <translation>Επεξεργασία</translation>
+    </message>
+    <message>
       <source>Encrypt personal storage</source>
       <translation>Κρυπτογράφηση προσωπικής αποθήκευσης</translation>
     </message>

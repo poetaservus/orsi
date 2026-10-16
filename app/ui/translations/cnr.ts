@@ -745,6 +745,10 @@ Lična pohrana: {value_2}{value_3}
       <translation>Gotovo</translation>
     </message>
     <message>
+      <source>Edit</source>
+      <translation>Izmijeni</translation>
+    </message>
+    <message>
       <source>Encrypt personal storage</source>
       <translation>Šifrirajte ličnu pohranu</translation>
     </message>

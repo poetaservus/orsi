@@ -745,6 +745,10 @@ Levyn vapaa tila: {value_4}</translation>
       <translation>Valmis</translation>
     </message>
     <message>
+      <source>Edit</source>
+      <translation>Muokkaa</translation>
+    </message>
+    <message>
       <source>Encrypt personal storage</source>
       <translation>Salaa henkilökohtainen tallennustila</translation>
     </message>

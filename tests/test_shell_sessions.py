@@ -69,6 +69,24 @@ def wait_for(predicate, timeout=6):
     pytest.fail('Native session did not reach its expected state before the deadline')
 
 
+def server_info(root):
+    # A returned background launch is not a readiness receipt. Also avoid
+    # observing the fixture's metadata between file creation and JSON completion.
+    def read():
+        try:
+            return json.loads((root / 'server-info.json').read_text())
+        except (FileNotFoundError, json.JSONDecodeError):
+            return None
+    return wait_for(read)
+
+
+def session_status(tool, root, session_id, predicate):
+    def read():
+        value = invoke(tool, root, {'action': 'status', 'session_id': session_id})
+        return value if predicate(value) else None
+    return wait_for(read)
+
+
 @pytest.mark.parametrize('shell', ['powershell', 'cmd'])
 def test_server_survives_return_and_foreground_calls_then_stop_releases_only_owned_children(tmp_path, tool, shell):
     (tmp_path / 'index.html').write_text('synthetic preview')
@@ -78,7 +96,7 @@ def test_server_survives_return_and_foreground_calls_then_stop_releases_only_own
         started = invoke(tool, tmp_path, args)
         assert started['running'] and started['background_processes_retained'] and not started['readiness_verified']
         assert not started['owned_processes_released'] and not started['command_completed']
-        info = json.loads((tmp_path / 'server-info.json').read_text())
+        info = server_info(tmp_path)
         owned = [psutil.Process(pid) for pid in info['pids']]
         sleep(1.1)  # The ordinary command timeout must not end a persistent session.
         assert urlopen(f"http://127.0.0.1:{info['port']}/", timeout=3).read() == b'synthetic preview'
@@ -108,7 +126,7 @@ def test_app_runtime_shutdown_releases_a_settled_session(tmp_path):
         assert service.run('Start the server and leave it running.') == 'Started the managed server.'
         session = service.store.turns()[0].settled_calls[0].result.output
         assert session['running'] and not service._turn_result.completion.incomplete
-        info = json.loads((tmp_path / 'server-info.json').read_text())
+        info = server_info(tmp_path)
         assert urlopen(f"http://127.0.0.1:{info['port']}/", timeout=3).status == 200
     finally:
         service.shutdown()
@@ -121,7 +139,7 @@ def test_cancel_during_initial_observation_releases_new_session(tmp_path, tool):
     args = launch_args(tmp_path, SERVER, yield_time_ms=10000)
     source = CancellationSource()
     def cancel():
-        wait_for(lambda: (tmp_path / 'server-info.json').exists())
+        server_info(tmp_path)
         source.cancel('Cancel initial launch')
     thread = Thread(target=cancel)
     thread.start()
@@ -129,7 +147,7 @@ def test_cancel_during_initial_observation_releases_new_session(tmp_path, tool):
         ctx = context(tmp_path, cancellation=source.token)
         result = tool.invoke(args, approved(tool, args, ctx))
         assert not result.success and result.error.code == Code.CANCELLED
-        info = json.loads((tmp_path / 'server-info.json').read_text())
+        info = server_info(tmp_path)
         assert all(not psutil.pid_exists(pid) for pid in info['pids'])
         assert tool.sessions.list()['sessions'][0]['owned_processes_released']
     finally:
@@ -137,10 +155,12 @@ def test_cancel_during_initial_observation_releases_new_session(tmp_path, tool):
 
 
 def test_session_lifetime_expiry_cleans_up_without_another_tool_call(tmp_path, tool):
-    started = invoke(tool, tmp_path, launch_args(tmp_path, SERVER, session_timeout_seconds=1, yield_time_ms=0))
+    # Allow native PowerShell startup to create the descendants whose expiry
+    # cleanup is under test. The production lifetime policy is unchanged.
+    started = invoke(tool, tmp_path, launch_args(tmp_path, SERVER, session_timeout_seconds=5, yield_time_ms=0))
+    info = server_info(tmp_path)
     session = tool.sessions.get(started['session_id'])
     wait_for(lambda: session.finished)
-    info = json.loads((tmp_path / 'server-info.json').read_text())
     assert session.snapshot()['status'] == 'timed_out' and session.snapshot()['owned_processes_released']
     assert all(not psutil.pid_exists(pid) for pid in info['pids'])
 
@@ -148,6 +168,7 @@ def test_session_lifetime_expiry_cleans_up_without_another_tool_call(tmp_path, t
 def test_failed_start_returns_exit_and_output_without_claiming_readiness(tmp_path, tool):
     args = {'command': "Write-Output 'startup error'; exit 7", 'workdir': str(tmp_path), 'background': True}
     output = invoke(tool, tmp_path, args)
+    output = session_status(tool, tmp_path, output['session_id'], lambda value: not value['running'])
     assert output['exit_code'] == 7 and output['status'] == 'exited'
     assert output['owned_processes_released'] and not output['readiness_verified'] and not output['command_succeeded']
     assert 'startup error' in output['output']
@@ -162,7 +183,7 @@ def test_browser_inspection_uses_session_server_without_taking_its_ownership(tmp
     (tmp_path / 'index.html').write_text('''<button id="go" onclick="document.querySelector('#result').textContent='clicked'">Go</button>
         <p id="result">ready</p><div id="scroll" style="height:100px;overflow:auto"><div style="height:1000px">long content</div></div>''')
     started = invoke(tool, tmp_path, launch_args(tmp_path, SERVER))
-    info = json.loads((tmp_path / 'server-info.json').read_text())
+    info = server_info(tmp_path)
     inspection = ProjectInspectCapability(state)
     args = {'project_path': str(tmp_path), 'kind': 'browser', 'url': f"http://127.0.0.1:{info['port']}/",
             'steps': [{'action': 'click', 'target': '#go'}, {'action': 'text', 'target': '#result', 'value': 'clicked'},
@@ -177,6 +198,7 @@ def test_browser_inspection_uses_session_server_without_taking_its_ownership(tmp
 def test_rolling_output_stays_bounded_and_paged_without_stopping_server(tmp_path, tool):
     args = launch_args(tmp_path, "import time; print('x'*100000,flush=True); time.sleep(60)")
     first = invoke(tool, tmp_path, args)
+    first = session_status(tool, tmp_path, first['session_id'], lambda value: value['output_total_bytes'] >= 100000)
     assert first['running'] and first['output_total_bytes'] >= 100000
     assert first['output_lost_bytes'] > 0 and first['output_has_more']
     assert len(json.dumps(first).encode()) < 64 * 1024
@@ -220,7 +242,7 @@ def test_no_launch_without_approval_and_session_controls_cannot_select_other_run
 
 def test_monitor_error_still_releases_owned_descendants(tmp_path, tool, monkeypatch):
     started = invoke(tool, tmp_path, launch_args(tmp_path, SERVER))
-    info = json.loads((tmp_path / 'server-info.json').read_text())
+    info = server_info(tmp_path)
     owned = [psutil.Process(pid) for pid in info['pids']]
     session = tool.sessions.get(started['session_id'])
     poll = session._process.poll

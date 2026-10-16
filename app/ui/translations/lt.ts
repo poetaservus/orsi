@@ -745,6 +745,10 @@ Asmeninė saugykla: {value_2}{value_3}
       <translation>atlikta</translation>
     </message>
     <message>
+      <source>Edit</source>
+      <translation>Redaguoti</translation>
+    </message>
+    <message>
       <source>Encrypt personal storage</source>
       <translation>užšifruokite asmeninę saugyklą</translation>
     </message>

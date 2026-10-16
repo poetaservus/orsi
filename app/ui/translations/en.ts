@@ -745,6 +745,10 @@ Disk free space: {value_4}</translation>
       <translation>Done</translation>
     </message>
     <message>
+      <source>Edit</source>
+      <translation>Edit</translation>
+    </message>
+    <message>
       <source>Encrypt personal storage</source>
       <translation>Encrypt personal storage</translation>
     </message>

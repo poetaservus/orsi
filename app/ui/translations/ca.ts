@@ -745,6 +745,10 @@ Espai lliure al disc: {value_4}</translation>
       <translation>fet</translation>
     </message>
     <message>
+      <source>Edit</source>
+      <translation>Edita</translation>
+    </message>
+    <message>
       <source>Encrypt personal storage</source>
       <translation>xifra l'emmagatzematge personal</translation>
     </message>

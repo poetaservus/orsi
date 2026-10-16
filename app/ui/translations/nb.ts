@@ -745,6 +745,10 @@ Disk ledig plass: {value_4}</translation>
       <translation>Ferdig</translation>
     </message>
     <message>
+      <source>Edit</source>
+      <translation>Rediger</translation>
+    </message>
+    <message>
       <source>Encrypt personal storage</source>
       <translation>Krypter personlig lagring</translation>
     </message>

@@ -745,6 +745,10 @@ Osobní úložiště: {value_2}{value_3}
       <translation>Hotovo</translation>
     </message>
     <message>
+      <source>Edit</source>
+      <translation>Upravit</translation>
+    </message>
+    <message>
       <source>Encrypt personal storage</source>
       <translation>Šifrování osobního úložiště</translation>
     </message>

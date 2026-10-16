@@ -341,26 +341,31 @@ def _workspace():
     # operation's owned directory. No repository path is ever extracted here.
     root = Path(os.path.abspath(tempfile.gettempdir())) / ("orsi-skill-git-" + uuid4().hex)
     identity = _create_directory(root)
+    cleaned = False
     try:
         with pinned_parent(root / "anchor", CancellationToken()):
             try:
                 yield root
             finally:
                 _clean_contents(root)
+                cleaned = True
     finally:
         try:
             from app.execution.windows_filesystem import directory_identity_for_path
             with pinned_parent(root, CancellationToken()):
                 if directory_identity_for_path(root) != identity:
                     raise OSError("Temporary directory identity changed.")
-                root.rmdir()  # Empty directory only; never follow a replacement.
+                if cleaned:
+                    _remove_directory(root, identity)
+                else:
+                    root.rmdir()  # Never retry an incomplete or refused cleanup.
         except OSError:
             raise SkillInstallError(Code.CLEANUP_FAILED,
                                     "Temporary repository cleanup failed; no skills were published.") from None
 
 
 def _clean_contents(folder):
-    from app.execution.windows_filesystem import pinned_parent
+    from app.execution.windows_filesystem import directory_identity_for_path, pinned_parent
     try:
         with pinned_parent(folder / "anchor", CancellationToken()):
             with os.scandir(folder) as scan:
@@ -370,8 +375,9 @@ def _clean_contents(folder):
                 if _redirect(info):
                     raise OSError("Cleanup refuses filesystem redirects.")
                 if stat.S_ISDIR(info.st_mode):
+                    identity = directory_identity_for_path(child)
                     _clean_contents(child)
-                    child.rmdir()
+                    _remove_directory(child, identity)
                 elif stat.S_ISREG(info.st_mode):
                     _delete_file(child)
                 else:
@@ -379,6 +385,24 @@ def _clean_contents(folder):
     except OSError:
         raise SkillInstallError(Code.CLEANUP_FAILED,
                                 "Temporary repository cleanup failed; no skills were published.") from None
+
+
+def _remove_directory(path, identity):
+    """Wait for delete-pending owned children without following replacements."""
+    from app.execution.windows_filesystem import directory_identity_for_path
+    deadline = monotonic() + 5
+    while True:
+        if directory_identity_for_path(path) != identity:
+            raise OSError("Temporary directory identity changed.")
+        try:
+            path.rmdir()
+            return
+        except OSError as error:
+            # A shared reader can outlive process exit and file disposition.
+            # Retry only sharing violations or delayed empty-directory removal.
+            if getattr(error, "winerror", None) not in (32, 145) or monotonic() >= deadline:
+                raise
+            sleep(0.01)
 
 
 def _delete_file(path):

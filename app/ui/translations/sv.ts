@@ -745,6 +745,10 @@ Disk ledigt utrymme: {value_4}</translation>
       <translation>Klart</translation>
     </message>
     <message>
+      <source>Edit</source>
+      <translation>Redigera</translation>
+    </message>
+    <message>
       <source>Encrypt personal storage</source>
       <translation>Kryptera personlig lagring</translation>
     </message>

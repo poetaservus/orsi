@@ -490,10 +490,13 @@ def _write_package(folder, identity, data):
 
 def _publish(source, destination, identity):
     from app.execution.windows_filesystem import directory_identity_for_path, pinned_parent
+    from app.state.atomic import _retry_windows_denial
     with pinned_parent(source, CancellationToken()), pinned_parent(destination, CancellationToken()):
-        if directory_identity_for_path(source) != identity:
-            raise SkillInstallError(SkillInstallErrorCode.UNSAFE_PATH, "Package directory changed before placement.")
-        os.rename(source, destination)  # Windows fails on any existing destination.
+        def place():
+            if directory_identity_for_path(source) != identity:
+                raise SkillInstallError(SkillInstallErrorCode.UNSAFE_PATH, "Package directory changed before placement.")
+            os.rename(source, destination)  # Windows fails on any existing destination.
+        _retry_windows_denial(place)
 
 
 def _verify_package(folder, identity, data):

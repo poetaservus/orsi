@@ -745,6 +745,10 @@ Freier Festplattenspeicher: {value_4}</translation>
       <translation>Fertig</translation>
     </message>
     <message>
+      <source>Edit</source>
+      <translation>Bearbeiten</translation>
+    </message>
+    <message>
       <source>Encrypt personal storage</source>
       <translation>Persönlichen Speicher verschlüsseln</translation>
     </message>

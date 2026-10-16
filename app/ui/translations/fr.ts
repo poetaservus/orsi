@@ -745,6 +745,10 @@ Espace disque disponible : {value_4}</translation>
       <translation>terminé</translation>
     </message>
     <message>
+      <source>Edit</source>
+      <translation>Modifier</translation>
+    </message>
+    <message>
       <source>Encrypt personal storage</source>
       <translation>chiffrer le stockage personnel</translation>
     </message>

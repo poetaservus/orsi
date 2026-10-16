@@ -44,6 +44,64 @@ def assert_clean(tmp_path, installer, names=()):
     assert not module._lock_path(installer.storage_root).exists()
 
 
+@pytest.mark.parametrize("reader_state", ["released", "held", "replaced"])
+def test_publish_waits_for_readers_without_replacing_or_losing_identity(tmp_path, monkeypatch, reader_state):
+    import ctypes as C
+    from app.execution.windows_filesystem import _kernel
+    api = _kernel()
+    stage, destination, previous = (tmp_path / name for name in ("stage", "placed", "previous"))
+    identity = module._create_directory(stage)
+    source = stage / "SKILL.md"
+    source.write_bytes(b"owned")
+    handle = api.CreateFileW(str(source), 0x80000000, 0x1, None, 3, 0x00200000, None)
+    assert handle != C.c_void_p(-1).value
+    release, closed = Event(), Event()
+    failures = []
+    original = os.rename
+
+    def close_reader():
+        release.wait(5)
+        api.CloseHandle(handle)
+        closed.set()
+
+    def rename(source, target):
+        try:
+            return original(source, target)
+        except PermissionError as error:
+            if Path(source) == stage and getattr(error, "winerror", None) in {5, 32, 33}:
+                failures.append(error.winerror)
+                if reader_state != "held":
+                    release.set()
+                if reader_state == "replaced" and len(failures) == 1:
+                    assert closed.wait(5)
+                    original(stage, previous)
+                    stage.mkdir()
+                    (stage / "SKILL.md").write_bytes(b"replacement")
+            raise
+
+    reader = Thread(target=close_reader)
+    reader.start()
+    monkeypatch.setattr(os, "rename", rename)
+    try:
+        if reader_state == "released":
+            module._publish(stage, destination, identity)
+            assert destination.joinpath("SKILL.md").read_bytes() == b"owned"
+            assert not stage.exists()
+        elif reader_state == "held":
+            with pytest.raises(PermissionError):
+                module._publish(stage, destination, identity)
+            assert stage.joinpath("SKILL.md").read_bytes() == b"owned" and not destination.exists()
+        else:
+            reject(SkillInstallErrorCode.UNSAFE_PATH, lambda: module._publish(stage, destination, identity))
+            assert stage.joinpath("SKILL.md").read_bytes() == b"replacement"
+            assert previous.joinpath("SKILL.md").read_bytes() == b"owned" and not destination.exists()
+        assert failures
+    finally:
+        release.set()
+        reader.join(5)
+        assert not reader.is_alive()
+
+
 def test_single_skill_preview_precedes_copy_and_preserves_exact_bytes(tmp_path):
     source = write_skill(tmp_path / "source", data=
         b'\xef\xbb\xbf---\r\nname: frontend\r\ndescription: Design\r\n---\r\n# Exact \xf0\x9f\x8e\xa8\r\n')

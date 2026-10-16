@@ -745,6 +745,10 @@ Espazo libre no disco: {value_4}</translation>
       <translation>Feito</translation>
     </message>
     <message>
+      <source>Edit</source>
+      <translation>Editar</translation>
+    </message>
+    <message>
       <source>Encrypt personal storage</source>
       <translation>cifrar o almacenamento persoal</translation>
     </message>

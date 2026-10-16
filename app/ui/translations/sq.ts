@@ -745,6 +745,10 @@ Hapësira e lirë në disk: {value_4}</translation>
       <translation>U krye</translation>
     </message>
     <message>
+      <source>Edit</source>
+      <translation>Redakto</translation>
+    </message>
+    <message>
       <source>Encrypt personal storage</source>
       <translation>Kripto ruajtjen personale</translation>
     </message>

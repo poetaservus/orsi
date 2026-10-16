@@ -745,6 +745,10 @@ Disk free space: {value_4}</source>
       <translation>Готово</translation>
     </message>
     <message>
+      <source>Edit</source>
+      <translation>Редактировать</translation>
+    </message>
+    <message>
       <source>Encrypt personal storage</source>
       <translation>зашифровать личное хранилище.</translation>
     </message>

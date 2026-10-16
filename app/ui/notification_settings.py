@@ -7,6 +7,7 @@ from PySide6.QtCore import QEasingCurve, QRectF, QSize, Qt, QVariantAnimation
 from PySide6.QtGui import QIcon, QPainter
 from PySide6.QtWidgets import (QHBoxLayout)
 from app.ui.inputs import ScrollSafeComboBox
+from app.ui.settings_layout import settings_combo_popup
 from app.ui.theme_runtime import theme_color
 
 
@@ -63,6 +64,7 @@ class NotificationSoundControl(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
         self.selector = ScrollSafeComboBox()
+        settings_combo_popup(self.selector)
         self.selector.setAccessibleName(ui_text('Notification sound'))
         self.selector.addItem(ui_text('noti_1 (Default)'), "noti_1.ogg")
         self.selector.addItem(ui_text('noti_2'), "noti_2.ogg")

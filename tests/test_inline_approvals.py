@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from threading import Event
+from time import monotonic
 from types import SimpleNamespace
 
 import pytest
@@ -217,7 +218,12 @@ def test_saved_off_runs_native_write_with_status_and_no_composer_review(tmp_path
         window.show()
         window.input.setPlainText(f'Write text to "{target}":\nsaved')
         window.submit()
-        assert entered.wait(2)
+        # Cold language-detection imports can outlast the filesystem operation.
+        # Keep Qt responsive while waiting for the worker and its status signals.
+        deadline = monotonic() + 10
+        while not entered.is_set() and monotonic() < deadline:
+            QTest.qWait(10)
+        assert entered.is_set()
         QTest.qWait(60)
         assert target.read_bytes() == b"saved\n"
         assert not runtime.tool_approval_required
@@ -227,10 +233,9 @@ def test_saved_off_runs_native_write_with_status_and_no_composer_review(tmp_path
         assert window.chat.activity_label.text() == "Writing xyz.py…"
     finally:
         release.set()
-        for _ in range(200):
+        deadline = monotonic() + 10
+        while window.thread is not None and monotonic() < deadline:
             QTest.qWait(10)
-            if window.thread is None:
-                break
         assert window.thread is None
         window.close()
         service.shutdown()

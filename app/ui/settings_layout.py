@@ -1,7 +1,7 @@
 """Flat, spacious groups and responsive rows for ordinary Settings modules."""
 from PySide6.QtCore import QEvent, QRect, QSize, Qt
 from PySide6.QtGui import QFont, QPainter, QPalette
-from PySide6.QtWidgets import QBoxLayout, QHBoxLayout, QSizePolicy, QStyle, QStyleOptionButton, QVBoxLayout
+from PySide6.QtWidgets import QBoxLayout, QHBoxLayout, QListView, QSizePolicy, QStyle, QStyledItemDelegate, QStyleOptionButton, QVBoxLayout
 
 from app.ui.localization import QComboBox, QFrame, QLabel, QPushButton, QWidget
 from app.ui.settings_style import settings_control_style
@@ -112,6 +112,15 @@ def settings_group(layout, title=None):
     return content
 
 
+def settings_combo_popup(control):
+    # Platform menu views can clip rows and ignore popup item styles.
+    # Own the list and its delegate so sizing and painting stay consistent.
+    view = QListView(control)
+    view.setResizeMode(QListView.ResizeMode.Adjust)
+    control.setView(view)
+    control.setItemDelegate(QStyledItemDelegate(view))
+
+
 class SettingRow(QFrame):
     def __init__(self, title, hint, control, *, indent=0, separator=True, control_size=(280, 44)):
         super().__init__()
@@ -136,6 +145,7 @@ class SettingRow(QFrame):
         control.setFixedSize(*control_size)
         control.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         if isinstance(control, QComboBox):
+            settings_combo_popup(control)
             control.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
             control.setMinimumContentsLength(1)
         self.box.addWidget(self.labels, 1)
