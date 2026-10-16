@@ -17,6 +17,7 @@ from tests.test_office_mcp_capabilities import runtime_for, prepare, authorize
 from tests.test_office_mcp_connection import ROOT
 from tests.test_office_mcp_live import execute
 from tests.test_office_word_authoring import report_plan
+from tests.test_office_word_compose_validation import redundant_breaks
 
 
 @pytest.mark.skipif(os.environ.get("ORSI_TEST_LIVE_OFFICE") != "1", reason="Opt-in synthetic native report gate")
@@ -93,9 +94,13 @@ def test_blank_three_page_report_authority_restore_render_and_save(tmp_path):
         with pytest.raises(CapabilityExecutionError):
             prepare(runtime,"office.word_compose",report_plan(session,partial["snapshot"]),"partial-refusal")
         first=complete(partial)
-        args=report_plan(session,first["snapshot"])
+        args=redundant_breaks(report_plan(session,first["snapshot"]))
         prepared=prepare(runtime,"office.word_compose",args,"denied-compose")
         assert "Replace ALL" in prepared.request.approval_preview
+        assert prepared.validated_arguments().model_dump(mode="json")==runtime.registry.resolve(
+            "office.word_compose").validate_arguments(report_plan(session,first["snapshot"])).model_dump(mode="json")
+        assert sum(block["kind"]=="page_break" for block in json.loads(
+            prepared.request.arguments_json)["blocks"])==2
         auth=authorize(runtime,prepared,ApprovalStatus.DENIED)
         rejected=runtime.executor.executor.execute(prepared,auth)
         assert not rejected.success
@@ -107,7 +112,8 @@ def test_blank_three_page_report_authority_restore_render_and_save(tmp_path):
             prepare(runtime,"office.word_compose",args,"stale-refusal")
         document.Content.Text=""
         current=complete(read_authoring())
-        args=report_plan(session,current["snapshot"])
+        args=redundant_breaks(report_plan(session,current["snapshot"]))
+        diagnostics["submitted_page_breaks"]=sum(block["kind"]=="page_break" for block in args["blocks"])
         assert bridge.call_timeout == 10 and bridge.tool_timeout(runtime.registry.resolve("office.word_compose").contract) == 60
         assert runtime.registry.resolve("office.word_compose").timeout_seconds == 90
         compose_started=monotonic()

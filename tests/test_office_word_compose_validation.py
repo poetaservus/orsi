@@ -6,7 +6,7 @@ from types import SimpleNamespace
 import jsonschema
 import pytest
 
-from app.capabilities.contracts import CapabilityArgumentError
+from app.capabilities.contracts import CapabilityArgumentError, CapabilityResult
 from app.inference.completion import CompletionMetadata
 from app.inference.openai_tools import (
     _arguments, normalize_responses_calls, responses_function_tools, responses_input,
@@ -49,6 +49,64 @@ def test_complete_three_page_report_round_trips_the_strict_provider_boundary():
     assert sum(block.kind == "table" for block in plan.blocks) == 1
     assert len(canonical_json(wire).encode()) < 32768
     assert CONTRACT.definition().input_schema == before
+
+
+def redundant_breaks(plan):
+    value = deepcopy(plan)
+    blocks = [{"kind": "page_break"}, {"kind": "page_break"}]
+    for block in value["blocks"]:
+        blocks.append(block)
+        if block["kind"] == "page_break":
+            blocks.append({"kind": "page_break"})
+    value["blocks"] = blocks + [{"kind": "page_break"}, {"kind": "page_break"}]
+    return value
+
+
+def test_redundant_report_breaks_normalize_before_dispatch_without_changing_wire_history():
+    original = redundant_breaks(report_plan())
+    before = deepcopy(original)
+    wire, call = wire_call(original)
+    effective = tool().validate_arguments(call.arguments)
+    assert effective == WordComposeArguments.model_validate(report_plan())
+    assert original == before
+    assert WordComposeArguments.model_validate(effective.model_dump(mode="json")) == effective
+    transcript = [model_capability_calls_message((call,), provider_message_id="response_report"),
+                  model_capability_result_message(call, CapabilityResult(
+                      call_id=call.provider_call_id, capability=call.capability, success=True,
+                      output={"synthetic_dispatch": True}, duration_ms=0).model_dump(mode="json"),
+                      provider_message_id="response_report")]
+    replay = responses_input(transcript, (CONTRACT.definition(),))
+    assert json.loads(replay[0]["arguments"]) == wire
+    assert sum(block["kind"] == "page_break" for block in call.arguments["blocks"]) == 8
+    assert sum(block.kind == "page_break" for block in effective.blocks) == 2
+
+
+@pytest.mark.parametrize("blocks,expected", [
+    ([{"kind": "page_break"}, {"kind": "paragraph", "text": "body"}], ["paragraph"]),
+    ([{"kind": "paragraph", "text": "body"}, {"kind": "page_break"}], ["paragraph"]),
+    ([{"kind": "paragraph", "text": "first"}, {"kind": "page_break"},
+      {"kind": "page_break"}, {"kind": "paragraph", "text": "second"}],
+     ["paragraph", "page_break", "paragraph"]),
+    ([{"kind": "page_break"}, {"kind": "table", "cells": [["body"]], "widths_mm": [100]},
+      {"kind": "page_break"}], ["table"]),
+    ([{"kind": "paragraph", "text": "first"}, {"kind": "page_break"},
+      {"kind": "paragraph", "text": ""}, {"kind": "page_break"},
+      {"kind": "paragraph", "text": "third"}],
+     ["paragraph", "page_break", "paragraph", "page_break", "paragraph"]),
+])
+def test_report_breaks_delimit_content_without_creating_empty_pages(blocks, expected):
+    plan = WordComposeArguments.model_validate({**report_plan(), "blocks": blocks})
+    assert [block.kind for block in plan.blocks] == expected
+
+
+@pytest.mark.parametrize("blocks", [
+    [{"kind": "page_break"}, {"kind": "page_break"}],
+    [{"kind": "page_break", "private": "must-not-be-dropped"}, {"kind": "paragraph", "text": "body"}],
+    [{"kind": "paragraph", "text": "body"}] + [{"kind": "page_break"}] * 96,
+])
+def test_normalization_retains_empty_report_unknown_field_and_block_count_refusals(blocks):
+    with pytest.raises(ValueError):
+        WordComposeArguments.model_validate({**report_plan(), "blocks": blocks})
 
 
 @pytest.mark.parametrize("change,expected", [
@@ -147,7 +205,7 @@ def test_agent_can_correct_a_refusal_and_still_stops_identical_invalid_retries(t
     dispatched = []
     bad = {**report_plan(), "blocks": [{"kind": "paragraph", "text": "one\ntwo"}]}
     _, first = wire_call(bad, "call_bad_report")
-    _, second = wire_call(report_plan() if corrected else bad, "call_next_report")
+    _, second = wire_call(redundant_breaks(report_plan()) if corrected else bad, "call_next_report")
     _, third = wire_call(bad, "call_repeated_report")
     responses = [ModelResponse.calls((first,)), ModelResponse.calls((second,)),
                  ModelResponse.text("Synthetic dispatch complete") if corrected else ModelResponse.calls((third,))]

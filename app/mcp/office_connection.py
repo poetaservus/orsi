@@ -497,6 +497,21 @@ class OfficeConnection:
                         if cancellation.is_cancelled:
                             raise TaskCancelled("Office operation cancelled.")
                         raise Error(Code.TIMED_OUT, "Office MCP stopped or exceeded its deadline.")
+        except Error:
+            # The SDK can settle a failed receipt before the worker's finally
+            # block releases its transport. Invalidation is not worker exit.
+            with self._state:
+                failed_worker = (not self._ready and self._thread is not None
+                                 and self._thread.is_alive())
+            if failed_worker:
+                try:
+                    self.disconnect()
+                except Exception:
+                    # Preserve the original uncertain-write/error classification
+                    # even if bounded cleanup fails. Never make it replayable.
+                    with self._state:
+                        self._failure_diagnostics["confirmation_cleanup_failed"] = True
+            raise
         finally:
             if acquired:
                 self._dispatch_lock.release()

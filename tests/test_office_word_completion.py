@@ -1,7 +1,7 @@
 """Report confirmation uses one consistent budget without replay or false success."""
 from concurrent.futures import Future, TimeoutError as FutureTimeout
 import os
-from threading import Timer
+from threading import Event, Thread, Timer
 from time import monotonic
 from types import SimpleNamespace
 
@@ -126,3 +126,52 @@ def test_receipt_settled_between_poll_timeout_and_worker_stop_is_preserved(faile
         assert caught.value.code == Code.OUTCOME_UNKNOWN
     else:
         assert bridge.call(COMPOSE, arguments, expected=bridge.exposure, operation="compose1", cancellation=CancellationToken()) == receipt
+
+
+@pytest.mark.parametrize("code", [Code.OUTCOME_UNKNOWN, Code.INVALID_OUTPUT])
+@pytest.mark.parametrize("cleanup_failure", [False, True])
+def test_failed_worker_receipt_waits_for_cleanup_and_keeps_its_original_error(code, cleanup_failure):
+    bridge = connection()
+    bridge._enabled = bridge._ready = True
+    bridge._generation = 1
+    bridge._sessions["s1"] = "word"
+    stop = Event()
+    worker = Thread(target=stop.wait)
+    bridge._thread = worker
+    worker.start()
+    failure = Error(code, "Synthetic failed worker receipt")
+    calls = []
+
+    def dispatch(request):
+        if request is None:
+            stop.set()
+            return
+        calls.append(request)
+        request.sent = True
+        bridge._ready = bridge._enabled = False
+        request.future.set_exception(failure)
+
+    def abort():
+        raise OSError("Synthetic cleanup failure")
+
+    bridge._queue = SimpleNamespace(put_nowait=dispatch)
+    bridge._loop = SimpleNamespace(call_soon_threadsafe=lambda callback, request: callback(request))
+    if cleanup_failure:
+        bridge._transport = SimpleNamespace(abort=abort)
+    contract = COMPOSE if code == Code.OUTCOME_UNKNOWN else next(t for t in OFFICE_TOOLS if t.name == "office.read")
+    arguments = contract.arguments.model_validate(ARGS if contract == COMPOSE else {"session": "s1"})
+    try:
+        with pytest.raises(Error) as caught:
+            bridge.call(contract, arguments, expected=bridge.exposure, operation="failed1", cancellation=CancellationToken())
+        assert caught.value is failure
+        assert len(calls) == 1 and not bridge.exposure.ready
+        if cleanup_failure:
+            assert bridge.diagnostics["confirmation_cleanup_failed"] is True
+        else:
+            assert not worker.is_alive()
+    finally:
+        stop.set()
+        worker.join(2)
+        bridge._transport = None
+        bridge.close()
+    assert not worker.is_alive()

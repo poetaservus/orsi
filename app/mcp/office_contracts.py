@@ -7,7 +7,7 @@ import json
 import re
 from typing import Annotated, Any, ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.capabilities.contracts import PermissionClass
 from app.inference.contracts import ModelCapabilityDefinition
@@ -218,6 +218,25 @@ class WordComposeArguments(OfficeModel):
     footer: str = Field(default="", max_length=512, pattern=_WORD_TEXT_PATTERN)
     page_numbers: Literal["none", "page", "page_of_total"] = "page_of_total"
 
+    @field_validator("blocks")
+    @classmethod
+    def normalize_page_breaks(cls, blocks):
+        # Breaks delimit content pages. Boundary/repeated delimiters have no
+        # content to separate; normalize the typed plan before approval/hash
+        # binding, compilation and readback use it. Invalid blocks still fail
+        # their own schema validation before reaching this step.
+        normalized = []
+        for block in blocks:
+            if isinstance(block, WordPageBreak) and (
+                    not normalized or isinstance(normalized[-1], WordPageBreak)):
+                continue
+            normalized.append(block)
+        if normalized and isinstance(normalized[-1], WordPageBreak):
+            normalized.pop()
+        if not normalized:
+            raise ValueError("Word page breaks must separate content blocks.")
+        return normalized
+
     @model_validator(mode="after")
     def check_document(self):
         text = [self.header, self.footer]
@@ -236,10 +255,6 @@ class WordComposeArguments(OfficeModel):
             raise ValueError("The Word document exceeds its bounded content limit.")
         if any(any(ord(char) < 32 for char in value) for value in text):
             raise ValueError("Use separate Word paragraph/page-break blocks; text cannot contain control markers.")
-        if (isinstance(self.blocks[0], WordPageBreak) or isinstance(self.blocks[-1], WordPageBreak)
-                or any(isinstance(a, WordPageBreak) and isinstance(b, WordPageBreak)
-                       for a, b in zip(self.blocks, self.blocks[1:]))):
-            raise ValueError("Word page breaks must separate content blocks.")
         return self
 
 
@@ -550,6 +565,7 @@ OFFICE_TOOLS = tuple(sorted((
                        "Read target=authoring completely first, including blanks; approval and owned recovery apply. "
                        "Set typography, spacing, millimetre layout, headers/footers and page numbers. No text boxes. "
                        "Use separate paragraph blocks; no newlines, tabs or controls in text/cells/header/footer. "
+                       "Redundant leading/trailing/adjacent page breaks are ignored. "
                        "Rectangular tables need one width per column; total widths must fit page width minus left/right margins (default 170 mm). "
                        "Header/footer distances must be below top/bottom margins. "
                        "After editing, read target=layout for actual page count and target=render:1:3 (up to three pages per call); inspect every page and correct layout, then save separately.",
