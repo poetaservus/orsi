@@ -141,6 +141,8 @@ class WordEdits:
             if not same_document(backend.capture_word(descriptor), before):
                 raise OfficeConflict("Office conflict: the complete report changed after its authoring read.")
             action = "compose"
+            from app.inference.word_plan_diagnostics import record_word_plan
+            record_word_plan("approval_plan", arguments.model_dump(mode="json"))
             expected = {"packet": compile_packet(document, arguments, before),
                         "plan": arguments.model_dump(mode="json")}
         elif name == "office.word_edit":
@@ -222,7 +224,13 @@ class WordEdits:
         elif save is None and name != "office.revert" and action != "replace_text":
             preview = {"insert_after": "Insert after Word body text", "apply_style": "Apply Word paragraph style " + (arguments.changes[0].style or ""),
                        "edit_table": "Edit Word table"}[action] + f" at {before['start']}:{before['end']}; preserve unrelated text and structure"
-        return {"guard": key, "digest": identity, "preview": (binding["document"]["title"] + "\n" + preview)[:2000]}
+        result = {"guard": key, "digest": identity, "preview": (binding["document"]["title"] + "\n" + preview)[:2000]}
+        if name == "office.word_compose":
+            from app.inference.word_plan_diagnostics import word_plan_shape
+            # Private control response: summarize the complete plan actually
+            # bound into the approval guard, never the document text or packet.
+            result["word_plan_shape"] = word_plan_shape(expected["plan"])
+        return result
 
     def execute(self, name, arguments, binding, authority, operation):
         record = self.guards.pop(authority.get("guard"), None)

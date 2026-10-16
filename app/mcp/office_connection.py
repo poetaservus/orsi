@@ -436,8 +436,19 @@ class OfficeConnection:
     def prepare_mutation(self, contract, arguments, context):
         with self._state:
             authority = dict(self._authority.get(context.call_id, {}))
+        serialized = arguments.model_dump(mode="json")
+        if contract.name == "office.word_compose":
+            from app.inference.word_plan_diagnostics import record_word_plan
+            record_word_plan("approval_serialized", serialized)
         value = self.control("mutation", {**authority, "tool": contract.name,
-            "arguments": arguments.model_dump(mode="json")}, context.cancellation)
+            "arguments": serialized}, context.cancellation)
+        if contract.name == "office.word_compose":
+            from app.inference.word_plan_diagnostics import word_plan_shape
+            if value.get("word_plan_shape") == word_plan_shape(serialized):
+                record_word_plan("approval_plan", serialized)
+            elif "word_plan_shape" in value:
+                from app.inference.word_plan_diagnostics import log as diagnostic_log
+                diagnostic_log.warning("word_compose approval_shape_mismatch")
         with self._state:
             self._authority[context.call_id] = {**authority, "guard": value["guard"]}
         return value
@@ -448,6 +459,9 @@ class OfficeConnection:
         timeout = self.tool_timeout(contract)
         request = _Request(contract, arguments.model_dump(mode="json"), expected, operation,
                            timeout_seconds=timeout)
+        if contract.name == "office.word_compose":
+            from app.inference.word_plan_diagnostics import record_word_plan
+            record_word_plan("dispatch_serialized", request.arguments)
         deadline = monotonic() + timeout
         acquired = False
         try:

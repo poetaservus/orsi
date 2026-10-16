@@ -58,6 +58,10 @@ def _compose_branch(label):
 
 def _compose_error_details(raw, details):
     """Discard errors from union alternatives the supplied block kind excludes."""
+    try:
+        raw = WordComposeArguments.complete_pages(raw)
+    except ValueError:
+        pass
     blocks = raw.get("blocks", []) if isinstance(raw, dict) else []
     branches = {"paragraph": "WordParagraph", "table": "WordTable", "page_break": "WordPageBreak"}
     focused = []
@@ -92,11 +96,11 @@ def _compose_error_message(details, empty_plan=None):
     if empty_plan is not None:
         return ("Invalid Word composition arguments. blocks: received "
             f"{empty_plan['page_breaks']} page-break blocks and {empty_plan['empty_blocks']} empty blocks; "
-            "no paragraphs or tables. Supply the COMPLETE document body as paragraph/table blocks. "
-            "word_compose replaces the body; it cannot append page breaks alone. "
-            "Use page_break_before on a paragraph to start its page. No Word write was dispatched.")
+            "no paragraphs or tables. Supply the COMPLETE document body in nonempty pages, each with paragraph/table blocks. "
+            "For two pages supply two full page objects; word_compose replaces all content. No Word write was dispatched.")
     schema = WordComposeArguments.model_json_schema()
     fields = set(schema["properties"])
+    fields.update(("blocks", "page_break_before"))  # Safe historical/native field names.
     for child in schema.get("$defs", {}).values():
         fields.update(child.get("properties", {}))
     rules = {
@@ -116,6 +120,9 @@ def _compose_error_message(details, empty_plan=None):
         "Use separate Word paragraph/page-break blocks; text cannot contain control markers.",
         "Word composition requires paragraph or table content; supply the complete replacement body.",
         "Office matrices must be rectangular.", "Office matrices exceed the cell limit.",
+        "Supply complete nonempty pages, without a separate blocks plan.",
+        "Each planned page requires its complete nonempty paragraph/table blocks.",
+        "Use complete page content; page boundaries are applied between pages.",
     }
     numeric = {"greater_than", "greater_than_equal", "less_than", "less_than_equal", "multiple_of",
                "string_too_long", "string_too_short", "too_long", "too_short"}
@@ -160,15 +167,27 @@ class OfficeCapability(Capability):
                 connection.tool_timeout(contract) + 2 * connection.call_timeout + 10.0)
 
     def validate_arguments(self, raw_arguments):
+        from app.inference.word_plan_diagnostics import record_word_plan
+        if self.name == "office.word_compose":
+            record_word_plan("validation_input", raw_arguments)
         try:
-            return super().validate_arguments(raw_arguments)
+            plan = super().validate_arguments(raw_arguments)
+            if self.name == "office.word_compose":
+                record_word_plan("validated_plan", plan.model_dump(mode="json"))
+            return plan
         except CapabilityArgumentError as exc:
             if self.name != "office.word_compose":
                 raise
+            record_word_plan("validation_rejected", raw_arguments)
             details = _compose_error_details(raw_arguments, exc.failure.details)
             empty_plan = _empty_compose_plan(raw_arguments)
+            message = _compose_error_message(details, empty_plan)
+            # This message is generated from allowlisted fields/rules above;
+            # raw Pydantic errors can contain private keys and are never logged.
+            from app.inference.word_plan_diagnostics import log as diagnostic_log
+            diagnostic_log.info("word_compose validation_feedback=%s", message)
             raise CapabilityArgumentError(exc.failure.model_copy(update={
-                "message": _compose_error_message(details, empty_plan),
+                "message": message,
                 "details": details + ([{"word_plan_shape": empty_plan}] if empty_plan is not None else []),
             })) from None
 

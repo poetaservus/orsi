@@ -584,6 +584,11 @@ def normalize_native_chat_message(
                 provider_call_id=provider_call_id,
                 capability=capability,
             )
+        if capability == "office.word_compose":
+            from app.inference.word_plan_diagnostics import record_word_plan
+            # The native decoder only parses JSON; it never projects fields.
+            record_word_plan("provider_wire", arguments)
+            record_word_plan("decoded_arguments", arguments)
         calls.append(
             ModelCapabilityCall(
                 provider_call_id=provider_call_id,

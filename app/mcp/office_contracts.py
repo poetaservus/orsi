@@ -167,7 +167,8 @@ class WordParagraph(OfficeModel):
     text: WordText
     style: Literal["Normal", "Heading 1", "Heading 2", "Title", "Subtitle"] = "Normal"
     format: WordFormat | None = None
-    page_break_before: bool = False
+    page_break_before: bool = Field(default=False,
+        description="Start this content paragraph on a new page.")
 
 
 class WordTable(OfficeModel):
@@ -213,12 +214,64 @@ class WordPageLayout(OfficeModel):
 class WordComposeArguments(OfficeModel):
     session: Identifier
     snapshot: Identifier
-    blocks: list[WordParagraph | WordTable | WordPageBreak] = Field(min_length=1, max_length=96)
+    blocks: list[WordParagraph | WordTable | WordPageBreak] = Field(min_length=1, max_length=96,
+        description="COMPLETE replacement body in reading order; pagination belongs on paragraphs.")
     layout: WordPageLayout = Field(default_factory=WordPageLayout)
     format: WordFormat = Field(default_factory=WordFormat)
     header: str = Field(default="", max_length=512, pattern=_WORD_TEXT_PATTERN)
     footer: str = Field(default="", max_length=512, pattern=_WORD_TEXT_PATTERN)
     page_numbers: Literal["none", "page", "page_of_total"] = "page_of_total"
+
+    @classmethod
+    def legacy_json_schema(cls, *args, **kwargs):
+        return super().model_json_schema(*args, **kwargs)
+
+    @classmethod
+    def model_json_schema(cls, *args, **kwargs):
+        # The live plan groups complete content by intended page. The typed
+        # native/recovery representation remains compatible with older blocks.
+        schema = cls.legacy_json_schema(*args, **kwargs)
+        blocks = schema["properties"].pop("blocks")
+        blocks.pop("description", None)
+        blocks["items"]["anyOf"] = [
+            branch for branch in blocks["items"]["anyOf"]
+            if branch.get("$ref") != "#/$defs/WordPageBreak"]
+        schema["$defs"].pop("WordPageBreak", None)
+        schema["$defs"]["WordParagraph"]["properties"].pop("page_break_before")
+        schema["$defs"]["WordComposePage"] = {"type": "object", "additionalProperties": False,
+            "properties": {"blocks": blocks}, "required": ["blocks"]}
+        schema["properties"]["pages"] = {"type": "array", "minItems": 1, "maxItems": 96,
+            "items": {"$ref": "#/$defs/WordComposePage"}}
+        schema["required"] = ["pages" if name == "blocks" else name for name in schema["required"]]
+        return schema
+
+    @model_validator(mode="before")
+    @classmethod
+    def complete_pages(cls, raw):
+        if not isinstance(raw, dict) or "pages" not in raw:
+            return raw  # Historical/native complete block plans retain their semantics.
+        if len(canonical_json(raw).encode("utf-8")) > MAX_ARGUMENT_BYTES:
+            raise ValueError("The Office payload exceeds its byte limit.")
+        pages = raw["pages"]
+        if "blocks" in raw or not isinstance(pages, list) or not 1 <= len(pages) <= 96:
+            raise ValueError("Supply complete nonempty pages, without a separate blocks plan.")
+        blocks = []
+        for index, page in enumerate(pages):
+            if (not isinstance(page, dict) or set(page) != {"blocks"}
+                    or not isinstance(page["blocks"], list) or not 1 <= len(page["blocks"]) <= 96):
+                raise ValueError("Each planned page requires its complete nonempty paragraph/table blocks.")
+            for offset, block in enumerate(page["blocks"]):
+                if (not isinstance(block, dict) or block.get("kind") == "page_break"
+                        or "page_break_before" in block):
+                    raise ValueError("Use complete page content; page boundaries are applied between pages.")
+                block = dict(block)
+                if index and offset == 0:
+                    if block.get("kind") == "paragraph" or "text" in block:
+                        block["page_break_before"] = True
+                    else:
+                        blocks.append({"kind": "page_break"})
+                blocks.append(block)
+        return {**{key: value for key, value in raw.items() if key != "pages"}, "blocks": blocks}
 
     @field_validator("blocks")
     @classmethod
@@ -563,14 +616,14 @@ OFFICE_TOOLS = tuple(sorted((
                        "apply_style to a complete paragraph using a discovered style; edit_table replaces the exact matrix of a discovered simple fixed-layout table (64 cells). "
                        "Finish cursor pages. No structural markers, merged cells, fields or tracked changes. Preserves direct formatting; save separately. Read again before revert; Save As creates a new .docx.",
                        WordEditArguments, EditResult, PermissionClass.WRITE, "word"),
-    OfficeToolContract("office.word_compose", "Replace ALL attached report body/header/footer content with native paragraphs, heading styles, editable tables and page breaks. "
+    OfficeToolContract("office.word_compose", "Replace ALL report body/header/footer with native paragraphs, heading styles and editable tables. "
                        "Read target=authoring completely first, including blanks; approval and owned recovery apply. "
-                       "Set typography, spacing, millimetre layout, headers/footers and page numbers. No text boxes. "
+                       "No text boxes. "
                        "Use separate paragraph blocks; no newlines, tabs or controls in text/cells/header/footer. "
-                       "Supply the full body; break-only plans cannot edit pagination. "
+                       "pages is the COMPLETE body, including pricing tables, grouped by intended page. For two pages supply exactly TWO nonempty page objects, each with all its paragraph/table blocks. Page starts are applied between pages; no standalone breaks. "
                        "Rectangular tables need one width per column; total widths must fit page width minus left/right margins (default 170 mm). "
                        "Header/footer distances must be below top/bottom margins. "
-                       "After editing, read target=layout for actual page count and target=render:1:3 (up to three pages per call); inspect every page and correct layout, then save separately.",
+                       "After editing, read target=layout for actual page count and target=render:first:last (1-3 existing pages per call); inspect every page and correct layout, then save separately.",
                        WordComposeArguments, EditResult, PermissionClass.WRITE, "word"),
     OfficeToolContract("office.powerpoint_edit", "Edit slide text, layout or positions against a snapshot.",
                        PowerPointEditArguments, EditResult, PermissionClass.WRITE, "powerpoint"),

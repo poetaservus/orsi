@@ -177,7 +177,7 @@ def responses_input(messages: Iterable[dict], definitions: Iterable[ModelCapabil
                 history_definitions = _office_history_definitions(
                     _reversal_history_definitions(definitions, expected), expected, raw_calls)
                 response = normalize_responses_calls(_inspection_history_calls(raw_calls, history_definitions),
-                    history_definitions, CompletionMetadata())
+                    history_definitions, CompletionMetadata(), record_diagnostics=False)
                 if response.protocol_failure is not None or response.capability_calls != expected:
                     raise ValueError("OpenAI call evidence does not match its settled transcript.")
             elif "capability_calls" in message:
@@ -249,14 +249,14 @@ def _office_history_definitions(definitions, expected, raw_calls):
     values = []
     for definition in definitions:
         calls = [call for call in expected if call.capability == definition.name]
-        if definition.name == "office.word_compose" and any(
-                isinstance(call.arguments.get("blocks"), list) and
-                any(block == {} for block in call.arguments["blocks"]) for call in calls):
-            # Before the required page-break discriminator, the strict wire
-            # admitted {"kind": null}, decoded to {}. Retain historical
-            # calls byte-for-byte, without permitting that shape in live calls.
-            schema = deepcopy(definition.input_schema)
-            schema["$defs"]["WordPageBreak"]["required"] = []
+        if definition.name == "office.word_compose" and any("blocks" in call.arguments for call in calls):
+            from app.mcp.office_contracts import WordComposeArguments
+            # History only: standalone breaks are no longer advertised. Rebuild
+            # their exact former branch; raw evidence must still match the
+            # settled call. Old null discriminators are allowed only for {}.
+            schema = WordComposeArguments.legacy_json_schema()
+            if any(block == {} for call in calls for block in call.arguments.get("blocks", [])):
+                schema["$defs"]["WordPageBreak"]["required"] = []
             definition = definition.model_copy(update={"input_schema": schema})
         if definition.name == "office.word_edit" and calls:
             # The reserved pre-phase-5 schema advertised four actions and 16
@@ -314,6 +314,9 @@ def _neutral_responses_input(messages: Iterable[dict], definitions: Iterable[Mod
             for call in message["tool_calls"]:
                 original = next(originals)
                 schema = schemas[call["function"]["name"]]
+                if original.capability == "office.word_compose":
+                    schema = next(d.input_schema for d in _office_history_definitions(
+                        values, (original,), ()) if d.name == original.capability)
                 arguments = _arguments(schema, original.arguments, schema, from_wire=False)
                 calls_by_id[call["id"]] = original
                 result.append({"type": "function_call", "call_id": original.provider_call_id,
@@ -340,7 +343,7 @@ def _neutral_responses_input(messages: Iterable[dict], definitions: Iterable[Mod
 
 def normalize_responses_calls(items: list[dict], definitions: Iterable[ModelCapabilityDefinition],
                               completion: CompletionMetadata, *, assistant_text: str | None = None,
-                              previous_ids: set[str] | None = None) -> ModelResponse:
+                              previous_ids: set[str] | None = None, record_diagnostics: bool = True) -> ModelResponse:
     values = model_capability_definitions(definitions, require_nonempty=True)
     if completion.incomplete:
         return ModelResponse.failure(ModelProtocolFailureCode.OUTPUT_TRUNCATED,
@@ -376,7 +379,12 @@ def normalize_responses_calls(items: list[dict], definitions: Iterable[ModelCapa
                                    parse_constant=lambda _: (_ for _ in ()).throw(ValueError()))
             if not isinstance(arguments, dict) or _json_size(arguments) > _MAX_ARGUMENT_BYTES:
                 raise ValueError
+            if definition.name == "office.word_compose" and record_diagnostics:
+                from app.inference.word_plan_diagnostics import record_word_plan
+                record_word_plan("provider_wire", arguments)
             arguments = _arguments(definition.input_schema, arguments, definition.input_schema, from_wire=True)
+            if definition.name == "office.word_compose" and record_diagnostics:
+                record_word_plan("decoded_arguments", arguments)
             calls.append(ModelCapabilityCall(provider_call_id=identity, capability=definition.name, arguments=arguments))
         except (TypeError, ValueError, UnicodeError, RecursionError):
             failure = ModelProtocolFailureCode.MALFORMED_ARGUMENTS

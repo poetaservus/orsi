@@ -1,5 +1,31 @@
 # Git layout and baseline hygiene
 
+## Word complete-body pages and live proposal qualification, 16 October 2026
+
+`codex/word-compose-complete-body` starts from clean local main `b79137d`.
+It replaces the model-facing content-free break alternative and optional page
+flag with required complete page groups, while retaining historical/native
+block plans, exact approval and guarded recovery. Real GPT-6 Luna investigation
+also demonstrates and repairs invalid justified-alignment XML and overly strict
+standard-spacing readback. See [the evidence and live qualification](office-word-complete-body.md).
+
+The final deterministic selection passes 273 checks. The unchanged live proposal
+request completes through the configured GPT-6 Luna/ConversationService/Office
+path, including complete generated body/table calls, approval, rendering and
+save. The saved editable proposal has exactly two A4 pages; both were visually
+inspected and pricing/payment arithmetic checked. The original report is unchanged.
+Failed intermediate attempts, the corrected test-harness read scope, Windows
+environment evidence and the unavailable historical raw response remain explicit.
+No local model or full repository suite was run. Model settings, routing, core
+prompts, acceptance request and retry limits retain their existing policies.
+
+After focused/native qualification, commit the bounded change, preserve prior
+main at `archive/2026-10-16/main-before-word-complete-body`, fast-forward local
+main and remove only the merged feature branch. Preserve private settings,
+other worktrees, historical/unmerged tips and every remote ref. No remote action
+is authorized. Content-free evidence is under ignored `state/word-complete-body/`;
+isolated live artifacts are in this task's visualization directory.
+
 ## Word empty-plan investigation, 16 October 2026
 
 `codex/word-compose-empty-plan` starts from clean local main `c50f731`.

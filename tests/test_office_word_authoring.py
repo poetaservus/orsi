@@ -120,6 +120,30 @@ def test_report_plan_is_bounded_native_content_and_has_three_explicit_pages():
     assert len(plan.model_dump_json().encode()) < 32768
 
 
+@pytest.mark.parametrize("alignment,xml_value", [("left", "left"), ("center", "center"),
+    ("right", "right"), ("justify", "both")])
+def test_native_paragraph_alignment_serializes_wordprocessingml_enumeration(alignment, xml_value):
+    from xml.etree.ElementTree import Element
+    from app.mcp.office_word_document import effective_format, paragraph, W
+    plan = WordComposeArguments.model_validate({"session": "s", "snapshot": "r",
+        "blocks": [{"kind": "paragraph", "text": "Editable paragraph"}], "format": {"alignment": alignment}})
+    body = Element(W + "body")
+    native = paragraph(body, plan.blocks[0].text, "Normal", effective_format(plan))
+    assert native.find(W + "pPr/" + W + "jc").attrib[W + "val"] == xml_value
+    assert native.find(W + "r/" + W + "t").text == plan.blocks[0].text
+
+
+@pytest.mark.parametrize("rule,points,multiple,expected", [
+    (0, 27.6, 1, True), (1, 41.4, 1.5, True), (2, 55.2, 2, True),
+    (5, 13.2, 1.1, True), (5, 18, 1.5, True),
+    (0, 27.6, 1.1, False), (1, 41.4, 2, False), (2, 55.2, 1, False),
+    (3, 12, 1, False), (4, 12, 1, False), (5, 18, 1, False),
+])
+def test_readback_compares_spacing_ratio_and_rejects_actual_spacing_changes(rule, points, multiple, expected):
+    from app.mcp.office_word_document import matches_line_spacing
+    assert matches_line_spacing(SimpleNamespace(LineSpacingRule=rule, LineSpacing=points), multiple) is expected
+
+
 def test_snapshot_ignores_revision_bookkeeping_but_preserves_content_and_formatting():
     xml = '<pkg:package xmlns:pkg="http://schemas.microsoft.com/office/2006/xmlPackage" xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><pkg:part pkg:name="/word/document.xml"><pkg:xmlData><w:document><w:body><w:p w:rsidR="1"><w:r><w:rPr><w:b/></w:rPr><w:t>native</w:t></w:r></w:p></w:body></w:document></pkg:xmlData></pkg:part></pkg:package>'
     assert signature(xml) == signature(xml.replace('rsidR="1"', 'rsidR="2"'))

@@ -220,3 +220,82 @@ def test_blank_three_page_report_authority_restore_render_and_save(tmp_path):
         (tmp_path/"native-diagnostics.json").write_text(json.dumps(diagnostics,indent=2),encoding="utf-8")
         pythoncom.CoUninitialize()
     assert diagnostics["bridge_released"] and diagnostics["temporary_released"] and not diagnostics["forced_fixture_cleanup"]
+
+
+@pytest.mark.skipif(os.environ.get("ORSI_TEST_LIVE_OFFICE") != "1", reason="Opt-in synthetic native pagination gate")
+@pytest.mark.parametrize("alignment,line_multiple", [("left", 1.1), ("justify", 1.1),
+    ("left", 1), ("left", 1.5), ("left", 2)])
+def test_content_only_two_page_plan_preserves_native_body_table_and_approval(tmp_path, caplog, alignment, line_multiple):
+    """Native contract regression; deliberately not a live model-generation claim."""
+    import pythoncom
+    import psutil
+    import win32com.client
+    import win32process
+    from app.mcp.office_contracts import WordComposeArguments
+
+    caplog.set_level("INFO", logger="app.inference.word_plan_diagnostics")
+    pythoncom.CoInitializeEx(2)
+    application = document = owned = None
+    bridge = OfficeConnection(ROOT, backend=lambda: "cloud", startup_timeout=20)
+    runtime = runtime_for(bridge, tmp_path, policy=bridge.resource_policy)
+    try:
+        application = win32com.client.DispatchEx("Word.Application")
+        application.Visible = True
+        application.DisplayAlerts = 0
+        document = application.Documents.Add()
+        owned = psutil.Process(win32process.GetWindowThreadProcessId(int(document.ActiveWindow.Hwnd))[1])
+        document.SaveAs2(str(tmp_path / ("content-body-" + uuid4().hex + ".docx")), 12)
+        bridge.connect()
+        selected = next(d for d in bridge.list_documents() if d["application"] == "word" and d["title"] == str(document.Name))
+        bridge.select_document(selected["document"])
+        session = execute(runtime, "attach", {"application": "word", "document": selected["document"]}, "content-attach").output["session"]
+        (tmp_path / "application").mkdir()
+        for name in ("office.word_compose", "office.save", "office.revert"):
+            runtime.registry.resolve(name).write_policy = HostWritePolicy(tmp_path / "application")
+        read = execute(runtime, "read", {"session": session, "target": "authoring", "max_chars": 8192}, "content-read").output
+        while read["cursor"]:
+            read = execute(runtime, "read", {"session": session, "target": "authoring", "cursor": read["cursor"], "max_chars": 8192},
+                "content-cursor-" + uuid4().hex).output
+        args = {"session": session, "snapshot": read["snapshot"], "format": {"alignment": alignment, "line_multiple": line_multiple},
+            "header": "SYNTHETIC NATIVE CONTRACT REGRESSION",
+            "footer": "Editable report", "page_numbers": "page_of_total", "blocks": [
+                {"kind": "paragraph", "style": "Title", "text": "Content and pagination"},
+                {"kind": "paragraph", "text": "The complete first-page body must survive approval and native composition."},
+                {"kind": "paragraph", "style": "Heading 1", "text": "Second-page pricing", "page_break_before": True},
+                {"kind": "table", "cells": [["Deliverable", "EUR"], ["Analysis", "100"], ["Automation", "200"], ["Total", "300"]],
+                 "widths_mm": [120, 50]},
+                {"kind": "paragraph", "text": "The complete second-page body remains editable after the pricing table."}]}
+        from tests.test_office_word_compose_validation import page_plan
+        paged_args = page_plan(args)
+        prepared = prepare(runtime, "office.word_compose", paged_args, "content-compose")
+        assert json.loads(prepared.request.arguments_json) == WordComposeArguments.model_validate(args).model_dump(mode="json")
+        result = runtime.executor.executor.execute(prepared, authorize(runtime, prepared, ApprovalStatus.APPROVED))
+        assert result.success, result.error
+        assert int(document.Tables.Count) == 1 and int(document.Shapes.Count) == int(document.InlineShapes.Count) == 0
+        for block in args["blocks"]:
+            for text in ([block["text"]] if block["kind"] == "paragraph" else [v for row in block["cells"] for v in row]):
+                assert text in str(document.Content.Text)
+        assert int(document.Range(0, 0).Information(4)) == 2
+        assert int(document.Sections.Item(1).Footers.Item(1).Range.Fields.Count) == 2
+        rendered = execute(runtime, "read", {"session": session, "target": "render:1:2"}, "content-render")
+        assert rendered.success, rendered.error
+        assert [number for number, _ in bridge.render_images(rendered.output)] == [1, 2]
+        stages = [record.getMessage().split("stage=")[1].split()[0] for record in caplog.records if "stage=" in record.getMessage()]
+        assert "approval_serialized" in stages and "approval_plan" in stages and "dispatch_serialized" in stages
+        shapes = [json.loads(record.getMessage().split("shape=")[1]) for record in caplog.records if "stage=" in record.getMessage()]
+        assert all(shape["paragraphs"] == 4 and shape["tables"] == 1 and shape["planned_pages"] == 2 for shape in shapes)
+        assert shapes[0]["page_break_before"] == 0 and all(shape["page_break_before"] == 1 for shape in shapes[1:])
+    finally:
+        runtime.shutdown()
+        if document is not None:
+            document.Close(False)
+        document = None
+        gc.collect()
+        if application is not None:
+            application.Quit(False)
+        application = None
+        gc.collect()
+        if owned is not None:
+            owned.wait(10)
+        pythoncom.CoUninitialize()
+    assert not bridge.diagnostics["worker_alive"] and bridge.diagnostics["temporary_released"]

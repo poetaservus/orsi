@@ -234,7 +234,9 @@ def paragraph(parent, text, style_id, fmt, *, page_break=False):
     p = add(parent, "p")
     props = add(p, "pPr")
     add(props, "pStyle", val=style_id)
-    add(props, "jc", val=fmt["alignment"])
+    # The public/COM alignment is called "justify"; WordprocessingML calls
+    # that value "both". Emitting "justify" makes Word reject the XML packet.
+    add(props, "jc", val="both" if fmt["alignment"] == "justify" else fmt["alignment"])
     add(props, "spacing", before=round(fmt["space_before"] * 20), after=round(fmt["space_after"] * 20),
         line=round(fmt["line_multiple"] * 240), lineRule="auto")
     add(props, "widowControl")
@@ -380,6 +382,19 @@ def write_document(backend, document, packet, plan):
     document.Repaginate()
 
 
+def matches_line_spacing(paragraph_format, multiple):
+    """Word canonicalizes auto 240/360/480 to single/1.5/double COM rules.
+
+    Custom multiples use twelve-point units in COM. Standard rules describe a
+    ratio instead; their reported point height varies with the font. Compare
+    the requested ratio, without accepting another spacing rule or multiplier.
+    """
+    rule = int(paragraph_format.LineSpacingRule)
+    if rule == 5:
+        return abs(float(paragraph_format.LineSpacing) - multiple * 12) < .06
+    return rule == {1: 0, 1.5: 1, 2: 2}.get(round(multiple * 240) / 240)
+
+
 def verify_document(document, plan):
     """Verify native types, content, styles, formatting and geometry after dispatch."""
     from app.mcp.office_contracts import WordParagraph, WordTable
@@ -441,8 +456,7 @@ def verify_document(document, plan):
         require(int(paragraph_format.Alignment) == ALIGNMENTS[fmt["alignment"]])
         require(abs(float(paragraph_format.SpaceBefore) - fmt["space_before"]) < .05)
         require(abs(float(paragraph_format.SpaceAfter) - fmt["space_after"]) < .05)
-        require(int(paragraph_format.LineSpacingRule) == 5)
-        require(abs(float(paragraph_format.LineSpacing) - fmt["line_multiple"] * 12) < .06)
+        require(matches_line_spacing(paragraph_format, fmt["line_multiple"]))
         require(bool(paragraph_format.PageBreakBefore) == block.page_break_before)
         require(bool(paragraph_format.WidowControl) and bool(paragraph_format.KeepWithNext) == fmt["keep_with_next"])
     layout = plan.layout
