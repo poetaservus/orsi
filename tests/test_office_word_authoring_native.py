@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 from uuid import uuid4
+from time import monotonic
 from zipfile import ZipFile
 
 import pytest
@@ -37,7 +38,7 @@ def test_blank_three_page_report_authority_restore_render_and_save(tmp_path):
     application = document = other = reopened = backend = None
     owned = None
     documents = []
-    bridge = OfficeConnection(ROOT, backend=lambda:"cloud", startup_timeout=20, call_timeout=30)
+    bridge = OfficeConnection(ROOT, backend=lambda:"cloud", startup_timeout=20)
     runtime = runtime_for(bridge,tmp_path,policy=bridge.resource_policy)
     diagnostics = {"native_report_gate":False,"provider_requests":0,"forced_fixture_cleanup":False}
     try:
@@ -107,7 +108,11 @@ def test_blank_three_page_report_authority_restore_render_and_save(tmp_path):
         document.Content.Text=""
         current=complete(read_authoring())
         args=report_plan(session,current["snapshot"])
+        assert bridge.call_timeout == 10 and bridge.tool_timeout(runtime.registry.resolve("office.word_compose").contract) == 60
+        assert runtime.registry.resolve("office.word_compose").timeout_seconds == 90
+        compose_started=monotonic()
         edited=execute(runtime,"word_compose",args,"compose")
+        diagnostics["compose_elapsed_seconds"]=round(monotonic()-compose_started,3)
         assert edited.success, edited.error
         assert str(other.Content.Text)=="Foreign focused fixture\r"
         assert int(document.Shapes.Count)==int(document.InlineShapes.Count)==0

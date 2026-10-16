@@ -25,12 +25,17 @@ from app.mcp.office_excel import LIVE_TOOLS, READ_TOOLS
 from app.runtime.cancellation import CancellationToken, TaskCancelled
 
 
+DEFAULT_CALL_TIMEOUT = 10.0
+WORD_COMPOSE_CALL_TIMEOUT = 60.0
+
+
 @dataclass
 class _Request:
     contract: OfficeToolContract | None
     arguments: dict
     exposure: OfficeExposure
     operation: str
+    timeout_seconds: float = DEFAULT_CALL_TIMEOUT
     future: Future = field(default_factory=Future)
     sent: bool = False
     control: tuple | None = None
@@ -44,10 +49,12 @@ class OfficeConnection:
     Trusted injected transports keep the phase 2 fixture interface.
     """
     def __init__(self, root: Path, *, backend: Callable[[], str], applications=(),
-                 call_timeout=10.0, startup_timeout=10.0, _transport_factory=None, discovery=None):
+                 call_timeout=None, startup_timeout=10.0, _transport_factory=None, discovery=None):
         self.root = Path(root).resolve(strict=True)
         self._backend = backend
         self._applications = OfficeExposure(applications=tuple(applications)).applications
+        self._explicit_call_timeout = call_timeout is not None
+        call_timeout = DEFAULT_CALL_TIMEOUT if call_timeout is None else call_timeout
         if (not callable(backend) or type(call_timeout) not in (int, float) or
                 type(startup_timeout) not in (int, float) or not 0.05 <= call_timeout <= 30 or
                 not 0.05 <= startup_timeout <= 30):
@@ -66,6 +73,14 @@ class OfficeConnection:
         self._thread = self._loop = self._queue = self._transport = None
         self._sessions, self._used_calls = {}, set()
         self._failure_diagnostics = {}
+
+    def tool_timeout(self, contract):
+        # Full report writes include pagination, native property verification
+        # and a complete recovery snapshot. Explicit test/host overrides stay
+        # authoritative, including short deadlines for hung-worker checks.
+        if contract.name == "office.word_compose" and not self._explicit_call_timeout:
+            return WORD_COMPOSE_CALL_TIMEOUT
+        return self.call_timeout
 
     def _bundled_transport(self):
         python = self.root / "runtime/python/python.exe"
@@ -230,7 +245,7 @@ class OfficeConnection:
                         request.future.set_result(output)
                     continue
                 result = await client.call_tool(request.contract.name, request.arguments,
-                    read_timeout_seconds=self.call_timeout,
+                    read_timeout_seconds=request.timeout_seconds,
                     meta=RequestParamsMeta(orsiOperation=request.operation,
                         **({"orsiAuthority": request.authority} if self.live else {})))
                 failure = result.meta or {}
@@ -430,8 +445,10 @@ class OfficeConnection:
     def call(self, contract: OfficeToolContract, arguments, *, expected: OfficeExposure,
              operation: str, cancellation: CancellationToken):
         cancellation.raise_if_cancelled()
-        request = _Request(contract, arguments.model_dump(mode="json"), expected, operation)
-        deadline = monotonic() + self.call_timeout
+        timeout = self.tool_timeout(contract)
+        request = _Request(contract, arguments.model_dump(mode="json"), expected, operation,
+                           timeout_seconds=timeout)
+        deadline = monotonic() + timeout
         acquired = False
         try:
             while not acquired:
@@ -461,9 +478,19 @@ class OfficeConnection:
                 except FutureTimeout:
                     if cancellation.is_cancelled or monotonic() >= deadline or self._stopped.is_set():
                         with self._state:
+                            # A verified receipt can settle between the timed
+                            # poll and the deadline/cancellation check. Preserve
+                            # it instead of replacing it with an unknown result.
+                            if request.future.done():
+                                return request.future.result()
                             sent = request.sent
                             if not sent:
                                 request.future.cancel()
+                            self._failure_diagnostics.update({
+                                "confirmation_stop": "cancelled" if cancellation.is_cancelled else (
+                                    "deadline" if monotonic() >= deadline else "worker_stopped"),
+                                "confirmation_timeout_seconds": timeout,
+                            })
                         self.disconnect()
                         if sent and contract.permission == PermissionClass.WRITE:
                             raise Error(Code.OUTCOME_UNKNOWN, "The Office write may have completed; review its outcome before retrying.")

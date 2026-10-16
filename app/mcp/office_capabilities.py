@@ -134,6 +134,11 @@ class OfficeCapability(Capability):
         self.arguments_model, self.permission = contract.arguments, contract.permission
         self.resource_policy, self.write_policy = resource_policy, write_policy
         self._prepared, self._lock = OrderedDict(), RLock()
+        if self.name == "office.word_compose" and callable(getattr(connection, "tool_timeout", None)):
+            # Execution rechecks binding and mutation authority (two controls),
+            # then waits for the verified tool receipt and bounded shutdown.
+            self.timeout_seconds = max(self.timeout_seconds,
+                connection.tool_timeout(contract) + 2 * connection.call_timeout + 10.0)
 
     def validate_arguments(self, raw_arguments):
         try:

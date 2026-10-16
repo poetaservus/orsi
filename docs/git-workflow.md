@@ -1,5 +1,20 @@
 # Git layout and baseline hygiene
 
+## Word report confirmation, 16 October 2026
+
+`codex/word-write-completion` starts from main `d7b5688` in the isolated Word
+checkout. It fixes the reproducible ten-second production confirmation cutoff
+for full report composition, aligns SDK/client/outer budgets and preserves
+already settled receipts at the wait boundary. Genuine uncertain outcomes still
+require review. See [reproduction and qualification](office-word-write-completion.md).
+The native gate now uses production call settings. Pending full-suite repair,
+private settings, prompts/model policy and existing write protections are preserved.
+
+After qualification, commit, fast-forward local main and remove only the merged
+feature branch. Preserve other worktrees and historical/unmerged refs. Recovery
+is under ignored state/backups/word-write-completion-20261016; no remote action
+is authorized.
+
 ## Word composition validation, 16 October 2026
 
 `codex/word-compose-validation` starts from local main `363b271` in the existing

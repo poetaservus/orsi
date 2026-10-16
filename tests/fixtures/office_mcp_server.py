@@ -14,10 +14,12 @@ MODE = sys.argv[1] if len(sys.argv) > 1 else "normal"
 STATE = {"value": 1, "version": 1}
 DOCUMENT = {"document": "d1", "application": "excel", "title": "Synthetic workbook",
             "dirty": True, "has_path": False, "read_only": False}
+if MODE in {"slow_word", "hang_word"}:
+    DOCUMENT = {**DOCUMENT, "application": "word", "title": "Synthetic report"}
 
 
 async def handle(contract, arguments, meta):
-    if MODE == "hang_call" or (MODE == "hang_write" and contract.permission.value == "write"):
+    if MODE == "hang_call" or (MODE in {"hang_write", "hang_word"} and contract.permission.value == "write"):
         await asyncio.sleep(60)
     if MODE == "crash_call" or (MODE == "crash_write" and contract.permission.value == "write"):
         os._exit(7)
@@ -39,6 +41,12 @@ async def handle(contract, arguments, meta):
         if values is not None:
             STATE["value"] = values[0][0]
         STATE["version"] += 1
+        output = {"session": "s1", "operation": meta["orsiOperation"],
+                  "outcome": "applied", "affected_items": 1, "recovery": "rec1"}
+    elif name == "office.word_compose":
+        STATE["version"] += 1  # Native side effect precedes the confirmation.
+        if MODE == "slow_word":
+            await asyncio.sleep(11)
         output = {"session": "s1", "operation": meta["orsiOperation"],
                   "outcome": "applied", "affected_items": 1, "recovery": "rec1"}
     elif name == "office.save":
