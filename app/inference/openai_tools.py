@@ -249,6 +249,15 @@ def _office_history_definitions(definitions, expected, raw_calls):
     values = []
     for definition in definitions:
         calls = [call for call in expected if call.capability == definition.name]
+        if definition.name == "office.word_compose" and any(
+                isinstance(call.arguments.get("blocks"), list) and
+                any(block == {} for block in call.arguments["blocks"]) for call in calls):
+            # Before the required page-break discriminator, the strict wire
+            # admitted {"kind": null}, decoded to {}. Retain historical
+            # calls byte-for-byte, without permitting that shape in live calls.
+            schema = deepcopy(definition.input_schema)
+            schema["$defs"]["WordPageBreak"]["required"] = []
+            definition = definition.model_copy(update={"input_schema": schema})
         if definition.name == "office.word_edit" and calls:
             # The reserved pre-phase-5 schema advertised four actions and 16
             # changes. This history-only schema validates original evidence;

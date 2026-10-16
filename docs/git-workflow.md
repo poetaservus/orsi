@@ -1,5 +1,24 @@
 # Git layout and baseline hygiene
 
+## Word empty-plan investigation, 16 October 2026
+
+`codex/word-compose-empty-plan` starts from clean local main `c50f731`.
+The reported rejection occurs before Word dispatch when the submitted body has
+no paragraphs or tables. A baseline reproduction confirms that an optional
+page-break discriminator allowed empty objects in both advertised and provider
+schemas. The change requires that discriminator, explains empty/break-only
+plans with content-free structural counts, and preserves older failed-call
+history without granting live execution authority. See
+[the evidence, qualification and unresolved live gate](office-word-empty-plan.md).
+
+The 214 focused checks passed and the accepted schema remains within its
+existing budget. The full suite was not repeated after the user's stop request.
+The actual failed call is unavailable because the user cannot access that chat;
+empty objects versus explicit breaks cannot be distinguished. The live proposal
+acceptance case remains unqualified. Commit, fast-forward local main, and remove
+only the merged bounded branch. Preserve private settings and other worktrees;
+no remote operation is authorized.
+
 ## Full-suite repair, 16 October 2026
 
 `codex/full-suite-repair` starts from clean local main `cdd7f5b`. It repairs

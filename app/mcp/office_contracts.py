@@ -187,7 +187,9 @@ class WordTable(OfficeModel):
 
 
 class WordPageBreak(OfficeModel):
-    kind: Literal["page_break"] = "page_break"
+    # A missing discriminator previously made {} a schema-valid page break.
+    # On the strict provider wire this also admitted {"kind": null}.
+    kind: Literal["page_break"]
 
 
 class WordPageLayout(OfficeModel):
@@ -234,7 +236,7 @@ class WordComposeArguments(OfficeModel):
         if normalized and isinstance(normalized[-1], WordPageBreak):
             normalized.pop()
         if not normalized:
-            raise ValueError("Word page breaks must separate content blocks.")
+            raise ValueError("Word composition requires paragraph or table content; supply the complete replacement body.")
         return normalized
 
     @model_validator(mode="after")
@@ -565,7 +567,7 @@ OFFICE_TOOLS = tuple(sorted((
                        "Read target=authoring completely first, including blanks; approval and owned recovery apply. "
                        "Set typography, spacing, millimetre layout, headers/footers and page numbers. No text boxes. "
                        "Use separate paragraph blocks; no newlines, tabs or controls in text/cells/header/footer. "
-                       "Redundant leading/trailing/adjacent page breaks are ignored. "
+                       "Supply the full body; break-only plans cannot edit pagination. "
                        "Rectangular tables need one width per column; total widths must fit page width minus left/right margins (default 170 mm). "
                        "Header/footer distances must be below top/bottom margins. "
                        "After editing, read target=layout for actual page count and target=render:1:3 (up to three pages per call); inspect every page and correct layout, then save separately.",

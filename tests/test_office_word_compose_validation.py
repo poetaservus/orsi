@@ -122,7 +122,7 @@ def test_normalization_retains_empty_report_unknown_field_and_block_count_refusa
     ({"layout": {"margins_mm": [4, 20, 20, 20]}}, "layout.margins_mm.0"),
     ({"layout": {"margins_mm": [10, 20, 20, 20], "header_mm": 10}}, "header/footer distances inside the margins"),
     ({"format": {"size": 10.7}}, "format.size"),
-    ({"blocks": [{"kind": "page_break"}]}, "page breaks must separate content blocks"),
+    ({"blocks": [{"kind": "page_break"}]}, "no paragraphs or tables"),
 ])
 def test_refusal_explains_the_actual_field_without_dispatch_or_input_echo(tmp_path, change, expected):
     args = {**report_plan(), **change}
@@ -142,6 +142,98 @@ def test_table_union_refusal_does_not_suggest_missing_paragraph_text():
     assert "blocks.0.cells: required field is missing" in error.value.failure.message
     assert "text: required field is missing" not in error.value.failure.message
     assert len(error.value.failure.details) == 1
+
+
+@pytest.mark.parametrize("blocks,breaks,empty", [
+    ([{}], 0, 1),
+    ([{"kind": "page_break"}], 1, 0),
+    ([{}, {"kind": "page_break"}, {}], 1, 2),
+])
+def test_empty_plan_explains_full_replacement_and_retains_content_free_shape(blocks, breaks, empty):
+    with pytest.raises(CapabilityArgumentError) as error:
+        tool().validate_arguments({**report_plan(), "blocks": blocks})
+    failure = error.value.failure
+    assert "no paragraphs or tables" in failure.message
+    assert "COMPLETE document body" in failure.message
+    assert "page_break_before" in failure.message
+    assert "No Word write was dispatched" in failure.message
+    assert len(failure.message) <= 500
+    assert failure.details[-1] == {"word_plan_shape": {
+        "paragraphs": 0, "tables": 0, "page_breaks": breaks, "empty_blocks": empty}}
+
+
+def test_empty_block_is_no_longer_a_page_break_in_the_advertised_or_provider_schema():
+    definition = CONTRACT.definition()
+    schema = definition.input_schema
+    args = {**report_plan(), "blocks": [{}]}
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(args, schema)
+    # Independent fixture for the old strict wire shape; do not generate this
+    # through the current domain-to-wire adapter, which must reject it too.
+    wire = _arguments(schema, report_plan(), schema, from_wire=False)
+    wire["blocks"] = [{"kind": None}]
+    native = responses_function_tools((definition,))[0]
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(wire, native["parameters"])
+    response = normalize_responses_calls([{
+        "call_id": "call_empty_block", "name": native["name"], "arguments": canonical_json(wire),
+    }], (definition,), CompletionMetadata())
+    assert response.protocol_failure is not None and not response.capability_calls
+
+
+def test_missing_optional_kinds_do_not_discard_paragraph_or_table_content():
+    args = report_plan()
+    for block in args["blocks"]:
+        if block["kind"] != "page_break":
+            del block["kind"]
+    wire, call = wire_call(args)
+    jsonschema.validate(wire, responses_function_tools((CONTRACT.definition(),))[0]["parameters"])
+    effective = tool().validate_arguments(call.arguments)
+    assert effective == WordComposeArguments.model_validate(report_plan())
+
+
+@pytest.mark.parametrize("body", [False, True])
+def test_pre_upgrade_null_page_break_evidence_replays_without_live_execution_authority(body):
+    from app.inference.openai_replay import OpenAIReplay, REPLAY_KEY
+
+    definition = CONTRACT.definition()
+    old_schema = deepcopy(definition.input_schema)
+    old_schema["$defs"]["WordPageBreak"].pop("required")
+    old_definition = definition.model_copy(update={"input_schema": old_schema})
+    blocks = [{"text": "first"}, {}, {"text": "second"}] if body else [{}]
+    args = {**report_plan(), "blocks": blocks}
+    old_wire = _arguments(old_schema, args, old_schema, from_wire=False)
+    native = responses_function_tools((old_definition,))[0]
+    item = {"type": "function_call", "id": "fc_old", "call_id": "call_old",
+            "name": native["name"], "arguments": canonical_json(old_wire)}
+    response = normalize_responses_calls([item], (old_definition,), CompletionMetadata())
+    assert response.protocol_failure is None
+    call = response.capability_calls[0]
+    assert any(block == {} for block in call.arguments["blocks"])
+    with pytest.raises(CapabilityArgumentError) as rejection:
+        tool().validate_arguments(call.arguments)
+    settled = CapabilityResult(call_id="receipt_old", capability=call.capability,
+        success=body, error=None if body else rejection.value.failure,
+        output={"synthetic_legacy_write": True} if body else None, duration_ms=0)
+    replay = OpenAIReplay(model="synthetic-model", response_id="resp_old", items_json=json.dumps([item]))
+    history = model_capability_calls_message((call,), provider_message_id="resp_old")
+    history[REPLAY_KEY] = replay.model_dump()
+    transcript = [history, model_capability_result_message(call, settled.model_dump(mode="json"),
+                                                         provider_message_id="resp_old")]
+    restored = responses_input(transcript, (definition,))
+    assert restored[0] == item
+    assert json.loads(restored[1]["output"])["success"] is body
+    assert normalize_responses_calls([item], (definition,), CompletionMetadata()).protocol_failure is not None
+    # Historical compatibility must not bless different original provider bytes.
+    tampered = deepcopy(transcript)
+    altered = deepcopy(item)
+    altered_wire = deepcopy(old_wire)
+    altered_wire["blocks"][1 if body else 0] = {"kind": "page_break"}
+    altered["arguments"] = canonical_json(altered_wire)
+    tampered[0][REPLAY_KEY] = OpenAIReplay(model="synthetic-model", response_id="resp_old",
+        items_json=json.dumps([altered])).model_dump()
+    with pytest.raises(ValueError, match="does not match"):
+        responses_input(tampered, (definition,))
 
 
 def test_unknown_keys_are_not_echoed_in_the_visible_error():

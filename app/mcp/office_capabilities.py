@@ -74,8 +74,27 @@ def _compose_error_details(raw, details):
     return focused or details
 
 
-def _compose_error_message(details):
+def _empty_compose_plan(raw):
+    """Describe only the bounded structural failure, never document contents."""
+    blocks = raw.get("blocks") if isinstance(raw, dict) else None
+    if not isinstance(blocks, list) or not 1 <= len(blocks) <= 96:
+        return None
+    if not all(isinstance(block, dict) and (not block or
+            set(block) == {"kind"} and block["kind"] == "page_break") for block in blocks):
+        return None
+    return {"paragraphs": 0, "tables": 0,
+            "page_breaks": sum(bool(block) for block in blocks),
+            "empty_blocks": sum(not block for block in blocks)}
+
+
+def _compose_error_message(details, empty_plan=None):
     """Explain bounded constraints without echoing input values or unknown keys."""
+    if empty_plan is not None:
+        return ("Invalid Word composition arguments. blocks: received "
+            f"{empty_plan['page_breaks']} page-break blocks and {empty_plan['empty_blocks']} empty blocks; "
+            "no paragraphs or tables. Supply the COMPLETE document body as paragraph/table blocks. "
+            "word_compose replaces the body; it cannot append page breaks alone. "
+            "Use page_break_before on a paragraph to start its page. No Word write was dispatched.")
     schema = WordComposeArguments.model_json_schema()
     fields = set(schema["properties"])
     for child in schema.get("$defs", {}).values():
@@ -95,7 +114,7 @@ def _compose_error_message(details):
         "Word table widths exceed the printable body width.",
         "The Word document exceeds its bounded content limit.",
         "Use separate Word paragraph/page-break blocks; text cannot contain control markers.",
-        "Word page breaks must separate content blocks.",
+        "Word composition requires paragraph or table content; supply the complete replacement body.",
         "Office matrices must be rectangular.", "Office matrices exceed the cell limit.",
     }
     numeric = {"greater_than", "greater_than_equal", "less_than", "less_than_equal", "multiple_of",
@@ -147,8 +166,10 @@ class OfficeCapability(Capability):
             if self.name != "office.word_compose":
                 raise
             details = _compose_error_details(raw_arguments, exc.failure.details)
+            empty_plan = _empty_compose_plan(raw_arguments)
             raise CapabilityArgumentError(exc.failure.model_copy(update={
-                "message": _compose_error_message(details), "details": details,
+                "message": _compose_error_message(details, empty_plan),
+                "details": details + ([{"word_plan_shape": empty_plan}] if empty_plan is not None else []),
             })) from None
 
     def _current_binding(self, arguments, context):
