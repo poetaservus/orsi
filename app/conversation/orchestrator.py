@@ -53,7 +53,7 @@ from app.runtime.skills import (
     SkillDefinition, SkillRegistry, SkillActivationError, SkillActivationErrorCode, with_active_skill,
     SkillCandidate, SkillSelection, select_skill,
 )
-from app.inference.completion import CompletionText, IncompleteResponseError
+from app.inference.completion import CompletionText, IncompleteResponseError, AgentStoppedError
 from app.runtime.skills.diagnostics import record_skill_event, skill_source
 
 
@@ -700,8 +700,10 @@ class ConversationService:
             return CompletionText(result.partial_text, result.completion, result.completion_history,
                                   status_message=result.message)
         if result.status != AgentRunStatus.COMPLETED:
-            if (result.status in RECOVERY_STOP_STATUSES or result.status == AgentRunStatus.PROTOCOL_FAILURE_LIMIT
-                    and result.completion.incomplete) and result.partial_text is not None:
+            if result.status in RECOVERY_STOP_STATUSES:
+                raise AgentStoppedError(result)
+            if (result.status == AgentRunStatus.PROTOCOL_FAILURE_LIMIT
+                    and result.completion.incomplete and result.partial_text is not None):
                 raise IncompleteResponseError(result.message, result.completion,
                     result.partial_text, result.completion_history)
             raise RuntimeError(result.message or "The bounded agent run did not complete.")

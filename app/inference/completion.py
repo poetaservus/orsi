@@ -131,3 +131,13 @@ class IncompleteResponseError(RuntimeError):
         self.completion = completion
         self.partial_text = partial_text
         self.completion_history = history or (completion,)
+
+
+class AgentStoppedError(RuntimeError):
+    """A local bounded stop, distinct from provider response incompleteness."""
+    def __init__(self, result):
+        super().__init__(result.message)
+        self.status = result.status
+        self.completion = result.completion
+        self.partial_text = result.partial_text
+        self.completion_history = result.completion_history

@@ -179,7 +179,9 @@ class _Message(QFrame):
         )
         self.completion_label = None
         if not from_user and (self.completion.incomplete or any(kind == "incomplete_code" for kind, _, _ in parts)):
-            indication = (ui_text("Incomplete — output limit reached. Partial response.")
+            indication = (ui_text("Task stopped locally before completion.")
+                          if self.completion.finish_reason == "agent_recovery_stop" else
+                          ui_text("Incomplete — output limit reached. Partial response.")
                           if self.completion.finish_reason == "length" else
                           ui_text("Incomplete response.") if self.completion.incomplete else
                           ui_text("Incomplete code block — closing fence missing."))

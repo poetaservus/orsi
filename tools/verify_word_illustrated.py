@@ -33,6 +33,42 @@ from app.settings.agent import load_agent_feature_config
 from app.settings.cloud import load_cloud_config
 
 
+def retain_terminal(report, turn):
+    """Allowlisted, content-free terminal evidence, including failed turns."""
+    from app.agent.runtime import RECOVERY_STOP_STATUSES
+    from app.inference.completion import ResponseFailureReason
+    from typing import get_args
+    result = turn.outcome
+    completion = result.completion
+    report["terminal_status"] = result.status.value
+    report["task_completed"] = result.status.value == "completed"
+    report["stop_category"] = ("local_recovery" if result.status in RECOVERY_STOP_STATUSES else
+        "provider_incomplete" if result.status.value == "incomplete" and
+        completion.finish_reason != "agent_task_unfinished" else
+        "completed" if report["task_completed"] else "other_stop")
+    allowed_finish = {"stop", "length", "content_filter", "cancelled", "error", "completed",
+        "tool_calls", "agent_recovery_stop", "agent_budget_limit", "agent_task_unfinished"}
+    report["finish_reason"] = completion.finish_reason if completion.finish_reason in allowed_finish else None
+    report["failure_reason"] = completion.failure_reason if completion.failure_reason in get_args(ResponseFailureReason) else None
+    report["interrupted"] = completion.interrupted
+    for field in ("steps", "capability_calls", "model_requests", "inference_requests", "protocol_failures",
+                  "semantic_corrections", "consecutive_format_failures", "context_projections", "context_compactions"):
+        report[field] = getattr(result, field)
+    report["settled_calls"] = len(turn.settled_calls)
+    report["calls"] = []
+    for settled in turn.settled_calls:
+        call, receipt = settled.call, settled.result
+        output = receipt.output if isinstance(receipt.output, dict) else {}
+        report["calls"].append({"tool": call.capability if call.capability in {
+            "office.attach", "office.read", "office.word_edit", "office.word_compose", "office.save", "office.revert"} else "other",
+            "success": receipt.success,
+            "error": receipt.error.code.value if receipt.error else None,
+            "outcome": output.get("outcome") if output.get("outcome") in {"applied", "unchanged"} else None,
+            "affected_items": output.get("affected_items") if type(output.get("affected_items")) is int else None})
+    report["successful_compositions"] = sum(c.call.capability == "office.word_compose" and c.result.success for c in turn.settled_calls)
+    report["model_saved"] = any(c.call.capability == "office.save" and c.result.success for c in turn.settled_calls)
+
+
 def illustrations(output):
     """Original, explicitly synthetic diagrams with no third-party image rights."""
     from PIL import Image, ImageDraw, ImageFont
@@ -154,9 +190,7 @@ def verify(output, key_file=None):
         bridge.select_document(selected["document"])
         service.run(template.format(document=fixture, image1=images[0], image2=images[1]))
         turn = service.store.turns()[-1]
-        report["terminal_status"] = turn.outcome.status.value
-        report["calls"] = [{"tool": c.call.capability, "success": c.result.success,
-            "error": c.result.error.code.value if c.result.error else None} for c in turn.settled_calls]
+        retain_terminal(report, turn)
         compositions = [c for c in turn.settled_calls if c.call.capability == "office.word_compose" and c.result.success]
         report["successful_compositions"] = len(compositions)
         if compositions:
@@ -192,11 +226,7 @@ def verify(output, key_file=None):
         report["office_diagnostics"] = bridge.diagnostics
         turns = service.store.turns()
         if turns:
-            report["calls"] = [{"tool": c.call.capability, "success": c.result.success,
-                "error": c.result.error.code.value if c.result.error else None} for c in turns[-1].settled_calls]
-            report["successful_compositions"] = sum(c.call.capability == "office.word_compose" and c.result.success
-                for c in turns[-1].settled_calls)
-            report["model_saved"] = any(c.call.capability == "office.save" and c.result.success for c in turns[-1].settled_calls)
+            retain_terminal(report, turns[-1])
         report["passed"] = False
     finally:
         runtime.shutdown()

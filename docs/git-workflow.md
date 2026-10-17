@@ -1,5 +1,19 @@
 # Git layout and baseline hygiene
 
+## Local-stop reporting, 17 October 2026
+
+`codex/local-stop-reporting` starts from local main `45c4240`. It distinguishes
+local recovery stops from provider incompleteness in conversation presentation
+and retains content-free terminal/receipt evidence after verification exceptions.
+See [cause, focused checks and uncertainty](local-stop-reporting.md). No renewal
+policy defect was demonstrated; save/no-op exclusions and actual-edit renewal
+remain protected. 98 focused checks pass; an unrelated existing plain-chat failure
+and sandbox bridge failures are recorded separately. No full suite or paid live
+run was made. Preserve prior main and the ignored recovery bundle, commit,
+fast-forward local main and delete only the merged feature branch. No remote
+action, user-document edit or other-worktree change is authorized.
+
+
 ## Native Word pictures and column sections, 17 October 2026
 
 `codex/word-pictures-columns` starts from clean local main `528c9e8`. It adds

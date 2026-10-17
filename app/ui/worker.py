@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 
 from PySide6.QtCore import QObject, Signal, Slot
-from app.inference.completion import CompletionText, IncompleteResponseError
+from app.inference.completion import CompletionText, IncompleteResponseError, AgentStoppedError
 from app.inference.attachments import attachment_references
 from app.conversation.questions import present_questions
 
@@ -62,7 +62,7 @@ class ConversationWorker(QObject):
                 raise RuntimeError("O.R.S.I finished processing, but returned an empty response.")
             self._restore_unadmitted()
             self.finished.emit(response)
-        except IncompleteResponseError as exc:
+        except (IncompleteResponseError, AgentStoppedError) as exc:
             self._restore_unadmitted()
             self.failed.emit(present_questions(CompletionText(exc.partial_text or str(exc), exc.completion,
                 exc.completion_history, status_message=str(exc) if exc.partial_text else None), allow_forms=False))

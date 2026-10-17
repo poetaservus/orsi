@@ -8,7 +8,7 @@ from app.agent.contracts import AgentRunStatus
 from app.agent.bootstrap import build_agent_runtime
 from app.conversation.orchestrator import ConversationService
 from app.conversation.store import ConversationStore
-from app.inference.completion import CompletionText, IncompleteResponseError
+from app.inference.completion import CompletionText, AgentStoppedError
 from app.inference.protocol import ModelCapabilityCall, ModelResponse, native_chat_messages
 from app.security.host_access import HostAccessPolicy
 from app.settings.agent import AgentFeatureConfig, AgentRuntimeLimits
@@ -29,7 +29,7 @@ class RoomyScriptedModel(ScriptedModel):
 
 
 def stopped_report(service, prompt):
-    with pytest.raises(IncompleteResponseError) as caught:
+    with pytest.raises(AgentStoppedError) as caught:
         service.run(prompt)
     error = caught.value
     assert error.partial_text
