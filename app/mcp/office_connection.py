@@ -315,7 +315,10 @@ class OfficeConnection:
                     with self._state:
                         self._selected = (binding["document"]["document"], binding["identity"])
                 if not request.future.done():
-                    request.future.set_result(output.model_dump(mode="json"))
+                    serialized_output = output.model_dump(mode="json")
+                    if serialized_output.get("word_workflow") is None:
+                        serialized_output.pop("word_workflow", None)
+                    request.future.set_result(serialized_output)
             except BaseException:
                 with self._state:
                     self._invalidate_locked()
@@ -463,9 +466,11 @@ class OfficeConnection:
             if hasattr(arguments, "document") and arguments.document != selected[0]:
                 raise Error(Code.PERMISSION_DENIED, "Select this exact Office document first.")
             authority = {"document": selected[0], "identity": selected[1]}
+            if contract.name == "office.word_review" and value["document"]["application"] != "word":
+                raise Error(Code.DISABLED_CAPABILITY, "Word review requires a Word document.")
             source = Path(value["path"]) if value["path"] else None
             destination = source
-            if contract.name not in READ_TOOLS:
+            if contract.name not in READ_TOOLS | {"office.word_review"}:
                 kind = value["document"]["application"]
                 if kind not in {"excel", "word"} or (contract.application is not None and contract.application != kind):
                     raise Error(Code.DISABLED_CAPABILITY, "This edit requires its exact supported Office application.")

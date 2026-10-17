@@ -1,5 +1,24 @@
 # Git layout and baseline hygiene
 
+## Word revision workflow, 18 October 2026
+
+`codex/word-revision-workflow` starts from clean local main `a862446`, preserving
+that save fix. It binds Word authoring, page/image inspection, correction findings
+and save receipts to semantic revisions; gates further edits on concrete defects;
+detects recurring revisions; and finishes after clean review/current save.
+See [cause, bounded changes and essential qualification](office-word-revision-workflow.md).
+
+229 distinct deterministic checks pass (225 combined, then 33 focused with overlap),
+plus a separate isolated native Word gate with scripted image-capable responses,
+save/reopen and released owned resources. No live-model acceptance or full suite
+was run. The user's computers.docx and article task remain untouched. Excel,
+shared budgets, model settings, routing, core/acceptance prompts and context policy
+are unchanged. Recovery refs/worktrees and a verified complete-history bundle are
+under ignored `state/backups/word-revision-workflow-20261018/`; prior main is
+`archive/2026-10-18/main-before-word-revision-workflow`. Commit, fast-forward local
+main and remove only the merged bounded branch. No remote operation is authorized.
+
+
 ## Word save finalization, 18 October 2026
 
 `codex/word-save-finalization` starts from clean local main `fdba4a1`. It narrows

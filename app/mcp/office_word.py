@@ -18,6 +18,7 @@ class WordEdits:
         self.live = live
         self.snapshots, self.cursors, self.guards, self.recoveries = {}, {}, OrderedDict(), {}
         self.blocked = False
+        self.workflows = {}
         from app.mcp.office_word_render import WordRenders
         self.renders = WordRenders(live)
         from app.mcp.office_word_assets import WordAssets
@@ -30,7 +31,58 @@ class WordEdits:
         self.recoveries.clear()
         self.renders.clear()
         self.assets.clear()
+        self.workflows.clear()
         # An unknown outcome is not repaired by clearing in-memory authority.
+
+    def workflow(self, binding):
+        from app.mcp.office_word_document import signature
+        from app.mcp.office_word_workflow import WordWorkflow
+        key = binding["document"]["document"]
+        workflow = self.workflows.setdefault(key, WordWorkflow())
+        document = self.live.documents[key][1]
+        workflow.sync(signature(str(document.Content.WordOpenXML)))
+        return workflow
+
+    def reviewed_call(self, name, arguments, binding, authority=None, operation=None):
+        document = self.live.documents[binding["document"]["document"]][1]
+        if isinstance(document, dict):
+            # Legacy synthetic adapters have no native package or page pixels.
+            if name == "office.word_review":
+                raise OfficeConflict("This adapter cannot verify native Word pages.")
+            return self.read(arguments, binding) if name == "office.read" else self.execute(name, arguments, binding, authority, operation)
+        workflow = self.workflow(binding)
+        if name == "office.word_review":
+            workflow.inspect(arguments)
+            return {"session": arguments.session, "word_workflow": workflow.evidence()}
+        if name == "office.read":
+            output = self.read(arguments, binding)
+            if arguments.target == "authoring" and output.get("cursor") is None:
+                workflow.authoring = {"snapshot": output["snapshot"], "revision": workflow.revision}
+        else:
+            output = self.execute(name, arguments, binding, authority, operation)
+            if name == "office.word_compose":
+                workflow.composed = True
+            if output.get("outcome") == "applied":
+                try:
+                    from app.mcp.office_word_document import signature
+                    document = self.live.documents[binding["document"]["document"]][1]
+                    workflow.applied(signature(str(document.Content.WordOpenXML)))
+                except Exception:
+                    # The native action already returned a verified applied receipt.
+                    # Losing subsequent workflow evidence must not lose that receipt.
+                    workflow.edited = True
+                    workflow.invalidate()
+            elif output.get("saved") is True:
+                try:
+                    workflow = self.workflow(binding)
+                except Exception:
+                    workflow.saves.append({"revision": None, "operation": operation})
+                    workflow.invalidate()
+                else:
+                    workflow.authoring = None
+                    workflow.save(operation)
+        output["word_workflow"] = workflow.evidence()
+        return output
 
     @staticmethod
     def state_bytes(snapshot):
@@ -177,12 +229,17 @@ class WordEdits:
         backend.word_writable(document)
         descriptor = before = expected = save = None
         action = "replace_text"
+        if name in {"office.word_compose", "office.word_edit"} and binding["document"]["document"] in self.workflows:
+            self.workflow(binding).before_edit()
         if name == "office.word_compose":
             from app.mcp.office_word_document import compile_packet
+            record = self.snapshots.get(arguments.snapshot)
+            if record is None or record["signature"][1] != "authoring":
+                raise OfficeConflict("Read target=authoring completely before replacing the report. Layout/render snapshots cannot authorize editing. Read fresh authoring only for a justified replacement; never replay a settled edit.")
             entries = self.coverage(arguments, binding)
             if (len(entries) != 1 or entries[0]["state"] is None
                     or entries[0]["state"].get("kind") != "document"):
-                raise OfficeConflict("Read target=authoring completely before replacing the report.")
+                raise OfficeConflict("Read target=authoring completely before replacing the report. Layout/render snapshots cannot authorize editing. Read a fresh complete authoring snapshot only if a concrete unresolved defect justifies replacement; never replay a settled edit.")
             descriptor, before = entries[0]["descriptor"], entries[0]["state"]
             if not same_document(backend.capture_word(descriptor), before):
                 raise OfficeConflict("Office conflict: the complete report changed after its authoring read.")

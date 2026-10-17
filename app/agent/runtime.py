@@ -386,6 +386,11 @@ class AgentRuntime:
             report = evidence_report(final_goal)
             if report and result.partial_text is not None and result.status in RECOVERY_STOP_STATUSES | WORK_BUDGET_STATUSES:
                 result = result.model_copy(update={"partial_text": (result.partial_text + "\n\n" + report)[:1_000_000]})
+        from app.agent.word_evidence import word_stop_report
+        word_report = word_stop_report(result)
+        if word_report:
+            result = result.model_copy(update={"partial_text":
+                ((result.partial_text or result.message or "") + "\n\n" + word_report).strip()})
         return result
 
     def _run(
@@ -505,6 +510,8 @@ class AgentRuntime:
         project_progress = ProjectProgressTracker()
         edit_progress = EditProgressTracker()
         office_read_progress = OfficeReadProgress()
+        from app.agent.word_evidence import WordTurnProgress
+        word_progress = WordTurnProgress()
         office_read_repetition = OfficeReadRepetition()
         repair_loop = RepairLoopTracker()
         used_call_ids: set[str] = set()
@@ -700,6 +707,19 @@ class AgentRuntime:
                         steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
             if response.kind == ModelResponseKind.ASSISTANT_TEXT:
                 if proposed_answer is None and not assessment_text:
+                    unfinished_word = word_progress.before_final()
+                    if unfinished_word is not None:
+                        retry, message = unfinished_word
+                        if not retry:
+                            return self._stopped(AgentRunStatus.INCOMPLETE,
+                                "Word verification/finalization remains unfinished; completed work and save receipts are retained.",
+                                partial_text=message, steps=steps, capability_calls=capability_calls,
+                                protocol_failures=protocol_failures)
+                        self._retain_response_text(transcript, response)
+                        transcript.append({"role": "system", "content": message})
+                        if not self._transcript_within_limit(transcript):
+                            return self._transcript_limited(steps, capability_calls, protocol_failures)
+                        continue
                     unfinished = office_read_progress.before_final()
                     if unfinished is not None:
                         retry, message = unfinished
@@ -961,6 +981,8 @@ class AgentRuntime:
                 rejection = edit_progress.before(call, step=steps, assistant_text=response.assistant_text) if not linked.is_cancelled else None
                 if rejection is None and not linked.is_cancelled:
                     rejection = repair_loop.before(call, step=steps)
+                if rejection is None and not linked.is_cancelled:
+                    rejection = word_progress.before(call)
                 if repeat_rejection is not None and not linked.is_cancelled:
                     outcome = _CallOutcome(result=failure_result(internal_call_id, call.capability, repeat_rejection))
                 elif rejection is not None:
@@ -1035,6 +1057,9 @@ class AgentRuntime:
                     project_receipts.setdefault(call_fingerprint(call), []).append(outcome.result.call_id)
                 read_progress.observe(call, outcome.result, repeated)
                 office_read_progress.observe(call, outcome.result)
+                word_feedback = word_progress.observe(call, outcome.result)
+                if word_feedback:
+                    recovery_feedback.append(word_feedback)
                 office_read_repetition.observe(call, outcome.result, repeated)
                 project_progress.observe(call, outcome.result, repeated)
                 diagnosis_feedback = repair_loop.observe(call, outcome.result, step=steps)
@@ -1106,6 +1131,7 @@ class AgentRuntime:
                         message = word_image_message(self.registry.resolve(call.capability), call, result, self.model)
                         if message is not None:
                             transcript.append(message)
+                            word_progress.images_delivered(call, result, message)
             except (TypeError, ValueError):
                 return self._transcript_limited(
                     steps,

@@ -101,7 +101,7 @@ class LiveOffice:
             return self.word.assets.chunk(data["session"], data["asset"], data["offset"], data["data"], data["final"])
         if action == "mutation":
             from app.mcp.office_contracts import OFFICE_TOOLS
-            contract = next((t for t in OFFICE_TOOLS if t.name == data.get("tool") and t.name in LIVE_TOOLS - READ_TOOLS), None)
+            contract = next((t for t in OFFICE_TOOLS if t.name == data.get("tool") and t.name in LIVE_TOOLS - (READ_TOOLS | {"office.word_review"})), None)
             if contract is None:
                 raise OfficeConflict("Unsupported Office mutation.")
             arguments = contract.arguments.model_validate(data.get("arguments"))
@@ -122,7 +122,10 @@ class LiveOffice:
         bound = self.binding(document=document, session=getattr(arguments, "session", None))
         if bound["document"]["document"] != document or bound["identity"] != authority.get("identity"):
             raise OfficeConflict("The approved document identity changed.")
-        if contract.name in LIVE_TOOLS - READ_TOOLS:
+        if bound["document"]["application"] == "word" and contract.name in {
+                "office.read", "office.word_review", "office.word_compose", "office.word_edit", "office.save", "office.revert"}:
+            return self.word.reviewed_call(contract.name, arguments, bound, authority, operation)
+        if contract.name in LIVE_TOOLS - (READ_TOOLS | {"office.word_review"}):
             return self.edits(bound).execute(contract.name, arguments, bound, authority, operation)
         if contract.name == "office.documents":
             if arguments.cursor is not None:
@@ -136,6 +139,8 @@ class LiveOffice:
                 raise OfficeUnavailable("The session limit was reached. Refresh the connection.")
             session = token()
             self.sessions[session] = document
+            if bound["document"]["application"] == "word":
+                self.word.workflows.pop(document, None)
             return {"session": session, "document": bound["document"]}
         return self.read(arguments, bound)
 

@@ -106,9 +106,13 @@ class WordRenders:
     def __init__(self, live):
         self.live = live
         self.images = OrderedDict()
+        self.revisions = {}
+        self.transfers = {}
 
     def clear(self):
         self.images.clear()
+        self.revisions.clear()
+        self.transfers.clear()
 
     def read(self, arguments, binding):
         match = re.fullmatch(r"render:([1-9][0-9]{0,3}):([1-9][0-9]{0,3})", arguments.target)
@@ -153,6 +157,10 @@ class WordRenders:
         # A single bounded group; fresh rendering invalidates prior pixels.
         self.clear()
         self.images[snapshot] = (arguments.session, binding["identity"], images)
+        workflow = self.live.word.workflow(binding)
+        workflow.page_count = layout["page_count"]
+        workflow.rendered.update(images)
+        self.revisions = {snapshot: fingerprint}
         return {"session": arguments.session, "application": "word", "snapshot": snapshot,
                 "items": items, "cursor": None}
 
@@ -163,7 +171,17 @@ class WordRenders:
                 or type(number) is not int or number not in record[2] or type(offset) is not int
                 or not 0 <= offset < len(record[2][number])):
             raise OfficeUnavailable("The rendered Word page is unavailable for this exact session.")
+        workflow = self.live.word.workflow(binding)
+        if self.revisions.get(data.get("snapshot")) != workflow.revision:
+            raise OfficeUnavailable("The rendered Word page belongs to an old revision.")
         blob = record[2][number]
         part = blob[offset:offset + 24000]
+        key = (data.get("snapshot"), number)
+        prefix = self.transfers.get(key, 0)
+        if offset <= prefix:
+            prefix = max(prefix, offset + len(part))
+            self.transfers[key] = prefix
+        if prefix == len(blob):
+            workflow.delivered.add(number)
         return {"data": base64.b64encode(part).decode("ascii"), "offset": offset,
                 "next": offset + len(part), "total": len(blob)}

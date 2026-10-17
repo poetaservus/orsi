@@ -107,6 +107,20 @@ class ReadArguments(OfficeModel):
     max_chars: int = Field(default=4_096, ge=1, le=8_192)
 
 
+class WordFinding(OfficeModel):
+    location: str = Field(min_length=1, max_length=256)
+    defect: str = Field(min_length=1, max_length=512)
+    requirement: str = Field(min_length=1, max_length=512)
+
+
+class WordReviewArguments(OfficeModel):
+    session: Identifier
+    revision: Identifier
+    findings: list[WordFinding] = Field(max_length=64)
+    requirements_checked: list[Annotated[str, Field(min_length=1, max_length=512)]] = Field(min_length=1, max_length=64)
+    requirements_met: bool
+
+
 class ExcelChange(OfficeModel):
     sheet: str = Field(min_length=1, max_length=128)
     range: str = Field(min_length=1, max_length=256)
@@ -596,6 +610,11 @@ class RevertArguments(EditArguments):
 
 class OfficeResult(OfficeModel):
     byte_limit: ClassVar[int] = MAX_RESULT_BYTES
+    word_workflow: dict | None = None
+
+
+class WordReviewResult(OfficeResult):
+    session: Identifier
 
 
 class Document(OfficeModel):
@@ -745,20 +764,13 @@ OFFICE_TOOLS = tuple(sorted((
                        "Objects are created, not overwritten; revert removes only unchanged owned objects and restores the reserved pivot cells (read them again first). "
                        "No defined names, external data or references. Editing is not saving.",
                        ExcelEditArguments, EditResult, PermissionClass.WRITE, "excel"),
-    OfficeToolContract("office.word_edit", "One fully read Word action per patch: replace_text or insert_after in a uniform body run (4096 UTF-16 units); "
-                       "apply_style to a complete paragraph using a discovered style; edit_table replaces the exact matrix of a discovered simple fixed-layout table (64 cells). "
-                       "Finish cursor pages. No structural markers, merged cells, fields or tracked changes. Preserves direct formatting; save separately. Read again before revert; Save As creates a new .docx.",
+    OfficeToolContract("office.word_review", 'Record findings after inspecting ALL current page images. Each defect needs location and unmet user requirement; no vague cosmetic rewrites. Check user requirements. Correct once coherently, inspect all pages for reflow. Clean: save and finish. Never replay edits.',
+                       WordReviewArguments, WordReviewResult, PermissionClass.READ, "word"),
+    OfficeToolContract("office.word_edit", 'One fully read exact Word action: replace_text/insert_after in uniform runs; apply_style to complete paragraphs; edit_table for simple tables. Finish cursors. Corrections require word_review defects. Save separately.',
                        WordEditArguments, EditResult, PermissionClass.WRITE, "word"),
-    OfficeToolContract("office.image_register", "Register a local PNG/JPEG path or attachment: reference discovered with read target=assets for this Word session. Returns an opaque immutable asset; no image bytes in calls. Max eight assets, 256 KiB each, 2048 pixels per side, four million pixels, one MiB total. No URLs or rendered-page references.",
+    OfficeToolContract("office.image_register", 'Register a local PNG/JPEG or attachment: reference from read assets as an immutable Word picture. No URLs/rendered pages. Eight assets; 256 KiB each; 2048 pixels/side.',
                        WordImageRegisterArguments, WordImageRegisterResult, PermissionClass.READ, "word"),
-    OfficeToolContract("office.word_compose", "Replace ALL body/header/footer with editable paragraphs, headings, tables and embedded inline pictures. "
-                       "Read target=authoring completely first, including blanks; approval and owned recovery apply. "
-                       "No text boxes. "
-                       "Use separate paragraph blocks; no newlines, tabs or controls in text/cells/header/footer. "
-                       "sections is the COMPLETE body. Each nonempty section has native columns=1 or 2, column_spacing_mm, start=continuous or new_page, and blocks. First start is continuous. Use one-column title/figure sections and two-column flowing body; column_break advances a column, not a page. Historical pages/blocks calls remain supported separately. "
-                       "Images use image_register asset, width_mm (aspect preserved), meaningful alt_text, optional editable caption and truthful credit. Max eight pictures. Tables need rectangular cells and one width per column. Usable column width=(page width-left margin-right margin-(columns-1)*gap)/columns; default full body 170 mm, two columns with 8 mm gap each 81 mm. Table/image widths must fit this limit. "
-                       "Header/footer distances must be below top/bottom margins. "
-                       "After editing, read target=layout for actual page count and target=render:first:last (1-3 existing pages per call); inspect every page and correct layout, then save separately.",
+    OfficeToolContract("office.word_compose", 'Replace ALL body/header/footer with complete editable content in sections. Read authoring completely first, including blanks; layout/render snapshots cannot authorize replacement. Corrections require current word_review defects. Native sections support one/two columns, tables and registered pictures. Approval and owned recovery apply; save separately.',
                        WordComposeArguments, EditResult, PermissionClass.WRITE, "word"),
     OfficeToolContract("office.powerpoint_edit", "Edit slide text, layout or positions against a snapshot.",
                        PowerPointEditArguments, EditResult, PermissionClass.WRITE, "powerpoint"),
