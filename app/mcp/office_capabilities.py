@@ -5,6 +5,7 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
+import re
 from threading import RLock
 
 from app.capabilities.contracts import (
@@ -50,7 +51,7 @@ def _exposure(connection, model):
 
 
 def _compose_branch(label):
-    for branch in ("WordParagraph", "WordTable", "WordPageBreak"):
+    for branch in ("WordParagraph", "WordTable", "WordPageBreak", "WordImage", "WordColumnBreak", "WordSectionBreak"):
         if label == branch or label.startswith("function-after[") and f", {branch}]" in label:
             return branch
     return None
@@ -63,7 +64,8 @@ def _compose_error_details(raw, details):
     except ValueError:
         pass
     blocks = raw.get("blocks", []) if isinstance(raw, dict) else []
-    branches = {"paragraph": "WordParagraph", "table": "WordTable", "page_break": "WordPageBreak"}
+    branches = {"paragraph": "WordParagraph", "table": "WordTable", "page_break": "WordPageBreak",
+        "image": "WordImage", "column_break": "WordColumnBreak", "section_break": "WordSectionBreak"}
     focused = []
     for detail in details:
         location = detail.get("location", [])
@@ -123,6 +125,17 @@ def _compose_error_message(details, empty_plan=None):
         "Supply complete nonempty pages, without a separate blocks plan.",
         "Each planned page requires its complete nonempty paragraph/table blocks.",
         "Use complete page content; page boundaries are applied between pages.",
+        "Supply exactly one complete body representation: sections, pages or blocks.",
+        "Section column settings must be supplied only on sections.",
+        "Each section requires bounded content and column settings.",
+        "Each section requires paragraph, table or image content.",
+        "Use section transitions and column breaks inside sections.",
+        "The first section must start continuously.",
+        "Word columns require at least 20 mm of usable width.",
+        "Column breaks require a two-column section.",
+        "Word image width exceeds its containing column width.",
+        "Word requires nonempty sections, at most 16 sections and eight images.",
+        "Pictures require meaningful nonblank alt text.",
     }
     numeric = {"greater_than", "greater_than_equal", "less_than", "less_than_equal", "multiple_of",
                "string_too_long", "string_too_short", "too_long", "too_short"}
@@ -134,7 +147,8 @@ def _compose_error_message(details, empty_plan=None):
         kind, message = detail.get("type"), detail.get("message", "")
         if kind == "value_error":
             message = message.removeprefix("Value error, ")
-            hint = message if message in known else "does not match the advertised schema"
+            width = re.fullmatch(r"Word (?:image width exceeds its|table widths exceed their) containing column width; maximum ([0-9]{1,3}\.[0-9]{3}) mm\.", message)
+            hint = message if message in known or width and 0 < float(width[1]) <= 420 else "does not match the advertised schema"
         elif kind == "string_pattern_mismatch":
             hint = ("use separate paragraph blocks; text cannot contain newlines, tabs or controls"
                     if (parts and parts[-1] in {"text", "header", "footer"}) or "cells" in parts
@@ -250,6 +264,10 @@ class OfficeCapability(Capability):
             if (identity != context.authorized_resource_identity or
                     (str(binding.resource) if binding.resource is not None else None) != context.authorized_resource):
                 raise Error(Code.PERMISSION_DENIED, "The exact approved Office target changed before execution.")
+            if self.name == "office.image_register":
+                return self.connection.register_image(arguments, binding.resource, context.cancellation, context.session_id)
+            if self.name == "office.read" and arguments.target == "assets":
+                return self.connection.discover_picture_sources(arguments, context)
             return self.connection.call(self.contract, arguments, expected=exposure,
                                         operation=context.call_id, cancellation=context.cancellation)
         finally:

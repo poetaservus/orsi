@@ -193,7 +193,50 @@ class WordPageBreak(OfficeModel):
     kind: Literal["page_break"]
 
 
+class WordColumnBreak(OfficeModel):
+    kind: Literal["column_break"]
+
+
+class WordSectionBreak(OfficeModel):
+    kind: Literal["section_break"]
+    start: Literal["continuous", "new_page"] = "continuous"
+    columns: Literal[1, 2] = 1
+    column_spacing_mm: float = Field(default=8, ge=0, le=40)
+
+
+class WordImage(OfficeModel):
+    kind: Literal["image"]
+    asset: Identifier
+    width_mm: float = Field(gt=0, le=400)
+    alt_text: WordText = Field(min_length=1)
+    caption: WordText = ""
+    credit: WordText = ""
+
+    @field_validator("alt_text")
+    @classmethod
+    def meaningful_alt(cls, value):
+        if not value.strip():
+            raise ValueError("Pictures require meaningful nonblank alt text.")
+        return value
+
+
+class WordImageRegisterArguments(OfficeModel):
+    session: Identifier
+    path: str = Field(min_length=1, max_length=2048)
+
+
+class WordImageRegisterResult(OfficeModel):
+    session: Identifier
+    asset: Identifier
+    format: Literal["PNG", "JPEG"]
+    width_px: int
+    height_px: int
+    bytes: int
+
+
 class WordPageLayout(OfficeModel):
+    columns: Literal[1, 2] = 1
+    column_spacing_mm: float = Field(default=8, ge=0, le=40)
     width_mm: float = Field(default=210, ge=100, le=420)
     height_mm: float = Field(default=297, ge=100, le=420)
     margins_mm: list[WordMargin] = Field(default_factory=lambda: [20, 20, 20, 20],
@@ -214,7 +257,7 @@ class WordPageLayout(OfficeModel):
 class WordComposeArguments(OfficeModel):
     session: Identifier
     snapshot: Identifier
-    blocks: list[WordParagraph | WordTable | WordPageBreak] = Field(min_length=1, max_length=96,
+    blocks: list[WordParagraph | WordTable | WordImage | WordPageBreak | WordColumnBreak | WordSectionBreak] = Field(min_length=1, max_length=96,
         description="COMPLETE replacement body in reading order; pagination belongs on paragraphs.")
     layout: WordPageLayout = Field(default_factory=WordPageLayout)
     format: WordFormat = Field(default_factory=WordFormat)
@@ -224,30 +267,95 @@ class WordComposeArguments(OfficeModel):
 
     @classmethod
     def legacy_json_schema(cls, *args, **kwargs):
-        return super().model_json_schema(*args, **kwargs)
+        schema = super().model_json_schema(*args, **kwargs)
+        old = {"WordParagraph", "WordTable", "WordPageBreak"}
+        schema["properties"]["blocks"]["items"]["anyOf"] = [b for b in schema["properties"]["blocks"]["items"]["anyOf"]
+            if b.get("$ref", "").rsplit("/", 1)[-1] in old]
+        for name in ("WordImage", "WordSectionBreak", "WordColumnBreak"):
+            schema["$defs"].pop(name, None)
+        for name in ("columns", "column_spacing_mm"):
+            schema["$defs"]["WordPageLayout"]["properties"].pop(name)
+        return schema
 
     @classmethod
-    def model_json_schema(cls, *args, **kwargs):
-        # The live plan groups complete content by intended page. The typed
-        # native/recovery representation remains compatible with older blocks.
-        schema = cls.legacy_json_schema(*args, **kwargs)
+    def pages_json_schema(cls):
+        schema = cls.legacy_json_schema()
         blocks = schema["properties"].pop("blocks")
         blocks.pop("description", None)
-        blocks["items"]["anyOf"] = [
-            branch for branch in blocks["items"]["anyOf"]
-            if branch.get("$ref") != "#/$defs/WordPageBreak"]
-        schema["$defs"].pop("WordPageBreak", None)
+        blocks["items"]["anyOf"] = [b for b in blocks["items"]["anyOf"] if b.get("$ref") != "#/$defs/WordPageBreak"]
+        schema["$defs"].pop("WordPageBreak")
         schema["$defs"]["WordParagraph"]["properties"].pop("page_break_before")
         schema["$defs"]["WordComposePage"] = {"type": "object", "additionalProperties": False,
             "properties": {"blocks": blocks}, "required": ["blocks"]}
         schema["properties"]["pages"] = {"type": "array", "minItems": 1, "maxItems": 96,
             "items": {"$ref": "#/$defs/WordComposePage"}}
-        schema["required"] = ["pages" if name == "blocks" else name for name in schema["required"]]
+        schema["required"] = ["pages" if n == "blocks" else n for n in schema["required"]]
+        return schema
+
+    @classmethod
+    def model_json_schema(cls, *args, **kwargs):
+        # The live plan groups complete content by native section. The typed
+        # native/recovery representation remains compatible with older blocks.
+        schema = super().model_json_schema(*args, **kwargs)
+        blocks = schema["properties"].pop("blocks")
+        blocks.pop("description", None)
+        blocks["items"]["anyOf"] = [branch for branch in blocks["items"]["anyOf"]
+            if branch.get("$ref") not in {"#/$defs/WordPageBreak", "#/$defs/WordSectionBreak"}]
+        boundary = schema["$defs"].pop("WordSectionBreak")
+        boundary["title"] = "WordComposeSection"
+        schema["$defs"].pop("WordPageBreak")
+        boundary["properties"].pop("kind")
+        for name in ("WordParagraph", "WordTable"):
+            schema["$defs"][name]["required"] = list(dict.fromkeys(["kind", *schema["$defs"][name].get("required", [])]))
+        schema["$defs"]["WordParagraph"]["properties"]["text"]["minLength"] = 1
+        schema["$defs"]["WordParagraph"]["properties"].pop("page_break_before")
+        boundary["properties"]["blocks"] = blocks
+        boundary["required"] = ["start", "columns", "column_spacing_mm", "blocks"]
+        schema["$defs"]["WordComposeSection"] = boundary
+        schema["properties"]["sections"] = {"type": "array", "minItems": 1, "maxItems": 16,
+            "items": {"$ref": "#/$defs/WordComposeSection"}}
+        # Column defaults belong to each advertised section. Legacy layout calls
+        # retain their controls but cannot compete with a sections plan.
+        for name in ("columns", "column_spacing_mm"):
+            schema["$defs"]["WordPageLayout"]["properties"].pop(name)
+        schema["required"] = ["sections" if name == "blocks" else name for name in schema["required"]]
         return schema
 
     @model_validator(mode="before")
     @classmethod
     def complete_pages(cls, raw):
+        if isinstance(raw, dict) and "sections" in raw:
+            if len(canonical_json(raw).encode()) > MAX_ARGUMENT_BYTES:
+                raise ValueError("The Office payload exceeds its byte limit.")
+            sections = raw["sections"]
+            if ("blocks" in raw or "pages" in raw or not isinstance(sections, list)
+                    or not 1 <= len(sections) <= 16):
+                raise ValueError("Supply exactly one complete body representation: sections, pages or blocks.")
+            if any(key in raw.get("layout", {}) for key in ("columns", "column_spacing_mm")):
+                raise ValueError("Section column settings must be supplied only on sections.")
+            blocks, first = [], None
+            for index, section in enumerate(sections):
+                if not isinstance(section, dict) or set(section) - {"blocks", "start", "columns", "column_spacing_mm"}:
+                    raise ValueError("Each section requires bounded content and column settings.")
+                boundary = WordSectionBreak.model_validate({"kind": "section_break", **{
+                    key: value for key, value in section.items() if key != "blocks"}})
+                content = section.get("blocks")
+                if (not isinstance(content, list) or not 1 <= len(content) <= 96
+                        or not any(isinstance(b, dict) and b.get("kind", "paragraph") in {"paragraph", "table", "image"} for b in content)):
+                    raise ValueError("Each section requires paragraph, table or image content.")
+                if any(not isinstance(b, dict) or b.get("kind") in {"section_break", "page_break"}
+                       or "page_break_before" in b for b in content):
+                    raise ValueError("Use section transitions and column breaks inside sections.")
+                if index:
+                    blocks.append(boundary.model_dump())
+                else:
+                    if boundary.start != "continuous":
+                        raise ValueError("The first section must start continuously.")
+                    first = boundary
+                blocks.extend(content)
+            return {**{key: value for key, value in raw.items() if key != "sections"},
+                "layout": {**raw.get("layout", {}), "columns": first.columns,
+                           "column_spacing_mm": first.column_spacing_mm}, "blocks": blocks}
         if not isinstance(raw, dict) or "pages" not in raw:
             return raw  # Historical/native complete block plans retain their semantics.
         if len(canonical_json(raw).encode("utf-8")) > MAX_ARGUMENT_BYTES:
@@ -296,15 +404,40 @@ class WordComposeArguments(OfficeModel):
     def check_document(self):
         text = [self.header, self.footer]
         usable = self.layout.width_mm - self.layout.margins_mm[1] - self.layout.margins_mm[3]
-        cells = 0
+        cells = images = sections = 0
+        columns, spacing = self.layout.columns, self.layout.column_spacing_mm
+        content = False
         for block in self.blocks:
+            if isinstance(block, WordSectionBreak):
+                if not content:
+                    raise ValueError("Each section requires paragraph, table or image content.")
+                content = False
+                sections += 1
+                columns, spacing = block.columns, block.column_spacing_mm
+            column_width = (usable - (columns - 1) * spacing) / columns
+            if column_width < 20:
+                raise ValueError("Word columns require at least 20 mm of usable width.")
+            if isinstance(block, WordColumnBreak) and columns != 2:
+                raise ValueError("Column breaks require a two-column section.")
             if isinstance(block, WordParagraph):
                 text.append(block.text)
+                content = content or bool(block.text.strip())
             elif isinstance(block, WordTable):
+                content = True
                 text.extend(value for row in block.cells for value in row)
                 cells += _matrix_cells(block.cells)
-                if sum(block.widths_mm) > usable + .05:
+                if sum(block.widths_mm) > column_width + .05:
+                    if columns == 2:
+                        raise ValueError(f"Word table widths exceed their containing column width; maximum {column_width:.3f} mm.")
                     raise ValueError("Word table widths exceed the printable body width.")
+            elif isinstance(block, WordImage):
+                content = True
+                images += 1
+                text.extend((block.alt_text, block.caption, block.credit))
+                if block.width_mm > column_width + .05:
+                    raise ValueError(f"Word image width exceeds its containing column width; maximum {column_width:.3f} mm.")
+        if not content or sections >= 16 or images > 8:
+            raise ValueError("Word requires nonempty sections, at most 16 sections and eight images.")
         if (cells > 512 or sum(isinstance(block, WordTable) for block in self.blocks) > 32
                 or sum(len(value) for value in text) > 24000):
             raise ValueError("The Word document exceeds its bounded content limit.")
@@ -598,7 +731,7 @@ OFFICE_TOOLS = tuple(sorted((
                        "Results are pages, not the whole target: repeat the same session/target with cursor until null. "
                        "Used-range items pack row segments into typed matrices; labels identify their exact cell ranges. "
                        "Never derive whole-sheet KPIs from a preview or unfinished page sequence. "
-                       "Word: document, text:start:end, styles, tables or table:index; authoring reads complete report content/layout for word_compose, "
+                       "Word: assets discovers eligible conversation image references; document, text:start:end, styles, tables or table:index; authoring reads complete report content/layout for word_compose, "
                        "layout returns native page count; render:first:last returns up to three actual page images for visual inspection. PowerPoint: slides or slide:index.",
                        ReadArguments, ReadResult, PermissionClass.READ),
     OfficeToolContract("office.excel_edit", "Apply a bounded Excel patch against a complete matching cell snapshot. "
@@ -616,12 +749,14 @@ OFFICE_TOOLS = tuple(sorted((
                        "apply_style to a complete paragraph using a discovered style; edit_table replaces the exact matrix of a discovered simple fixed-layout table (64 cells). "
                        "Finish cursor pages. No structural markers, merged cells, fields or tracked changes. Preserves direct formatting; save separately. Read again before revert; Save As creates a new .docx.",
                        WordEditArguments, EditResult, PermissionClass.WRITE, "word"),
-    OfficeToolContract("office.word_compose", "Replace ALL report body/header/footer with native paragraphs, heading styles and editable tables. "
+    OfficeToolContract("office.image_register", "Register a local PNG/JPEG path or attachment: reference discovered with read target=assets for this Word session. Returns an opaque immutable asset; no image bytes in calls. Max eight assets, 256 KiB each, 2048 pixels per side, four million pixels, one MiB total. No URLs or rendered-page references.",
+                       WordImageRegisterArguments, WordImageRegisterResult, PermissionClass.READ, "word"),
+    OfficeToolContract("office.word_compose", "Replace ALL body/header/footer with editable paragraphs, headings, tables and embedded inline pictures. "
                        "Read target=authoring completely first, including blanks; approval and owned recovery apply. "
                        "No text boxes. "
                        "Use separate paragraph blocks; no newlines, tabs or controls in text/cells/header/footer. "
-                       "pages is the COMPLETE body, including pricing tables, grouped by intended page. For two pages supply exactly TWO nonempty page objects, each with all its paragraph/table blocks. Page starts are applied between pages; no standalone breaks. "
-                       "Rectangular tables need one width per column; total widths must fit page width minus left/right margins (default 170 mm). "
+                       "sections is the COMPLETE body. Each nonempty section has native columns=1 or 2, column_spacing_mm, start=continuous or new_page, and blocks. First start is continuous. Use one-column title/figure sections and two-column flowing body; column_break advances a column, not a page. Historical pages/blocks calls remain supported separately. "
+                       "Images use image_register asset, width_mm (aspect preserved), meaningful alt_text, optional editable caption and truthful credit. Max eight pictures. Tables need rectangular cells and one width per column. Usable column width=(page width-left margin-right margin-(columns-1)*gap)/columns; default full body 170 mm, two columns with 8 mm gap each 81 mm. Table/image widths must fit this limit. "
                        "Header/footer distances must be below top/bottom margins. "
                        "After editing, read target=layout for actual page count and target=render:first:last (1-3 existing pages per call); inspect every page and correct layout, then save separately.",
                        WordComposeArguments, EditResult, PermissionClass.WRITE, "word"),

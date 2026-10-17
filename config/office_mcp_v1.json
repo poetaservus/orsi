@@ -1,79 +1,86 @@
 {
+  "schema_version": 1,
+  "transport": "stdio",
   "cloud_only": true,
   "max_argument_bytes": 32768,
-  "max_cells": 1000,
-  "max_changes": 16,
   "max_result_bytes": 16384,
-  "schema_budget": {
-    "max_reserve_tokens": 7200,
-    "max_wire_bytes": 20000,
-    "token_method": "ORSI offline reserve: ceil(wire_bytes / 3) + 48 per tool"
-  },
-  "schema_version": 1,
+  "max_changes": 16,
+  "max_cells": 1000,
   "tools": [
     {
-      "application": null,
-      "input_schema_sha256": "8a5d52b4cab08ebd1e37be342fdc942743c5746c0d7f4589b5bec784ec615020",
       "name": "office.attach",
-      "output_schema_sha256": "224a6df5b29b19e48a935617b8b5357964171163cebe0786b5b731d25e9437ef",
-      "permission": "read"
+      "application": null,
+      "permission": "read",
+      "input_schema_sha256": "8a5d52b4cab08ebd1e37be342fdc942743c5746c0d7f4589b5bec784ec615020",
+      "output_schema_sha256": "224a6df5b29b19e48a935617b8b5357964171163cebe0786b5b731d25e9437ef"
     },
     {
-      "application": null,
-      "input_schema_sha256": "7c152eb184f1be27a80dc129481005a8f073ec6d64c7f34ddc3994165ecce754",
       "name": "office.documents",
-      "output_schema_sha256": "c1ab11986831c39c6d73b59ee46b25009478ec3ad17cd40664b5f1ce62e824a4",
-      "permission": "read"
+      "application": null,
+      "permission": "read",
+      "input_schema_sha256": "7c152eb184f1be27a80dc129481005a8f073ec6d64c7f34ddc3994165ecce754",
+      "output_schema_sha256": "c1ab11986831c39c6d73b59ee46b25009478ec3ad17cd40664b5f1ce62e824a4"
     },
     {
-      "application": "excel",
-      "input_schema_sha256": "098f05a29633cffc655e9d2ba6e058d51722cce936c58643a198f3ceefcd4a70",
       "name": "office.excel_edit",
-      "output_schema_sha256": "0ca4db16737e5c418149a84e7c43a686845bd9bd5611cb2d7c9301b78904fd16",
-      "permission": "write"
+      "application": "excel",
+      "permission": "write",
+      "input_schema_sha256": "098f05a29633cffc655e9d2ba6e058d51722cce936c58643a198f3ceefcd4a70",
+      "output_schema_sha256": "0ca4db16737e5c418149a84e7c43a686845bd9bd5611cb2d7c9301b78904fd16"
     },
     {
-      "application": "powerpoint",
-      "input_schema_sha256": "eb278adca1a3bb1da31f66663c99238c7f0fcf9738b7fe0773d571ba2e1100e4",
+      "name": "office.image_register",
+      "application": "word",
+      "permission": "read",
+      "input_schema_sha256": "c0f2b69742d5b56849fc62eb70a05f7c0b01ac75ea07e11623e76194010463d5",
+      "output_schema_sha256": "f913705ea7b172835cc044ba1ac808d820c1c76bfbdda9bf8e3f3fc6e90fa5df"
+    },
+    {
       "name": "office.powerpoint_edit",
-      "output_schema_sha256": "0ca4db16737e5c418149a84e7c43a686845bd9bd5611cb2d7c9301b78904fd16",
-      "permission": "write"
+      "application": "powerpoint",
+      "permission": "write",
+      "input_schema_sha256": "eb278adca1a3bb1da31f66663c99238c7f0fcf9738b7fe0773d571ba2e1100e4",
+      "output_schema_sha256": "0ca4db16737e5c418149a84e7c43a686845bd9bd5611cb2d7c9301b78904fd16"
     },
     {
-      "application": null,
-      "input_schema_sha256": "5cfd98c48a63fd5bbee6c81af4225ad26462ad80efb0b1c90f32807684c17286",
       "name": "office.read",
-      "output_schema_sha256": "bf3c8a299fbdef129ef276591c0daea45f0654c96ac0694ea7cdff72f82f9fdb",
-      "permission": "read"
+      "application": null,
+      "permission": "read",
+      "input_schema_sha256": "5cfd98c48a63fd5bbee6c81af4225ad26462ad80efb0b1c90f32807684c17286",
+      "output_schema_sha256": "bf3c8a299fbdef129ef276591c0daea45f0654c96ac0694ea7cdff72f82f9fdb"
     },
     {
-      "application": null,
-      "input_schema_sha256": "370aab0176369e4b03908310c4de557b2af40001db861e73c622052eef9db996",
       "name": "office.revert",
-      "output_schema_sha256": "0ca4db16737e5c418149a84e7c43a686845bd9bd5611cb2d7c9301b78904fd16",
-      "permission": "write"
-    },
-    {
       "application": null,
-      "input_schema_sha256": "6823735402238fe5888aa12fccb2cdfe0be4e8b27bcb074b37a8ee861fefec49",
+      "permission": "write",
+      "input_schema_sha256": "370aab0176369e4b03908310c4de557b2af40001db861e73c622052eef9db996",
+      "output_schema_sha256": "0ca4db16737e5c418149a84e7c43a686845bd9bd5611cb2d7c9301b78904fd16"
+    },
+    {
       "name": "office.save",
-      "output_schema_sha256": "94cc08433ac711f490179fc094e9574b40d7264805b9df13bdc25fc070da45b6",
-      "permission": "write"
+      "application": null,
+      "permission": "write",
+      "input_schema_sha256": "6823735402238fe5888aa12fccb2cdfe0be4e8b27bcb074b37a8ee861fefec49",
+      "output_schema_sha256": "94cc08433ac711f490179fc094e9574b40d7264805b9df13bdc25fc070da45b6"
     },
     {
-      "application": "word",
-      "input_schema_sha256": "d5cb7066df932ba3b71d40f05258463779767337a46a7028f88587c56f3fb5cd",
       "name": "office.word_compose",
-      "output_schema_sha256": "0ca4db16737e5c418149a84e7c43a686845bd9bd5611cb2d7c9301b78904fd16",
-      "permission": "write"
+      "application": "word",
+      "permission": "write",
+      "input_schema_sha256": "cb48143395213340cc0ba7fbd57277e24139a3398b6309a292b085b0f28a82dc",
+      "output_schema_sha256": "0ca4db16737e5c418149a84e7c43a686845bd9bd5611cb2d7c9301b78904fd16"
     },
     {
-      "application": "word",
-      "input_schema_sha256": "d6963466cb01e7bd744c7c075651efc5e5cdbe6985a39445261c904caf295af6",
       "name": "office.word_edit",
-      "output_schema_sha256": "0ca4db16737e5c418149a84e7c43a686845bd9bd5611cb2d7c9301b78904fd16",
-      "permission": "write"
+      "application": "word",
+      "permission": "write",
+      "input_schema_sha256": "d6963466cb01e7bd744c7c075651efc5e5cdbe6985a39445261c904caf295af6",
+      "output_schema_sha256": "0ca4db16737e5c418149a84e7c43a686845bd9bd5611cb2d7c9301b78904fd16"
     }
   ],
-  "transport": "stdio"
+  "schema_budget": {
+    "max_wire_bytes": 22500,
+    "max_reserve_tokens": 8100,
+    "token_method": "ORSI offline reserve: ceil(wire_bytes / 3) + 48 per tool"
+  }
 }

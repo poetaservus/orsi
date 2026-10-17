@@ -24,12 +24,20 @@ def layout_view(document):
     count = int(document.Range(0, 0).Information(4))
     if not 1 <= count <= 1000:
         raise WordRenderUnavailable("Word page count exceeds the inspection bound.")
-    setup = document.PageSetup
-    body_width = float(setup.PageWidth) - float(setup.LeftMargin) - float(setup.RightMargin)
+    setup = document.Sections.Item(1).PageSetup
+    sections = []
+    for number in range(1, int(document.Sections.Count) + 1):
+        page = document.Sections.Item(number).PageSetup
+        columns = page.TextColumns
+        sections.append({"columns": int(columns.Count), "column_spacing_mm":
+            round(float(columns.Spacing) * 25.4 / 72, 2) if int(columns.Count) > 1 else 0})
     overflow = []
     for index in range(1, min(int(document.Tables.Count), 32) + 1):
         table = document.Tables.Item(index)
         try:
+            page = table.Range.Sections.Item(1).PageSetup
+            body_width = (float(page.PageWidth) - float(page.LeftMargin) - float(page.RightMargin)
+                - (int(page.TextColumns.Count) - 1) * float(page.TextColumns.Spacing)) / int(page.TextColumns.Count)
             width = sum(float(table.Columns.Item(i).Width) for i in range(1, int(table.Columns.Count) + 1))
             if width > body_width + 1:
                 overflow.append(index)
@@ -38,6 +46,7 @@ def layout_view(document):
     return {"page_count": count, "page_width_mm": round(float(setup.PageWidth) * 25.4 / 72, 2),
             "page_height_mm": round(float(setup.PageHeight) * 25.4 / 72, 2),
             "tables_outside_body_or_irregular": overflow,
+            "sections": sections, "inline_pictures": int(document.InlineShapes.Count),
             "visual_verification_status": "requires_review",
             "render_target": "render:1:" + str(min(count, 3)),
             "scope": "Native Word pagination and table widths. Inspect every rendered page for whitespace, clipping and headings."}

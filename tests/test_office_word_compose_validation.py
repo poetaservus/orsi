@@ -64,7 +64,9 @@ def page_plan(plan):
 
 
 def wire_call(plan, call_id="call_report", *, definition=None):
-    definition = definition or CONTRACT.definition()
+    # Existing page/block fixtures exercise the historical provider contract.
+    # The section-aware live contract has its own lossless projection regression.
+    definition = definition or CONTRACT.definition().model_copy(update={"input_schema": WordComposeArguments.pages_json_schema()})
     schema = definition.input_schema
     if "pages" in schema["properties"] and "blocks" in plan:
         plan = page_plan(plan)
@@ -80,7 +82,8 @@ def wire_call(plan, call_id="call_report", *, definition=None):
 def test_complete_three_page_report_round_trips_the_strict_provider_boundary():
     before = deepcopy(CONTRACT.definition().input_schema)
     wire, call = wire_call(body_plan())
-    jsonschema.validate(wire, responses_function_tools((CONTRACT.definition(),))[0]["parameters"])
+    historical = CONTRACT.definition().model_copy(update={"input_schema": WordComposeArguments.pages_json_schema()})
+    jsonschema.validate(wire, responses_function_tools((historical,))[0]["parameters"])
     plan = tool().validate_arguments(call.arguments)
     assert plan == WordComposeArguments.model_validate(body_plan())
     assert sum(block.page_break_before for block in plan.blocks if block.kind == "paragraph") == 2
@@ -201,7 +204,7 @@ def test_empty_plan_explains_full_replacement_and_retains_content_free_shape(blo
 
 
 def test_empty_block_is_no_longer_a_page_break_in_the_advertised_or_provider_schema():
-    definition = CONTRACT.definition()
+    definition = CONTRACT.definition().model_copy(update={"input_schema": WordComposeArguments.pages_json_schema()})
     schema = definition.input_schema
     args = {**report_plan(), "blocks": [{}]}
     with pytest.raises(jsonschema.ValidationError):
@@ -225,7 +228,8 @@ def test_missing_optional_kinds_do_not_discard_paragraph_or_table_content():
         if block["kind"] != "page_break":
             del block["kind"]
     wire, call = wire_call(args)
-    jsonschema.validate(wire, responses_function_tools((CONTRACT.definition(),))[0]["parameters"])
+    historical = CONTRACT.definition().model_copy(update={"input_schema": WordComposeArguments.pages_json_schema()})
+    jsonschema.validate(wire, responses_function_tools((historical,))[0]["parameters"])
     effective = tool().validate_arguments(call.arguments)
     assert effective == WordComposeArguments.model_validate(body_plan())
 
@@ -291,7 +295,7 @@ def test_schema_advertises_control_width_margin_and_running_matter_bounds():
                    {"blocks": [{"kind": "table", "cells": [["one\ntwo"]], "widths_mm": [100]}]}):
         with pytest.raises(jsonschema.ValidationError):
             jsonschema.validate(page_plan({**body_plan(), **change}), schema)
-    assert "default 170 mm" in CONTRACT.description
+    assert "default full body 170 mm" in CONTRACT.description
     assert "below top/bottom margins" in CONTRACT.description
 
 
@@ -385,7 +389,7 @@ def test_break_only_replacement_is_no_longer_advertised_or_accepted_by_live_prov
         "arguments": canonical_json(old_wire)}], (definition,), CompletionMetadata())
     assert response.protocol_failure is not None and not response.capability_calls
     assert "WordPageBreak" not in definition.input_schema.get("$defs", {})
-    assert "COMPLETE body" in definition.description and "TWO nonempty page objects" in definition.description
+    assert "COMPLETE body" in definition.description and "sections" in definition.input_schema["properties"]
 
 
 @pytest.mark.parametrize("body", [False, True])

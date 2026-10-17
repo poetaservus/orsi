@@ -94,6 +94,11 @@ class LiveOffice:
         if action == "word-render-image":
             binding = self.binding(session=data.get("session"))
             return self.word.renders.chunk(data, binding)
+        if action == "word-asset":
+            bound = self.binding(session=data.get("session"))
+            if bound["document"]["application"] != "word":
+                raise OfficeConflict("Pictures require a Word session.")
+            return self.word.assets.chunk(data["session"], data["asset"], data["offset"], data["data"], data["final"])
         if action == "mutation":
             from app.mcp.office_contracts import OFFICE_TOOLS
             contract = next((t for t in OFFICE_TOOLS if t.name == data.get("tool") and t.name in LIVE_TOOLS - READ_TOOLS), None)

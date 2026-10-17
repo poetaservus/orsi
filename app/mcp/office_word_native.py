@@ -15,7 +15,7 @@ W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 PKG = "{http://schemas.microsoft.com/office/2006/xmlPackage}"
 MAX_WORD_UNITS = 4096
 MAX_PARAGRAPH_UNITS = 8192
-MAX_XML_BYTES = 256 * 1024
+MAX_XML_BYTES = 2 * 1024 * 1024
 WORD_STYLES = {"Normal": -1, "Heading 1": -2, "Heading 2": -3, "Title": -63, "Subtitle": -75}
 
 
@@ -163,6 +163,20 @@ def replacement(state, text):
 
 
 class WordNative:
+    def word_read_guard(self, document):
+        """One bounded package guards a complete paged paragraph read."""
+        self.check_thread()
+        xml = str(document.Content.WordOpenXML)
+        if len(xml.encode()) > MAX_XML_BYTES:
+            reject("The complete Word read exceeds two MiB; use a smaller explicit text range.")
+        from app.mcp.office_word_document import signature
+        return signature(xml)
+
+    def word_read_anchor_valid(self, descriptor):
+        _, document, start, end, retained = descriptor
+        return (self.same(retained.Document, document) and int(retained.StoryType) == 1
+                and (int(retained.Start), int(retained.End)) == (start, end))
+
     def word_descriptor(self, document, start, end):
         return ("word", document, start, end, document.Range(start, end).Duplicate)
 
@@ -183,12 +197,17 @@ class WordNative:
 
     def word_xml_safe(self, document):
         # WordOpenXML includes related package parts even for a tiny range.
-        # Bound those native exports before requesting them, so an unrelated
-        # header image or embedded font cannot bypass the snapshot byte limit.
-        if (bool(document.EmbedTrueTypeFonts) or int(document.InlineShapes.Count) or
+        # Refuse unqualified object types/counts before requesting the export.
+        # Complete capture then verifies exact media bytes, decoded dimensions,
+        # relationships and the package bound before granting write authority.
+        if (bool(document.EmbedTrueTypeFonts) or int(document.InlineShapes.Count) > 8 or
                 int(document.Shapes.Count) or int(document.Footnotes.Count) or int(document.Endnotes.Count) or
                 int(document.Sections.Count) > 16):
-            reject("Word snapshots with embedded fonts, drawings, notes or more than 16 sections are read-only.")
+            reject("Word snapshots with embedded fonts, floating drawings, notes, more than eight pictures or 16 sections are read-only.")
+        for index in range(1, int(document.InlineShapes.Count) + 1):
+            picture = document.InlineShapes.Item(index)
+            if int(picture.Type) != 3 or not 0 < float(picture.Width) <= 1191 or not 0 < float(picture.Height) <= 1191:
+                reject("Only bounded native inline pictures are supported.")
         for index in range(1, int(document.Sections.Count) + 1):
             section = document.Sections.Item(index)
             for collection in (section.Headers, section.Footers):

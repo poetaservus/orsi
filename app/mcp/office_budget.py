@@ -12,8 +12,11 @@ from app.mcp.office_contracts import (
 # Dashboard creation adds four typed native object payloads to excel_edit.
 # The ceiling is measured against that expanded catalog, without changing the
 # model's context limit or any execution/approval policy.
-MAX_SCHEMA_WIRE_BYTES = 20_000
-MAX_SCHEMA_RESERVE_TOKENS = 7_200
+# Native section flow and bounded immutable picture registration add one read
+# tool and two content variants. This catalog ceiling does not change context
+# limits, output reserves, model settings or retry policy.
+MAX_SCHEMA_WIRE_BYTES = 22_500
+MAX_SCHEMA_RESERVE_TOKENS = 8_100
 
 
 def measure_office_catalog(exposure: OfficeExposure) -> dict:

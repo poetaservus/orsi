@@ -8,7 +8,7 @@ from defusedxml import ElementTree as ET
 from app.mcp.office_contracts import canonical_json
 from app.mcp.office_word_native import W, PKG, WORD_STYLES, reject
 
-MAX_DOCUMENT_XML = 1024 * 1024
+MAX_DOCUMENT_XML = 2 * 1024 * 1024
 ALIGNMENTS = {"left": 0, "center": 1, "right": 2, "justify": 3}
 LAYOUT = ("PageWidth", "PageHeight", "TopMargin", "RightMargin", "BottomMargin", "LeftMargin",
           "HeaderDistance", "FooterDistance")
@@ -28,7 +28,13 @@ def normalized(node):
     """Ignore Word's revision IDs/gallery state, retaining content and formatting."""
     attributes = {key: value for key, value in node.attrib.items()
                   if not key.rsplit("}", 1)[-1].startswith("rsid")
-                  and key.rsplit("}", 1)[-1] not in {"paraId", "textId", "dirty"}}
+                  and key.rsplit("}", 1)[-1] not in {"paraId", "textId", "dirty", "editId", "anchorId"}
+                  and not (key == "id" and node.tag.rsplit("}", 1)[-1] in {"docPr", "cNvPr"})}
+    if node.tag == W + "docGrid" and attributes.get(W + "type", "default") == "default":
+        # Word recalculates this dormant pitch on section import. In default
+        # (no-grid) mode it does not control layout. Active grid pitch remains
+        # guarded, along with all other section attributes.
+        attributes.pop(W + "linePitch", None)
     text = node.text or ""
     if node.tag not in {W + "t", W + "instrText"} and not text.strip():
         text = ""
@@ -86,6 +92,12 @@ def package_state(root):
              if not part.attrib.get(PKG + "name", "").startswith("/docProps/")}
     aliases, ignored = {}, set()
     for name, part in parts.items():
+        binary = part.find(PKG + "binaryData")
+        if binary is not None:
+            import base64
+            content = sha256(base64.b64decode("".join((binary.text or "").split()), validate=True)).hexdigest()
+            aliases[name] = "media:" + content
+            binary.text = content
         if name.startswith(("/word/header", "/word/footer")) and name.endswith(".xml"):
             data = part.find(PKG + "xmlData")
             role = "header" if name.startswith("/word/header") else "footer"
@@ -145,8 +157,9 @@ def package_state(root):
             relation.attrib["Id"] = identity
             if source_part is not None:
                 for node in source_part.iter():
-                    if node.attrib.get(R + "id") == old_id:
-                        node.attrib[R + "id"] = identity
+                    for key in (R + "id", R + "embed"):
+                        if node.attrib.get(key) == old_id:
+                            node.attrib[key] = identity
     result = {}
     for name, part in parts.items():
         if name in ignored:
@@ -176,36 +189,74 @@ def capture_document(backend, document):
     backend.check_thread()
     backend.word_writable(document)
     backend.word_xml_safe(document)
-    if int(document.Content.End) > 32768 or int(document.Sections.Count) != 1:
-        reject("Report authoring supports one bounded section with at most 32768 native text positions.")
+    if int(document.Content.End) > 32768 or not 1 <= int(document.Sections.Count) <= 16:
+        reject("Report authoring supports at most 16 sections and 32768 native text positions.")
     if int(document.Tables.Count) > 32 or sum(int(document.Tables.Item(i).Range.Cells.Count)
             for i in range(1, int(document.Tables.Count) + 1)) > 512:
         reject("Report authoring supports at most 32 tables and 512 cells.")
-    running = []
-    for name, collection in (("Headers", document.Sections.Item(1).Headers),
-                             ("Footers", document.Sections.Item(1).Footers)):
-        for index in range(1, 4):
-            part = collection.Item(index)
-            if bool(part.Exists):
-                if int(part.Range.Hyperlinks.Count) or any(int(part.Range.Fields.Item(i).Type) not in {26, 33}
-                        for i in range(1, int(part.Range.Fields.Count) + 1)):
-                    reject("Report running matter supports ordinary text and PAGE/NUMPAGES fields only.")
-            running.append({"collection": name, "index": index, "exists": bool(part.Exists),
-                            "xml": str(part.Range.WordOpenXML) if bool(part.Exists) else None})
     xml = str(document.Content.WordOpenXML)
     if len(xml.encode()) > MAX_DOCUMENT_XML:
-        reject("The complete report snapshot exceeds its one-MiB bound.")
+        reject("The complete report snapshot exceeds its two-MiB bound.")
     root = ET.fromstring(xml)
+    from app.mcp.office_word_assets import validate_package, REL
+    pictures = validate_package(root)
+    parts = {p.attrib.get(PKG + "name"): p for p in root.findall(PKG + "part")}
+    relationships = parts.get("/word/_rels/document.xml.rels")
+    mapping = {} if relationships is None else {r.attrib.get("Id"): posixpath.normpath(posixpath.join("/word", r.attrib.get("Target", "")))
+        for r in relationships.iter(REL + "Relationship")}
+    properties = parts["/word/document.xml"].findall(".//" + W + "sectPr")
+    if len(properties) != int(document.Sections.Count):
+        reject("Word section metadata and native package disagree.")
+    if any(g.attrib.get(W + "type", "default") != "default" for p in properties for g in p.findall(W + "docGrid")):
+        reject("Active document grids are unsupported for report authoring.")
+    inherited = {}
+    running = []
+    section_views = []
+    for number in range(1, int(document.Sections.Count) + 1):
+        section = document.Sections.Item(number)
+        setup = section.PageSetup
+        columns = setup.TextColumns
+        if int(columns.Count) not in {1, 2} or not bool(columns.EvenlySpaced) or int(setup.SectionStart) not in {0, 2}:
+            reject("Only one/two equal columns and continuous/new-page sections are supported.")
+        section_views.append({"layout_points": {name: round(float(getattr(setup, name)), 3) for name in LAYOUT},
+            "columns": int(columns.Count), "column_spacing_points": round(float(columns.Spacing), 3) if int(columns.Count) > 1 else 0,
+            "start": int(setup.SectionStart), "different_first": bool(setup.DifferentFirstPageHeaderFooter),
+            "odd_even": bool(setup.OddAndEvenPagesHeaderFooter)})
+        for name, collection in (("Headers", section.Headers), ("Footers", section.Footers)):
+            for index in range(1, 4):
+                part = collection.Item(index)
+                if bool(part.Exists):
+                    if int(part.Range.Hyperlinks.Count) or any(int(part.Range.Fields.Item(i).Type) not in {26, 33}
+                            for i in range(1, int(part.Range.Fields.Count) + 1)):
+                        reject("Report running matter supports ordinary text and PAGE/NUMPAGES fields only.")
+                running.append({"section": number, "collection": name, "index": index,
+                    "exists": bool(part.Exists), "linked": bool(part.LinkToPrevious),
+                    "body": None})
+                kind = {1: "default", 2: "first", 3: "even"}[index]
+                tag = W + ("headerReference" if name == "Headers" else "footerReference")
+                reference = next((n for n in properties[number - 1] if n.tag == tag and n.attrib.get(W + "type") == kind), None)
+                if reference is not None:
+                    inherited[(name, index)] = mapping.get(reference.attrib.get(R + "id"))
+                source = parts.get(inherited.get((name, index)))
+                if bool(part.Exists):
+                    if source is None:
+                        reject("Word running-matter relationship is unavailable.")
+                    data = source.find(PKG + "xmlData")
+                    container = list(data)[0] if data is not None and len(data) else None
+                    if container is None:
+                        reject("Word running-matter package is unavailable.")
+                    running[-1]["body"] = "<w:body>" + "".join(tostring(n, encoding="unicode") for n in container) + "</w:body>"
     if any(node.attrib.get("TargetMode") == "External" for node in root.iter()):
         reject("Report authoring cannot replace documents with external relationships.")
-    setup = document.PageSetup
+    setup = document.Sections.Item(1).PageSetup
     section = document.Sections.Item(1)
     view = {"scope": "Complete body, page setup, styles and running matter; replacement is explicit.",
             "text": str(document.Content.Text), "tables": int(document.Tables.Count),
             "layout_points": {name: round(float(getattr(setup, name)), 3) for name in LAYOUT},
             "header": str(section.Headers.Item(1).Range.Text) if bool(section.Headers.Item(1).Exists) else "",
             "footer": str(section.Footers.Item(1).Range.Text) if bool(section.Footers.Item(1).Exists) else "",
-            "styles": backend.word_styles(document)}
+            "styles": backend.word_styles(document), "sections": section_views,
+            "pictures": [{k: v for k, v in p.items() if k != "digest"} for p in pictures]}
     return {"kind": "document", "start": 0, "end": int(document.Content.End),
             "fingerprint": signature(xml), "xml": xml, "view": view, "running": running}
 
@@ -259,9 +310,54 @@ def paragraph(parent, text, style_id, fmt, *, page_break=False):
     return p
 
 
-def compile_packet(document, plan, before):
+def section_specs(plan):
+    from app.mcp.office_contracts import WordSectionBreak
+    return [dict(columns=plan.layout.columns, column_spacing_mm=plan.layout.column_spacing_mm, start="continuous"),
+        *[b.model_dump(exclude={"kind"}) for b in plan.blocks if isinstance(b, WordSectionBreak)]]
+
+
+def section_xml(parent, layout, spec):
+    section = add(parent, "sectPr")
+    add(section, "type", val="continuous" if spec["start"] == "continuous" else "nextPage")
+    add(section, "pgSz", w=round(points(layout.width_mm) * 20), h=round(points(layout.height_mm) * 20))
+    top, right, bottom, left = layout.margins_mm
+    add(section, "pgMar", top=round(points(top) * 20), right=round(points(right) * 20),
+        bottom=round(points(bottom) * 20), left=round(points(left) * 20),
+        header=round(points(layout.header_mm) * 20), footer=round(points(layout.footer_mm) * 20), gutter=0)
+    add(section, "cols", num=spec["columns"], space=round(points(spec["column_spacing_mm"]) * 20), equalWidth=1)
+    return section
+
+
+def picture_xml(parent, block, metadata, relationship, number):
+    from app.mcp.office_word_assets import WP, A, PIC
+    from xml.etree.ElementTree import SubElement as node
+    p = add(parent, "p")
+    add(add(p, "pPr"), "keepNext", val=int(bool(block.caption or block.credit)))
+    inline = node(add(add(p, "r"), "drawing"), WP + "inline", {"distT": "0", "distB": "0", "distL": "0", "distR": "0"})
+    cx, cy = round(block.width_mm * 36000), round(block.width_mm * metadata["height_px"] / metadata["width_px"] * 36000)
+    node(inline, WP + "extent", {"cx": str(cx), "cy": str(cy)})
+    node(inline, WP + "docPr", {"id": str(number), "name": "Picture " + str(number), "descr": block.alt_text})
+    node(node(inline, WP + "cNvGraphicFramePr"), A + "graphicFrameLocks", {"noChangeAspect": "1"})
+    graphic = node(node(inline, A + "graphic"), A + "graphicData", {"uri": PIC[1:-1]})
+    pic = node(graphic, PIC + "pic")
+    nv = node(pic, PIC + "nvPicPr")
+    node(nv, PIC + "cNvPr", {"id": "0", "name": "Picture " + str(number)})
+    node(nv, PIC + "cNvPicPr")
+    fill = node(pic, PIC + "blipFill")
+    node(fill, A + "blip", {R + "embed": relationship})
+    node(node(fill, A + "stretch"), A + "fillRect")
+    props = node(pic, PIC + "spPr")
+    transform = node(props, A + "xfrm")
+    node(transform, A + "off", {"x": "0", "y": "0"})
+    node(transform, A + "ext", {"cx": str(cx), "cy": str(cy)})
+    node(node(props, A + "prstGeom", {"prst": "rect"}), A + "avLst")
+
+
+def compile_packet(document, plan, before, media=None):
     """Build XML internally from typed content, preserving native style definitions."""
-    from app.mcp.office_contracts import WordParagraph, WordTable
+    from app.mcp.office_contracts import WordParagraph, WordTable, WordImage, WordSectionBreak, WordColumnBreak
+    media = media or {}
+    specs, current, images = section_specs(plan), 0, []
     root = ET.fromstring(before["xml"])
     native = root.find(".//" + W + "body")
     styles = root.findall(".//" + W + "style")
@@ -309,76 +405,129 @@ def compile_packet(document, plan, before):
             # Keep adjacent native tables distinct and retain Word's final paragraph.
             if index == len(plan.blocks) - 1 or isinstance(plan.blocks[index + 1], WordTable):
                 paragraph(native, "", ids["Normal"], effective_format(plan))
+        elif isinstance(block, WordImage):
+            data, metadata = media[block.asset]
+            number = len(images) + 1
+            relationship = "orsiPicture" + str(number)
+            images.append((relationship, data, metadata))
+            picture_xml(native, block, metadata, relationship, number)
+            for text in (block.caption, block.credit):
+                if text:
+                    paragraph(native, text, ids["Normal"], effective_format(plan))
+        elif isinstance(block, WordSectionBreak):
+            # A dedicated native paragraph owns the preceding section properties.
+            section_xml(add(add(native, "p"), "pPr"), plan.layout, specs[current])
+            current += 1
         else:
             p = add(native, "p")
-            add(add(p, "r"), "br", type="page")
-    section = add(native, "sectPr")
-    layout = plan.layout
-    add(section, "pgSz", w=round(points(layout.width_mm) * 20), h=round(points(layout.height_mm) * 20))
-    top, right, bottom, left = layout.margins_mm
-    add(section, "pgMar", top=round(points(top) * 20), right=round(points(right) * 20),
-        bottom=round(points(bottom) * 20), left=round(points(left) * 20),
-        header=round(points(layout.header_mm) * 20), footer=round(points(layout.footer_mm) * 20), gutter=0)
+            add(add(p, "r"), "br", type="column" if isinstance(block, WordColumnBreak) else "page")
+    if plan.blocks[-1].kind == "image":
+        paragraph(native, "", ids["Normal"], effective_format(plan))
+    section_xml(native, plan.layout, specs[current])
     from app.mcp.office_word_xml import body_xml
     body = body_xml(before["xml"])
     # Preserve Word's namespace declarations, including prefixes referenced
     # by mc:Ignorable attributes. Generic package reserialization drops them.
-    return before["xml"][:body.start()] + tostring(native, encoding="unicode") + before["xml"][body.end():]
+    value = before["xml"][:body.start()] + tostring(native, encoding="unicode") + before["xml"][body.end():]
+    # Body replacement clears running matter too. Remove old media/relationships,
+    # retaining style/font/theme namespaces verbatim from Word's captured packet.
+    import re, base64
+    from xml.etree.ElementTree import Element
+    from app.mcp.office_word_assets import REL
+    value = re.sub(r'<pkg:part\b[^>]*pkg:name="/word/media/[^\"]+"[^>]*>.*?</pkg:part>', "", value, flags=re.DOTALL)
+    value = re.sub(r'<pkg:part\b[^>]*pkg:name="/word/(?:header|footer)[^/\"]*\.xml"[^>]*>.*?</pkg:part>', "", value, flags=re.DOTALL)
+    value = re.sub(r'<pkg:part\b[^>]*pkg:name="/word/_rels/(?:header|footer)[^/\"]*\.rels"[^>]*>.*?</pkg:part>', "", value, flags=re.DOTALL)
+    value = re.sub(r'<Relationship\b[^>]*Type="[^\"]+/(?:image|header|footer)"[^>]*/>', "", value)
+    new_parts, relationships = [], []
+    for rid, data, meta in images:
+        extension = "png" if meta["format"] == "PNG" else "jpg"
+        name = "media/" + rid + "." + extension
+        part = Element(PKG + "part", {PKG + "name": "/word/" + name,
+            PKG + "contentType": "image/png" if extension == "png" else "image/jpeg", PKG + "compression": "store"})
+        SubElement(part, PKG + "binaryData").text = base64.b64encode(data).decode("ascii")
+        new_parts.append(tostring(part, encoding="unicode"))
+        relation = Element("Relationship", {"Id": rid, "Type": R[1:-1] + "/image", "Target": name})
+        relationships.append(tostring(relation, encoding="unicode"))
+    if relationships:
+        # Flat OPC captured by Word always uses the default Relationships namespace.
+        match = re.search(r'<pkg:part\b[^>]*pkg:name="/word/_rels/document.xml.rels"[^>]*>.*?</pkg:part>', value, re.DOTALL)
+        if match is None:
+            reject("Word returned no document relationship part.")
+        changed = match.group().replace("</Relationships>", "".join(relationships) + "</Relationships>")
+        value = value[:match.start()] + changed + value[match.end():]
+    value = value.replace("</pkg:package>", "".join(new_parts) + "</pkg:package>")
+    if len(value.encode()) > MAX_DOCUMENT_XML:
+        reject("The composed native package exceeds its two-MiB snapshot limit.")
+    from app.mcp.office_word_assets import validate_package
+    validate_package(ET.fromstring(value))
+    return value
 
 
 def write_document(backend, document, packet, plan):
     backend.check_thread()
     backend.word_writable(document)
     document.Content.InsertXML(packet)
-    setup = document.PageSetup
-    setup.Orientation = int(plan.layout.width_mm > plan.layout.height_mm)
     values = [plan.layout.width_mm, plan.layout.height_mm, *plan.layout.margins_mm,
               plan.layout.header_mm, plan.layout.footer_mm]
-    for name, value in zip(LAYOUT, values, strict=True):
-        setattr(setup, name, points(value))
-    setup.DifferentFirstPageHeaderFooter = False
-    setup.OddAndEvenPagesHeaderFooter = False
-    for collection in (document.Sections.Item(1).Headers, document.Sections.Item(1).Footers):
-        for index in range(1, 4):
-            part = collection.Item(index)
-            if bool(part.Exists):
-                part.Range.Text = ""
-            part.Exists = False
-    section = document.Sections.Item(1)
-    if plan.header:
-        section.Headers.Item(1).Exists = True
-        section.Headers.Item(1).Range.Text = plan.header
-    if plan.footer or plan.page_numbers != "none":
-        section.Footers.Item(1).Exists = True
-        footer = section.Footers.Item(1).Range
-        footer.Text = plan.footer + ("  |  " if plan.footer and plan.page_numbers != "none" else "")
-    if plan.page_numbers != "none":
-        end = section.Footers.Item(1).Range.Duplicate
-        end.End -= 1
-        end.Collapse(0)
-        end.InsertAfter("Page ")
-        end.Collapse(0)
-        end.Fields.Add(end, 33)
-        if plan.page_numbers == "page_of_total":
+    for number, spec in enumerate(section_specs(plan), 1):
+        native = document.Sections.Item(number)
+        setup = native.PageSetup
+        setup.Orientation = int(plan.layout.width_mm > plan.layout.height_mm)
+        for name, value in zip(LAYOUT, values, strict=True):
+            setattr(setup, name, points(value))
+        setup.SectionStart = 0 if spec["start"] == "continuous" else 2
+        setup.TextColumns.SetCount(spec["columns"])
+        setup.TextColumns.EvenlySpaced = True
+        if spec["columns"] == 2:
+            setup.TextColumns.Spacing = points(spec["column_spacing_mm"])
+        setup.DifferentFirstPageHeaderFooter = False
+        setup.OddAndEvenPagesHeaderFooter = False
+        for collection in (native.Headers, native.Footers):
+            for index in range(1, 4):
+                part = collection.Item(index)
+                part.LinkToPrevious = False
+                if bool(part.Exists):
+                    part.Range.Text = ""
+                part.Exists = False
+    for number in range(1, int(document.Sections.Count) + 1):
+        section = document.Sections.Item(number)
+        if plan.header:
+            section.Headers.Item(1).Exists = True
+            section.Headers.Item(1).Range.Text = plan.header
+        if plan.footer or plan.page_numbers != "none":
+            section.Footers.Item(1).Exists = True
+            footer = section.Footers.Item(1).Range
+            footer.Text = plan.footer + ("  |  " if plan.footer and plan.page_numbers != "none" else "")
+        if plan.page_numbers != "none":
             end = section.Footers.Item(1).Range.Duplicate
             end.End -= 1
             end.Collapse(0)
-            end.InsertAfter(" of ")
+            end.InsertAfter("Page ")
             end.Collapse(0)
-            end.Fields.Add(end, 26)
-    fmt = effective_format(plan)
-    for part in (section.Headers.Item(1), section.Footers.Item(1)):
-        if bool(part.Exists):
-            part.Range.Font.Name = fmt["font"]
-            part.Range.Font.Size = 9
-            part.Range.Font.Color = rgb(fmt["color"])
-            part.Range.ParagraphFormat.SpaceBefore = 0
-            part.Range.ParagraphFormat.SpaceAfter = 0
-            part.Range.Fields.Update()
+            end.Fields.Add(end, 33)
+            if plan.page_numbers == "page_of_total":
+                end = section.Footers.Item(1).Range.Duplicate
+                end.End -= 1
+                end.Collapse(0)
+                end.InsertAfter(" of ")
+                end.Collapse(0)
+                end.Fields.Add(end, 26)
+        fmt = effective_format(plan)
+        for part in (section.Headers.Item(1), section.Footers.Item(1)):
+            if bool(part.Exists):
+                part.Range.Font.Name = fmt["font"]
+                part.Range.Font.Size = 9
+                part.Range.Font.Color = rgb(fmt["color"])
+                part.Range.ParagraphFormat.SpaceBefore = 0
+                part.Range.ParagraphFormat.SpaceAfter = 0
+                part.Range.Fields.Update()
+        if plan.page_numbers != "none":
+            section.Footers.Item(1).PageNumbers.RestartNumberingAtSection = False
     document.Repaginate()
-    for part in (section.Headers.Item(1), section.Footers.Item(1)):
-        if bool(part.Exists):
-            part.Range.Fields.Update()
+    for number in range(1, int(document.Sections.Count) + 1):
+        for part in (document.Sections.Item(number).Headers.Item(1), document.Sections.Item(number).Footers.Item(1)):
+            if bool(part.Exists):
+                part.Range.Fields.Update()
     document.Repaginate()
 
 
@@ -395,15 +544,28 @@ def matches_line_spacing(paragraph_format, multiple):
     return rule == {1: 0, 1.5: 1, 2: 2}.get(round(multiple * 240) / 240)
 
 
-def verify_document(document, plan):
+def verify_document(document, plan, media=None):
     """Verify native types, content, styles, formatting and geometry after dispatch."""
-    from app.mcp.office_contracts import WordParagraph, WordTable
+    from app.mcp.office_contracts import WordParagraph, WordTable, WordImage, WordColumnBreak, WordSectionBreak
     from app.mcp.office_excel import OfficeUnknown
     def require(condition):
         if not condition:
             raise OfficeUnknown("Native Word report readback differs from the approved structure or formatting.")
-    require(int(document.Shapes.Count) == int(document.InlineShapes.Count) == 0)
-    require(int(document.Sections.Count) == 1)
+    require(int(document.Shapes.Count) == 0)
+    pictures = [block for block in plan.blocks if isinstance(block, WordImage)]
+    require(int(document.InlineShapes.Count) == len(pictures))
+    from app.mcp.office_word_assets import validate_package
+    picture_info = validate_package(ET.fromstring(str(document.Content.WordOpenXML)))
+    require(len(picture_info) == len(pictures))
+    if media is not None:
+        require([info["digest"] for info in picture_info] == [media[b.asset] for b in pictures])
+    for number, (block, info) in enumerate(zip(pictures, picture_info, strict=True), 1):
+        picture = document.InlineShapes.Item(number)
+        require(int(picture.Type) == 3 and str(picture.AlternativeText) == block.alt_text)
+        require(abs(float(picture.Width) - points(block.width_mm)) < .15)
+        require(abs(float(picture.Height) - points(block.width_mm * info["height_px"] / info["width_px"])) < .15)
+    specs = section_specs(plan)
+    require(int(document.Sections.Count) == len(specs))
     expected_tables = [block for block in plan.blocks if isinstance(block, WordTable)]
     require(int(document.Tables.Count) == len(expected_tables))
     for index, block in enumerate(expected_tables, 1):
@@ -435,15 +597,30 @@ def verify_document(document, plan):
     for index, block in enumerate(plan.blocks):
         if isinstance(block, WordParagraph):
             expected.append((block.text + "\r", block))
+        elif isinstance(block, WordImage):
+            # Word's COM text projection uses a printable picture placeholder;
+            # verify the actual object/relationship separately above.
+            expected.append((None, None))
+            expected.extend((text + "\r", None) for text in (block.caption, block.credit) if text)
+        elif isinstance(block, WordSectionBreak):
+            expected.append(("\x0c", None))
+        elif isinstance(block, WordColumnBreak):
+            expected.append(("\x0e\r", None))
         elif not isinstance(block, WordTable):
             expected.append(("\x0c\r", None))
         elif index == len(plan.blocks) - 1 or isinstance(plan.blocks[index + 1], WordTable):
             expected.append(("\r", None))
+    if plan.blocks[-1].kind == "image":
+        expected.append(("\r", None))
     actual = [document.Paragraphs.Item(i) for i in range(1, int(document.Paragraphs.Count) + 1)
               if not bool(document.Paragraphs.Item(i).Range.Information(12))]
     require(len(actual) == len(expected))
     for native, (text, block) in zip(actual, expected, strict=True):
-        require(str(native.Range.Text) == text)
+        if text is None:
+            require(int(native.Range.InlineShapes.Count) == 1 and len(str(native.Range.Text)) == 2
+                    and str(native.Range.Text).endswith("\r"))
+        else:
+            require(str(native.Range.Text) == text)
         if block is None:
             continue
         require(str(native.Style.NameLocal) == str(document.Styles.Item(WORD_STYLES[block.style]).NameLocal))
@@ -461,41 +638,91 @@ def verify_document(document, plan):
         require(bool(paragraph_format.WidowControl) and bool(paragraph_format.KeepWithNext) == fmt["keep_with_next"])
     layout = plan.layout
     values = [layout.width_mm, layout.height_mm, *layout.margins_mm, layout.header_mm, layout.footer_mm]
-    require(all(abs(float(getattr(document.PageSetup, name)) - points(value)) < .15
-                for name, value in zip(LAYOUT, values, strict=True)))
-    section = document.Sections.Item(1)
-    if plan.header:
-        require(str(section.Headers.Item(1).Range.Text) == plan.header + "\r")
-    else:
-        require(not bool(section.Headers.Item(1).Exists))
-    if not plan.footer and plan.page_numbers == "none":
-        require(not bool(section.Footers.Item(1).Exists))
-        return
-    fields = section.Footers.Item(1).Range.Fields
-    require([int(fields.Item(i).Type) for i in range(1, int(fields.Count) + 1)] ==
-            {"none": [], "page": [33], "page_of_total": [33, 26]}[plan.page_numbers])
-    require(str(section.Footers.Item(1).Range.Text).startswith(plan.footer))
+    def empty_running(part):
+        # Word retains a primary empty stub after a many-to-one section import.
+        # Its existence is inert; text, fields and drawing objects are not.
+        return not bool(part.Exists) or (str(part.Range.Text) in {"", "\r"}
+            and int(part.Range.Fields.Count) == int(part.Range.Hyperlinks.Count)
+            == int(part.Range.InlineShapes.Count) == int(part.Shapes.Count) == 0)
+    for number, spec in enumerate(specs, 1):
+        native = document.Sections.Item(number)
+        require(all(abs(float(getattr(native.PageSetup, name)) - points(value)) < .15
+                    for name, value in zip(LAYOUT, values, strict=True)))
+        require(int(native.PageSetup.SectionStart) == (0 if spec["start"] == "continuous" else 2))
+        require(int(native.PageSetup.TextColumns.Count) == spec["columns"])
+        require(bool(native.PageSetup.TextColumns.EvenlySpaced))
+        if spec["columns"] == 2:
+            require(abs(float(native.PageSetup.TextColumns.Spacing) - points(spec["column_spacing_mm"])) < .15)
+        if plan.header:
+            require(str(native.Headers.Item(1).Range.Text) == plan.header + "\r")
+            require(int(native.Headers.Item(1).Range.Fields.Count) == 0)
+        else:
+            require(empty_running(native.Headers.Item(1)))
+        if plan.footer or plan.page_numbers != "none":
+            require(str(native.Footers.Item(1).Range.Text).startswith(plan.footer))
+            fields = native.Footers.Item(1).Range.Fields
+            require([int(fields.Item(i).Type) for i in range(1, int(fields.Count) + 1)] ==
+                {"none": [], "page": [33], "page_of_total": [33, 26]}[plan.page_numbers])
+        else:
+            require(empty_running(native.Footers.Item(1)))
+        if plan.page_numbers != "none":
+            require(not bool(native.Footers.Item(1).PageNumbers.RestartNumberingAtSection))
+
 
 
 def restore_document(backend, document, state):
     backend.check_thread()
     backend.word_writable(document)
     document.Content.InsertXML(state["xml"])
-    setup = state["view"]["layout_points"]
-    document.PageSetup.Orientation = int(setup["PageWidth"] > setup["PageHeight"])
-    for name, value in state["view"]["layout_points"].items():
-        setattr(document.PageSetup, name, value)
+    for number, view in enumerate(state["view"]["sections"], 1):
+        setup = document.Sections.Item(number).PageSetup
+        values = view["layout_points"]
+        orientation = int(values["PageWidth"] > values["PageHeight"])
+        if int(setup.Orientation) != orientation:
+            setup.Orientation = orientation
+        for name, value in values.items():
+            if abs(float(getattr(setup, name)) - value) > .001:
+                setattr(setup, name, value)
+        for name, value in (("SectionStart", view["start"]),
+                ("DifferentFirstPageHeaderFooter", view.get("different_first", False)),
+                ("OddAndEvenPagesHeaderFooter", view.get("odd_even", False))):
+            current = getattr(setup, name)
+            if (int(current) if name == "SectionStart" else bool(current)) != value:
+                setattr(setup, name, value)
+        # Reapplying an already imported width/margin/column setting can make
+        # Word recalculate docGrid pitch in unrelated continuous sections.
+        # Keep the captured XML properties when they already match exactly.
+        if int(setup.TextColumns.Count) != view["columns"]:
+            setup.TextColumns.SetCount(view["columns"])
+        if not bool(setup.TextColumns.EvenlySpaced):
+            setup.TextColumns.EvenlySpaced = True
+        if view["columns"] == 2 and abs(float(setup.TextColumns.Spacing) - view["column_spacing_points"]) > .001:
+            setup.TextColumns.Spacing = view["column_spacing_points"]
     from app.mcp.office_word_xml import packet, body_xml
-    section = document.Sections.Item(1)
     for item in state["running"]:
+        section = document.Sections.Item(item.get("section", 1))
         part = getattr(section, item["collection"]).Item(item["index"])
+        if item.get("section", 1) > 1:
+            part.LinkToPrevious = False
         if item["exists"]:
             part.Exists = True
-            part.Range.InsertXML(packet(item["xml"], body_xml(item["xml"]).group()))
+            part.Range.InsertXML(packet(state["xml"], item["body"]))
         else:
             part.Exists = False
+    # Set links only after every source and destination story exists. Applying
+    # links while later stories are still being replaced can resolve a missing
+    # continuous header to the first section or materialize an empty final part.
+    for item in state["running"]:
+        view = state["view"]["sections"][item.get("section", 1) - 1]
+        active = item["index"] == 1 or item["index"] == 2 and view.get("different_first") or item["index"] == 3 and view.get("odd_even")
+        if item.get("section", 1) > 1 and item["exists"] and item.get("linked") and active:
+            part = getattr(document.Sections.Item(item["section"]), item["collection"]).Item(item["index"])
+            if not bool(part.LinkToPrevious):
+                part.LinkToPrevious = True
     document.Repaginate()
-    for collection in (section.Headers, section.Footers):
-        for index in range(1, 4):
-            if bool(collection.Item(index).Exists):
-                collection.Item(index).Range.Fields.Update()
+    for number in range(1, int(document.Sections.Count) + 1):
+        section = document.Sections.Item(number)
+        for collection in (section.Headers, section.Footers):
+            for index in range(1, 4):
+                if bool(collection.Item(index).Exists):
+                    collection.Item(index).Range.Fields.Update()

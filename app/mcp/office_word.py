@@ -20,6 +20,8 @@ class WordEdits:
         self.blocked = False
         from app.mcp.office_word_render import WordRenders
         self.renders = WordRenders(live)
+        from app.mcp.office_word_assets import WordAssets
+        self.assets = WordAssets()
 
     def clear(self):
         self.snapshots.clear()
@@ -27,12 +29,13 @@ class WordEdits:
         self.guards.clear()
         self.recoveries.clear()
         self.renders.clear()
+        self.assets.clear()
         # An unknown outcome is not repaired by clearing in-memory authority.
 
     @staticmethod
     def state_bytes(snapshot):
         return len(canonical_json([[entry["target"], entry["state"]] for entry in snapshot["entries"]]).encode()) + len(
-            canonical_json([[d[2], d[3], offset, count, fingerprint] for d, offset, count, fingerprint in snapshot["pages"]]).encode())
+            canonical_json([[d[2], d[3], offset, count, fingerprint] for d, offset, count, fingerprint in snapshot["pages"]]).encode()) + len(snapshot.get("document_guard", ""))
 
     def read(self, arguments, binding):
         from app.mcp.office_read_diagnostics import read_call
@@ -52,44 +55,80 @@ class WordEdits:
             if len(self.snapshots) >= 128:
                 raise OfficeConflict("The Word snapshot limit was reached. Reconnect explicitly.")
             document = self.live.documents[binding["document"]["document"]][1]
+            lazy = arguments.target == "document" and callable(getattr(backend, "word_read_guard", None))
+            guard = backend.word_read_guard(document) if lazy else None
             plan = read_call("word_plan", backend.plan, "word", document, arguments.target)
             entries = []
             for descriptor in plan:
-                try:
-                    state = read_call("word_capture", backend.capture_word, descriptor)
-                except OfficeUnavailable:
-                    state = None  # Unsupported targets remain bounded read-only views.
+                state = None
+                if not lazy:
+                    try:
+                        state = read_call("word_capture", backend.capture_word, descriptor)
+                    except OfficeUnavailable:
+                        state = None  # Unsupported targets remain bounded read-only views.
                 entries.append({"descriptor": descriptor, "target": uuid4().hex,
-                                "state": state, "complete": False})
+                                "state": state, "complete": False, "captured": not lazy})
             snapshot, index, offset = uuid4().hex, 0, 0
             record = {"signature": signature, "entries": entries, "pages": [], "complete": False}
+            if lazy:
+                record["document_guard"] = guard
             if self.state_bytes(record) + sum(self.state_bytes(r) for r in self.snapshots.values()) > MAX_STATE_BYTES:
                 raise OfficeConflict("The Word snapshot memory limit was reached. Reconnect explicitly.")
         # Recheck every observed fragment and formatting snapshot, not only the
         # last page. Retained native ranges reject shifted duplicate text.
+        document_views = {}
+        if record.get("document_guard") is not None:
+            document = self.live.documents[binding["document"]["document"]][1]
+            if backend.word_read_guard(document) != record["document_guard"]:
+                raise OfficeConflict("Office conflict: the complete Word document changed during its read.")
         for entry in record["entries"]:
-            if entry["state"] is not None and not same_document(read_call("word_capture", backend.capture_word, entry["descriptor"]), entry["state"]):
-                raise OfficeConflict("Office conflict: the Word target changed during its read.")
+            if entry["state"] is not None:
+                if record.get("document_guard") is not None and entry["descriptor"][0] == "word":
+                    if not backend.word_read_anchor_valid(entry["descriptor"]):
+                        raise OfficeConflict("Office conflict: the retained Word text anchor moved during its read.")
+                elif not same_document(read_call("word_capture", backend.capture_word, entry["descriptor"]), entry["state"]):
+                    raise OfficeConflict("Office conflict: the Word target changed during its read.")
+            if entry["state"] is not None and entry["state"].get("kind") == "document":
+                document_views[id(entry["descriptor"][1])] = canonical_json(entry["state"]["view"])
+        def piece(descriptor, offset, count):
+            # A complete native package already guards this immutable view.
+            # Re-exporting all section/header dependencies for every 1200-char
+            # slice exceeds the ordinary read deadline. Check the full package
+            # before and after this read, while slicing the retained snapshot.
+            view = document_views.get(id(descriptor[1])) if descriptor[0] == "word_document" else None
+            if view is None:
+                return read_call("word_piece", backend.piece, descriptor, offset, count)
+            text = view[offset:offset + count]
+            return {"label": "Complete report authoring snapshot", "text": text}, (offset + len(text) if offset + len(text) < len(view) else None)
         for descriptor, old_offset, count, fingerprint in record["pages"]:
-            piece, _ = read_call("word_piece", backend.piece, descriptor, old_offset, count)
-            if digest(piece) != fingerprint:
+            fragment, _ = piece(descriptor, old_offset, count)
+            if digest(fragment) != fingerprint:
                 raise OfficeConflict("Office conflict: an earlier Word read fragment changed.")
-        items, consumed, pages = [], 0, []
+        items, consumed, pages, captured = [], 0, [], 0
         while index < len(record["entries"]) and consumed < arguments.max_chars and len(items) < min(arguments.max_items, 32):
             entry = record["entries"][index]
+            if not entry.get("captured", True):
+                if captured >= 4:
+                    break
+                try:
+                    entry["state"] = read_call("word_capture", backend.capture_word, entry["descriptor"])
+                except OfficeUnavailable:
+                    entry["state"] = None
+                entry["captured"] = True
+                captured += 1
             count = min(arguments.max_chars - consumed, 1200)
-            piece, next_offset = read_call("word_piece", backend.piece, entry["descriptor"], offset, count)
-            text = piece.get("text") or ""
+            fragment, next_offset = piece(entry["descriptor"], offset, count)
+            text = fragment.get("text") or ""
             if len(text) > count or (next_offset is not None and next_offset <= offset):
                 raise OfficeUnavailable("The Word reader exceeded its bound.")
-            item = {"target": entry["target"], **piece}
+            item = {"target": entry["target"], **fragment}
             candidate = {"session": arguments.session, "application": "word", "snapshot": snapshot,
                          "items": [*items, item], "cursor": "0" * 32}
             if len(canonical_json(candidate).encode()) > MAX_RESULT_BYTES:
                 break
             items.append(item)
             consumed += len(text)
-            pages.append((entry["descriptor"], offset, count, digest(piece)))
+            pages.append((entry["descriptor"], offset, count, digest(fragment)))
             if next_offset is None:
                 entry["complete"] = True
                 index, offset = index + 1, 0
@@ -114,6 +153,12 @@ class WordEdits:
             record["complete"] = True
         if arguments.cursor:
             self.cursors.pop(arguments.cursor, None)
+        for entry in record["entries"]:
+            if entry["state"] is not None and entry["state"].get("kind") == "document" and not same_document(
+                    read_call("word_capture", backend.capture_word, entry["descriptor"]), entry["state"]):
+                raise OfficeConflict("Office conflict: the Word document changed during its read.")
+        if record.get("document_guard") is not None and backend.word_read_guard(document) != record["document_guard"]:
+            raise OfficeConflict("Office conflict: the complete Word document changed during its read.")
         self.snapshots[snapshot] = record
         return {"session": arguments.session, "application": "word", "snapshot": snapshot,
                 "items": items, "cursor": cursor}
@@ -144,8 +189,14 @@ class WordEdits:
             action = "compose"
             from app.inference.word_plan_diagnostics import record_word_plan
             record_word_plan("approval_plan", arguments.model_dump(mode="json"))
-            expected = {"packet": compile_packet(document, arguments, before),
-                        "plan": arguments.model_dump(mode="json")}
+            media = self.assets.resolve(arguments)
+            if media:
+                record_word_plan("approval_plan", {**arguments.model_dump(mode="json"),
+                    "_picture_metadata": [metadata for _, metadata in media.values()]})
+            from hashlib import sha256
+            expected = {"packet": compile_packet(document, arguments, before, media),
+                        "plan": arguments.model_dump(mode="json"),
+                        "media": {key: sha256(value[0]).hexdigest() for key, value in media.items()}}
         elif name == "office.word_edit":
             entries = self.coverage(arguments, binding)
             if len(arguments.changes) != 1:
@@ -207,7 +258,7 @@ class WordEdits:
         if action == "compose":
             # Raw native exports contain fresh revision IDs on each capture.
             # Approval binds the complete semantic snapshot and typed plan.
-            checked = expected["fingerprint"] if name == "office.revert" else expected["plan"]
+            checked = expected["fingerprint"] if name == "office.revert" else [expected["plan"], expected["media"]]
             identity = digest([binding["identity"], name, arguments.model_dump(mode="json"),
                                before["fingerprint"], checked])
         else:
@@ -221,7 +272,9 @@ class WordEdits:
         if action == "compose":
             preview = ("Restore the complete owned report revision" if name == "office.revert" else
                        "Replace ALL report body text, tables, page layout, headers and footers with "
-                       f"{len(arguments.blocks)} native content blocks. No text boxes; save separately.")
+                       f"{len(arguments.blocks)} native content blocks, "
+                       f"{1 + sum(b.kind == 'section_break' for b in arguments.blocks)} sections and "
+                       f"{sum(b.kind == 'image' for b in arguments.blocks)} embedded pictures. Save separately.")
         elif save is None and name != "office.revert" and action != "replace_text":
             preview = {"insert_after": "Insert after Word body text", "apply_style": "Apply Word paragraph style " + (arguments.changes[0].style or ""),
                        "edit_table": "Edit Word table"}[action] + f" at {before['start']}:{before['end']}; preserve unrelated text and structure"
@@ -269,7 +322,7 @@ class WordEdits:
                         plan = WordComposeArguments.model_validate(expected["plan"])
                         write_document(backend, document, expected["packet"], plan)
                         stage = "word_document_readback"
-                        verify_document(document, plan)
+                        verify_document(document, plan, expected.get("media", {}))
                     after_descriptor = ("word_document", document, 0, int(document.Content.End))
                     after = backend.capture_word(after_descriptor)
                     if name == "office.revert" and not same_document(after, expected):

@@ -251,7 +251,7 @@ def test_budget_and_accepted_manifest_need_no_network_processes_or_credentials(m
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     report = verify(ROOT / "config/office_mcp_v1.json")
     assert report["passed"] and not report["billed_tokens_measured"]
-    assert report["cases"]["cloud_all"]["tool_count"] == 9
+    assert report["cases"]["cloud_all"]["tool_count"] == 10
     for case in ("local", "cloud_disabled", "cloud_not_ready"):
         assert report["cases"][case]["schema_wire_bytes"] == report["cases"][case]["schema_reserve_tokens"] == 0
     assert report["verification_model_requests"] == 0
@@ -271,6 +271,6 @@ def test_phase_one_does_not_register_executable_office_tools(tmp_path):
                                      application_root=tmp_path, state_directory=tmp_path / "state")
     assert not any(name.startswith("office.") for name in registry.names)
     assert {tool.permission for tool in OFFICE_TOOLS if tool.name in
-            ("office.documents", "office.attach", "office.read")} == {PermissionClass.READ}
+            ("office.documents", "office.attach", "office.read", "office.image_register")} == {PermissionClass.READ}
     assert {tool.permission for tool in OFFICE_TOOLS if tool.name not in
-            ("office.documents", "office.attach", "office.read")} == {PermissionClass.WRITE}
+            ("office.documents", "office.attach", "office.read", "office.image_register")} == {PermissionClass.WRITE}

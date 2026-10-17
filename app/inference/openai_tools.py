@@ -249,6 +249,9 @@ def _office_history_definitions(definitions, expected, raw_calls):
     values = []
     for definition in definitions:
         calls = [call for call in expected if call.capability == definition.name]
+        if definition.name == "office.word_compose" and any("pages" in call.arguments for call in calls):
+            from app.mcp.office_contracts import WordComposeArguments
+            definition = definition.model_copy(update={"input_schema": WordComposeArguments.pages_json_schema()})
         if definition.name == "office.word_compose" and any("blocks" in call.arguments for call in calls):
             from app.mcp.office_contracts import WordComposeArguments
             # History only: standalone breaks are no longer advertised. Rebuild

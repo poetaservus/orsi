@@ -66,6 +66,7 @@ class OfficeConnection:
         self.live = _transport_factory is None or discovery is not None
         self.discovery = discovery or OfficeDiscovery()
         self._selected = None
+        self._picture_sources = None
         self._authority = {}
         self._state, self._connect_lock, self._dispatch_lock = RLock(), Lock(), Lock()
         self._started, self._stopped = Event(), Event()
@@ -75,12 +76,15 @@ class OfficeConnection:
         self._sessions, self._used_calls = {}, set()
         self._failure_diagnostics = {}
 
-    def tool_timeout(self, contract):
+    def tool_timeout(self, contract, arguments=None):
         # Full report writes include pagination, native property verification
         # and a complete recovery snapshot. Explicit test/host overrides stay
         # authoritative, including short deadlines for hung-worker checks.
         if contract.name == "office.word_compose" and not self._explicit_call_timeout:
             return WORD_COMPOSE_CALL_TIMEOUT
+        if (contract.name == "office.read" and not self._explicit_call_timeout
+                and str(getattr(arguments, "target", "")).startswith("render:")):
+            return 30.0  # Bounded three-page print export and rasterization.
         return self.call_timeout
 
     def _bundled_transport(self):
@@ -116,6 +120,7 @@ class OfficeConnection:
         self._sessions.clear()
         self._selected = None
         self._authority.clear()
+        self._picture_sources = None
 
     def _signal_stop(self):
         if self._loop is not None and self._queue is not None:
@@ -412,6 +417,28 @@ class OfficeConnection:
         from app.mcp.office_capabilities import OfficeResourceBinding
         if contract.name not in LIVE_TOOLS:
             raise Error(Code.DISABLED_CAPABILITY, "Office editing is unavailable in this phase.")
+        if contract.name == "office.image_register":
+            attachment = arguments.path.startswith("attachment:")
+            if attachment:
+                reference, _ = self.picture_source(arguments.path, context.session_id)
+                path = None
+            elif context.host_access_policy is not None:
+                path = context.host_access_policy.resolve_read(arguments.path).resolved
+            else:
+                from app.security.path_policy import resolve_read_path
+                path = resolve_read_path(arguments.path, portable_root=context.portable_root,
+                    allowed_roots=context.allowed_read_roots).resolved
+            if path is not None and str(path).startswith(("\\\\", "//")):
+                raise Error(Code.PERMISSION_DENIED, "Pictures require an accessible local file.")
+            with self._state:
+                selected = self._selected
+            value = self.control("binding", {"session": arguments.session}, context.cancellation)
+            if (selected is None or (value["document"]["document"], value["identity"]) != selected
+                    or value["document"]["application"] != "word"):
+                raise Error(Code.PERMISSION_DENIED, "Choose this exact Word document first.")
+            identity = value["identity"] if not attachment else sha256(canonical_json(
+                [value["identity"], context.session_id, reference.id, reference.sha256]).encode()).hexdigest()
+            return OfficeResourceBinding(path, identity, "Register immutable local picture")
         with self._state:
             selected = self._selected
         if selected is None:
@@ -445,6 +472,66 @@ class OfficeConnection:
                 self._authority.pop(next(iter(self._authority)))
         return binding
 
+    def bind_picture_sources(self, session_id, store, references):
+        with self._state:
+            self._picture_sources = (session_id, store, {r.id: r for r in references if r.kind == "image"})
+
+    def picture_source(self, path, session_id):
+        with self._state:
+            sources = self._picture_sources
+        reference = None if sources is None else sources[2].get(path.removeprefix("attachment:"))
+        if sources is None or sources[0] != session_id or reference is None:
+            raise Error(Code.PERMISSION_DENIED, "Only images attached to this conversation are available.")
+        return reference, sources[1]
+
+    def discover_picture_sources(self, arguments, context):
+        with self._state:
+            sources = self._picture_sources
+        if arguments.cursor:
+            raise Error(Code.INVALID_ARGUMENTS, "Picture discovery does not use cursors.")
+        references = sources[2].values() if sources is not None and sources[0] == context.session_id else ()
+        items = [{"label": "Attached picture", "text": canonical_json({"reference": "attachment:" + r.id,
+            "media_type": r.media_type, "bytes": r.size_bytes})} for r in references
+            if r.media_type in {"image/png", "image/jpeg"} and r.size_bytes <= 256 * 1024]
+        if len(items) > 8:
+            raise Error(Code.INVALID_ARGUMENTS, "Picture discovery supports at most eight eligible attached images.")
+        if len(items) > arguments.max_items or sum(len(v["text"]) for v in items) > arguments.max_chars:
+            raise Error(Code.INVALID_ARGUMENTS, "Picture discovery needs sufficient max_items and max_chars for its bounded metadata.")
+        return {"session": arguments.session, "application": "word", "snapshot": "picture_discovery",
+            "items": [{"target": "picture_" + str(i), **v} for i, v in enumerate(items)], "cursor": None}
+
+    def register_image(self, arguments, path, cancellation, session_id=None):
+        import base64
+        from uuid import uuid4
+        from app.mcp.office_word_assets import MAX_IMAGE_BYTES, inspect_image
+        if arguments.path.startswith("attachment:"):
+            reference, store = self.picture_source(arguments.path, session_id)
+            if reference.size_bytes > MAX_IMAGE_BYTES or reference.media_type not in {"image/png", "image/jpeg"}:
+                raise Error(Code.INVALID_ARGUMENTS, "Attached picture exceeds supported format or byte bounds.")
+            with store.open(reference, cancellation=cancellation) as stream:
+                data = stream.read(MAX_IMAGE_BYTES + 1)
+        else:
+            from app.conversation.attachments import _snapshot_stream
+            try:
+                with _snapshot_stream(path, MAX_IMAGE_BYTES, cancellation) as stream:
+                    data = stream.read(MAX_IMAGE_BYTES + 1)
+            except (OSError, ValueError):
+                raise Error(Code.INVALID_ARGUMENTS, "Picture source must be an ordinary readable local file within 256 KiB.") from None
+        try:
+            inspect_image(data)
+        except Exception as error:
+            from app.mcp.office_excel import OfficeConflict
+            if isinstance(error, OfficeConflict):
+                raise Error(Code.INVALID_ARGUMENTS, str(error)) from None
+            raise
+        asset = uuid4().hex
+        for offset in range(0, len(data), 24000):
+            chunk = data[offset:offset + 24000]
+            result = self.control("word-asset", {"session": arguments.session, "asset": asset,
+                "offset": offset, "data": base64.b64encode(chunk).decode("ascii"),
+                "final": offset + len(chunk) == len(data)}, cancellation)
+        return result
+
     def prepare_mutation(self, contract, arguments, context):
         with self._state:
             authority = dict(self._authority.get(context.call_id, {}))
@@ -468,7 +555,7 @@ class OfficeConnection:
     def call(self, contract: OfficeToolContract, arguments, *, expected: OfficeExposure,
              operation: str, cancellation: CancellationToken):
         cancellation.raise_if_cancelled()
-        timeout = self.tool_timeout(contract)
+        timeout = self.tool_timeout(contract, arguments)
         request = _Request(contract, arguments.model_dump(mode="json"), expected, operation,
                            timeout_seconds=timeout)
         if contract.name == "office.word_compose":
@@ -517,6 +604,9 @@ class OfficeConnection:
                                     "deadline" if monotonic() >= deadline else "worker_stopped"),
                                 "confirmation_timeout_seconds": timeout,
                             })
+                            if contract.name == "office.read":
+                                from app.mcp.office_read_diagnostics import read_shape
+                                self._failure_diagnostics["confirmation_read_shape"] = read_shape(arguments.model_dump(mode="json"))
                         self.disconnect()
                         if sent and contract.permission == PermissionClass.WRITE:
                             raise Error(Code.OUTCOME_UNKNOWN, "The Office write may have completed; review its outcome before retrying.")

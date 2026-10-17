@@ -1,5 +1,28 @@
 # Git layout and baseline hygiene
 
+## Native Word pictures and column sections, 17 October 2026
+
+`codex/word-pictures-columns` starts from clean local main `528c9e8`. It adds
+immutable local/attachment PNG/JPEG registration, embedded native pictures,
+one/two-column sections and column breaks, with exact approval, native readback,
+save/reopen and owned recovery. Historical pages/blocks, prior read-recovery
+corrections, prompts, model settings, routing and retry limits are preserved.
+See [scope, limits and qualification](office-word-pictures-columns.md).
+
+Only focused checks are run: 259 distinct deterministic checks and separate real
+Word gates. The final unchanged live fixture produces a saved five-page DOCX
+with native columns 1/2/1, two embedded original diagrams and an editable table.
+All pages are inspected; the model turn remains incomplete and word count/layout
+quality fail acceptance. This is not recorded as a clean live pass. Windows
+sandbox/teardown evidence is recorded separately from product failures.
+
+Recovery refs/worktrees and a verified complete-history bundle are under ignored
+`state/backups/word-pictures-columns-20261017/`. Preserve prior main at
+`archive/2026-10-17/main-before-word-pictures-columns`, commit, fast-forward local
+main and remove only the merged bounded branch. Preserve private settings,
+other worktrees, historical/unmerged tips and remote refs. No remote action or
+full suite is authorized. Desktop/report.docx remains unchanged.
+
 ## Office read recovery, 17 October 2026
 
 `codex/office-read-recovery` starts from clean local main `183d660`. It renews

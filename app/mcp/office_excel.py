@@ -19,7 +19,7 @@ class OfficeUnknown(OfficeUnavailable):
     """A dispatched mutation may have completed or partially completed."""
 
 
-READ_TOOLS = frozenset(("office.documents", "office.attach", "office.read"))
+READ_TOOLS = frozenset(("office.documents", "office.attach", "office.read", "office.image_register"))
 EXCEL_TOOLS = READ_TOOLS | {"office.excel_edit", "office.revert", "office.save"}
 WORD_TOOLS = READ_TOOLS | {"office.word_edit", "office.word_compose", "office.revert", "office.save"}
 LIVE_TOOLS = EXCEL_TOOLS | WORD_TOOLS

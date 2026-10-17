@@ -155,7 +155,7 @@ def test_real_stdio_selected_document_flows_through_permissions_executor_and_pri
     try:
         bridge.connect()
         assert {n for n in runtime.registry.model_visible_names if n.startswith("office.")} == {
-            "office.documents", "office.attach", "office.read", "office.excel_edit", "office.word_edit", "office.word_compose", "office.save", "office.revert"}
+            "office.documents", "office.attach", "office.read", "office.image_register", "office.excel_edit", "office.word_edit", "office.word_compose", "office.save", "office.revert"}
         values = bridge.list_documents()
         assert len(values) == 2
         assert execute(runtime, "documents", {}, "empty").output["documents"] == []
@@ -173,7 +173,9 @@ def test_real_stdio_selected_document_flows_through_permissions_executor_and_pri
         assert bridge.diagnostics["tool_calls"] == 3
         assert "alpha" not in json.dumps([r.model_dump(mode="json") for r in runtime.executor.journal.records])
         invalid = execute(runtime, "read", {"session": attached.output["session"], "target": "invalid"}, "bad")
-        assert not invalid.success and invalid.error.code == CapabilityErrorCode.INVALID_ARGUMENTS
+        # The fixture raises an unexpected ValueError, not a supported-target
+        # refusal. Preserve the settled-read recovery correction's taxonomy.
+        assert not invalid.success and invalid.error.code == CapabilityErrorCode.INVALID_OUTPUT
         assert "SECRET" not in invalid.error.message and bridge.exposure.ready
         bridge.disconnect()
         bridge.connect()
