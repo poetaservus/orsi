@@ -50,6 +50,12 @@ def _exposure(connection, model):
     return value
 
 
+def _word_save_context(connection):
+    return connection is not None and (
+        getattr(connection, "selected_application", None) == "word" or
+        connection.exposure.applications == ("word",))
+
+
 def _compose_branch(label):
     for branch in ("WordParagraph", "WordTable", "WordPageBreak", "WordImage", "WordColumnBreak", "WordSectionBreak"):
         if label == branch or label.startswith("function-after[") and f", {branch}]" in label:
@@ -190,6 +196,11 @@ class OfficeCapability(Capability):
                 record_word_plan("validated_plan", plan.model_dump(mode="json"))
             return plan
         except CapabilityArgumentError as exc:
+            if self.name == "office.save" and _word_save_context(self.connection):
+                from app.mcp.office_word_save import word_save_error_message
+                raise CapabilityArgumentError(exc.failure.model_copy(update={
+                    "message": word_save_error_message(exc.failure.details),
+                })) from None
             if self.name != "office.word_compose":
                 raise
             record_word_plan("validation_rejected", raw_arguments)
@@ -297,6 +308,9 @@ class OfficeCapabilityRegistry(CapabilityRegistry):
             from app.mcp.office_excel import live_tools
             allowed = live_tools(_exposure(self.connection, self.model).applications)
             office = tuple(tool for tool in office if tool.name in allowed)
+        if _word_save_context(self.connection):
+            from app.mcp.office_word_save import word_save_definition
+            office = tuple(word_save_definition() if tool.name == "office.save" else tool for tool in office)
         return tuple(sorted((*self.base.model_definitions(), *office), key=lambda definition: definition.name))
 
     @property

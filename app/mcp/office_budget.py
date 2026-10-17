@@ -1,6 +1,8 @@
 """Offline measurement of the actual Responses tool projection; never calls an API."""
 from __future__ import annotations
 
+from hashlib import sha256
+
 from app.inference.openai_context import estimate_schema_tokens
 from app.inference.openai_tools import responses_function_tools
 from app.mcp.office_contracts import (
@@ -19,15 +21,18 @@ MAX_SCHEMA_WIRE_BYTES = 22_500
 MAX_SCHEMA_RESERVE_TOKENS = 8_100
 
 
-def measure_office_catalog(exposure: OfficeExposure) -> dict:
+def measure_office_catalog(exposure: OfficeExposure, *, word_save=False) -> dict:
     catalog = office_catalog(exposure)
     definitions = catalog.model_definitions()
+    if word_save:
+        from app.mcp.office_word_save import word_save_definition
+        definitions = tuple(word_save_definition() if d.name == "office.save" else d for d in definitions)
     tools = responses_function_tools(definitions) if definitions else []
     return {
         "tool_count": len(tools),
         "schema_wire_bytes": len(canonical_json(tools).encode("utf-8")) if tools else 0,
         "schema_reserve_tokens": estimate_schema_tokens(tools),
-        "schema_digest": catalog.schema_digest,
+        "schema_digest": sha256(canonical_json([d.model_dump(mode="json") for d in definitions]).encode()).hexdigest(),
     }
 
 
@@ -41,6 +46,8 @@ def office_budget_report() -> dict:
     cases.update({f"cloud_{app}": OfficeExposure(backend="cloud", enabled=True, ready=True,
                   generation=1, applications=(app,)) for app in APPLICATIONS})
     measured = {name: measure_office_catalog(exposure) for name, exposure in cases.items()}
+    for case in ("cloud_all", "cloud_word"):
+        measured[case + "_word_save"] = measure_office_catalog(cases[case], word_save=True)
     return {
         "schema_version": 1,
         "measurement": "canonical Responses tools JSON, UTF-8",

@@ -249,6 +249,13 @@ def _office_history_definitions(definitions, expected, raw_calls):
     values = []
     for definition in definitions:
         calls = [call for call in expected if call.capability == definition.name]
+        if (definition.name == "office.save" and calls and
+                definition.input_schema.get("properties", {}).get("overwrite", {}).get("const") is False):
+            from app.mcp.office_contracts import SaveArguments
+            # Word now advertises only overwrite=false. Preserve older save
+            # attempts in history, including rejected attempts, without allowing
+            # that choice in a new provider call or replaying any side effect.
+            definition = definition.model_copy(update={"input_schema": SaveArguments.model_json_schema()})
         if definition.name == "office.word_compose" and any("pages" in call.arguments for call in calls):
             from app.mcp.office_contracts import WordComposeArguments
             definition = definition.model_copy(update={"input_schema": WordComposeArguments.pages_json_schema()})

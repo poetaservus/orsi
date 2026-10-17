@@ -66,6 +66,7 @@ class OfficeConnection:
         self.live = _transport_factory is None or discovery is not None
         self.discovery = discovery or OfficeDiscovery()
         self._selected = None
+        self._selected_application = None
         self._picture_sources = None
         self._authority = {}
         self._state, self._connect_lock, self._dispatch_lock = RLock(), Lock(), Lock()
@@ -105,6 +106,12 @@ class OfficeConnection:
                                   generation=self._generation, applications=self._applications)
 
     @property
+    def selected_application(self):
+        """Trusted UI selection for model guidance only; execution rechecks identity."""
+        with self._state:
+            return self._selected_application
+
+    @property
     def diagnostics(self):
         with self._state:
             return {"generation": self._generation, "ready": self.exposure.ready,
@@ -119,6 +126,7 @@ class OfficeConnection:
         self._generation += 1
         self._sessions.clear()
         self._selected = None
+        self._selected_application = None
         self._authority.clear()
         self._picture_sources = None
 
@@ -402,6 +410,7 @@ class OfficeConnection:
         value = self.control("binding", {"document": document}, cancellation)
         with self._state:
             self._selected = (document, value["identity"])
+            self._selected_application = value["document"]["application"]
             self._sessions.clear()
             self._authority.clear()
             self._generation += 1

@@ -1,5 +1,18 @@
 # Git layout and baseline hygiene
 
+## Word save finalization, 18 October 2026
+
+`codex/word-save-finalization` starts from clean local main `fdba4a1`. It narrows
+the model's save choices only for Word, explains Word save validation failures,
+and preserves historical save evidence without changing Excel or retry limits.
+See [scope, evidence and essential checks](office-word-save-finalization.md).
+The focused selection passes 191 tests; no full suite, real Word COM gate or paid
+model run is made. Prior refs/worktrees and verified history bundle are retained
+under ignored `state/backups/word-save-finalization-20261018/`. Preserve prior main
+at `archive/2026-10-18/main-before-word-save-finalization`, commit, fast-forward
+local main and delete only the merged feature branch. No remote action or change
+to user documents/settings or another worktree is authorized.
+
 ## Local-stop reporting, 17 October 2026
 
 `codex/local-stop-reporting` starts from local main `45c4240`. It distinguishes
