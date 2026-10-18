@@ -770,7 +770,7 @@ OFFICE_TOOLS = tuple(sorted((
                        WordEditArguments, EditResult, PermissionClass.WRITE, "word"),
     OfficeToolContract("office.image_register", 'Register a local PNG/JPEG or attachment: reference from read assets as an immutable Word picture. No URLs/rendered pages. Eight assets; 256 KiB each; 2048 pixels/side.',
                        WordImageRegisterArguments, WordImageRegisterResult, PermissionClass.READ, "word"),
-    OfficeToolContract("office.word_compose", 'Replace ALL body/header/footer with complete editable content in sections. Read authoring completely first, including blanks; layout/render snapshots cannot authorize replacement. Corrections require current word_review defects. Native sections support one/two columns, tables and registered pictures. Approval and owned recovery apply; save separately.',
+    OfficeToolContract("office.word_compose", 'Replace ALL body/header/footer with complete editable sections. First read ALL authoring including blanks; layout/render cannot authorize compose. Corrections need current word_review defects. Column width=(page width-left margin-right margin-(columns-1)*gap)/columns; default full body 170 mm. Table/image widths must fit. Header/footer distances below top/bottom margins. Registered pictures only. Approval/owned recovery apply; save separately.',
                        WordComposeArguments, EditResult, PermissionClass.WRITE, "word"),
     OfficeToolContract("office.powerpoint_edit", "Edit slide text, layout or positions against a snapshot.",
                        PowerPointEditArguments, EditResult, PermissionClass.WRITE, "powerpoint"),

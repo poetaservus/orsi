@@ -290,12 +290,29 @@ def test_schema_advertises_control_width_margin_and_running_matter_bounds():
     assert schema["properties"]["footer"]["maxLength"] == 512
     assert schema["$defs"]["WordTable"]["properties"]["widths_mm"]["items"]["minimum"] == 5
     assert schema["$defs"]["WordPageLayout"]["properties"]["margins_mm"]["items"]["minimum"] == 5
-    for change in ({"header": "one\ntwo"}, {"footer": "one\ttwo"},
-                   {"blocks": [{"kind": "paragraph", "text": "one\ntwo"}]},
-                   {"blocks": [{"kind": "table", "cells": [["one\ntwo"]], "widths_mm": [100]}]}):
-        with pytest.raises(jsonschema.ValidationError):
-            jsonschema.validate(page_plan({**body_plan(), **change}), schema)
+    plan = {"session": "session", "snapshot": "snapshot", "header": "Header", "footer": "Footer",
+            "sections": [{"start": "continuous", "columns": 1, "column_spacing_mm": 8, "blocks": [
+                {"kind": "paragraph", "text": "Clean paragraph"},
+                {"kind": "table", "cells": [["Clean cell"]], "widths_mm": [100]}]}]}
+    jsonschema.validate(plan, schema)
+    for path, text in ((("header",), "one\ntwo"), (("footer",), "one\ttwo"),
+                       (("sections", 0, "blocks", 0, "text"), "one\ntwo"),
+                       (("sections", 0, "blocks", 1, "cells", 0, 0), "one\ntwo")):
+        invalid = deepcopy(plan)
+        target = invalid
+        for key in path[:-1]:
+            target = target[key]
+        target[path[-1]] = text
+        with pytest.raises(jsonschema.ValidationError) as error:
+            jsonschema.validate(invalid, schema)
+        # Union branches retain their specific text rejection in context.
+        errors = [error.value]
+        for issue in errors:
+            errors.extend(issue.context)
+        assert any(issue.validator == "pattern" and tuple(issue.absolute_path) == path for issue in errors)
+    assert "Column width=(page width-left margin-right margin-(columns-1)*gap)/columns" in CONTRACT.description
     assert "default full body 170 mm" in CONTRACT.description
+    assert "Table/image widths must fit" in CONTRACT.description
     assert "below top/bottom margins" in CONTRACT.description
 
 
@@ -320,6 +337,7 @@ def test_rejected_provider_call_and_corrected_report_can_be_replayed_without_cha
 def test_agent_can_correct_a_refusal_and_still_stops_identical_invalid_retries(tmp_path, corrected):
     from app.agent.contracts import AgentRunStatus
     from app.inference.protocol import ModelResponse
+    from app.mcp.office_word_workflow import WordWorkflow
     from app.security.permissions import ApprovalStatus, PermissionClass, PermissionDecision, PermissionGate, PermissionRule
     from tests.test_agent_runtime import build_runtime, run
     from tests.test_bounded_edit_recovery import RoomyScriptedModel
@@ -333,18 +351,27 @@ def test_agent_can_correct_a_refusal_and_still_stops_identical_invalid_retries(t
 
         def execute(self, arguments, context):
             dispatched.append(arguments)
-            return {"synthetic_dispatch": True}
+            workflow.applied("composed")
+            return {"synthetic_dispatch": True, "word_workflow": workflow.evidence()}
 
     dispatched = []
+    workflow = WordWorkflow()
+    workflow.sync("initial")
     # Reproduce the latest failure exactly, using its former provider contract.
     bad = {**report_plan(), "blocks": [{"kind": "page_break"}] * 2}
     _, first = wire_call(bad, "call_bad_report", definition=legacy_definition())
     _, second = wire_call(body_plan() if corrected else bad, "call_next_report",
         definition=None if corrected else legacy_definition())
     _, third = wire_call(bad, "call_repeated_report", definition=legacy_definition())
-    responses = [ModelResponse.calls((first,)), ModelResponse.calls((second,)),
-                 ModelResponse.text("Synthetic dispatch complete") if corrected else ModelResponse.calls((third,))]
-    model = RoomyScriptedModel(responses)
+    responses = [ModelResponse.calls((first,)), ModelResponse.calls((second,))]
+    if corrected:
+        # Dispatch alone supplies no page review or save receipt. Allow the
+        # finalization reminder and report that precise blocker honestly.
+        responses.extend((ModelResponse.text("Synthetic dispatch complete"),
+                          ModelResponse.text("Blocked: current pages, requirements and save remain unverified.")))
+    else:
+        responses.append(ModelResponse.calls((third,)))
+    model = RoomyScriptedModel(responses, auto_review=False)
     implementation = RecordingOffice(CONTRACT, SimpleNamespace(close=lambda: None), None, None, None)
     approvals = []
     def requester(manager):
@@ -358,7 +385,7 @@ def test_agent_can_correct_a_refusal_and_still_stops_identical_invalid_retries(t
         permission=PermissionClass.WRITE, capability_pattern="office.word_compose"),))
     try:
         result = run(runtime, tmp_path)
-        assert result.status == (AgentRunStatus.COMPLETED if corrected else AgentRunStatus.REPEATED_CALL)
+        assert result.status == (AgentRunStatus.INCOMPLETE if corrected else AgentRunStatus.REPEATED_CALL)
         assert len(dispatched) == (1 if corrected else 0), [
             (settled.result.error.code, settled.result.error.message) if settled.result.error else None
             for settled in result.settled_calls]
@@ -369,6 +396,15 @@ def test_agent_can_correct_a_refusal_and_still_stops_identical_invalid_retries(t
         assert "nonempty pages" in failure["error"]["message"]
         if corrected:
             assert dispatched[0] == WordComposeArguments.model_validate(body_plan())
+            assert [settled.result.success for settled in result.settled_calls] == [False, True]
+            evidence = result.settled_calls[-1].result.output["word_workflow"]
+            assert evidence["revision"] == "composed" and evidence["edited"]
+            assert evidence["review"] is None and evidence["current_save"] is None
+            assert not evidence["verified_saved"]
+            assert "verification/finalization is unfinished" in result.partial_text
+            assert len(model.requests) == 4 and not model.responses
+            assert any(message.get("role") == "system" and "office.word_review" in message.get("content", "")
+                       and "save current" in message.get("content", "") for message in model.requests[-1])
     finally:
         runtime.shutdown()
 
@@ -389,7 +425,8 @@ def test_break_only_replacement_is_no_longer_advertised_or_accepted_by_live_prov
         "arguments": canonical_json(old_wire)}], (definition,), CompletionMetadata())
     assert response.protocol_failure is not None and not response.capability_calls
     assert "WordPageBreak" not in definition.input_schema.get("$defs", {})
-    assert "COMPLETE body" in definition.description and "sections" in definition.input_schema["properties"]
+    assert "Replace ALL body/header/footer" in definition.description
+    assert "sections" in definition.input_schema["properties"]
 
 
 @pytest.mark.parametrize("body", [False, True])

@@ -1,5 +1,19 @@
 # Git layout and baseline hygiene
 
+## Focused Word failure fix, 18 October 2026
+
+`codex/word-failure-fix` starts from clean local main `6ece427`. It restores
+compose geometry guidance and repairs the stale schema/finalization fixtures
+behind the audit's three Word failures. Eight essential focused checks pass;
+six in-memory mutations demonstrate the relevant assertions. The accepted Office
+manifest and budget ceilings remain unchanged. See [scope, proof and limits](office-word-failure-fix.md).
+
+The user requested only focused tests, so no full suite, native Word gate or
+live-model run is made. Earlier non-Word blockers remain unresolved. Preserve
+prior main as `archive/2026-10-18/main-before-word-failure-fix`, commit the bounded
+change, fast-forward local main and remove only its merged branch. Other
+worktrees/settings and remote refs remain untouched.
+
 ## Deep test and legacy-code audit, 18 October 2026
 
 `codex/deep-test-audit` starts from clean local main `220263c`. Qualified
