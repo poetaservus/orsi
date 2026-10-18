@@ -189,8 +189,13 @@ def capture_document(backend, document):
     backend.check_thread()
     backend.word_writable(document)
     backend.word_xml_safe(document)
-    if int(document.Content.End) > 32768 or not 1 <= int(document.Sections.Count) <= 16:
-        reject("Report authoring supports at most 16 sections and 32768 native text positions.")
+    count = int(document.Sections.Count)
+    # Sixteen authored sections may have one empty continuous column terminator.
+    terminal = document.Sections.Item(count) if count == 17 else None
+    valid_terminal = terminal is not None and (str(terminal.Range.Text) == "\r"
+        and int(terminal.PageSetup.SectionStart) == 0 and int(terminal.PageSetup.TextColumns.Count) == 1)
+    if int(document.Content.End) > 32768 or not (1 <= count <= 16 or count == 17 and valid_terminal):
+        reject("Report authoring supports at most 16 content sections and 32768 native text positions.")
     if int(document.Tables.Count) > 32 or sum(int(document.Tables.Item(i).Range.Cells.Count)
             for i in range(1, int(document.Tables.Count) + 1)) > 512:
         reject("Report authoring supports at most 32 tables and 512 cells.")
@@ -291,10 +296,11 @@ def paragraph(parent, text, style_id, fmt, *, page_break=False):
     add(props, "spacing", before=round(fmt["space_before"] * 20), after=round(fmt["space_after"] * 20),
         line=round(fmt["line_multiple"] * 240), lineRule="auto")
     add(props, "widowControl")
-    if fmt["keep_with_next"]:
-        add(props, "keepNext")
-    if page_break:
-        add(props, "pageBreakBefore")
+    # False must override the source style too. Omission inherits pagination
+    # rules and can turn an otherwise correct import into pages of blank space.
+    add(props, "keepNext", val=int(fmt["keep_with_next"]))
+    add(props, "keepLines", val=0)
+    add(props, "pageBreakBefore", val=int(page_break))
     run = add(p, "r")
     fonts = add(run, "rPr")
     add(fonts, "rFonts", ascii=fmt["font"], hAnsi=fmt["font"], eastAsia=fmt["font"], cs=fmt["font"])
@@ -312,8 +318,18 @@ def paragraph(parent, text, style_id, fmt, *, page_break=False):
 
 def section_specs(plan):
     from app.mcp.office_contracts import WordSectionBreak
-    return [dict(columns=plan.layout.columns, column_spacing_mm=plan.layout.column_spacing_mm, start="continuous"),
+    specs = [dict(columns=plan.layout.columns, column_spacing_mm=plan.layout.column_spacing_mm, start="continuous"),
         *[b.model_dump(exclude={"kind"}) for b in plan.blocks if isinstance(b, WordSectionBreak)]]
+    if specs[-1]["columns"] == 2:
+        # Word balances a column section when a following continuous section
+        # closes it. End-of-document alone leaves the last page unbalanced.
+        specs.append(dict(columns=1, column_spacing_mm=0, start="continuous", terminal=True))
+    return specs
+
+
+def column_balance_disabled(root):
+    return any(node.attrib.get(W + "val", "1") not in {"0", "false", "off"}
+               for node in root.findall(".//" + W + "noColumnBalance"))
 
 
 def section_xml(parent, layout, spec):
@@ -332,7 +348,10 @@ def picture_xml(parent, block, metadata, relationship, number):
     from app.mcp.office_word_assets import WP, A, PIC
     from xml.etree.ElementTree import SubElement as node
     p = add(parent, "p")
-    add(add(p, "pPr"), "keepNext", val=int(bool(block.caption or block.credit)))
+    props = add(p, "pPr")
+    add(props, "keepNext", val=int(bool(block.caption or block.credit)))
+    add(props, "keepLines", val=0)
+    add(props, "pageBreakBefore", val=0)
     inline = node(add(add(p, "r"), "drawing"), WP + "inline", {"distT": "0", "distB": "0", "distL": "0", "distR": "0"})
     cx, cy = round(block.width_mm * 36000), round(block.width_mm * metadata["height_px"] / metadata["width_px"] * 36000)
     node(inline, WP + "extent", {"cx": str(cx), "cy": str(cy)})
@@ -359,6 +378,8 @@ def compile_packet(document, plan, before, media=None):
     media = media or {}
     specs, current, images = section_specs(plan), 0, []
     root = ET.fromstring(before["xml"])
+    if any(spec["columns"] == 2 for spec in specs) and column_balance_disabled(root):
+        reject("This document disables column balancing. Enable column balancing in Word and read fresh authoring before composing columns.")
     native = root.find(".//" + W + "body")
     styles = root.findall(".//" + W + "style")
     ids = {}
@@ -411,18 +432,28 @@ def compile_packet(document, plan, before, media=None):
             relationship = "orsiPicture" + str(number)
             images.append((relationship, data, metadata))
             picture_xml(native, block, metadata, relationship, number)
-            for text in (block.caption, block.credit):
+            for text, keep_next in ((block.caption, bool(block.credit)), (block.credit, False)):
                 if text:
-                    paragraph(native, text, ids["Normal"], effective_format(plan))
+                    fmt = effective_format(plan)
+                    fmt["keep_with_next"] = keep_next
+                    paragraph(native, text, ids["Normal"], fmt)
         elif isinstance(block, WordSectionBreak):
             # A dedicated native paragraph owns the preceding section properties.
-            section_xml(add(add(native, "p"), "pPr"), plan.layout, specs[current])
+            boundary = paragraph(native, "", ids["Normal"], effective_format(plan))
+            section_xml(boundary.find(W + "pPr"), plan.layout, specs[current])
             current += 1
         else:
-            p = add(native, "p")
+            p = paragraph(native, "", ids["Normal"], effective_format(plan))
             add(add(p, "r"), "br", type="column" if isinstance(block, WordColumnBreak) else "page")
     if plan.blocks[-1].kind == "image":
         paragraph(native, "", ids["Normal"], effective_format(plan))
+    if specs[-1].get("terminal"):
+        fmt = {**effective_format(plan), "size":1, "space_before":0, "space_after":0, "line_multiple":1,
+               "keep_with_next":False}
+        boundary = paragraph(native, "", ids["Normal"], fmt)
+        section_xml(boundary.find(W + "pPr"), plan.layout, specs[current])
+        current += 1
+        paragraph(native, "", ids["Normal"], fmt)
     section_xml(native, plan.layout, specs[current])
     from app.mcp.office_word_xml import body_xml
     body = body_xml(before["xml"])
@@ -466,20 +497,38 @@ def compile_packet(document, plan, before, media=None):
 def write_document(backend, document, packet, plan):
     backend.check_thread()
     backend.word_writable(document)
-    document.Content.InsertXML(packet)
+    from app.mcp.office_write_diagnostics import native_step
+    with native_step("insert_xml"):
+        document.Content.InsertXML(packet)
+    with native_step("section_layout"):
+        configure_sections(document, plan)
+    with native_step("running_matter"):
+        write_running_matter(document, plan)
+    finalize_layout(document)
+
+
+def configure_sections(document, plan):
     values = [plan.layout.width_mm, plan.layout.height_mm, *plan.layout.margins_mm,
               plan.layout.header_mm, plan.layout.footer_mm]
     for number, spec in enumerate(section_specs(plan), 1):
         native = document.Sections.Item(number)
         setup = native.PageSetup
-        setup.Orientation = int(plan.layout.width_mm > plan.layout.height_mm)
+        if int(setup.Orientation) != int(plan.layout.width_mm > plan.layout.height_mm):
+            setup.Orientation = int(plan.layout.width_mm > plan.layout.height_mm)
         for name, value in zip(LAYOUT, values, strict=True):
-            setattr(setup, name, points(value))
-        setup.SectionStart = 0 if spec["start"] == "continuous" else 2
-        setup.TextColumns.SetCount(spec["columns"])
-        setup.TextColumns.EvenlySpaced = True
+            if abs(float(getattr(setup, name)) - points(value)) >= .05:
+                setattr(setup, name, points(value))
+        start = 0 if spec["start"] == "continuous" else 2
+        if int(setup.SectionStart) != start:
+            setup.SectionStart = start
+        columns = setup.TextColumns
+        if int(columns.Count) != spec["columns"]:
+            columns.SetCount(spec["columns"])
+        if not bool(columns.EvenlySpaced):
+            columns.EvenlySpaced = True
         if spec["columns"] == 2:
-            setup.TextColumns.Spacing = points(spec["column_spacing_mm"])
+            if abs(float(columns.Spacing) - points(spec["column_spacing_mm"])) >= .05:
+                columns.Spacing = points(spec["column_spacing_mm"])
         setup.DifferentFirstPageHeaderFooter = False
         setup.OddAndEvenPagesHeaderFooter = False
         for collection in (native.Headers, native.Footers):
@@ -489,6 +538,9 @@ def write_document(backend, document, packet, plan):
                 if bool(part.Exists):
                     part.Range.Text = ""
                 part.Exists = False
+
+
+def write_running_matter(document, plan):
     for number in range(1, int(document.Sections.Count) + 1):
         section = document.Sections.Item(number)
         if plan.header:
@@ -520,15 +572,23 @@ def write_document(backend, document, packet, plan):
                 part.Range.Font.Color = rgb(fmt["color"])
                 part.Range.ParagraphFormat.SpaceBefore = 0
                 part.Range.ParagraphFormat.SpaceAfter = 0
-                part.Range.Fields.Update()
         if plan.page_numbers != "none":
             section.Footers.Item(1).PageNumbers.RestartNumberingAtSection = False
-    document.Repaginate()
-    for number in range(1, int(document.Sections.Count) + 1):
-        for part in (document.Sections.Item(number).Headers.Item(1), document.Sections.Item(number).Footers.Item(1)):
-            if bool(part.Exists):
-                part.Range.Fields.Update()
-    document.Repaginate()
+
+
+def finalize_layout(document):
+    """Page totals need pagination before field update and a final reflow."""
+    from app.mcp.office_write_diagnostics import native_step
+    with native_step("repaginate"):
+        document.Repaginate()
+    with native_step("fields_update"):
+        for number in range(1, int(document.Sections.Count) + 1):
+            section = document.Sections.Item(number)
+            for part in (section.Headers.Item(1), section.Footers.Item(1)):
+                if bool(part.Exists):
+                    part.Range.Fields.Update()
+    with native_step("repaginate"):
+        document.Repaginate()
 
 
 def matches_line_spacing(paragraph_format, multiple):
@@ -564,6 +624,16 @@ def verify_document(document, plan, media=None):
         require(int(picture.Type) == 3 and str(picture.AlternativeText) == block.alt_text)
         require(abs(float(picture.Width) - points(block.width_mm)) < .15)
         require(abs(float(picture.Height) - points(block.width_mm * info["height_px"] / info["width_px"])) < .15)
+        paragraph_range = picture.Range.Paragraphs.Item(1).Range
+        require(not bool(paragraph_range.ParagraphFormat.PageBreakBefore))
+        require(bool(paragraph_range.ParagraphFormat.KeepWithNext) == bool(block.caption or block.credit))
+        for text, keep_next in ((block.caption, bool(block.credit)), (block.credit, False)):
+            if text:
+                start = int(paragraph_range.End)
+                paragraph_range = document.Range(start,start).Paragraphs.Item(1).Range
+                require(str(paragraph_range.Text) == text + "\r")
+                require(not bool(paragraph_range.ParagraphFormat.PageBreakBefore))
+                require(bool(paragraph_range.ParagraphFormat.KeepWithNext) == keep_next)
     specs = section_specs(plan)
     require(int(document.Sections.Count) == len(specs))
     expected_tables = [block for block in plan.blocks if isinstance(block, WordTable)]
@@ -612,6 +682,8 @@ def verify_document(document, plan, media=None):
             expected.append(("\r", None))
     if plan.blocks[-1].kind == "image":
         expected.append(("\r", None))
+    if specs[-1].get("terminal"):
+        expected.extend((("\x0c", None), ("\r", None)))
     actual = [document.Paragraphs.Item(i) for i in range(1, int(document.Paragraphs.Count) + 1)
               if not bool(document.Paragraphs.Item(i).Range.Information(12))]
     require(len(actual) == len(expected))
@@ -636,6 +708,7 @@ def verify_document(document, plan, media=None):
         require(matches_line_spacing(paragraph_format, fmt["line_multiple"]))
         require(bool(paragraph_format.PageBreakBefore) == block.page_break_before)
         require(bool(paragraph_format.WidowControl) and bool(paragraph_format.KeepWithNext) == fmt["keep_with_next"])
+        require(not bool(paragraph_format.KeepTogether))
     layout = plan.layout
     values = [layout.width_mm, layout.height_mm, *layout.margins_mm, layout.header_mm, layout.footer_mm]
     def empty_running(part):

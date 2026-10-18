@@ -502,8 +502,22 @@ def test_native_bridge_assets_approval_substitution_noop_and_foreign_recovery(tm
             body = execute(runtime, "read", {"session": session, "target": "document", "cursor": body.output["cursor"]}, "body-cursor-"+uuid4().hex)
             assert body.success, body.error
         same_args = section_plan(session, read()["snapshot"], (registered.output["asset"], second.output["asset"]))
-        unchanged = execute(runtime, "word_compose", same_args, "identical-compose")
-        assert unchanged.success and unchanged.output["outcome"] == "unchanged", unchanged.error
+        # Current workflow requires inspected defects before another composition.
+        # Keep the native gate aligned with that existing authority contract.
+        with pytest.raises(CapabilityExecutionError, match="page inspection"):
+            execute(runtime, "word_compose", same_args, "identical-compose")
+        page_count = int(document.Range(0,0).Information(4))
+        for first_page in range(1,page_count+1,3):
+            rendered = execute(runtime, "read", {"session":session,
+                "target":f"render:{first_page}:{min(first_page+2,page_count)}"}, "inspect-"+str(first_page))
+            assert rendered.success, rendered.error
+            bridge.render_images(rendered.output)
+        review = execute(runtime, "word_review", {"session":session,
+            "revision":rendered.output["word_workflow"]["revision"],
+            "findings":[{"location":"document body", "defect":"The recovery fixture still contains the long report",
+                "requirement":"Replace the fixture with one paragraph before testing owned restoration"}],
+            "requirements_checked":["Disposable recovery fixture body"], "requirements_met":False}, "review-shorter")
+        assert review.success, review.error
         shorter = execute(runtime, "word_compose", {"session": session, "snapshot": read()["snapshot"],
             "blocks": [{"text": "Owned short replacement"}]}, "shorter")
         if not shorter.success:

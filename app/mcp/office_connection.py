@@ -24,6 +24,7 @@ from app.mcp.stdio_transport import OwnedStdioTransport
 from app.mcp.office_excel import LIVE_TOOLS, READ_TOOLS
 from app.runtime.cancellation import CancellationToken, TaskCancelled
 from app.mcp.office_read_diagnostics import record_read_failure, read_failure_message
+from app.mcp.office_write_diagnostics import record_write_event
 
 
 DEFAULT_CALL_TIMEOUT = 10.0
@@ -41,6 +42,7 @@ class _Request:
     sent: bool = False
     control: tuple | None = None
     authority: dict | None = None
+    started_at: float = field(default_factory=monotonic)
 
 
 class OfficeConnection:
@@ -247,6 +249,8 @@ class OfficeConnection:
                 request.sent = True
                 if request.control is None:
                     self._calls += 1
+            diagnostic_received = False
+            request_stage = "confirmation"
             try:
                 if request.control is not None:
                     try:
@@ -263,6 +267,22 @@ class OfficeConnection:
                     meta=RequestParamsMeta(orsiOperation=request.operation,
                         **({"orsiAuthority": request.authority} if self.live else {})))
                 failure = result.meta or {}
+                request_stage = "result_validation"
+                if request.contract.permission == PermissionClass.WRITE and request.contract.name in {
+                        "office.word_compose", "office.word_edit", "office.save", "office.revert"}:
+                    diagnostic = failure.get("orsiWriteDiagnostic")
+                    if isinstance(diagnostic, dict):
+                        diagnostic_received = True
+                        from app.inference.word_plan_diagnostics import word_plan_shape
+                        diagnostic = record_write_event({**diagnostic, "tool": request.contract.name, "dispatched":True,
+                            **({"shape":word_plan_shape(request.arguments)} if request.contract.name == "office.word_compose" else {})})
+                        with self._state:
+                            self._failure_diagnostics["write_outcome"] = diagnostic
+                if result.is_error and self.live and failure.get("orsiFailure") == "not_applied":
+                    if not request.future.done():
+                        request.future.set_exception(Error(Code.INVALID_ARGUMENTS,
+                            "Word verified that the target is unchanged. Read it again and obtain fresh approval before retrying."))
+                    continue
                 if result.is_error and self.live and request.contract.name == "office.read":
                     diagnostic = failure.get("orsiReadDiagnostic")
                     diagnostic = diagnostic if isinstance(diagnostic, dict) else {}
@@ -273,11 +293,11 @@ class OfficeConnection:
                         "word_save", "word_native_insert", "word_readback", "word_verification",
                         "word_document_write", "word_document_readback"}:
                     with self._state:
-                        self._failure_diagnostics = {"failure_stage": failure["orsiStage"],
+                        self._failure_diagnostics.update({"failure_stage": failure["orsiStage"],
                             "failure_hresult": failure.get("orsiHresult") if type(failure.get("orsiHresult")) is int else None,
                             "failure_mismatch": [key for key in failure.get("orsiMismatch", []) if key in {
                                 "start", "end", "pstart", "pend", "text", "target", "paragraph", "dependencies", "paragraph_text", "uniform",
-                                "paragraph_identity", "paragraph_properties", "paragraph_runs"}]}
+                                "paragraph_identity", "paragraph_properties", "paragraph_runs"}]})
                 if result.is_error and self.live and (result.meta or {}).get("orsiFailure") == "conflict":
                     if not request.future.done():
                         request.future.set_exception(Error(Code.INVALID_ARGUMENTS,
@@ -309,17 +329,54 @@ class OfficeConnection:
                 if isinstance(request.contract.arguments.model_validate(request.arguments), AttachArguments):
                     self._sessions[output.session] = output.document.application
                 if self.live and request.contract.name == "office.save" and request.arguments.get("path"):
-                    binding = await self._control_request(client, "binding", {"session": output.session})
-                    if binding["path"] != str(Path(request.arguments["path"])):
-                        raise ValueError("The saved document identity did not match its destination.")
-                    with self._state:
-                        self._selected = (binding["document"]["document"], binding["identity"])
+                    try:
+                        binding = await self._control_request(client, "binding", {"session": output.session})
+                        if binding["path"] != str(Path(request.arguments["path"])):
+                            raise ValueError("The saved document identity did not match its destination.")
+                    except (Exception, asyncio.CancelledError):
+                        if self._sessions.get(output.session) != "word":
+                            raise
+                        # Word already verified the approved save and returned a
+                        # matching receipt. Failed authority refresh must revoke
+                        # future access without erasing that completed save.
+                        diagnostic = record_write_event({"tool":"office.save", "stage":"result_validation",
+                            "category":"verification", "outcome":"saved",
+                            "duration_ms":round((monotonic() - request.started_at) * 1000)})
+                        with self._state:
+                            self._failure_diagnostics["write_outcome"] = diagnostic
+                            self._failure_diagnostics["save_binding_unavailable"] = True
+                            self._invalidate_locked()
+                        if not request.future.done():
+                            receipt = output.model_dump(mode="json")
+                            if receipt.get("word_workflow") is None:
+                                receipt.pop("word_workflow", None)
+                            request.future.set_result(receipt)
+                        break
+                    else:
+                        with self._state:
+                            self._selected = (binding["document"]["document"], binding["identity"])
                 if not request.future.done():
                     serialized_output = output.model_dump(mode="json")
                     if serialized_output.get("word_workflow") is None:
                         serialized_output.pop("word_workflow", None)
+                    if (not diagnostic_received and request.contract.permission == PermissionClass.WRITE
+                            and request.contract.name in {"office.word_compose", "office.word_edit", "office.save", "office.revert"}):
+                        from app.inference.word_plan_diagnostics import word_plan_shape
+                        record_write_event({"tool":request.contract.name, "stage":"result_validation", "category":"none",
+                            "duration_ms":round((monotonic() - request.started_at) * 1000),
+                            "outcome":"saved" if serialized_output.get("saved") else serialized_output.get("outcome"),
+                            **({"shape":word_plan_shape(request.arguments)} if request.contract.name == "office.word_compose" else {})})
                     request.future.set_result(serialized_output)
-            except BaseException:
+            except BaseException as error:
+                if request.contract is not None and request.contract.permission == PermissionClass.WRITE and request.contract.name in {
+                        "office.word_compose", "office.word_edit", "office.save", "office.revert"}:
+                    with self._state:
+                        if not diagnostic_received:
+                            self._failure_diagnostics["write_outcome"] = record_write_event({
+                                "tool": request.contract.name, "stage": request_stage,
+                                "category": "transport" if request_stage == "confirmation" else "verification",
+                                "duration_ms": round((monotonic() - request.started_at) * 1000),
+                                "outcome": "unknown", "dispatched": request.sent})
                 with self._state:
                     self._invalidate_locked()
                 if not request.future.done():
@@ -570,6 +627,7 @@ class OfficeConnection:
              operation: str, cancellation: CancellationToken):
         cancellation.raise_if_cancelled()
         timeout = self.tool_timeout(contract, arguments)
+        started = monotonic()
         request = _Request(contract, arguments.model_dump(mode="json"), expected, operation,
                            timeout_seconds=timeout)
         if contract.name == "office.word_compose":
@@ -621,6 +679,16 @@ class OfficeConnection:
                             if contract.name == "office.read":
                                 from app.mcp.office_read_diagnostics import read_shape
                                 self._failure_diagnostics["confirmation_read_shape"] = read_shape(arguments.model_dump(mode="json"))
+                        if contract.permission == PermissionClass.WRITE and contract.name in {
+                                "office.word_compose", "office.word_edit", "office.save", "office.revert"}:
+                            from app.inference.word_plan_diagnostics import word_plan_shape
+                            diagnostic = record_write_event({"tool": contract.name, "stage": "confirmation",
+                                "category": self._failure_diagnostics["confirmation_stop"].replace("deadline", "timeout"),
+                                "outcome": "unknown" if sent else "not_applied", "dispatched": sent,
+                                "duration_ms": round((monotonic() - started) * 1000), "timeout_ms": round(timeout * 1000),
+                                **({"shape": word_plan_shape(request.arguments)} if contract.name == "office.word_compose" else {})})
+                            with self._state:
+                                self._failure_diagnostics["write_outcome"] = diagnostic
                         self.disconnect()
                         if sent and contract.permission == PermissionClass.WRITE:
                             raise Error(Code.OUTCOME_UNKNOWN, "The Office write may have completed; review its outcome before retrying.")

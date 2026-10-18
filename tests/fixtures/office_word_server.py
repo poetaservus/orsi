@@ -89,12 +89,19 @@ class MemoryWord(MemoryOffice):
 
     def write_word(self, descriptor, state):
         self.check()
+        if self.mode == "busy":
+            error = RuntimeError("SECRET-BUSY-COM")
+            error.hresult = -2147417846
+            raise error
         self.writes += 1
         descriptor[1]["value"] = state["paragraph_text"][:-1]
         if self.mode == "partial":
+            descriptor[1]["value"] = state["paragraph_text"][:3]
             raise RuntimeError("SECRET-COM-DESCRIPTION")
         if self.mode == "miswrite":
             self.props = None
+        if self.mode == "after_apply":
+            raise RuntimeError("SECRET-POST-WRITE-COM")
         return self.word_descriptor(descriptor[1], state["start"], state["end"])
 
     def save_word(self, document, save):
@@ -118,6 +125,7 @@ class MemoryWord(MemoryOffice):
         self.writes += 1
         self.table = deepcopy(state)
         if self.mode == "partial":
+            self.table["cells"][-1]["text"] = "Incomplete"
             raise RuntimeError("SECRET-TABLE-EXCEPTION")
         if self.mode == "miswrite":
             self.table["structure"] = ["changed"]

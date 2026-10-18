@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from time import monotonic
 
 from mcp.server.lowlevel import Server
 from mcp.server.stdio import stdio_server
@@ -56,13 +57,22 @@ def create_server(*, handler=None, control=None):
 
 def create_live_server(sta):
     async def handler(contract, arguments, meta):
+        from app.capabilities.contracts import PermissionClass
+        from app.mcp.office_word import WordNotApplied
+        from app.mcp.office_write_diagnostics import safe_write_event
+        started = monotonic()
         authority = meta.get("orsiAuthority") if meta else None
-        stage = "read_execute"
+        stage = "dispatch" if contract.permission == PermissionClass.WRITE else "read_execute"
         try:
             output = await sta.invoke("call", contract, arguments, authority, meta.get("orsiOperation") if meta else None)
             stage = "result_validation"
             contract.validate_result(arguments, output)
-            return CallToolResult(content=[], structuredContent=output)
+            diagnostic = getattr(sta, "last_write_diagnostic", None) if contract.permission == PermissionClass.WRITE else None
+            return CallToolResult(content=[], structuredContent=output,
+                meta={"orsiWriteDiagnostic": safe_write_event(diagnostic)} if diagnostic else None)
+        except WordNotApplied as error:
+            return CallToolResult(isError=True, content=[TextContent(text=str(error))],
+                meta={"orsiFailure": "not_applied", "orsiWriteDiagnostic": error.diagnostic})
         except OfficeConflict as error:
             return CallToolResult(isError=True, content=[TextContent(text="Office conflict; no write was started.")],
                 meta={"orsiFailure": "conflict", "orsiMessage": "Office conflict: " + str(error),
@@ -70,7 +80,8 @@ def create_live_server(sta):
         except OfficeUnknown as error:
             return CallToolResult(isError=True, content=[TextContent(text="Office mutation outcome is uncertain; no automatic retry.")],
                 meta={"orsiFailure": "unknown", "orsiStage": getattr(error, "stage", None),
-                      "orsiHresult": getattr(error, "hresult", None), "orsiMismatch": getattr(error, "mismatch", [])})
+                      "orsiHresult": getattr(error, "hresult", None), "orsiMismatch": getattr(error, "mismatch", []),
+                      "orsiWriteDiagnostic": getattr(error, "diagnostic", None)})
         except WordRenderUnavailable as error:
             return CallToolResult(isError=True, content=[TextContent(text="Word page rendering is unavailable.")],
                 meta={"orsiFailure": "read_setup", "orsiMessage": str(error),
@@ -82,6 +93,14 @@ def create_live_server(sta):
                     text=read_failure_message(arguments.model_dump(), diagnostic))],
                     meta={"orsiFailure": "read_unavailable" if isinstance(error, OfficeUnavailable) else "read_execution",
                           "orsiReadDiagnostic": diagnostic})
+            if contract.permission == PermissionClass.WRITE:
+                from app.mcp.office_write_diagnostics import category
+                diagnostic = safe_write_event({"tool": contract.name, "stage": stage,
+                    "category": category(error), "hresult": getattr(error, "hresult", None),
+                    "duration_ms": round((monotonic() - started) * 1000), "outcome": "unknown"})
+                return CallToolResult(isError=True, content=[TextContent(
+                    text="Office write could not be confirmed. Inspect the document before another write.")],
+                    meta={"orsiFailure": "unknown", "orsiWriteDiagnostic": diagnostic})
             return CallToolResult(isError=True, content=[TextContent(
                 text="Office target is unavailable or changed; refresh the selection and read again.")])
 

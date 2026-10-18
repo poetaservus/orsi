@@ -5,12 +5,18 @@ from collections import OrderedDict
 from pathlib import Path
 import re
 from uuid import uuid4
+from time import monotonic
 
 from app.mcp.office_com import OfficeUnavailable
 from app.mcp.office_contracts import MAX_RESULT_BYTES, canonical_json
 from app.mcp.office_excel import MAX_STATE_BYTES, OfficeConflict, OfficeUnknown, digest, file_stamp
 from app.mcp.office_word_native import replacement
 from app.mcp.office_word_document import same_document
+from app.mcp.office_write_diagnostics import category, native_step, safe_write_event
+
+
+class WordNotApplied(OfficeConflict):
+    """Readback proved that the failed attempt left the complete target unchanged."""
 
 
 class WordEdits:
@@ -344,6 +350,7 @@ class WordEdits:
         return result
 
     def execute(self, name, arguments, binding, authority, operation):
+        started = monotonic()
         record = self.guards.pop(authority.get("guard"), None)
         if self.blocked or record is None or record[:3] != (name, arguments.model_dump(mode="json"), binding["identity"]):
             raise OfficeConflict("Office conflict: the exact approved Word operation is unavailable.")
@@ -381,7 +388,9 @@ class WordEdits:
                         stage = "word_document_readback"
                         verify_document(document, plan, expected.get("media", {}))
                     after_descriptor = ("word_document", document, 0, int(document.Content.End))
-                    after = backend.capture_word(after_descriptor)
+                    stage = "recovery_capture"
+                    with native_step(stage):
+                        after = backend.capture_word(after_descriptor)
                     if name == "office.revert" and not same_document(after, expected):
                         raise OfficeUnknown("Word report restoration did not match its complete owned snapshot.")
                     if same_document(before, after):
@@ -429,6 +438,71 @@ class WordEdits:
             self.blocked = False
             return output
         except Exception as error:
+            diagnostic = {"tool": name, "stage": getattr(error, "orsi_write_stage", stage),
+                "action": "save" if save is not None else "revert" if name == "office.revert" else action,
+                "category": category(error), "hresult": getattr(error, "hresult", None),
+                "step_ms": getattr(error, "orsi_write_step_ms", None),
+                "duration_ms": round((monotonic() - started) * 1000), "outcome": "unknown"}
+            # Reconcile on this STA using independent readback. Never rerun a
+            # writer, insert, field operation or save after an exception.
+            try:
+                if save is not None:
+                    backend.verify_word_save(document, save)
+                    output = {"session": arguments.session, "operation": operation, "saved": True}
+                    verified = "saved"
+                else:
+                    if action == "compose":
+                        current_descriptor = ("word_document", document, 0, int(document.Content.End))
+                        current = backend.capture_word(current_descriptor)
+                        if name == "office.revert":
+                            applied = same_document(current, expected)
+                        else:
+                            from app.mcp.office_word_document import verify_document
+                            from app.mcp.office_contracts import WordComposeArguments
+                            verify_document(document, WordComposeArguments.model_validate(expected["plan"]), expected.get("media", {}))
+                            applied = True
+                    else:
+                        current_descriptor = ((*descriptor[:2], expected["start"], expected["end"], *descriptor[4:])
+                            if action == "edit_table" else backend.word_descriptor(document, expected["start"], expected["end"]))
+                        current = backend.capture_word(current_descriptor)
+                        compared = set(expected) - ({"target", "uniform"} if action == "apply_style" else set())
+                        applied = all(current.get(key) == expected[key] for key in compared)
+                    if not applied:
+                        raise OfficeUnknown("Word outcome verification did not match the approved result.")
+                    recovery = uuid4().hex
+                    self.recoveries[recovery] = (arguments.session, binding["document"]["document"],
+                        current_descriptor, before, current, action)
+                    if name == "office.revert":
+                        self.recoveries.pop(arguments.recovery, None)
+                    affected = sum(b["text"] != a["text"] or b["paragraph"] != a["paragraph"]
+                        for b, a in zip(before["cells"], current["cells"], strict=True)) if action == "edit_table" else 1
+                    output = {"session": arguments.session, "operation": operation, "outcome": "applied",
+                        "affected_items": affected, "recovery": recovery}
+                    verified = "applied"
+            except Exception:
+                verified = "unknown"
+                if before is not None:
+                    try:
+                        # Original anchors/complete package also guard against
+                        # foreign changes and partial formatting/image inserts.
+                        if same_document(backend.capture_word(descriptor), before):
+                            verified = "not_applied"
+                    except Exception:
+                        pass
+            diagnostic["outcome"] = verified
+            self.last_diagnostic = safe_write_event(diagnostic)
+            if verified != "unknown":
+                self.snapshots.clear()
+                self.cursors.clear()
+                self.renders.clear()
+                self.guards.clear()
+                self.blocked = False
+                if verified == "not_applied":
+                    failure = WordNotApplied("Word verified that the target is unchanged. Read it again and obtain fresh approval before retrying.")
+                    failure.diagnostic = self.last_diagnostic
+                    raise failure from None
+                return output
             failure = OfficeUnknown("The Word mutation outcome is uncertain; inspect before another write.")
-            failure.stage, failure.hresult, failure.mismatch = stage, getattr(error, "hresult", None), mismatch
+            failure.stage, failure.hresult, failure.mismatch = diagnostic["stage"], getattr(error, "hresult", None), mismatch
+            failure.diagnostic = self.last_diagnostic
             raise failure from None

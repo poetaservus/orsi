@@ -265,17 +265,53 @@ class OfficeSTA:
     """Only this executor may construct, use or release the COM service."""
     def __init__(self, factory=LiveOffice):
         self.factory, self.service = factory, None
+        self.last_write_diagnostic = None
         self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="orsi-office-sta")
 
     def _invoke(self, method, args):
         if self.service is None:
             self.service = self.factory()
-        return getattr(self.service, method)(*args)
+        writing = method == "call" and args[0].permission.value == "write"
+        if writing:
+            self.service.word.last_diagnostic = None
+            self.last_write_diagnostic = None
+        failure = None
+        try:
+            return getattr(self.service, method)(*args)
+        except Exception as error:
+            # Native exceptions retain traceback frames containing COM proxies.
+            # Only a detached, content-free failure may leave the owning STA.
+            from app.mcp.office_excel import OfficeUnknown
+            from app.mcp.office_word import WordNotApplied
+            from app.mcp.office_word_render import WordRenderUnavailable
+            kind = next((kind for kind in (WordNotApplied, OfficeUnknown, OfficeConflict, WordRenderUnavailable, OfficeUnavailable)
+                         if isinstance(error, kind)), RuntimeError)
+            failure = kind(str(error) if kind is not RuntimeError else "Office execution failed.")
+            for field in ("hresult", "stage", "mismatch", "diagnostic", "orsi_read_stage"):
+                value = getattr(error, field, None)
+                if isinstance(value, (str, int, list, dict)):
+                    setattr(failure, field, value)
+            import traceback
+            pending, seen = [error], set()
+            while pending:
+                native = pending.pop()
+                if id(native) in seen:
+                    continue
+                seen.add(id(native))
+                traceback.clear_frames(native.__traceback__)
+                pending.extend(e for e in (native.__context__, native.__cause__) if e is not None)
+            native = None
+        finally:
+            if writing:
+                self.last_write_diagnostic = self.service.word.last_diagnostic
+        raise failure
 
     async def invoke(self, method, *args):
         return await asyncio.wrap_future(self.executor.submit(self._invoke, method, args))
 
     async def close(self):
-        if self.service is not None:
-            await self.invoke("close")
-        self.executor.shutdown(wait=False, cancel_futures=True)
+        try:
+            if self.service is not None:
+                await self.invoke("close")
+        finally:
+            self.executor.shutdown(wait=False, cancel_futures=True)

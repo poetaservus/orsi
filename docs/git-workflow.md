@@ -1,5 +1,21 @@
 # Git layout and baseline hygiene
 
+## Word COM stabilization, 18 October 2026
+
+`codex/word-com-stability` starts from clean local main `be5d21d`. It corrects
+inherited Word pagination, closes final two-column flow for balancing, verifies
+exception outcomes without replay, preserves confirmed saves through failed
+authority refresh, detaches STA exceptions, and persists content-free operation
+diagnostics. See [findings, qualification and limits](office-word-com-stability.md).
+
+Only essential focused checks run: 200 distinct deterministic cases and three
+disposable native gates. The accepted MCP manifest is unchanged. No full suite,
+live-model acceptance, user-document edit, settings/model/prompt change or remote
+Git operation is made. Historical incident arguments/HRESULT remain unavailable;
+reproduced defects are not attributed to that run without its evidence. Preserve
+prior main as `archive/2026-10-18/main-before-word-com-stability`, commit, fast-forward
+local main and remove only this merged branch. Other refs/worktrees remain intact.
+
 ## Word revision workflow, 18 October 2026
 
 `codex/word-revision-workflow` starts from clean local main `a862446`, preserving

@@ -356,10 +356,31 @@ class WordNative:
 
     def save_word(self, document, save):
         self.check_thread()
-        if save["save_as"]:
-            document.SaveAs2(save["path"], 12)  # wdFormatXMLDocument, no macros.
-        else:
-            document.Save()
+        from app.mcp.office_write_diagnostics import native_step
+        from app.mcp.office_word_document import finalize_layout
+        finalize_layout(document)
+        options = document.Application.Options
+        background = bool(options.BackgroundSave)
+        try:
+            # Save() may otherwise return while the file is still queued.
+            # Serialize this temporary application option on the owning STA.
+            options.BackgroundSave = False
+            with native_step("word_save"):
+                if save["save_as"]:
+                    document.SaveAs2(save["path"], 12)  # wdFormatXMLDocument, no macros.
+                else:
+                    document.Save()
+        finally:
+            options.BackgroundSave = background
+        with native_step("word_save_verify"):
+            self.verify_word_save(document, save)
+
+    def verify_word_save(self, document, save):
+        self.check_thread()
         path = Path(save["path"])
         if not bool(document.Saved) or Path(str(document.FullName)).resolve(strict=True) != path or not path.is_file():
             reject("Word did not verify saving to the approved destination.")
+        from zipfile import ZipFile
+        with ZipFile(path) as package:
+            if "word/document.xml" not in package.namelist():
+                reject("Word did not produce an ordinary saved document.")
