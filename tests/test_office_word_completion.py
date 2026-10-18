@@ -35,9 +35,12 @@ def test_word_composition_budgets_cover_controls_verification_and_shutdown_only_
         tool = OfficeCapability(COMPOSE, bridge, None, None, None)
         assert tool.timeout_seconds == 90
         for contract in OFFICE_TOOLS:
-            if contract.name != COMPOSE.name:
+            if contract.name not in {COMPOSE.name, "office.excel_edit"}:
                 assert bridge.tool_timeout(contract) == 10
                 assert OfficeCapability(contract, bridge, None, None, None).timeout_seconds == 40
+        excel = next(t for t in OFFICE_TOOLS if t.name == "office.excel_edit")
+        assert bridge.tool_timeout(excel) == 240
+        assert OfficeCapability(excel, bridge, None, None, None).timeout_seconds == 500
     finally:
         bridge.close()
 

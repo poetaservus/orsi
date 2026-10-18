@@ -95,6 +95,8 @@ class MemoryExcel(MemoryOffice):
 
 class ExcelFixture(LiveOffice):
     def control(self, action, data):
+        if action == "mutation" and self.backend.mode == "slow_prepare":
+            time.sleep(.5)
         if action == "fixture-cells":
             sheet = self.backend.sheets[data["sheet"]]
             for r, row in enumerate(data["values"], 1):

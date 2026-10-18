@@ -1,5 +1,21 @@
 # Git layout and baseline hygiene
 
+## Excel execution reliability, 18 October 2026
+
+`codex/office-mcp-reliability` starts from clean local main `0acc369`. It repairs
+native Excel mutation/preparation deadlines, dispatch-time budgets for shared
+save/revert tools, formula-result verification after same-patch recalculation,
+plain line-chart palette verification, and content-free Excel failure evidence. See
+[reproductions, focused verification and limits](office-excel-reliability.md).
+
+158 distinct deterministic/owned-stdio checks and the disposable native 200-cell,
+1,000-cell and four-chart gates pass. One opt-in Word gate remains skipped;
+native cleanup diagnostics are recorded separately. Only focused tests are used. Preserve prior
+main at `archive/2026-10-18/main-before-office-mcp-reliability`, commit, fast-forward
+local main and remove only this merged feature branch. Other worktrees, user
+settings/documents, historical/unmerged tips and remote refs remain untouched.
+No full suite or live-model acceptance is claimed.
+
 ## Office read reliability, 18 October 2026
 
 `codex/office-read-reliability` starts from clean local main `2a0c399`. It yields

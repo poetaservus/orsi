@@ -8,11 +8,12 @@ log = logging.getLogger(__name__)
 STAGES = frozenset({"dispatch", "confirmation", "result_validation", "word_save", "word_save_verify",
     "word_native_insert", "word_readback", "word_verification", "word_document_write",
     "word_document_readback", "insert_xml", "section_layout", "running_matter", "repaginate",
-    "fields_update", "recovery_capture", "outcome_verification"})
+    "fields_update", "recovery_capture", "outcome_verification", "excel_preflight", "excel_write",
+    "excel_verification", "excel_objects", "excel_save"})
 CATEGORIES = frozenset({"busy", "rejected", "native", "verification", "io", "internal",
     "timeout", "cancelled", "worker_stopped", "transport", "none"})
 OUTCOMES = frozenset({"unknown", "not_applied", "applied", "unchanged", "saved"})
-TOOLS = frozenset({"office.word_compose", "office.word_edit", "office.save", "office.revert"})
+TOOLS = frozenset({"office.word_compose", "office.word_edit", "office.excel_edit", "office.save", "office.revert"})
 ACTIONS = frozenset({"compose", "replace_text", "insert_after", "apply_style", "edit_table", "save", "revert"})
 
 
@@ -63,6 +64,19 @@ def record_write_event(value):
     log.info("office_write outcome=%s", json.dumps(event, separators=(",", ":")),
              extra={"orsi_write_diagnostic": event})
     return event
+
+
+def excel_failure_message(value):
+    """Explain the verified failure stage without native error text or contents."""
+    event = safe_write_event(value) or {}
+    stage = {"excel_write": "writing cells", "excel_verification": "checking cell values and formatting",
+        "excel_objects": "creating or checking dashboard objects", "excel_save": "saving the workbook",
+        "confirmation": "waiting for Excel", "result_validation": "checking the completion receipt"}.get(
+            event.get("stage"), "applying the edit")
+    reason = {"busy": " Excel was busy.", "rejected": " Excel rejected the request.",
+        "timeout": " Excel exceeded the operation deadline.",
+        "verification": " The readback did not match the approved result."}.get(event.get("category"), "")
+    return f"Excel could not confirm the edit while {stage}.{reason} Inspect the workbook before another edit; no automatic retry was made."
 
 
 @contextmanager

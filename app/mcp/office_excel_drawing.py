@@ -343,7 +343,10 @@ class ExcelDrawing:
             for index, series in enumerate(state["series"]):
                 if spec.colors:
                     expected = spec.colors[index % len(spec.colors)].upper()
-                    if series["fill"] != expected or series["line"] != expected:
+                    # A plain line has no filled area. Native Excel reports its
+                    # unused fill as black even after assigning a palette color;
+                    # the visible stroke is the property that must verify.
+                    if series["line"] != expected or (spec.chart_type != "line" and series["fill"] != expected):
                         raise OfficeUnknown("The native chart palette did not verify.")
         elif spec.kind == "shape":
             expected = {"shape_type": SHAPE_TYPES[spec.shape_type], "fill": spec.fill_color.upper() if spec.fill_color != "none" else "none",

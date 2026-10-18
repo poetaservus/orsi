@@ -5,6 +5,7 @@ from collections import OrderedDict
 from hashlib import sha256
 from pathlib import Path
 import re
+from time import monotonic
 from uuid import uuid4
 
 from app.mcp.office_com import OfficeUnavailable
@@ -121,6 +122,7 @@ class ExcelEdits:
         self.guards, self.recoveries = OrderedDict(), {}
         self.sheet_references = {}
         self.blocked = False
+        self.last_diagnostic = None
         self.objects = ExcelObjects(self)
 
     def clear(self):
@@ -316,16 +318,20 @@ class ExcelEdits:
         if save is None and not changed and not object_plans and not object_recovery:
             return {"session": arguments.session, "operation": operation, "outcome": "unchanged", "affected_items": 0}
         self.blocked = True
+        started, stage = monotonic(), "excel_preflight"
         try:
             if save is not None:
+                stage = "excel_save"
                 backend.save_excel(document, save, arguments.overwrite)
                 output = {"session": arguments.session, "operation": operation, "saved": True}
             else:
+                stage = "excel_objects"
                 self.objects.remove(object_recovery, document)
                 removed_pivot_cells = [d for r in object_recovery if r["spec"].kind == "pivot"
                     for d in backend.plan("excel", document,
                         "'" + r["spec"].sheet.replace("'", "''") + "'!" + r["spec"].destination)]
                 recalculation_started = False
+                stage = "excel_write"
                 for descriptor, before, expected, fields in changed:
                     check_references()
                     current = backend.capture_excel(descriptor)
@@ -346,18 +352,20 @@ class ExcelEdits:
                     backend.write_excel(descriptor, expected, fields)
                     recalculation_started |= bool({"value", "formula"} & set(fields))
                 verified = []
+                stage = "excel_verification"
                 for descriptor, before, expected, fields in changed:
                     after = backend.capture_excel(descriptor)
                     checked = set(expected) - {"formula"}
                     if "fill_color" in fields and "_fill" not in fields:
                         checked.discard("_fill")
-                    if "formula" in fields and expected["formula"]:
+                    if expected["formula"] and ("formula" in fields or recalculation_started):
                         checked.discard("value")
                     if any(not same_value(after[f], expected[f]) for f in checked) or (
                             formula_key(after["formula"]) != formula_key(expected["formula"])):
                         raise OfficeUnknown("Excel verification did not match the requested patch.")
                     verified.append((descriptor, before, after))
                 created = []
+                stage = "excel_objects"
                 for plan in object_plans:
                     self.objects.check([plan], document, late=True)
                     item, pivot_cells = self.objects.create(plan, document)
@@ -380,6 +388,16 @@ class ExcelEdits:
                           "affected_items": len(changed) + len(object_plans) + len(object_recovery),
                           "recovery": recovery if recoverable else None}
             self.blocked = False
+            from app.mcp.office_write_diagnostics import safe_write_event
+            self.last_diagnostic = safe_write_event({"tool": name, "stage": stage, "category": "none",
+                "duration_ms": round((monotonic() - started) * 1000),
+                "outcome": "saved" if save is not None else "applied"})
             return output
-        except Exception:
-            raise OfficeUnknown("The Excel mutation outcome is uncertain; inspect before another write.") from None
+        except Exception as error:
+            from app.mcp.office_write_diagnostics import safe_write_event, category
+            self.last_diagnostic = safe_write_event({"tool": name, "stage": stage, "category": category(error),
+                "hresult": getattr(error, "hresult", None), "duration_ms": round((monotonic() - started) * 1000),
+                "outcome": "unknown"})
+            failure = OfficeUnknown("The Excel mutation outcome is uncertain; inspect before another write.")
+            failure.diagnostic = self.last_diagnostic
+            raise failure from None

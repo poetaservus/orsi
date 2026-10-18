@@ -283,6 +283,7 @@ class OfficeSTA:
         writing = method == "call" and args[0].permission.value == "write"
         if writing:
             self.service.word.last_diagnostic = None
+            self.service.excel.last_diagnostic = None
             self.last_write_diagnostic = None
         failure = None
         try:
@@ -312,7 +313,7 @@ class OfficeSTA:
             native = None
         finally:
             if writing:
-                self.last_write_diagnostic = self.service.word.last_diagnostic
+                self.last_write_diagnostic = self.service.word.last_diagnostic or self.service.excel.last_diagnostic
         raise failure
 
     async def invoke(self, method, *args):

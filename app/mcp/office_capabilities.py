@@ -172,7 +172,6 @@ def _compose_error_message(details, empty_plan=None):
 
 class OfficeCapability(Capability):
     execution_isolation = ExecutionIsolation.IN_PROCESS_COOPERATIVE
-    timeout_seconds = 40.0
 
     def __init__(self, contract, connection, model, resource_policy, write_policy):
         self.contract, self.connection, self.model = contract, connection, model
@@ -180,11 +179,20 @@ class OfficeCapability(Capability):
         self.arguments_model, self.permission = contract.arguments, contract.permission
         self.resource_policy, self.write_policy = resource_policy, write_policy
         self._prepared, self._lock = OrderedDict(), RLock()
-        if self.name == "office.word_compose" and callable(getattr(connection, "tool_timeout", None)):
+
+    @property
+    def timeout_seconds(self):
+        # Registrations outlive document selection. Shared save/revert tools
+        # must use the currently selected application's budget at dispatch.
+        connection, contract = self.connection, self.contract
+        if callable(getattr(connection, "tool_timeout", None)):
             # Execution rechecks binding and mutation authority (two controls),
             # then waits for the verified tool receipt and bounded shutdown.
-            self.timeout_seconds = max(self.timeout_seconds,
-                connection.tool_timeout(contract) + 2 * connection.call_timeout + 10.0)
+            return max(40.0,
+                connection.tool_timeout(contract) + connection.call_timeout +
+                (connection.mutation_timeout(contract) if callable(getattr(connection, "mutation_timeout", None))
+                 else connection.call_timeout) + 10.0)
+        return 40.0
 
     def validate_arguments(self, raw_arguments):
         from app.inference.word_plan_diagnostics import record_word_plan

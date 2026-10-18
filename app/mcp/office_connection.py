@@ -24,11 +24,14 @@ from app.mcp.stdio_transport import OwnedStdioTransport
 from app.mcp.office_excel import LIVE_TOOLS, READ_TOOLS
 from app.runtime.cancellation import CancellationToken, TaskCancelled
 from app.mcp.office_read_diagnostics import record_read_failure, read_failure_message
-from app.mcp.office_write_diagnostics import record_write_event
+from app.mcp.office_write_diagnostics import record_write_event, TOOLS as DIAGNOSTIC_WRITE_TOOLS
 
 
 DEFAULT_CALL_TIMEOUT = 10.0
 WORD_COMPOSE_CALL_TIMEOUT = 60.0
+# Up to 1,000 guarded cells, native formatting and complete readback. The SDK,
+# preparation controls and outer executor must share this bounded allowance.
+EXCEL_MUTATION_TIMEOUT = 240.0
 
 
 @dataclass
@@ -85,10 +88,21 @@ class OfficeConnection:
         # authoritative, including short deadlines for hung-worker checks.
         if contract.name == "office.word_compose" and not self._explicit_call_timeout:
             return WORD_COMPOSE_CALL_TIMEOUT
+        if self._excel_mutation(contract) and not self._explicit_call_timeout:
+            return EXCEL_MUTATION_TIMEOUT
         if (contract.name == "office.read" and not self._explicit_call_timeout
                 and str(getattr(arguments, "target", "")).startswith("render:")):
             return 30.0  # Bounded three-page print export and rasterization.
         return self.call_timeout
+
+    def _excel_mutation(self, contract):
+        return contract.name == "office.excel_edit" or (
+            contract.name in {"office.revert", "office.save"} and self.selected_application == "excel")
+
+    def mutation_timeout(self, contract):
+        # Preparing/rechecking an approved batch captures the same bounded native
+        # cells as execution. It must not retain the short metadata deadline.
+        return self.tool_timeout(contract) if self._excel_mutation(contract) else self.call_timeout
 
     def _bundled_transport(self):
         python = self.root / "runtime/python/python.exe"
@@ -219,7 +233,10 @@ class OfficeConnection:
 
     async def _serve(self):
         self._loop, self._queue = asyncio.get_running_loop(), asyncio.Queue(maxsize=16)
-        async with Client(self._transport.open(), mode="legacy", read_timeout_seconds=self.startup_timeout) as client:
+        # Resource reads have no per-request SDK timeout. Give that inner layer
+        # enough room, then bound every control below by its own host deadline.
+        async with Client(self._transport.open(), mode="legacy",
+                read_timeout_seconds=max(self.startup_timeout, EXCEL_MUTATION_TIMEOUT)) as client:
             try:
                 await self._connected(client)
             finally:
@@ -254,7 +271,7 @@ class OfficeConnection:
             try:
                 if request.control is not None:
                     try:
-                        output = await self._control_request(client, *request.control)
+                        output = await self._control_request(client, *request.control, timeout=request.timeout_seconds)
                     except Error as error:
                         if not request.future.done():
                             request.future.set_exception(error)
@@ -268,8 +285,7 @@ class OfficeConnection:
                         **({"orsiAuthority": request.authority} if self.live else {})))
                 failure = result.meta or {}
                 request_stage = "result_validation"
-                if request.contract.permission == PermissionClass.WRITE and request.contract.name in {
-                        "office.word_compose", "office.word_edit", "office.save", "office.revert"}:
+                if request.contract.permission == PermissionClass.WRITE and request.contract.name in DIAGNOSTIC_WRITE_TOOLS:
                     diagnostic = failure.get("orsiWriteDiagnostic")
                     if isinstance(diagnostic, dict):
                         diagnostic_received = True
@@ -360,7 +376,7 @@ class OfficeConnection:
                     if serialized_output.get("word_workflow") is None:
                         serialized_output.pop("word_workflow", None)
                     if (not diagnostic_received and request.contract.permission == PermissionClass.WRITE
-                            and request.contract.name in {"office.word_compose", "office.word_edit", "office.save", "office.revert"}):
+                            and request.contract.name in DIAGNOSTIC_WRITE_TOOLS):
                         from app.inference.word_plan_diagnostics import word_plan_shape
                         record_write_event({"tool":request.contract.name, "stage":"result_validation", "category":"none",
                             "duration_ms":round((monotonic() - request.started_at) * 1000),
@@ -375,8 +391,7 @@ class OfficeConnection:
                                 "stage": "bridge" if request_stage == "confirmation" else "result_validation",
                                 "reason": "transport" if request_stage == "confirmation" else "invalid_result",
                                 "timeout_ms": round(request.timeout_seconds * 1000)})
-                if request.contract is not None and request.contract.permission == PermissionClass.WRITE and request.contract.name in {
-                        "office.word_compose", "office.word_edit", "office.save", "office.revert"}:
+                if request.contract is not None and request.contract.permission == PermissionClass.WRITE and request.contract.name in DIAGNOSTIC_WRITE_TOOLS:
                     with self._state:
                         if not diagnostic_received:
                             self._failure_diagnostics["write_outcome"] = record_write_event({
@@ -388,12 +403,18 @@ class OfficeConnection:
                     self._invalidate_locked()
                 if not request.future.done():
                     code = Code.OUTCOME_UNKNOWN if request.contract is not None and request.contract.permission == PermissionClass.WRITE else Code.INVALID_OUTPUT
-                    request.future.set_exception(Error(code, "Office execution failed; no automatic retry is permitted."))
+                    message = "Office execution failed; no automatic retry is permitted."
+                    diagnostic = self._failure_diagnostics.get("write_outcome", {})
+                    if request.contract is not None and request.contract.name == "office.excel_edit":
+                        from app.mcp.office_write_diagnostics import excel_failure_message
+                        message = excel_failure_message(diagnostic)
+                    request.future.set_exception(Error(code, message))
                 break
 
-    async def _control_request(self, client, action, data):
-        result = await client.read_resource("orsi-office://local/" + action,
-            meta=RequestParamsMeta(orsiControl=data), cache_mode="bypass")
+    async def _control_request(self, client, action, data, *, timeout=None):
+        result = await asyncio.wait_for(client.read_resource("orsi-office://local/" + action,
+            meta=RequestParamsMeta(orsiControl=data), cache_mode="bypass"),
+            timeout=self.call_timeout if timeout is None else timeout)
         if len(result.contents) != 1 or len(result.contents[0].text.encode()) > 48000:
             raise ValueError("Invalid local Office response.")
         output = json.loads(result.contents[0].text)
@@ -404,10 +425,11 @@ class OfficeConnection:
             raise Error(Code.INVALID_ARGUMENTS, message)
         return output
 
-    def control(self, action, data=None, cancellation=None):
+    def control(self, action, data=None, cancellation=None, *, timeout=None):
         """Private app operation; never part of model tools or conversation results."""
         cancellation = cancellation or CancellationToken()
-        deadline, acquired = monotonic() + self.call_timeout, False
+        timeout = self.call_timeout if timeout is None else timeout
+        deadline, acquired = monotonic() + timeout, False
         try:
             while not acquired:
                 acquired = self._dispatch_lock.acquire(timeout=0.01)
@@ -418,7 +440,7 @@ class OfficeConnection:
             expected = self.exposure
             if not self.live or not expected.ready or expected.backend != "cloud":
                 raise Error(Code.DISABLED_CAPABILITY, "Office controls require a ready cloud connection.")
-            request = _Request(None, {}, expected, "", control=(action, data or {}))
+            request = _Request(None, {}, expected, "", timeout_seconds=timeout, control=(action, data or {}))
             self._loop.call_soon_threadsafe(self._queue.put_nowait, request)
             while True:
                 try:
@@ -618,7 +640,7 @@ class OfficeConnection:
             from app.inference.word_plan_diagnostics import record_word_plan
             record_word_plan("approval_serialized", serialized)
         value = self.control("mutation", {**authority, "tool": contract.name,
-            "arguments": serialized}, context.cancellation)
+            "arguments": serialized}, context.cancellation, timeout=self.mutation_timeout(contract))
         if contract.name == "office.word_compose":
             from app.inference.word_plan_diagnostics import word_plan_shape
             if value.get("word_plan_shape") == word_plan_shape(serialized):
@@ -690,8 +712,7 @@ class OfficeConnection:
                                     "stage": "bridge",
                                     "reason": self._failure_diagnostics["confirmation_stop"].replace("deadline", "timeout"),
                                     "timeout_ms": round(timeout * 1000)})
-                        if contract.permission == PermissionClass.WRITE and contract.name in {
-                                "office.word_compose", "office.word_edit", "office.save", "office.revert"}:
+                        if contract.permission == PermissionClass.WRITE and contract.name in DIAGNOSTIC_WRITE_TOOLS:
                             from app.inference.word_plan_diagnostics import word_plan_shape
                             diagnostic = record_write_event({"tool": contract.name, "stage": "confirmation",
                                 "category": self._failure_diagnostics["confirmation_stop"].replace("deadline", "timeout"),

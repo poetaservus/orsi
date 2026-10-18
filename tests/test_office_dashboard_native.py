@@ -83,7 +83,7 @@ def test_native_dashboard_objects_filters_persistence_and_owned_recovery(tmp_pat
             attached = live.call(tool("attach"), tool("attach").arguments(application="excel", document=document_id), authority)
             session = attached["session"]
         else:
-            bridge = OfficeConnection(ROOT, backend=lambda: "cloud", startup_timeout=20, call_timeout=30)
+            bridge = OfficeConnection(ROOT, backend=lambda: "cloud")
             runtime = runtime_for(bridge, tmp_path, policy=bridge.resource_policy)
             bridge.connect()
             found = [d for d in bridge.list_documents() if d["application"] == "excel" and d["title"] == str(document.Name)]
@@ -145,6 +145,15 @@ def test_native_dashboard_objects_filters_persistence_and_owned_recovery(tmp_pat
         assert abs(float(dashboard.Range("A1").Interior.TintAndShade) - original_theme[1]) < 1e-5
         diagnostics["fill_and_theme_recovery"] = True
 
+        dashboard.Range("D1").Value2 = 1
+        dashboard.Range("D2").Formula2 = "=SUM(D1,1)"
+        calculated = edit(changes=[{"sheet": "Dashboard", "range": "D1", "values": [[8]]},
+            {"sheet": "Dashboard", "range": "D2", "bold": True}], destination="Dashboard!D1:D2")
+        assert float(dashboard.Range("D2").Value2) == 9 and bool(dashboard.Range("D2").Font.Bold)
+        invoke("revert", {"session": session, "snapshot": read("Dashboard!D1:D2"), "recovery": calculated["recovery"]})
+        assert float(dashboard.Range("D2").Value2) == 2 and not bool(dashboard.Range("D2").Font.Bold)
+        diagnostics["same_patch_formula_recalculation_verified"] = True
+
         source_snapshot = read("SyntheticSource!A1:B4")
         pivot_receipt = edit(objects=[{"kind": "pivot", "sheet": "Calculations", "name": "RevenueByRegion",
             "destination": "A1:B14", "source": {"snapshot": source_snapshot, "sheet": "SyntheticSource", "range": "A1:B4"},
@@ -171,13 +180,17 @@ def test_native_dashboard_objects_filters_persistence_and_owned_recovery(tmp_pat
         diagnostics["native_static_text_shape_verified"] = True
 
         chart_source = read("Calculations!" + output_range)
-        chart_receipt = edit(objects=[{"kind": "chart", "sheet": "Dashboard", "name": "RevenueChart",
-            "geometry": {"left": 15, "top": 140, "width": 420, "height": 260}, "chart_type": "bar",
+        chart_types = {"bar": 57, "column": 51, "line": 4, "doughnut": -4120}
+        chart_receipt = edit(objects=[{"kind": "chart", "sheet": "Dashboard", "name": "RevenueChart" + kind,
+            "geometry": {"left": 15 + 440 * (index % 2), "top": 140 + 280 * (index // 2), "width": 420, "height": 260},
             "source": {"snapshot": chart_source, "sheet": "Calculations", "range": output_range},
-            "title": "Revenue by region", "legend": False, "colors": ["#267F78"]}])
-        chart = dashboard.ChartObjects("RevenueChart")
-        assert int(chart.Chart.ChartType) == 57
-        assert int(chart.Chart.SeriesCollection().Count) >= 1
+            "title": "Revenue by region", "legend": False, "colors": ["#267F78"], "chart_type": kind}
+            for index, kind in enumerate(chart_types)])
+        assert int(dashboard.ChartObjects().Count) == 4
+        for kind, native_type in chart_types.items():
+            chart = dashboard.ChartObjects("RevenueChart" + kind)
+            assert int(chart.Chart.ChartType) == native_type
+            assert int(chart.Chart.SeriesCollection().Count) >= 1
         diagnostics["native_chart_verified"] = True
 
         slicer_source = read("Calculations!" + output_range)
@@ -247,8 +260,8 @@ def test_native_dashboard_objects_filters_persistence_and_owned_recovery(tmp_pat
         document = application.Workbooks.Open(str(destination))
         dashboard = document.Worksheets.Item("Dashboard")
         calculation = document.Worksheets.Item("Calculations")
-        assert int(dashboard.ChartObjects().Count) == 1
-        assert int(dashboard.Shapes.Count) >= 4
+        assert int(dashboard.ChartObjects().Count) == 4
+        assert int(dashboard.Shapes.Count) >= 7
         assert int(calculation.PivotTables().Count) == 1 and int(document.SlicerCaches.Count) == 1
         diagnostics["native_reopened_features_preserved"] = True
         diagnostics["passed"] = True
