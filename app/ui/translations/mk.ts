@@ -1345,10 +1345,6 @@ Total tokens: {value_4}</source>
       <translation>Да се премести датотеката?</translation>
     </message>
     <message>
-      <source>Move settings</source>
-      <translation>Преместете ги поставките</translation>
-    </message>
-    <message>
       <source>Moving from another O.R.S.I installation? Import its saved settings, conversations or personal data.</source>
       <translation>Се движите од друга инсталација на O.R.S.I? Увезете ги неговите зачувани поставки, разговори или лични податоци.</translation>
     </message>

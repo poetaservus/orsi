@@ -1345,10 +1345,6 @@ Toplam jetonlar: {value_4}</translation>
       <translation>Dosya taşınsın mı?</translation>
     </message>
     <message>
-      <source>Move settings</source>
-      <translation>Ayarları taşı</translation>
-    </message>
-    <message>
       <source>Moving from another O.R.S.I installation? Import its saved settings, conversations or personal data.</source>
       <translation>Başka bir O.R.S.I kurulumundan mı geçiyorsunuz? Kaydedilen ayarlarını, konuşmalarını veya kişisel verilerini içe aktarın.</translation>
     </message>

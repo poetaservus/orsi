@@ -1345,10 +1345,6 @@ Iš viso prieigos raktų: {value_4}</translation>
       <translation>perkelti failą?</translation>
     </message>
     <message>
-      <source>Move settings</source>
-      <translation>perkelkite nustatymus</translation>
-    </message>
-    <message>
       <source>Moving from another O.R.S.I installation? Import its saved settings, conversations or personal data.</source>
       <translation>pereinate iš kito O.R.S.I įrenginio? Importuokite išsaugotus nustatymus, pokalbius ar asmeninius duomenis.</translation>
     </message>

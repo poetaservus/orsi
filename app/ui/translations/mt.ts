@@ -1345,10 +1345,6 @@ Ttokens totali: {value_4}</translation>
       <translation>Ċaqlaq il-fajl?</translation>
     </message>
     <message>
-      <source>Move settings</source>
-      <translation>Ċaqlaq is-settings</translation>
-    </message>
-    <message>
       <source>Moving from another O.R.S.I installation? Import its saved settings, conversations or personal data.</source>
       <translation>Nimxu minn installazzjoni O.R.S.I oħra? Importa l-issettjar, il-konversazzjonijiet jew id-dejta personali ssejvjati tiegħu.</translation>
     </message>

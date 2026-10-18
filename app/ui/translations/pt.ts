@@ -1345,10 +1345,6 @@ Total de tokens: {value_4}</translation>
       <translation>Mover arquivo?</translation>
     </message>
     <message>
-      <source>Move settings</source>
-      <translation>Mover configurações</translation>
-    </message>
-    <message>
       <source>Moving from another O.R.S.I installation? Import its saved settings, conversations or personal data.</source>
       <translation>Mudando de outra instalação O.R.S.I? Importe suas configurações salvas, conversas ou dados pessoais.</translation>
     </message>

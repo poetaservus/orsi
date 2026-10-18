@@ -1345,10 +1345,6 @@ Tokenet totale: {value_4}</translation>
       <translation>Të zhvendoset skedari?</translation>
     </message>
     <message>
-      <source>Move settings</source>
-      <translation>Zhvendosni cilësimet</translation>
-    </message>
-    <message>
       <source>Moving from another O.R.S.I installation? Import its saved settings, conversations or personal data.</source>
       <translation>Po lëvizni nga një instalim tjetër i O.R.S.I? Importoni cilësimet e tij të ruajtura, bisedat ose të dhënat personale.</translation>
     </message>

@@ -135,24 +135,6 @@ def select_context_request(
     )
 
 
-def select_context_messages(
-    inference,
-    *,
-    system_prompt: str,
-    history: list[dict[str, Any]],
-    reserved_tokens: int = 0,
-    safety_buffer: int = DEFAULT_SAFETY_BUFFER_TOKENS,
-) -> list[dict[str, Any]]:
-    """Select complete conversation turns that fit the model's context window."""
-    return select_context_request(
-        inference,
-        system_prompt=system_prompt,
-        history=history,
-        reserved_tokens=reserved_tokens,
-        safety_buffer=safety_buffer,
-    ).messages
-
-
 def calculate_context_budget(
     inference,
     messages: list[dict[str, Any]],
@@ -205,23 +187,6 @@ def empty_context_budget(inference) -> ContextBudget:
         total_estimated_request_tokens=0,
         remaining_tokens=limit,
     )
-
-
-def estimated_context_tokens(
-    inference,
-    messages: list[dict[str, Any]],
-    *,
-    reserved_tokens: int = 0,
-    safety_buffer: int = DEFAULT_SAFETY_BUFFER_TOKENS,
-) -> int:
-    if not messages:
-        return 0
-    return calculate_context_budget(
-        inference,
-        messages,
-        reserved_tokens=reserved_tokens,
-        safety_buffer=safety_buffer,
-    ).total_estimated_request_tokens
 
 
 def capability_schema_reserve(definitions, *, inference=None) -> int:

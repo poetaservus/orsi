@@ -1345,10 +1345,6 @@ Kopējais marķieris: {value_4}</translation>
       <translation>vai pārvietot failu?</translation>
     </message>
     <message>
-      <source>Move settings</source>
-      <translation>pārvietojiet iestatījumus</translation>
-    </message>
-    <message>
       <source>Moving from another O.R.S.I installation? Import its saved settings, conversations or personal data.</source>
       <translation>Vai vēlaties pāriet no citas O.R.S.I instalācijas? Importējiet saglabātos iestatījumus, sarunas vai personas datus.</translation>
     </message>

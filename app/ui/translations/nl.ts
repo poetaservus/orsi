@@ -1345,10 +1345,6 @@ Totale tokens: {value_4}</translation>
       <translation>Bestand verplaatsen?</translation>
     </message>
     <message>
-      <source>Move settings</source>
-      <translation>Instellingen verplaatsen</translation>
-    </message>
-    <message>
       <source>Moving from another O.R.S.I installation? Import its saved settings, conversations or personal data.</source>
       <translation>Overstappen van een andere O.R.S.I-installatie? Importeer de opgeslagen instellingen, gesprekken of persoonlijke gegevens.</translation>
     </message>

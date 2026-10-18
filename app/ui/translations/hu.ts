@@ -2085,12 +2085,6 @@ Kimeneti tokenek: {value_3}
       <extracomment>Application-owned interface copy. Use concise informal Hungarian; preserve placeholders, paths, identifiers and literal technical tokens. See docs/hungarian-ui.md for terminology and review status.</extracomment>
     </message>
     <message>
-      <location filename="../settings_panel.py" line="61" />
-      <source>Move settings</source>
-      <translation>Beállításablak mozgatása</translation>
-      <extracomment>Application-owned interface copy. Use concise informal Hungarian; preserve placeholders, paths, identifiers and literal technical tokens. See docs/hungarian-ui.md for terminology and review status.</extracomment>
-    </message>
-    <message>
       <location filename="../personal_profile.py" line="935" />
       <source>Moving from another O.R.S.I installation? Import its saved settings, conversations or personal data.</source>
       <translation>Másik O.R.S.I-telepítésről váltasz? Importáld a korábbi beállításaidat, beszélgetéseidet és személyes adataidat.</translation>

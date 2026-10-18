@@ -1345,10 +1345,6 @@ Totot de jetons : {value_4}</translation>
       <translation>Déplacer le fichier ?</translation>
     </message>
     <message>
-      <source>Move settings</source>
-      <translation>déplacer les paramètres</translation>
-    </message>
-    <message>
       <source>Moving from another O.R.S.I installation? Import its saved settings, conversations or personal data.</source>
       <translation>Vous passez d'une autre installation O.R.S.I ? Importez ses paramètres enregistrés, ses conversations ou ses données personnelles.</translation>
     </message>

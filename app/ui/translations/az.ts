@@ -1345,10 +1345,6 @@ Giriş nişanları: {value_2}
       <translation>Fayl köçürülsün?</translation>
     </message>
     <message>
-      <source>Move settings</source>
-      <translation>Parametrləri köçürün</translation>
-    </message>
-    <message>
       <source>Moving from another O.R.S.I installation? Import its saved settings, conversations or personal data.</source>
       <translation>Başqa O.R.S.I quraşdırmasından köçürsünüz? Onun saxlanmış parametrlərini, söhbətlərini və ya şəxsi məlumatlarını idxal edin.</translation>
     </message>

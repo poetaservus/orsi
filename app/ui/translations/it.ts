@@ -1345,10 +1345,6 @@ Tetken totali: {value_4}</translation>
       <translation>spostare il file?</translation>
     </message>
     <message>
-      <source>Move settings</source>
-      <translation>sposta le impostazioni</translation>
-    </message>
-    <message>
       <source>Moving from another O.R.S.I installation? Import its saved settings, conversations or personal data.</source>
       <translation>Passaggio da un'altra installazione O.R.S.I? Importa le impostazioni salvate, le conversazioni o i dati personali.</translation>
     </message>

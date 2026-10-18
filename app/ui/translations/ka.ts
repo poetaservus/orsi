@@ -1345,10 +1345,6 @@ Total tokens: {value_4}</source>
       <translation>ფაილის გადატანა?</translation>
     </message>
     <message>
-      <source>Move settings</source>
-      <translation>პარამეტრების გადატანა</translation>
-    </message>
-    <message>
       <source>Moving from another O.R.S.I installation? Import its saved settings, conversations or personal data.</source>
       <translation>გადადიხარ სხვა O.R.S.I ინსტალაციისგან? შემოიტანეთ მისი შენახული პარამეტრები, საუბრები ან პერსონალური მონაცემები.</translation>
     </message>

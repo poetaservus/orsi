@@ -1345,10 +1345,6 @@ Totale tokens: {value_4}</translation>
       <translation>Flytte fil?</translation>
     </message>
     <message>
-      <source>Move settings</source>
-      <translation>Flytt innstillingar</translation>
-    </message>
-    <message>
       <source>Moving from another O.R.S.I installation? Import its saved settings, conversations or personal data.</source>
       <translation>Flytte fra ein annen O.R.S.I-installasjon? Importer lagra innstillingar, samtaler eller personlige data.</translation>
     </message>

@@ -4,7 +4,6 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.settings.loader import load_json
 from app.settings.model import ModelConfig
 
 
@@ -59,7 +58,3 @@ class LocalModelProfiles(BaseModel):
 
     def get(self, model_id: str) -> LocalModelProfile | None:
         return next((profile for profile in self.profiles if profile.model_id == model_id), None)
-
-
-def load_model_profiles(path: Path) -> LocalModelProfiles:
-    return LocalModelProfiles.model_validate(load_json(path))

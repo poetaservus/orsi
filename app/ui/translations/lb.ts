@@ -1345,10 +1345,6 @@ total Tokens: {value_4}</translation>
       <translation>Datei réckelen?</translation>
     </message>
     <message>
-      <source>Move settings</source>
-      <translation>Plënneren Astellunge</translation>
-    </message>
-    <message>
       <source>Moving from another O.R.S.I installation? Import its saved settings, conversations or personal data.</source>
       <translation>Plënneren vun enger anerer O.R.S.I Installatioun? Import seng gespäichert Astellungen, Gespréicher oder perséinlech Donnéeën.</translation>
     </message>

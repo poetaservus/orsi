@@ -1,10 +1,10 @@
-"""Vector button feedback and dragging for the settings UI."""
-from app.ui.localization import ui_text, QFrame, QPushButton, QWidget
+"""Page transitions, navigation highlights and vector button feedback for Settings."""
+from app.ui.localization import QFrame, QPushButton, QWidget
 
 from math import sin, pi
 
 from PySide6.QtCore import QEasingCurve, QEvent, QLineF, QObject, QPropertyAnimation, QRectF, Qt, QVariantAnimation, Signal
-from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
+from PySide6.QtGui import QIcon, QPainter, QPen, QPixmap
 from app.ui.theme_runtime import apply_theme_style, controller_for, theme_color, theme_icon
 from PySide6.QtSvg import QSvgRenderer
 from PySide6.QtWidgets import (QStyle, QStyleOptionButton, QStylePainter)
@@ -186,40 +186,3 @@ class SettingsIconButton(QPushButton):
                                 1.2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
             painter.drawLine(QLineF(-5, -5, 5, 5))
             painter.drawLine(QLineF(5, -5, -5, 5))
-
-
-class SettingsDragStrip(QWidget):
-    """A dedicated top-edge hit area, separate from the title and close control."""
-
-    def __init__(self, panel):
-        super().__init__(panel)
-        self.panel = panel
-        self.setAccessibleName(ui_text('Move settings'))
-        self._drag_offset = None
-        self.setCursor(Qt.CursorShape.OpenHandCursor)
-
-    def mousePressEvent(self, event):  # noqa: N802
-        if event.button() == Qt.MouseButton.LeftButton:
-            self._drag_offset = event.globalPosition().toPoint() - self.panel.mapToGlobal(self.panel.rect().topLeft())
-            self.setCursor(Qt.CursorShape.ClosedHandCursor)
-            event.accept()
-        else:
-            super().mousePressEvent(event)
-
-    def mouseMoveEvent(self, event):  # noqa: N802
-        if self._drag_offset is not None:
-            parent = self.panel.parentWidget()
-            position = parent.mapFromGlobal(event.globalPosition().toPoint() - self._drag_offset)
-            self.panel.move(self.panel.bounded_position(position))
-            self.panel.user_positioned = True
-            event.accept()
-        else:
-            super().mouseMoveEvent(event)
-
-    def mouseReleaseEvent(self, event):  # noqa: N802
-        if event.button() == Qt.MouseButton.LeftButton:
-            self._drag_offset = None
-            self.setCursor(Qt.CursorShape.OpenHandCursor)
-            event.accept()
-        else:
-            super().mouseReleaseEvent(event)

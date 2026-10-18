@@ -1345,10 +1345,6 @@ Total tokens: {value_4}</source>
       <translation>Преместване на файл?</translation>
     </message>
     <message>
-      <source>Move settings</source>
-      <translation>Преместете настройките</translation>
-    </message>
-    <message>
       <source>Moving from another O.R.S.I installation? Import its saved settings, conversations or personal data.</source>
       <translation>Преместване от друга инсталация на O.R.S.I? Импортирайте неговите запазени настройки, разговори или лични данни.</translation>
     </message>

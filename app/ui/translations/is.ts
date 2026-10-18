@@ -1345,10 +1345,6 @@ Tákn: {value_4}</translation>
       <translation>Move file?</translation>
     </message>
     <message>
-      <source>Move settings</source>
-      <translation>Move settings</translation>
-    </message>
-    <message>
       <source>Moving from another O.R.S.I installation? Import its saved settings, conversations or personal data.</source>
       <translation>Að flytja frá annarri O.R.S.I uppsetningu? Flyttu inn vistaðar stillingar, samtöl eða persónuleg gögn.</translation>
     </message>

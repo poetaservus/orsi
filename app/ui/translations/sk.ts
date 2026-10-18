@@ -1345,10 +1345,6 @@ Celkové tokeny: {value_4}</translation>
       <translation>Presunúť súbor?</translation>
     </message>
     <message>
-      <source>Move settings</source>
-      <translation>Presun nastavení</translation>
-    </message>
-    <message>
       <source>Moving from another O.R.S.I installation? Import its saved settings, conversations or personal data.</source>
       <translation>Prechod z inej inštalácie O.R.S.I? Importujte jeho uložené nastavenia, konverzácie alebo osobné údaje.</translation>
     </message>

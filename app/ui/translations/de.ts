@@ -1345,10 +1345,6 @@ Tokens insgesamt: {value_4}</translation>
       <translation>Datei verschieben?</translation>
     </message>
     <message>
-      <source>Move settings</source>
-      <translation>Einstellungen verschieben</translation>
-    </message>
-    <message>
       <source>Moving from another O.R.S.I installation? Import its saved settings, conversations or personal data.</source>
       <translation>Wechsel von einer anderen O.R.S.I-Installation? Importieren Sie die gespeicherten Einstellungen, Konversationen oder persönlichen Daten.</translation>
     </message>

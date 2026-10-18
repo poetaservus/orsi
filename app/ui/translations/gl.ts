@@ -1345,10 +1345,6 @@ Fichas totais: {value_4}</translation>
       <translation>mover o ficheiro?</translation>
     </message>
     <message>
-      <source>Move settings</source>
-      <translation>mover a configuración</translation>
-    </message>
-    <message>
       <source>Moving from another O.R.S.I installation? Import its saved settings, conversations or personal data.</source>
       <translation>moves doutra instalación de O.R.S.I? Importa a súa configuración, conversas ou datos persoais gardados.</translation>
     </message>

@@ -1345,10 +1345,6 @@ Total tokens: {value_4}</translation>
       <translation>Symud ffeil?</translation>
     </message>
     <message>
-      <source>Move settings</source>
-      <translation>Symud gosodiadau</translation>
-    </message>
-    <message>
       <source>Moving from another O.R.S.I installation? Import its saved settings, conversations or personal data.</source>
       <translation>Symud o osodiad O.R.S.I arall? Mewnforio ei osodiadau arbed, sgyrsiau neu ddata personol.</translation>
     </message>

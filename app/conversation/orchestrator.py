@@ -597,17 +597,6 @@ class ConversationService:
             raise RuntimeError("The conversation cannot fit the active model context window.")
         record_context_budget(log, request.budget, request_kind="conversation")
         self._record_skill_injection(request)
-        # Picture access is limited to references already admitted to this
-        # conversation. The Office read tool discovers opaque references; private
-        # attachment storage never becomes a general filesystem permission.
-        try:
-            picture_tool = self.agent_runtime.registry.resolve("office.image_register")
-        except (KeyError, LookupError, ValueError):
-            picture_tool = None
-        connection = getattr(picture_tool, "connection", None)
-        if connection is not None and hasattr(connection, "bind_picture_sources"):
-            connection.bind_picture_sources(self._session_id, self.store.attachment_store,
-                tuple(r for message in self.store.visible_messages() for r in message.attachments))
         if has_attachments(request.messages):
             response = self.inference.respond_with_attachments(request.messages,
                 attachment_store=self.store.attachment_store)
@@ -661,6 +650,16 @@ class ConversationService:
             raise RuntimeError("The agent request cannot fit the active model context window.")
         self._record_skill_injection(request)
         capabilities = self._turn_capabilities(text)  # Optional automatic guidance may have been dropped by admission.
+        # Bind only admitted conversation references before the agent can request
+        # Office picture discovery or registration. This is not filesystem access.
+        try:
+            picture_tool = self.agent_runtime.registry.resolve("office.image_register")
+        except LookupError:
+            picture_tool = None
+        connection = getattr(picture_tool, "connection", None)
+        if connection is not None and hasattr(connection, "bind_picture_sources"):
+            connection.bind_picture_sources(self._session_id, self.store.attachment_store,
+                tuple(r for message in self.store.visible_messages() for r in message.attachments))
         result = (self._reference_runtime or self.agent_runtime).run(
             request.messages,
             session_id=self._session_id,

@@ -5,10 +5,11 @@ from pathlib import Path
 import subprocess
 import sys
 from time import monotonic, sleep
+from types import SimpleNamespace
 
 import pytest
 
-from app.inference.owned_process import start_owned_process, ProcessOwnershipError, _api
+from app.inference.owned_process import OwnedProcess, start_owned_process, ProcessOwnershipError, _api
 
 
 pytestmark = pytest.mark.skipif(os.name != "nt", reason="Windows job-object integration")
@@ -36,6 +37,39 @@ def test_owned_process_exit_code_timeout_and_idempotent_close():
         assert process.wait(5) == 1
     finally:
         process.close()
+
+
+@pytest.mark.parametrize("failure", ["wait", "exit_code"])
+def test_close_releases_owned_handles_when_poll_fails(failure):
+    class FailedPoll:
+        def __init__(self):
+            self.closed = []
+
+        def WaitForSingleObject(self, handle, timeout):
+            C.set_last_error(6)  # ERROR_INVALID_HANDLE
+            return 0xFFFFFFFF if failure == "wait" else 0
+
+        def GetExitCodeProcess(self, handle, code):
+            C.set_last_error(6)
+            return False
+
+        def CloseHandle(self, handle):
+            self.closed.append(handle)
+            return True
+
+    api = FailedPoll()
+    process = OwnedProcess(api, 700, SimpleNamespace(pid=42, process=701))
+    try:
+        with pytest.raises(OSError) as raised:
+            process.close()
+        assert raised.value.winerror == 6
+        assert api.closed == [700, 701]
+        assert not process._release.alive
+        assert process.poll() == 1
+        process.close()
+        assert api.closed == [700, 701]
+    finally:
+        process._release()  # Do not leave the synthetic owner armed on failure.
 
 
 def test_atomic_ownership_is_required_before_create_process(monkeypatch):

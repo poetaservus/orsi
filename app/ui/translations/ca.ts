@@ -1345,10 +1345,6 @@ TTotal de fitxes: {value_4}</translation>
       <translation>Voleu moure el fitxer?</translation>
     </message>
     <message>
-      <source>Move settings</source>
-      <translation>mou la configuració</translation>
-    </message>
-    <message>
       <source>Moving from another O.R.S.I installation? Import its saved settings, conversations or personal data.</source>
       <translation>es mou d'una altra instal·lació de O.R.S.I? Importa la seva configuració desada, converses o dades personals.</translation>
     </message>

@@ -1345,10 +1345,6 @@ Ttokens: {value_4}</translation>
       <translation>Bog an comhad?</translation>
     </message>
     <message>
-      <source>Move settings</source>
-      <translation>Bog socruithe</translation>
-    </message>
-    <message>
       <source>Moving from another O.R.S.I installation? Import its saved settings, conversations or personal data.</source>
       <translation>Ag bogadh ó shuiteáil O.R.S.I eile? Iompórtáil a chuid socruithe sábháilte, comhráite nó sonraí pearsanta.</translation>
     </message>

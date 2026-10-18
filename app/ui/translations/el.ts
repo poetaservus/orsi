@@ -1345,10 +1345,6 @@ Total tokens: {value_4}</source>
       <translation>Μετακίνηση αρχείου;</translation>
     </message>
     <message>
-      <source>Move settings</source>
-      <translation>Μετακίνηση ρυθμίσεων</translation>
-    </message>
-    <message>
       <source>Moving from another O.R.S.I installation? Import its saved settings, conversations or personal data.</source>
       <translation>Μετακίνηση από άλλη εγκατάσταση O.R.S.I; Import its saved settings, conversations or personal data.</translation>
     </message>

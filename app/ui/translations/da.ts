@@ -1345,10 +1345,6 @@ total-tokens: {value_4}</translation>
       <translation>Flytte fil?</translation>
     </message>
     <message>
-      <source>Move settings</source>
-      <translation>Flyt indstillinger</translation>
-    </message>
-    <message>
       <source>Moving from another O.R.S.I installation? Import its saved settings, conversations or personal data.</source>
       <translation>Flytter du fra en anden O.R.S.I-installation? Importer dens gemte indstillinger, samtaler eller personlige data.</translation>
     </message>

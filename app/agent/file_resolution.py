@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-import re
 from typing import Any
 
 from app.capabilities.contracts import CapabilityErrorCode
@@ -105,13 +104,6 @@ def _feedback_already_sent(transcript: list[dict[str, Any]]) -> bool:
         and _FEEDBACK_MARKER in message["content"]
         for index, message in enumerate(transcript)
     )
-
-
-def _latest_user_text(transcript: list[dict[str, Any]]) -> str:
-    for message in reversed(transcript):
-        if message.get("role") == "user" and isinstance(message.get("content"), str):
-            return message["content"]
-    return ""
 
 
 def _last_capability_result(transcript: list[dict[str, Any]]) -> dict[str, Any] | None:

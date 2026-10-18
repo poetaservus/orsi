@@ -1345,10 +1345,6 @@ Tokenit yhteensä: {value_4}</translation>
       <translation>Siirretäänkö tiedosto?</translation>
     </message>
     <message>
-      <source>Move settings</source>
-      <translation>Siirrä asetuksia</translation>
-    </message>
-    <message>
       <source>Moving from another O.R.S.I installation? Import its saved settings, conversations or personal data.</source>
       <translation>Siirretäänkö toisesta O.R.S.I-asennuksesta? Tuo tallennetut asetukset, keskustelut tai henkilökohtaiset tiedot.</translation>
     </message>

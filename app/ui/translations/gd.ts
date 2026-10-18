@@ -1345,10 +1345,6 @@ TTokens: {value_4}</translation>
       <translation>Gluais am faidhle?</translation>
     </message>
     <message>
-      <source>Move settings</source>
-      <translation>Gluais roghainnean</translation>
-    </message>
-    <message>
       <source>Moving from another O.R.S.I installation? Import its saved settings, conversations or personal data.</source>
       <translation>A 'gluasad bho stàladh O.R.S.I eile? Cuir a-steach na roghainnean sàbhalaidh aige, còmhraidhean no dàta pearsanta.</translation>
     </message>

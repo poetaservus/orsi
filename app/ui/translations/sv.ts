@@ -1345,10 +1345,6 @@ Total: {value_4}</translation>
       <translation>Flytta fil?</translation>
     </message>
     <message>
-      <source>Move settings</source>
-      <translation>Flytta inställningar</translation>
-    </message>
-    <message>
       <source>Moving from another O.R.S.I installation? Import its saved settings, conversations or personal data.</source>
       <translation>Flytta från en annan O.R.S.I-installation? Importera dess sparade inställningar, konversationer eller personliga data.</translation>
     </message>

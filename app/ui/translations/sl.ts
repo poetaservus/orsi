@@ -1345,10 +1345,6 @@ Skupno žetoni: {value_4}</translation>
       <translation>Ali želite premakniti datoteko?</translation>
     </message>
     <message>
-      <source>Move settings</source>
-      <translation>Premakni nastavitve</translation>
-    </message>
-    <message>
       <source>Moving from another O.R.S.I installation? Import its saved settings, conversations or personal data.</source>
       <translation>Premik z druge namestitve O.R.S.I? Uvozite njegove shranjene nastavitve, pogovore ali osebne podatke.</translation>
     </message>

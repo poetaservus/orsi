@@ -1345,10 +1345,6 @@ Tokeny ogółem: {value_4}</translation>
       <translation>Przenieść plik?</translation>
     </message>
     <message>
-      <source>Move settings</source>
-      <translation>Przenieś ustawienia</translation>
-    </message>
-    <message>
       <source>Moving from another O.R.S.I installation? Import its saved settings, conversations or personal data.</source>
       <translation>Przechodzisz z innej instalacji O.R.S.I? Zaimportuj zapisane ustawienia, rozmowy lub dane osobowe.</translation>
     </message>

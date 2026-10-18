@@ -1345,10 +1345,6 @@ TJetoane totale: {value_4}</translation>
       <translation>Mutați fișierul?</translation>
     </message>
     <message>
-      <source>Move settings</source>
-      <translation>Mută setările</translation>
-    </message>
-    <message>
       <source>Moving from another O.R.S.I installation? Import its saved settings, conversations or personal data.</source>
       <translation>Mutare de la o altă instalare O.R.S.I? Importați setările salvate, conversațiile sau datele personale.</translation>
     </message>

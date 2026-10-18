@@ -1345,10 +1345,6 @@ Ukupni tokeni: {value_4}</translation>
       <translation>Premjestiti datoteku?</translation>
     </message>
     <message>
-      <source>Move settings</source>
-      <translation>Premjesti postavke</translation>
-    </message>
-    <message>
       <source>Moving from another O.R.S.I installation? Import its saved settings, conversations or personal data.</source>
       <translation>Premještanje s druge O.R.S.I instalacije? Uvezite njegove spremljene postavke, razgovore ili osobne podatke.</translation>
     </message>

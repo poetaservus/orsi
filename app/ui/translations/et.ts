@@ -1345,10 +1345,6 @@ Tokeneid kokku: {value_4}</translation>
       <translation>kas teisaldada fail?</translation>
     </message>
     <message>
-      <source>Move settings</source>
-      <translation>seadete teisaldamine</translation>
-    </message>
-    <message>
       <source>Moving from another O.R.S.I installation? Import its saved settings, conversations or personal data.</source>
       <translation>kas soovite teisest O.R.S.I installist üle minna? Importige selle salvestatud seaded, vestlused või isiklikud andmed.</translation>
     </message>

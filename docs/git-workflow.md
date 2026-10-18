@@ -1,5 +1,35 @@
 # Git layout and baseline hygiene
 
+## Deep test and legacy-code audit, 18 October 2026
+
+`codex/deep-test-audit` starts from clean local main `220263c`. Qualified
+reachability/history review removes five retired definitions and the obsolete
+Settings drag translation entry. It repairs plain-chat failure, agent picture
+source binding and owned-inference handle release after polling errors. Existing
+tests remain intact; failure injection and targeted mutation demonstrate their
+value. See [the audit, reproduced bugs and remaining gates](deep-test-audit-2026-10-18.md).
+
+The focused selection passes 273 tests with two opt-in Word gates skipped.
+The localization selection records 47 failures and 26 passes: all catalogs lack
+the pre-existing local-stop explanation. Retired-source cleanup preserves every
+other catalog message and verifies regenerated translation readback; it does not
+hide that validator failure. The complete native suite records **4,480 passed,
+53 failed, 79 skipped and 15 passing subtests** in **1,609.97 seconds**. Four of
+the six additional failures reproduce; cancellation and vault-rename cases pass
+unchanged in isolation but remain unexplained native failures. Word guidance and
+stale fixture/exception assumptions are documented without weakening assertions.
+The interrupted first run remains separate; the full suite is not called clean.
+No live model/provider/Office quality gate
+or user-document edit is made. Prompts, routing, accepted model profiles, sampling
+and context policy remain unchanged.
+
+Content-free ref/worktree inventories and ignored test/diagnostic evidence are
+under `state/deep-test-audit/`. Prior main is preserved as
+`archive/2026-10-18/main-before-deep-test-audit`. After verification, commit the
+bounded change, fast-forward local main and remove only its merged feature branch.
+Other worktrees, historical/unmerged tips, private settings and remote refs remain
+preserved. No remote operation is authorized.
+
 ## Word COM stabilization, 18 October 2026
 
 `codex/word-com-stability` starts from clean local main `be5d21d`. It corrects
