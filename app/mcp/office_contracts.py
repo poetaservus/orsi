@@ -659,6 +659,17 @@ class ReadResult(OfficeResult):
     items: list[ReadItem] = Field(max_length=MAX_CELLS)
     cursor: Identifier | None = None
 
+    @classmethod
+    def page_bytes(cls, value):
+        """Budget a provisional page with every serialized default included.
+
+        Construction only measures size. The completed result still passes
+        validate_result before crossing either bridge boundary.
+        """
+        items = [ReadItem.model_construct(**item) for item in value["items"]]
+        result = cls.model_construct(**{**value, "items": items})
+        return len(canonical_json(result.model_dump(mode="json")).encode("utf-8"))
+
     @model_validator(mode="after")
     def check_cells(self):
         if sum(max(_matrix_cells(i.values), _matrix_cells(i.formulas)) for i in self.items) > MAX_CELLS:

@@ -10,8 +10,9 @@ _TARGETS = frozenset({"selection", "workbook", "document", "authoring", "layout"
 _STAGES = frozenset({"read_execute", "result_validation", "word_plan", "word_capture", "word_piece",
     "word_render", "repeat_guard", "bridge"})
 _REASONS = frozenset({"unsupported_target", "outside_document", "table_index", "read_bound", "read_limit",
-    "cursor_limit", "unavailable", "native", "io", "internal", "invalid_result", "conflict", "render_setup", "identical_call"})
-_NUMBERS = {"max_items": 1000, "max_chars": 8192, "first": 1_000_000, "last": 1_000_000}
+    "cursor_limit", "unavailable", "native", "io", "internal", "invalid_result", "conflict", "render_setup", "identical_call",
+    "timeout", "cancelled", "worker_stopped", "transport"})
+_NUMBERS = {"max_items": 1000, "max_chars": 8192, "first": 1_000_000, "last": 1_000_000, "timeout_ms": 60_000}
 
 
 def _choice(value, choices, default):
@@ -106,7 +107,7 @@ def failure_data(error, stage):
 
 
 def record_read_failure(arguments, failure):
-    fields = {**read_shape(arguments), **{key: failure.get(key) for key in ("stage", "reason", "hresult")}}
+    fields = {**read_shape(arguments), **{key: failure.get(key) for key in ("stage", "reason", "hresult", "timeout_ms")}}
     event = safe_read_event(fields)
     log.warning("office_read failure=%s", json.dumps(event, separators=(",", ":")),
                 extra={"orsi_read_diagnostic": event})

@@ -2,6 +2,8 @@
 import gc
 import json
 import os
+from time import monotonic
+from uuid import uuid4
 
 import pytest
 
@@ -11,6 +13,81 @@ from app.security.write_policy import HostWritePolicy
 from tests.test_office_mcp_connection import ROOT
 from tests.test_office_mcp_capabilities import runtime_for, prepare
 from tests.test_office_mcp_live import execute
+
+
+@pytest.mark.skipif(os.environ.get("ORSI_TEST_LIVE_OFFICE") != "1", reason="Opt-in synthetic native Excel read gate")
+def test_large_used_range_read_pages_with_production_deadline(tmp_path):
+    import pythoncom
+    import win32com.client
+    import win32process
+    import psutil
+
+    pythoncom.CoInitializeEx(pythoncom.COINIT_APARTMENTTHREADED)
+    prior = {p.pid for p in psutil.process_iter(["name"]) if (p.info["name"] or "").lower() == "excel.exe"}
+    application = document = sheet = owned = None
+    bridge = OfficeConnection(ROOT, backend=lambda: "cloud")
+    runtime = runtime_for(bridge, tmp_path, policy=bridge.resource_policy)
+    diagnostics = {"synthetic_only": True, "provider_requests": 0, "pages": [], "passed": False}
+    try:
+        application = win32com.client.DispatchEx("Excel.Application")
+        pid = win32process.GetWindowThreadProcessId(int(application.Hwnd))[1]
+        assert pid not in prior
+        owned = psutil.Process(pid)
+        diagnostics.update(owned_pid=pid, owned_created=owned.create_time())
+        document = application.Workbooks.Add()
+        sheet = document.Worksheets.Item(1)
+        sheet.Name = "ORSIReadProbe"
+        sheet.Range("A1:J100").Value2 = tuple(tuple(row * 10 + column for column in range(10)) for row in range(100))
+        path = tmp_path / ("ORSIRead-" + uuid4().hex[:12] + ".xlsx")
+        document.SaveAs(str(path), 51)
+        application.Visible = True
+        assert bridge.call_timeout == 10.0
+        bridge.connect()
+        found = [item for item in bridge.list_documents() if item["application"] == "excel" and item["title"] == path.name]
+        assert len(found) == 1
+        bridge.select_document(found[0]["document"])
+        attached = execute(runtime, "attach", {"application": "excel", "document": found[0]["document"]}, "attach")
+        assert attached.success
+        session = attached.output["session"]
+        cursor, seen, snapshots = None, [], set()
+        while True:
+            started = monotonic()
+            result = execute(runtime, "read", {"session": session, "target": "ORSIReadProbe!used",
+                "cursor": cursor, "max_items": 1000}, "read" + str(len(diagnostics["pages"])))
+            assert result.success, result.error
+            page = result.output
+            values = [value for item in page["items"] for row in item["values"] for value in row]
+            assert values and bridge.exposure.ready
+            seen.extend(values)
+            snapshots.add(page["snapshot"])
+            cursor = page["cursor"]
+            diagnostics["pages"].append({"cells": len(values), "has_cursor": cursor is not None,
+                                         "duration_ms": round((monotonic() - started) * 1000)})
+            if cursor is None:
+                break
+        assert seen == list(range(1000)) and len(snapshots) == 1
+        assert len(diagnostics["pages"]) > 1 and diagnostics["pages"][0]["has_cursor"]
+        diagnostics["passed"] = True
+    finally:
+        runtime.shutdown()
+        sheet = None
+        if document is not None:
+            document.Close(False)
+        document = None
+        if application is not None and owned is not None:
+            application.Quit()
+        application = None
+        gc.collect()
+        pythoncom.CoUninitialize()
+        if owned is not None:
+            try:
+                owned.wait(timeout=10)
+                diagnostics["owned_excel_released"] = True
+            except psutil.TimeoutExpired:
+                diagnostics["owned_excel_released"] = False
+        diagnostics["worker_released"] = not bridge.diagnostics["worker_alive"]
+        (tmp_path / "native-read-diagnostics.json").write_text(json.dumps(diagnostics, indent=2))
+    assert diagnostics["owned_excel_released"] and diagnostics["worker_released"]
 
 
 @pytest.mark.skipif(os.environ.get("ORSI_TEST_LIVE_OFFICE") != "1", reason="Opt-in live Excel desktop gate")

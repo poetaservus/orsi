@@ -5,11 +5,15 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from hashlib import sha256
 from pathlib import Path
+from time import monotonic
 from uuid import uuid4
 
 from app.mcp.office_com import OfficeUnavailable, WindowsOffice
-from app.mcp.office_contracts import APPLICATIONS, MAX_RESULT_BYTES, canonical_json
+from app.mcp.office_contracts import APPLICATIONS, MAX_RESULT_BYTES, ReadResult, canonical_json
 from app.mcp.office_excel import ExcelEdits, LIVE_TOOLS, READ_TOOLS, OfficeConflict, MAX_STATE_BYTES, same_state, same_value
+
+
+READ_PAGE_SECONDS = 2.0  # Leave headroom inside the production 10-second call deadline.
 
 
 def token():
@@ -153,6 +157,7 @@ class LiveOffice:
     def read(self, arguments, binding):
         if binding["document"]["application"] == "word" and hasattr(self.backend, "capture_word"):
             return self.word.read(arguments, binding)
+        page_deadline = monotonic() + READ_PAGE_SECONDS
         if len(self.snapshots) >= 128 and not arguments.cursor:
             raise OfficeUnavailable("The snapshot limit was reached. Refresh the connection.")
         signature = (arguments.session, arguments.target, binding["identity"])
@@ -183,6 +188,10 @@ class LiveOffice:
         # A conservative byte allowance handles JSON escaping and 4-byte Unicode.
         while (index < len(plan) and consumed < arguments.max_chars and
                (read_count < arguments.max_items if packed else len(items) < min(arguments.max_items, 32))):
+            # max_items is an upper bound. Yield before slow native cell work
+            # exhausts the transport deadline, retaining the exact cursor/state.
+            if items and monotonic() >= page_deadline:
+                break
             count = min(arguments.max_chars - consumed, 1200)
             piece, next_offset = self.backend.piece(plan[index], offset, count)
             digest = sha256(canonical_json(piece).encode()).hexdigest()
@@ -205,7 +214,7 @@ class LiveOffice:
                 candidate_items = [*items[:-1], combined]
             candidate = {"session": arguments.session, "application": binding["document"]["application"],
                          "snapshot": snapshot, "items": candidate_items, "cursor": "0" * 32}
-            if len(canonical_json(candidate).encode()) > MAX_RESULT_BYTES:
+            if ReadResult.page_bytes(candidate) > MAX_RESULT_BYTES:
                 break
             items = candidate_items
             read_count += 1

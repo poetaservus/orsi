@@ -1,5 +1,21 @@
 # Git layout and baseline hygiene
 
+## Office read reliability, 18 October 2026
+
+`codex/office-read-reliability` starts from clean local main `2a0c399`. It yields
+slow native reads before the unchanged deadline, budgets normalized result
+defaults, aligns native Word preflight/revision guards, and persists safe read
+failure details. See [changes, proof and limits](office-read-reliability.md).
+
+Only focused tests run: 28 deterministic/owned-stdio cases and four native read
+gates pass, with zero failures/skips. The 1,000-cell Excel read completes across
+13 cursor pages at production defaults; the first native Word read passes.
+Native COM/RPC cleanup diagnostics remain recorded; all owned processes release.
+No full suite, live-model run, user-document/settings change or remote operation
+is made. Preserve prior main as
+`archive/2026-10-18/main-before-office-read-reliability`, commit, fast-forward local
+main and remove only this merged branch. Other worktrees/refs remain intact.
+
 ## Focused Word failure fix, 18 October 2026
 
 `codex/word-failure-fix` starts from clean local main `6ece427`. It restores

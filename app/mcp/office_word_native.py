@@ -166,6 +166,15 @@ class WordNative:
     def word_read_guard(self, document):
         """One bounded package guards a complete paged paragraph read."""
         self.check_thread()
+        from app.mcp.office_com import OfficeUnavailable
+        try:
+            # These native property reads can materialize empty package parts.
+            # Establish them before hashing, not during later paragraph capture.
+            self.word_xml_safe(document)
+        except OfficeUnavailable:
+            # An unsupported edit anchor must remain a readable view. The hash
+            # still guards its complete package; no mutation authority is granted.
+            pass
         xml = str(document.Content.WordOpenXML)
         if len(xml.encode()) > MAX_XML_BYTES:
             reject("The complete Word read exceeds two MiB; use a smaller explicit text range.")

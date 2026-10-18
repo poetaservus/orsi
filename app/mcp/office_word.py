@@ -46,7 +46,8 @@ class WordEdits:
         key = binding["document"]["document"]
         workflow = self.workflows.setdefault(key, WordWorkflow())
         document = self.live.documents[key][1]
-        workflow.sync(signature(str(document.Content.WordOpenXML)))
+        guard = getattr(getattr(self.live, "backend", None), "word_read_guard", None)
+        workflow.sync(guard(document) if callable(guard) else signature(str(document.Content.WordOpenXML)))
         return workflow
 
     def reviewed_call(self, name, arguments, binding, authority=None, operation=None):

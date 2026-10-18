@@ -19,7 +19,8 @@ if MODE in {"slow_word", "hang_word"}:
 
 
 async def handle(contract, arguments, meta):
-    if MODE == "hang_call" or (MODE in {"hang_write", "hang_word"} and contract.permission.value == "write"):
+    if (MODE == "hang_call" or MODE == "hang_read" and contract.name == "office.read"
+            or MODE in {"hang_write", "hang_word"} and contract.permission.value == "write"):
         await asyncio.sleep(60)
     if MODE == "crash_call" or (MODE == "crash_write" and contract.permission.value == "write"):
         os._exit(7)

@@ -368,6 +368,13 @@ class OfficeConnection:
                             **({"shape":word_plan_shape(request.arguments)} if request.contract.name == "office.word_compose" else {})})
                     request.future.set_result(serialized_output)
             except BaseException as error:
+                if request.contract is not None and request.contract.name == "office.read":
+                    with self._state:
+                        if "confirmation_stop" not in self._failure_diagnostics:
+                            self._failure_diagnostics["read_failure"] = record_read_failure(request.arguments, {
+                                "stage": "bridge" if request_stage == "confirmation" else "result_validation",
+                                "reason": "transport" if request_stage == "confirmation" else "invalid_result",
+                                "timeout_ms": round(request.timeout_seconds * 1000)})
                 if request.contract is not None and request.contract.permission == PermissionClass.WRITE and request.contract.name in {
                         "office.word_compose", "office.word_edit", "office.save", "office.revert"}:
                     with self._state:
@@ -679,6 +686,10 @@ class OfficeConnection:
                             if contract.name == "office.read":
                                 from app.mcp.office_read_diagnostics import read_shape
                                 self._failure_diagnostics["confirmation_read_shape"] = read_shape(arguments.model_dump(mode="json"))
+                                self._failure_diagnostics["read_failure"] = record_read_failure(request.arguments, {
+                                    "stage": "bridge",
+                                    "reason": self._failure_diagnostics["confirmation_stop"].replace("deadline", "timeout"),
+                                    "timeout_ms": round(timeout * 1000)})
                         if contract.permission == PermissionClass.WRITE and contract.name in {
                                 "office.word_compose", "office.word_edit", "office.save", "office.revert"}:
                             from app.inference.word_plan_diagnostics import word_plan_shape
