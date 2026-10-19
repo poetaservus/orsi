@@ -1,5 +1,33 @@
 # Git layout and baseline hygiene
 
+## Reproduced workflow fixes, 19 October 2026
+
+`codex/workflow-reproduction-fixes` starts from clean local main `2f94758`.
+It repairs source-bound image follow-ups, contradictory Excel read-failure
+reporting, missing local-stop catalogs and a stale local-stop test expectation.
+It also waits for pinned owned descendants to finish exiting before reporting
+worker cleanup complete, after a native browser-preview reproduction proved
+that zero active job accounting could precede a process object's exit signal.
+Word uncertain-operation feedback and encrypted provider diagnostics now retain
+bounded failure evidence without retrying or claiming an uncertain write passed.
+See [changes, actual workflow qualification and limits](workflow-reproduction-fixes.md).
+
+Final native suite: 4,578 passed, one failed, 82 skipped and 15 passing subtests.
+The remaining failure is the documented intermittent skill-fixture directory
+rename denial; no owned file-handle leak was established. The suite is not called
+clean. Focused cleanup tests and 30 native preview probes qualify the proven
+descendant-exit fix; controlled image, Word save/reopen and npm API workflows
+pass with their recorded scope limits. Historical streaming and Word failures
+are not claimed resolved by those successful repeats.
+
+The user authorized fixes after the read-only investigation. Acceptance prompts,
+core prompts, model profiles/sampling, context policy and user settings remain
+unchanged. Prior main is preserved at
+`archive/2026-10-19/main-before-workflow-reproduction-fixes`. After verification,
+commit the bounded changes, fast-forward local main and remove only this merged
+feature branch. Other worktrees, historical/unmerged refs, user documents and
+remote refs remain untouched. The running user app is preserved.
+
 ## Excel execution reliability, 18 October 2026
 
 `codex/office-mcp-reliability` starts from clean local main `0acc369`. It repairs
