@@ -2333,6 +2333,10 @@ Bekreftelse holder disse utfallene usikre. Den prøver ikke operasjonene på nyt
       <translation>Oppgavegjenopprettingsjournal</translation>
     </message>
     <message>
+      <source>Task stopped locally before completion.</source>
+      <translation>Oppgaven ble stoppet lokalt før den var fullført.</translation>
+    </message>
+    <message>
       <source>Temperature {value_0} · Top-p {value_1} · Top-k {value_2}
 {value_3} · {value_4} cache
 Switching preserves your conversation. Choose the Qwen vision model for image input.</source>

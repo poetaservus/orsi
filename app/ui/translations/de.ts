@@ -2333,6 +2333,10 @@ Bestätigung sorgt dafür, dass diese Ergebnisse ungewiss sind. Die Vorgänge we
       <translation>Aufgabenwiederherstellungsjournal</translation>
     </message>
     <message>
+      <source>Task stopped locally before completion.</source>
+      <translation>Die Aufgabe wurde lokal vor dem Abschluss gestoppt.</translation>
+    </message>
+    <message>
       <source>Temperature {value_0} · Top-p {value_1} · Top-k {value_2}
 {value_3} · {value_4} cache
 Switching preserves your conversation. Choose the Qwen vision model for image input.</source>

@@ -2333,6 +2333,10 @@ Mae cydnabod yn cadw'r canlyniadau hyn yn ansicr. Nid yw'n rhoi cynnig arall ar 
       <translation>Cyfnodolyn adfer tasg</translation>
     </message>
     <message>
+      <source>Task stopped locally before completion.</source>
+      <translation>Ataliwyd y dasg yn lleol cyn ei chwblhau.</translation>
+    </message>
+    <message>
       <source>Temperature {value_0} · Top-p {value_1} · Top-k {value_2}
 {value_3} · {value_4} cache
 Switching preserves your conversation. Choose the Qwen vision model for image input.</source>

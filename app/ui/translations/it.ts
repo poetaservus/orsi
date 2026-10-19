@@ -2333,6 +2333,10 @@ Il riconoscimento mantiene questi risultati incerti. Non ritenta le operazioni n
       <translation>giornale di ripristino attività</translation>
     </message>
     <message>
+      <source>Task stopped locally before completion.</source>
+      <translation>L’attività è stata interrotta localmente prima del completamento.</translation>
+    </message>
+    <message>
       <source>Temperature {value_0} · Top-p {value_1} · Top-k {value_2}
 {value_3} · {value_4} cache
 Switching preserves your conversation. Choose the Qwen vision model for image input.</source>

@@ -2333,6 +2333,10 @@ Anerkendelse holder disse resultater usikre. Den prøver ikke handlingerne igen 
       <translation>Opgavegendannelsesjournal</translation>
     </message>
     <message>
+      <source>Task stopped locally before completion.</source>
+      <translation>Opgaven blev stoppet lokalt før fuldførelse.</translation>
+    </message>
+    <message>
       <source>Temperature {value_0} · Top-p {value_1} · Top-k {value_2}
 {value_3} · {value_4} cache
 Switching preserves your conversation. Choose the Qwen vision model for image input.</source>

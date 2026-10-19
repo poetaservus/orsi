@@ -2331,6 +2331,10 @@ Acknowledging keeps these outcomes uncertain. It does not retry the operations o
       <translation>Առաջադրանքների վերականգնման ամսագիր</translation>
     </message>
     <message>
+      <source>Task stopped locally before completion.</source>
+      <translation>Առաջադրանքը տեղային կերպով դադարեցվել է նախքան ավարտը։</translation>
+    </message>
+    <message>
       <source>Temperature {value_0} · Top-p {value_1} · Top-k {value_2}
 {value_3} · {value_4} cache
 Switching preserves your conversation. Choose the Qwen vision model for image input.</source>

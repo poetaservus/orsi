@@ -2333,6 +2333,10 @@ Potvrdením sú tieto výsledky neisté. Neopakuje operácie ani neoznačí pred
       <translation>Denník obnovy úloh</translation>
     </message>
     <message>
+      <source>Task stopped locally before completion.</source>
+      <translation>Úloha bola lokálne zastavená pred dokončením.</translation>
+    </message>
+    <message>
       <source>Temperature {value_0} · Top-p {value_1} · Top-k {value_2}
 {value_3} · {value_4} cache
 Switching preserves your conversation. Choose the Qwen vision model for image input.</source>

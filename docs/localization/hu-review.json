@@ -14,19 +14,24 @@
   },
   "baseline_commit": "b87c29b",
   "style_guide": "docs/hungarian-ui.md",
-  "entry_count": 775,
-  "source_sha256": "dd533219d235dd8adb5a95a6f84896a0da603a6ecc64a741da67e776b2713b5c",
-  "translation_sha256": "ffc856760cb384436486c193f09a5fe04d9440b0e54b9352d872d6fc06a4f903",
+  "entry_count": 776,
+  "source_sha256": "bfe0c8fe949f74a4f0a9935e16dc6e2a3da197b895c36bbc2690e789f96b350c",
+  "translation_sha256": "de91f858a64a80c27cba9dd69b9e19ebfa27c2a7964af01b6dc6719f9a7ff53d",
   "maintenance": {
-    "date": "2026-10-18",
-    "baseline_commit": "220263c",
-    "method": "Removed only the retired SettingsDragStrip source Move settings after qualified reachability review. All remaining translations and annotations are unchanged; native-review status remains pending."
+    "date": "2026-10-19",
+    "baseline_commit": "2f94758",
+    "method": "Added the missing local-stop explanation after contextual Hungarian copy review. Existing translations and native-review status are preserved."
   },
   "maintenance_history": [
     {
       "date": "2026-10-16",
       "baseline_commit": "cdd7f5b",
       "method": "Added the Word edit approval title Edit as Szerkesztés after checking approvals.py; existing copy and native-review status preserved."
+    },
+    {
+      "date": "2026-10-18",
+      "baseline_commit": "220263c",
+      "method": "Removed only the retired SettingsDragStrip source Move settings after qualified reachability review. All remaining translations and annotations are unchanged; native-review status remains pending."
     }
   ]
 }

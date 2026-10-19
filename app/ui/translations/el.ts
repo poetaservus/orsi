@@ -2333,6 +2333,10 @@ Acknowledging keeps these outcomes uncertain. Δεν επαναλαμβάνει 
       <translation>Ημερολόγιο ανάκτησης εργασιών</translation>
     </message>
     <message>
+      <source>Task stopped locally before completion.</source>
+      <translation>Η εργασία διακόπηκε τοπικά πριν ολοκληρωθεί.</translation>
+    </message>
+    <message>
       <source>Temperature {value_0} · Top-p {value_1} · Top-k {value_2}
 {value_3} · {value_4} cache
 Switching preserves your conversation. Choose the Qwen vision model for image input.</source>

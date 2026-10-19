@@ -2333,6 +2333,10 @@ Recunoașterea face ca aceste rezultate să fie incerte. Nu reîncearcă operaț
       <translation>Jurnal de recuperare a sarcinilor</translation>
     </message>
     <message>
+      <source>Task stopped locally before completion.</source>
+      <translation>Sarcina a fost oprită local înainte de finalizare.</translation>
+    </message>
+    <message>
       <source>Temperature {value_0} · Top-p {value_1} · Top-k {value_2}
 {value_3} · {value_4} cache
 Switching preserves your conversation. Choose the Qwen vision model for image input.</source>

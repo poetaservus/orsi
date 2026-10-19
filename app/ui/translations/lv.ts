@@ -2333,6 +2333,10 @@ Atzīstot, šie rezultāti paliek neskaidri. Tas neatkārto darbības un neatzī
       <translation>uzdevumu atkopšanas žurnāls</translation>
     </message>
     <message>
+      <source>Task stopped locally before completion.</source>
+      <translation>Uzdevums tika lokāli apturēts pirms pabeigšanas.</translation>
+    </message>
+    <message>
       <source>Temperature {value_0} · Top-p {value_1} · Top-k {value_2}
 {value_3} · {value_4} cache
 Switching preserves your conversation. Choose the Qwen vision model for image input.</source>

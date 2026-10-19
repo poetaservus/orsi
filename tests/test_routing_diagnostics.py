@@ -271,6 +271,7 @@ def test_provider_terminal_retains_only_public_code_and_event(make_engine, caplo
 @pytest.mark.skipif(os.name != "nt", reason="Native Windows stop and journal authority")
 @pytest.mark.parametrize("cancel", [False, True])
 def test_terminal_stop_counts_match_durable_settled_work(recovery_service, tmp_path, caplog, cancel):
+    from app.inference.completion import AgentStoppedError
     from app.inference.protocol import ModelResponse
     from tests.test_bounded_edit_recovery import edit, read
     target = tmp_path / "main.py"
@@ -285,7 +286,7 @@ def test_terminal_stop_counts_match_durable_settled_work(recovery_service, tmp_p
         if cancel:
             service.run("Fix main.py.")
         else:
-            with pytest.raises(IncompleteResponseError):
+            with pytest.raises(AgentStoppedError):
                 service.run("Fix main.py.")
     terminal = records(caplog, "[turn]")[-1]
     assert terminal["terminal_status"] == ("cancelled" if cancel else "repeated_call")

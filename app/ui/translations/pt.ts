@@ -2333,6 +2333,10 @@ O reconhecimento mantém esses resultados incertos. Ele não tenta novamente as 
       <translation>Diário de recuperação de tarefas</translation>
     </message>
     <message>
+      <source>Task stopped locally before completion.</source>
+      <translation>A tarefa foi interrompida localmente antes de ser concluída.</translation>
+    </message>
+    <message>
       <source>Temperature {value_0} · Top-p {value_1} · Top-k {value_2}
 {value_3} · {value_4} cache
 Switching preserves your conversation. Choose the Qwen vision model for image input.</source>

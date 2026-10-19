@@ -3618,6 +3618,10 @@ Az ellenőrzés lezárása nem teszi bizonyossá a műveletek eredményét. Nem 
       <extracomment>Application-owned interface copy. Use concise informal Hungarian; preserve placeholders, paths, identifiers and literal technical tokens. See docs/hungarian-ui.md for terminology and review status.</extracomment>
     </message>
     <message>
+      <source>Task stopped locally before completion.</source>
+      <translation>A feladat végrehajtása helyben leállt, mielőtt befejeződött volna.</translation>
+    </message>
+    <message>
       <location filename="../main_window.py" line="1942" />
       <source>Temperature {value_0} · Top-p {value_1} · Top-k {value_2}
 {value_3} · {value_4} cache
