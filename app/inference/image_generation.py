@@ -29,8 +29,9 @@ _VISUAL_SUBJECT = re.compile(r"\b(?:character|subject|image|picture|photo|photog
 _VIEW_CHANGE = re.compile(r"\b(?:(?:side|back|front|rear|three-quarter)[ -]+views?|sideways?|sideway|sideview|backview|(?:another|different)[ -]+angle)\b", re.I)
 _IMAGE_NOUN_WORDS = r"(?:image|picture|photo|photograph|illustration|portrait|drawing|painting|screenshot)"
 _IMAGE_NOUN = re.compile(rf"\b{_IMAGE_NOUN_WORDS}\b", re.I)
-_VISUAL_EDIT_TARGET = re.compile(r"\b(?:background|foreground|lighting|colou?r|darker|brighter|hat|shirt|style|cropped|red|green|blue|black|white|transparent|larger|smaller|sharper)\b", re.I)
-_NAMED_EDIT_TARGET = re.compile(r"\b(?:background|foreground|lighting|hat|shirt)\b", re.I)
+_VISUAL_EDIT_TARGET = re.compile(r"\b(?:background|foreground|lighting|colou?r|darker|brighter|hat|shirt|sunglasses|glasses|style|cropped|red|green|blue|black|white|transparent|larger|smaller|sharper)\b", re.I)
+_NAMED_EDIT_TARGET = re.compile(r"\b(?:background|foreground|lighting|hat|shirt|sunglasses|glasses)\b", re.I)
+_PHOTO_ADJUSTMENT = re.compile(r"\b(?:blur|bokeh|depth[ -]+of[ -]+field|(?:camera|camara)[ -]+settings)\b", re.I)
 _INHERENT_VISUAL_EDITS = {"crop", "resize", "darken", "brighten"}
 _CODE_TARGET = re.compile(r"\b(?:code|source|script|program|function|traceback|exception|error|crash\w*|debug\w*|tkinter|sliders?|buttons?|files?)\b|\b[\w-]+\.(?:py|js|ts|tsx|jsx|cpp|cs|java)\b", re.I)
 _SOURCE_TARGET = re.compile(r"\b(?:code|source|script|program|function|tkinter)\b|\b[\w-]+\.(?:py|js|ts|tsx|jsx|cpp|cs|java)\b", re.I)
@@ -126,6 +127,11 @@ def image_intent(text, *, has_image=False, skill_name=None):
         if verb in {"write", "draft", "compose", "fix", "debug"} or _VISUAL_CODE.search(output) or (
                 written is not None and (visual is None or written.start() < visual.start())):
             return ImageIntent("agent", "coding_request" if verb in {"fix", "debug"} or _CODE_TARGET.search(clause) else "written_request")
+        # Photographic effects can name the requested pixels without repeating
+        # "image". Keep code exclusions ahead of this source-requiring route.
+        if (has_image and visual is None and (_CREATE.fullmatch(verb) or _EDIT.fullmatch(verb))
+                and _PHOTO_ADJUSTMENT.search(output) and not _CODE_TARGET.search(output)):
+            return ImageIntent("image_generation", "visual_edit", True)
         if _CREATE.fullmatch(verb) or _DRAW.fullmatch(verb):
             if visual is not None or _DRAW.fullmatch(verb) and not _CODE_TARGET.search(output):
                 return ImageIntent("image_generation", "visual_creation", creation_followup(clause))
