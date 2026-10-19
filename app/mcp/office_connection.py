@@ -399,6 +399,9 @@ class OfficeConnection:
                                 "category": "transport" if request_stage == "confirmation" else "verification",
                                 "duration_ms": round((monotonic() - request.started_at) * 1000),
                                 "outcome": "unknown", "dispatched": request.sent})
+                word_operation = (request.contract is not None and request.contract.permission == PermissionClass.WRITE
+                    and (request.contract.name in {"office.word_compose", "office.word_edit"}
+                         or self._sessions.get(request.arguments.get("session")) == "word"))
                 with self._state:
                     self._invalidate_locked()
                 if not request.future.done():
@@ -408,6 +411,9 @@ class OfficeConnection:
                     if request.contract is not None and request.contract.name == "office.excel_edit":
                         from app.mcp.office_write_diagnostics import excel_failure_message
                         message = excel_failure_message(diagnostic)
+                    elif word_operation:
+                        from app.mcp.office_write_diagnostics import word_failure_message
+                        message = word_failure_message(diagnostic)
                     request.future.set_exception(Error(code, message))
                 break
 

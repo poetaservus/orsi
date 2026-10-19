@@ -9,8 +9,20 @@ class OfficeReadProgress:
         self.pending = {}
         self.failed = {}
         self.reminded = None
+        self.applied = set()
+        self.saved = set()
 
     def observe(self, call, result):
+        session = call.arguments.get("session")
+        if call.capability in {"office.excel_edit", "office.revert", "office.save"}:
+            output = result.output or {}
+            if result.success and isinstance(session, str) and session:
+                if output.get("outcome") == "applied":
+                    self.applied.add(session)
+                    self.saved.discard(session)
+                elif call.capability == "office.save" and output.get("saved") is True:
+                    self.saved.add(session)
+            return
         if call.capability != "office.read":
             return
         target = call.arguments.get("target", "selection")
@@ -53,4 +65,9 @@ class OfficeReadProgress:
                    "Read the remaining worksheet pages before relying on whole-sheet calculations.")
         if self.failed:
             message += " " + next(iter(self.failed.values()))
+        affected = {session for session, _ in (*self.pending, *self.failed)}
+        if affected & self.applied:
+            message += " Earlier Excel changes were confirmed applied; the later read failure does not undo them."
+        if affected & self.saved:
+            message += " An earlier save was confirmed; the later read failure does not invalidate that save receipt."
         return message

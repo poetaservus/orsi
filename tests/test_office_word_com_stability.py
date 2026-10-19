@@ -192,6 +192,18 @@ def test_native_step_keeps_innermost_stage_and_hresult():
     assert caught.value.orsi_write_step_ms >= 0
 
 
+def test_word_uncertain_feedback_preserves_native_evidence_and_rejects_private_fields():
+    from app.mcp.office_write_diagnostics import word_failure_message
+    message = word_failure_message({"stage": "running_matter", "category": "native",
+        "hresult": -2147352567, "outcome": "unknown", "exception": "PRIVATE", "path": "PRIVATE"})
+    assert "stage=running_matter" in message and "reason=native" in message
+    assert "HRESULT=-2147352567" in message
+    assert "Changes may already be present" in message and "no automatic retry" in message
+    assert "PRIVATE" not in message
+    forged = word_failure_message({"stage": "PRIVATE", "category": "PRIVATE", "hresult": "PRIVATE"})
+    assert "PRIVATE" not in forged
+
+
 @pytest.mark.parametrize("sent,mutated", [(False,False), (True,False), (True,True)])
 def test_confirmation_timeout_does_not_infer_or_repeat_a_mutation(sent, mutated):
     from app.capabilities.contracts import CapabilityErrorCode as Code, CapabilityExecutionError as Error

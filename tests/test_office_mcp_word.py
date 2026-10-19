@@ -200,6 +200,10 @@ def test_stdio_partial_write_is_outcome_unknown_and_has_no_retry(tmp_path):
         page = execute(runtime, "read", {"session": session}, "read").output
         result = execute(runtime, "word_edit", patch(session, page), "edit")
         assert not result.success and result.error.code == CapabilityErrorCode.OUTCOME_UNKNOWN
+        assert "Changes may already be present" in result.error.message
+        assert "stage=word_native_insert" in result.error.message
+        assert "reason=internal" in result.error.message
+        assert "no automatic retry" in result.error.message
         assert bridge.diagnostics["tool_calls"] == 3
         assert not bridge.exposure.ready
         assert runtime.executor.journal.review_required

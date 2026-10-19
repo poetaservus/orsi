@@ -79,6 +79,19 @@ def excel_failure_message(value):
     return f"Excel could not confirm the edit while {stage}.{reason} Inspect the workbook before another edit; no automatic retry was made."
 
 
+def word_failure_message(value):
+    """Expose bounded failure evidence without inferring an uncertain write's outcome."""
+    event = safe_write_event(value) or {}
+    stage = event.get("stage", "confirmation")
+    category = event.get("category", "internal")
+    evidence = f"stage={stage}, reason={category}"
+    if "hresult" in event:
+        evidence += f", HRESULT={event['hresult']}"
+    return (f"Word could not confirm the operation ({evidence}). "
+            "Changes may already be present. Inspect the document before another write; "
+            "no automatic retry was made.")
+
+
 @contextmanager
 def native_step(stage):
     """Attach the innermost fixed native stage without retaining a COM proxy."""

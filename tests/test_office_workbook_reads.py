@@ -104,6 +104,53 @@ def test_full_read_failure_stays_unfinished_but_explicit_preview_does_not_force_
     assert progress.before_final() is None
 
 
+@pytest.mark.parametrize("save_confirmed", [False, True])
+def test_failed_verification_retains_real_applied_excel_receipt(save_confirmed):
+    from tests.test_office_mcp_excel import mutate, patch
+    from app.mcp.office_read_diagnostics import read_failure_message
+    live, authority, session = service()
+    try:
+        snapshot = read(live, authority, session)["snapshot"]
+        receipt = mutate(live, authority, "excel_edit", patch(session, snapshot, number_format="0.0"))
+        assert receipt["outcome"] == "applied"
+        assert all(live.backend.sheets["Sheet1"][(row, 1)]["number_format"] == "0.0" for row in (1, 2))
+        progress = OfficeReadProgress()
+        progress.observe(NS(capability="office.excel_edit", arguments={"session": session}),
+                         NS(success=True, output=receipt))
+        if save_confirmed:
+            progress.observe(NS(capability="office.save", arguments={"session": session}),
+                             NS(success=True, output={"saved": True}))
+        arguments = {"session": session, "target": "Sheet1!used", "max_items": 1, "max_chars": 8192}
+        page = read(live, authority, session, target="Sheet1!used", max_items=1, max_chars=8192)
+        assert page["cursor"]
+        progress.observe(NS(capability="office.read", arguments=arguments), NS(success=True, output=page))
+        message = read_failure_message({**arguments, "cursor": page["cursor"]},
+            {"stage": "read_execute", "reason": "native", "hresult": -2146777998})
+        progress.observe(NS(capability="office.read", arguments={**arguments, "cursor": page["cursor"]}),
+                         NS(success=False, error=NS(message=message)))
+        assert progress.before_final()[0] is False
+        summary = progress.unfinished_summary()
+        assert "No document change" not in summary
+        assert "Earlier Excel changes were confirmed applied" in summary
+        assert ("An earlier save was confirmed" in summary) == save_confirmed
+        assert "-2146777998" in summary
+    finally:
+        live.close()
+
+
+@pytest.mark.parametrize("success,outcome", [(False, "applied"), (True, "unchanged"), (True, "unknown")])
+def test_failed_or_unapplied_edit_does_not_earn_applied_receipt(success, outcome):
+    progress = OfficeReadProgress()
+    progress.observe(NS(capability="office.excel_edit", arguments={"session": "s"}),
+                     NS(success=success, output={"outcome": outcome}))
+    read_call = NS(capability="office.read", arguments={"session": "s", "target": "Sheet1!used"})
+    progress.observe(read_call, NS(success=True, output={"cursor": "next"}))
+    progress.observe(read_call, NS(success=False, error=NS(message="Verification unavailable.")))
+    assert "confirmed applied" not in progress.unfinished_summary()
+    assert "save was confirmed" not in progress.unfinished_summary()
+    assert progress.before_final()[0] is False
+
+
 class PagingModel(ScriptedModel):
     def __init__(self, session, *, stall=False):
         super().__init__([])

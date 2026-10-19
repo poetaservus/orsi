@@ -126,7 +126,7 @@ def read_failure_message(arguments, failure):
     elif event["reason"] in {"read_bound", "read_limit", "cursor_limit"}:
         message += "Use a smaller target or reconnect explicitly. Do not repeat this request unchanged."
     elif event["reason"] in {"native", "io", "internal", "invalid_result"}:
-        message += "No document change was established. Check the Office connection or render setup before retrying."
+        message += "This read could not be verified. Earlier edits and saves retain their own receipts. Check the Office connection or render setup before retrying."
     else:
         message += "Read a fresh target or refresh the connection. Word also supports authoring, layout and render:first:last (1-3 pages)."
     return message[:500]
