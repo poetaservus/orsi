@@ -11,6 +11,54 @@ from tests.test_project_verification import approved
 from tests.test_filesystem_read_text import context
 
 
+@pytest.mark.parametrize("settled", [True, False])
+def test_zero_job_accounting_does_not_replace_descendant_exit_confirmation(settled):
+    from app.runtime.owned_process import _release_handles
+
+    class Api:
+        closed = None
+        waited = None
+
+        def __init__(self):
+            self.closed, self.waited = [], []
+
+        def QueryInformationJobObject(self, job, kind, output, size, returned):
+            if kind == 3:
+                output._obj.assigned = output._obj.count = 1
+                output._obj.pids[0] = 42
+            else:
+                output._obj.active = 0
+            return True
+
+        def OpenProcess(self, rights, inherit, pid):
+            assert pid == 42 and rights == 0x101000 and not inherit
+            return 303
+
+        def IsProcessInJob(self, process, job, result):
+            result._obj.value = True
+            return True
+
+        def TerminateJobObject(self, job, code):
+            return True
+
+        def WaitForSingleObject(self, handle, timeout):
+            self.waited.append(handle)
+            return 0 if handle == 202 or settled else 258
+
+        def CloseHandle(self, handle):
+            self.closed.append(handle)
+            return True
+
+    api = Api()
+    if settled:
+        _release_handles(api, 101, 202)
+    else:
+        with pytest.raises(ProcessOwnershipError, match="descendant exit"):
+            _release_handles(api, 101, 202)
+    assert api.waited == [202, 303]
+    assert sorted(api.closed) == [101, 202, 303]
+
+
 @pytest.mark.parametrize("allowance", [True, 0, 1024**3 - 1, 4 * 1024**3 + 1, None])
 def test_untrusted_resource_allowances_cannot_launch_a_process(tmp_path, allowance):
     with pytest.raises(ProcessOwnershipError, match="bounded allowance"):

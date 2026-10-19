@@ -60,6 +60,12 @@ class _JobAccounting(C.Structure):
                 ("active", W.DWORD), ("terminated", W.DWORD)]
 
 
+class _JobProcessIds(C.Structure):
+    # The job's active-process limit is 16, including nested descendants.
+    _fields_ = [("assigned", W.DWORD), ("count", W.DWORD),
+                ("pids", C.c_size_t * 16)]
+
+
 @lru_cache(maxsize=1)
 def _api():
     kernel = C.WinDLL("kernel32", use_last_error=True)
@@ -80,6 +86,8 @@ def _api():
         "GetExitCodeProcess": ([W.HANDLE, C.POINTER(W.DWORD)], W.BOOL),
         "TerminateProcess": ([W.HANDLE, W.UINT], W.BOOL),
         "TerminateJobObject": ([W.HANDLE, W.UINT], W.BOOL),
+        "OpenProcess": ([W.DWORD, W.BOOL, W.DWORD], W.HANDLE),
+        "IsProcessInJob": ([W.HANDLE, W.HANDLE, C.POINTER(W.BOOL)], W.BOOL),
         "QueryInformationJobObject": ([W.HANDLE, C.c_int, C.c_void_p, W.DWORD,
                                         C.c_void_p], W.BOOL),
     }
@@ -92,7 +100,29 @@ def _api():
 def _release_handles(api, job, process):
     # Closing a job triggers asynchronous termination. Wait for all owned
     # descendants before returning so temporary files can be deleted safely.
+    members = []
     try:
+        identities = _JobProcessIds()
+        if not api.QueryInformationJobObject(job, 3, C.byref(identities), C.sizeof(identities), None):
+            raise C.WinError(C.get_last_error())
+        if identities.assigned > 16 or identities.count > 16 or identities.count != identities.assigned:
+            raise ProcessOwnershipError("Owned process inventory exceeded its configured bound.")
+        for pid in identities.pids[:identities.count]:
+            handle = api.OpenProcess(0x101000, False, pid)  # SYNCHRONIZE | QUERY_LIMITED_INFORMATION
+            if not handle:
+                if C.get_last_error() == 87:  # Process already exited.
+                    continue
+                raise C.WinError(C.get_last_error())
+            try:
+                belongs = W.BOOL()
+                if not api.IsProcessInJob(handle, job, C.byref(belongs)):
+                    raise C.WinError(C.get_last_error())
+                if belongs.value:
+                    members.append(handle)
+                    handle = None
+            finally:
+                if handle:
+                    api.CloseHandle(handle)
         if not api.TerminateJobObject(job, 1):
             raise C.WinError(C.get_last_error())
         if api.WaitForSingleObject(process, 5000) != 0:
@@ -107,9 +137,18 @@ def _release_handles(api, job, process):
             if monotonic() >= deadline:
                 raise ProcessOwnershipError("Owned descendants did not stop before cleanup.")
             sleep(0.01)
+        # Job accounting can reach zero before a descendant's process object
+        # becomes signaled. Pin membership before termination and await these
+        # exact objects; PID lookup after termination can observe reuse.
+        for handle in members:
+            remaining = max(0, int((deadline - monotonic()) * 1000))
+            if api.WaitForSingleObject(handle, remaining) != 0:
+                raise ProcessOwnershipError("Owned descendant exit did not settle before cleanup.")
     finally:
         api.CloseHandle(job)  # KILL_ON_JOB_CLOSE also covers unexpected owner exit.
         api.CloseHandle(process)
+        for handle in members:
+            api.CloseHandle(handle)
 
 
 class OwnedProcess:
