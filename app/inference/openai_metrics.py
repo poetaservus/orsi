@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from time import monotonic
+from math import isfinite
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -50,10 +51,29 @@ class RequestMeasurement:
             first_event_ms=elapsed(self.first_event), first_text_ms=elapsed(self.first_text))
 
 
+def safe_metrics_event(value):
+    """Keep only measured numeric fields and fixed outcome labels."""
+    if not isinstance(value, dict):
+        return None
+    outcome = value.get("outcome")
+    result = {"event": "openai_request_metrics", "outcome": outcome if isinstance(outcome, str)
+              and outcome in {"completed", "incomplete", "cancelled", "error"} else "unknown"}
+    for field in ("attempts", "input_tokens", "output_tokens", "total_tokens", "cached_input_tokens",
+                  "cache_write_tokens", "reasoning_tokens"):
+        number = value.get(field)
+        result[field] = number if type(number) is int and 0 <= number <= 2**63 - 1 else None
+    for field in ("queue_ms", "duration_ms", "first_event_ms", "first_text_ms"):
+        number = value.get(field)
+        result[field] = number if type(number) in (int, float) and 0 <= number <= 2**63 - 1 and isfinite(number) else None
+    return result
+
+
 def record_request_metrics(logger, metrics, usage):
+    diagnostic = {**metrics.model_dump(), **usage.model_dump()}
     logger.info("OpenAI request metrics: outcome=%s attempts=%s queue_ms=%s duration_ms=%s "
         "first_event_ms=%s first_text_ms=%s input_tokens=%s output_tokens=%s total_tokens=%s "
         "cached_input_tokens=%s cache_write_tokens=%s reasoning_tokens=%s",
         metrics.outcome, metrics.attempts, metrics.queue_ms, metrics.duration_ms,
         metrics.first_event_ms, metrics.first_text_ms, usage.input_tokens, usage.output_tokens,
-        usage.total_tokens, usage.cached_input_tokens, usage.cache_write_tokens, usage.reasoning_tokens)
+        usage.total_tokens, usage.cached_input_tokens, usage.cache_write_tokens, usage.reasoning_tokens,
+        extra={"orsi_openai_metrics_diagnostic": diagnostic})

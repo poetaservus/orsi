@@ -56,6 +56,26 @@ def sdk_version():
     return value if isinstance(value, str) and _VERSION.fullmatch(value) else "unknown"
 
 
+def safe_stream_event(value):
+    """Revalidate structured diagnostics at the personal-storage boundary."""
+    if not isinstance(value, dict):
+        return None
+    event, category = event_labels(value.get("event_type"))
+    reason, code, origin = value.get("reason"), value.get("code"), value.get("origin")
+    version_value = value.get("sdk_version")
+    result = {"event": "openai_stream_failure",
+        "origin": origin if isinstance(origin, str) and origin in {"stream", "sdk_envelope", "provider_terminal"} else "unknown",
+        "reason": reason if isinstance(reason, str) and reason in get_args(ResponseFailureReason) else "unknown",
+        "code": code if isinstance(code, str) and code in _CODES | {"none"} else "unrecognized",
+        "event_type": event, "event_category": category,
+        "event_supported": value.get("event_supported") is True,
+        "sdk_version": version_value if isinstance(version_value, str) and _VERSION.fullmatch(version_value) else "unknown"}
+    for field in ("events", "sequence", "bytes", "text_chars"):
+        number = value.get(field)
+        result[field] = number if type(number) is int and -1 <= number <= 2**63 - 1 else None
+    return result
+
+
 def record_stream_failure(logger, state, *, origin="stream", reason, code=None):
     """Accept only locally approved labels and numeric protocol counters."""
     event, category = event_labels(state.last_event)
@@ -68,6 +88,7 @@ def record_stream_failure(logger, state, *, origin="stream", reason, code=None):
             ("bytes", state.bytes), ("text_chars", state.chars)):
         values[field] = value if type(value) is int and -1 <= value <= 2**63 - 1 else None
     try:
-        logger.warning("[stream] %s", json.dumps(values, sort_keys=True))
+        logger.warning("[stream] %s", json.dumps(values, sort_keys=True),
+                       extra={"orsi_openai_stream_diagnostic": values})
     except Exception:
         pass
