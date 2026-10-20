@@ -363,6 +363,8 @@ def test_rejected_review_tool_preserves_candidate_until_assessed(tmp_path, mode)
         assert result.model_requests == len(model.requests) == 3
         assert result.completion_review.status == "ready"
         assert echo.values == [] and result.capability_calls == 0 and result.settled_calls == ()
+        assert [failure.reason for failure in result.review_failures] == ['tool_proposal']
+        assert 'Assessment correction: Return the JSON assessment only' in model.requests[-1][-1]['content']
         assert [item.response_id for item in retained] == ["resp-answer"]
         assert phases == [False, True, True]
     finally:

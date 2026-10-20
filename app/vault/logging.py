@@ -7,6 +7,7 @@ from app.inference.word_plan_diagnostics import safe_word_event
 from app.mcp.office_read_diagnostics import safe_read_event
 from app.mcp.office_write_diagnostics import safe_write_event
 from app.inference.openai_diagnostics import safe_stream_event
+from app.agent.review_diagnostics import safe_review_event
 from app.inference.openai_metrics import safe_metrics_event
 
 
@@ -30,6 +31,8 @@ class ProfileLogHandler(logging.Handler):
                 event = safe_read_event(getattr(record, "orsi_read_diagnostic", None))
             elif record.name == "app.mcp.office_write_diagnostics":
                 event = safe_write_event(getattr(record, "orsi_write_diagnostic", None))
+            elif record.name == 'app.agent.review_diagnostics':
+                event = safe_review_event(getattr(record, 'orsi_completion_review_diagnostic', None))
             elif record.name.startswith("app.inference."):
                 event = (safe_stream_event(getattr(record, "orsi_openai_stream_diagnostic", None)) or
                          safe_metrics_event(getattr(record, "orsi_openai_metrics_diagnostic", None)))

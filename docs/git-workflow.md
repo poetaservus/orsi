@@ -1,5 +1,26 @@
 # Git layout and baseline hygiene
 
+## Completion review recovery, 20 October 2026
+
+`codex/completion-review-recovery` starts from local main `0881ba5`. Real model
+qualification reproduced two rejected reviews after a long settled history.
+The repair moves receipt-ledger construction from the model into the runtime,
+keeps the minimal semantic assessment strict, retains safe failure reasons and
+preserves review evidence through later presentation failures. See
+[reproduction, focused qualification and limits](completion-review-recovery.md).
+
+Focused native selections pass 116 and 102 checks; final affected rechecks pass
+66 and 13 checks. Selections overlap and are not added. No full suite is run.
+The repaired real model accepts an 81-receipt current history in one assessment
+and continues a stale-test history. A disposable native workflow completes two
+edits, its two unchanged selected tests and one browser text assertion with no
+review format failures. Earlier fixture/setup failures are recorded separately.
+
+Preserve prior main at `archive/2026-10-20/main-before-completion-review-recovery`,
+commit, fast-forward local main and remove only the merged feature branch.
+Other worktrees, historical/unmerged refs, user settings and remote refs remain
+intact. Preserve the running user app; it needs a restart to load the repair.
+
 ## Orchestrator completion reliability, 20 October 2026
 
 `codex/orchestrator-completion-reliability` starts from clean local main `7107e21`.

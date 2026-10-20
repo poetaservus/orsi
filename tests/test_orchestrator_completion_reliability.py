@@ -218,10 +218,10 @@ def test_inspection_errors_name_the_actual_step_rule(tmp_path, step, message):
     assert not result.success and message in result.error.message
 
 
-def test_completion_schema_requires_evidence_fields_without_changing_old_history_parser():
+def test_live_schema_keeps_receipt_bookkeeping_in_runtime_and_old_history_remains_readable():
     schema = completion_review_schema([completion_review_message(TaskGoal(goal_id='turn-1', objective='Report'), None)])
-    assert 'evidence' in schema['required']
-    assert set(schema['$defs']['ReviewEvidence']['required']) == {'call_id', 'claim', 'visual_sha256', 'readiness_call_id'}
+    assert set(schema['required']) == {'goal_id', 'status', 'remaining'}
+    assert 'evidence' not in schema['properties']
     assert CompletionReview.model_validate_json('{"goal_id":"turn-1","status":"ready","remaining":[]}').evidence == ()
 
 
@@ -280,7 +280,7 @@ def test_review_cannot_turn_a_failed_command_into_success():
     validate_review_evidence(review({'call_id': 'job', 'claim': 'completed'}), goal, [job])
 
 
-def test_invalid_evidence_is_corrected_in_review_without_replaying_tools(tmp_path):
+def test_runtime_attaches_inspection_receipt_without_model_ledger_or_tool_replay(tmp_path):
     from app.capabilities.project_verification import ProjectInspectionArguments
     from tests.test_agent_runtime import ScriptedModel
     class Inspect(EchoCapability):
@@ -293,18 +293,16 @@ def test_invalid_evidence_is_corrected_in_review_without_replaying_tools(tmp_pat
     call = ModelResponse.calls((ModelCapabilityCall(provider_call_id='inspect', capability='project.inspect',
         arguments={'project_path': str(tmp_path), 'kind': 'browser', 'url': 'http://localhost/'}),))
     model = ScriptedModel([call, ModelResponse.text('The requested inspection passed.'),
-        ModelResponse.text('{"goal_id":"turn-1","status":"ready","remaining":[]}'),
-        ModelResponse.text(json.dumps({'goal_id': 'turn-1', 'status': 'ready', 'remaining': [], 'evidence': [
-            {'call_id': 'internal-call-1', 'claim': 'passed'}]}))], auto_review=False)
+        ModelResponse.text('{"goal_id":"turn-1","status":"ready","remaining":[]}')], auto_review=False)
     runtime, _, tool, _, _ = build_runtime(tmp_path, [], capability=Inspect(), model=model)
     runtime.permission_gate = PermissionGate((PermissionRule('inspect', PermissionDecision.ALLOW,
         permission=tool.permission, capability_pattern=tool.name),))
     try:
         outcome = runtime.run([{'role': 'user', 'content': 'Inspect this preview'}], session_id='session', turn_id='turn-1',
             portable_root=tmp_path, allowed_read_roots=(tmp_path,), goal_request='Inspect this preview')
-        assert outcome.status == AgentRunStatus.COMPLETED and outcome.protocol_failures == 1
-        assert len(tool.values) == len(outcome.settled_calls) == 1 and len(model.requests) == 4
-        assert 'Evidence correction: Account for' in model.requests[-1][-1]['content']
+        assert outcome.status == AgentRunStatus.COMPLETED and outcome.protocol_failures == 0
+        assert len(tool.values) == len(outcome.settled_calls) == 1 and len(model.requests) == 3
+        assert outcome.completion_review.evidence[0].claim == 'passed'
         store = ConversationStore(tmp_path / 'review.json')
         turn = store.begin_turn('Inspect this preview')
         store.start_goal(turn)

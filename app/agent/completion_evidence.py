@@ -58,7 +58,22 @@ def evidence_catalog(calls, goal=None):
             for item in review_receipts(calls)]
 
 
+def compile_review_evidence(goal, calls):
+    """The runtime owns receipt bookkeeping; the model assesses task coverage."""
+    entries = []
+    for item in review_receipts(calls):
+        claim = receipt_claim(item)
+        if any(check.call_id == item.result.call_id and check.stale for check in goal.verification):
+            claim = 'unverified'
+        elif claim == 'completed' and (item.result.output or {}).get('command_succeeded') is True:
+            claim = 'succeeded'
+        entries.append(ReviewEvidence(call_id=item.result.call_id, claim=claim))
+    return tuple(entries)
+
+
 def validate_review_evidence(review, goal, calls, delivered_visuals=()):
+    if review.evidence_origin == 'runtime' and review.evidence != compile_review_evidence(goal, calls):
+        raise ValueError('Completion evidence must match the runtime ledger.')
     records = {item.result.call_id: item for item in calls}
     latest_ids = {item.result.call_id for item in review_receipts(calls)}
     screenshots = set().union(*(screenshot_digests(item.result.output or {}) for item in calls

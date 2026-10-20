@@ -527,6 +527,10 @@ class ConversationService:
                         completion_history=prior_outcome.completion_history if prior_outcome else value.completion_history,
                         partial_text=prior_outcome.assistant_text if prior_outcome else str(value) or None,
                         settled_calls=prior_outcome.settled_calls if prior_outcome else ())
+                    if prior_outcome is not None:
+                        outcome = outcome.model_copy(update={'review_failures': prior_outcome.review_failures,
+                            'delivered_visuals': prior_outcome.delivered_visuals,
+                            'completion_review': prior_outcome.completion_review, 'goal': prior_outcome.goal})
                 try:
                     self.store.finish_turn(turn_id, outcome, outcome.partial_text)
                     self._agent_history = self._stored_agent_history()

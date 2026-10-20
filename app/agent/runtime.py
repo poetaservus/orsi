@@ -12,7 +12,7 @@ import math
 import json
 from concurrent.futures import Future, TimeoutError as FutureTimeoutError
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Event, Thread
 from time import monotonic
@@ -45,10 +45,12 @@ from app.agent.office_read_progress import OfficeReadProgress
 from app.agent.office_read_repetition import OfficeReadRepetition
 from app.agent.repair_loop import RepairLoopTracker
 from app.agent.recovery_progress import RecoveryProgress, recovery_scope
-from app.agent.completion_evidence import validate_review_evidence
+from app.agent.completion_evidence import compile_review_evidence, validate_review_evidence
+from app.agent.review_diagnostics import ReviewFailure, record_review_event
 from app.agent.goals import TaskGoal, observe_goal, finish_goal, goal_feedback, evidence_report
 from app.agent.task_completion import (CompletionReview, task_context_message,
-    completion_review_message, parse_completion_review, looks_like_completion_review, resume_answer_message)
+    completion_review_message, parse_completion_review, looks_like_completion_review, resume_answer_message,
+    ReviewValidationError)
 from app.capabilities.contracts import (
     CapabilityArgumentError,
     CapabilityContext,
@@ -105,6 +107,7 @@ class _RecoveryUsage:
     model_requests: int = 0
     consecutive_format_failures: int = 0
     semantic_corrections: int = 0
+    review_failures: list[ReviewFailure] = field(default_factory=list)
     context_projections: int = 0
     context_compactions: int = 0
     inference_requests: int = 0
@@ -363,6 +366,7 @@ class AgentRuntime:
         result = result.model_copy(update={"completion_history": tuple(history),
             "settled_calls": tuple(settled),
             "delivered_visuals": tuple(sorted(visuals)),
+            "review_failures": tuple(recovery.review_failures),
             "model_requests": recovery.model_requests,
             "consecutive_format_failures": recovery.consecutive_format_failures,
             "semantic_corrections": recovery.semantic_corrections,
@@ -697,6 +701,12 @@ class AgentRuntime:
                 # approval or provider call replay is recorded for a rejected proposal.
                 protocol_failures += 1
                 recovery.consecutive_format_failures += 1
+                recovery.review_failures.append(ReviewFailure(reason='tool_proposal', model_request=recovery.model_requests,
+                    response_chars=len(response.assistant_text or '')))
+                record_review_event('exhausted' if recovery.consecutive_format_failures >= self.limits.max_protocol_failures
+                    else 'rejected', 'tool_proposal', model_request=recovery.model_requests,
+                    response_chars=len(response.assistant_text or ''), receipt_count=len(_settled_calls or ()),
+                    failure_count=len(recovery.review_failures))
                 if recovery.consecutive_format_failures >= self.limits.max_protocol_failures:
                     return self._stopped(AgentRunStatus.PROTOCOL_FAILURE_LIMIT,
                         "The completion check cannot call tools and did not return a valid assessment.",
@@ -707,6 +717,7 @@ class AgentRuntime:
                     edit_progress.pending_recovery() or edit_progress.completion_blocker(),
                     browser_inspection_available='project.inspect' in advertised_names,
                     settled_calls=_settled_calls or (), delivered_visuals=_visuals or ()))
+                transcript[-1]['content'] += '\nAssessment correction: Return the JSON assessment only; tool calls are unavailable during review.'
                 continue
             provider_message_id = uuid4().hex
             assessment_text = (bool(_goal) and review_started and response.kind == ModelResponseKind.ASSISTANT_TEXT
@@ -800,13 +811,23 @@ class AgentRuntime:
                     else:
                         try:
                             review = parse_completion_review(response.assistant_text, _goal[0].goal_id)
+                            review = review.model_copy(update={'evidence': compile_review_evidence(_goal[0], _settled_calls or ()),
+                                'evidence_origin': 'runtime'})
                             validate_review_evidence(review, _goal[0], _settled_calls or (), _visuals or ())
                         except ValueError as exc:
                             recovery.consecutive_format_failures += 1
                             protocol_failures += 1
+                            reason = exc.reason if isinstance(exc, ReviewValidationError) else 'evidence_invalid'
+                            recovery.review_failures.append(ReviewFailure(reason=reason, model_request=recovery.model_requests,
+                                response_chars=len(response.assistant_text)))
+                            exhausted = recovery.consecutive_format_failures >= self.limits.max_protocol_failures
+                            record_review_event('exhausted' if exhausted else 'rejected', reason,
+                                model_request=recovery.model_requests, response_chars=len(response.assistant_text),
+                                receipt_count=len(_settled_calls or ()), failure_count=len(recovery.review_failures))
                             if recovery.consecutive_format_failures >= self.limits.max_protocol_failures:
                                 return self._stopped(AgentRunStatus.PROTOCOL_FAILURE_LIMIT,
-                                    "The task remains unfinished because its completion review was invalid.",
+                                    'The automatic completion review was invalid (' + reason + '). '
+                                    'Settled work and the proposed report are retained; task completion remains unverified.',
                                     completion=CompletionMetadata(finish_reason="agent_review_invalid", interrupted=True),
                                     partial_text=proposed_answer,
                                     steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
@@ -814,11 +835,12 @@ class AgentRuntime:
                                 edit_progress.pending_recovery() or edit_progress.completion_blocker(),
                                 browser_inspection_available='project.inspect' in advertised_names,
                                 settled_calls=_settled_calls or (), delivered_visuals=_visuals or ()))
-                            # Validation messages contain fixed rules, never submitted values.
-                            if str(exc).startswith(('Completion evidence', 'Account for', 'A passed claim',
-                                    'Server readiness', 'Readiness evidence', 'Visual assessment')):
-                                transcript[-1]['content'] += '\nEvidence correction: ' + str(exc)
+                            feedback = exc.feedback if isinstance(exc, ReviewValidationError) else 'The runtime could not reconcile its receipt ledger; do not invent evidence or repeat tools.'
+                            transcript[-1]['content'] += '\nAssessment correction: ' + feedback
                             continue
+                        record_review_event('accepted', 'none', model_request=recovery.model_requests,
+                            response_chars=len(response.assistant_text), receipt_count=len(_settled_calls or ()),
+                            failure_count=len(recovery.review_failures))
                         recovery.consecutive_format_failures = 0
                         pending = edit_progress.pending_recovery()
                         blocker = edit_progress.completion_blocker()

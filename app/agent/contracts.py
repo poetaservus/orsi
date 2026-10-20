@@ -10,6 +10,7 @@ from app.inference.protocol import ModelCapabilityCall, model_capability_calls_m
 from app.capabilities.contracts import CapabilityResult
 from app.agent.goals import TaskGoal
 from app.agent.task_completion import CompletionReview
+from app.agent.review_diagnostics import ReviewFailure
 from app.settings.agent_limits import (
     MAX_AGENT_STEPS, MAX_AGENT_MODEL_REQUESTS, MAX_AGENT_CAPABILITY_CALLS, MAX_AGENT_COMPLETIONS,
 )
@@ -82,6 +83,7 @@ class AgentRunResult(BaseModel):
     goal: TaskGoal | None = None
     completion_review: CompletionReview | None = None
     delivered_visuals: tuple[str, ...] = Field(default=(), max_length=MAX_AGENT_CAPABILITY_CALLS * 5)
+    review_failures: tuple[ReviewFailure, ...] = Field(default=(), max_length=MAX_AGENT_STEPS)
 
     @model_validator(mode="after")
     def validate_terminal_outcome(self):
