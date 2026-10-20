@@ -15,6 +15,14 @@ _PREREQUISITES = {
     "current_evidence_required": "The retry still requires current supporting evidence.",
     "unchanged_recovery_state": "No relevant recovery prerequisite changed since the earlier attempts.",
 }
+_OFFICE_STOP_REASONS = {
+    "no_progress_observed": "The bounded repeat allowance was exhausted; no further qualifying Office progress was observed for this retry.",
+    "current_revision_already_saved": "The current observed Office document revision already has a confirmed save.",
+    "snapshot_required": "A complete current Office document snapshot is still required before this retry.",
+    "session_blocked": "The Office session remains blocked; its access or recovery prerequisite has not been satisfied.",
+    "connection_changed": "The Office connection changed; current document discovery is required before this retry.",
+    "retry_allowance_exhausted": "The one bounded retry after fresh Office evidence was already consumed.",
+}
 _OPERATIONS = {
     "filesystem.stat": ("metadata check", "metadata checks"),
     "filesystem.list": ("folder listing", "folder listings"),
@@ -70,10 +78,19 @@ def recovery_stop_progress(result: AgentRunResult) -> str:
     if blocked is not None:
         lines.extend(["", f"Blocked attempt: {blocked.capability}; repetition count {blocked.repetition_count}. "
             "This call was not dispatched."])
-        if blocked.prerequisite_reason is not None:
+        office_attempt = blocked.capability.startswith("office.")
+        if office_attempt:
+            # Old outcomes did not compare Office state. Their generic reason
+            # must not be displayed as proof that the workbook was unchanged.
+            lines.append(_OFFICE_STOP_REASONS[blocked.office_state_reason] if blocked.office_state_reason
+                else "The bounded repeat allowance was exhausted; no Office progress comparison was recorded for this stop.")
+            if blocked.office_progress_revision is not None:
+                lines.append(f"Observed Office progress revision: {blocked.office_progress_revision}.")
+        elif blocked.prerequisite_reason is not None:
             lines.append(_PREREQUISITES[blocked.prerequisite_reason])
         if blocked.evidence_receipt is not None:
-            lines.append(f"Related inspection receipt: {blocked.evidence_receipt}.")
+            label = "Office evidence" if office_attempt else "inspection"
+            lines.append(f"Related {label} receipt: {blocked.evidence_receipt}.")
     changes = Counter()
     for item in result.settled_calls:
         if item.result.success and item.call.capability in {

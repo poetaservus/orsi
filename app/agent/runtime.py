@@ -43,7 +43,7 @@ from app.agent.read_progress import ReadProgressTracker
 from app.agent.project_progress import ProjectProgressTracker
 from app.agent.edit_progress import EditProgressTracker
 from app.agent.office_read_progress import OfficeReadProgress
-from app.agent.office_read_repetition import OfficeReadRepetition
+from app.agent.office_progress import OfficeProgress
 from app.agent.prerequisite_retries import PrerequisiteRetries, repetition_fingerprint
 from app.agent.recovery_progress import RecoveryProgress, recovery_scope
 from app.agent.completion_evidence import compile_review_evidence, validate_review_evidence
@@ -541,7 +541,7 @@ class AgentRuntime:
         office_read_progress = OfficeReadProgress()
         from app.agent.word_evidence import WordTurnProgress
         word_progress = WordTurnProgress()
-        office_read_repetition = OfficeReadRepetition()
+        office_progress = OfficeProgress()
         repair_loop = project_progress.repair_loop
         prerequisite_retries = PrerequisiteRetries()
         recovery_progress = RecoveryProgress()
@@ -733,7 +733,7 @@ class AgentRuntime:
                 transcript.append(completion_review_message(_goal[0],
                     edit_progress.pending_recovery() or edit_progress.completion_blocker(),
                     browser_inspection_available='project.inspect' in advertised_names,
-                    settled_calls=_settled_calls or (), delivered_visuals=_visuals or ()))
+                    settled_calls=_settled_calls or (), delivered_visuals=_visuals or (), ledger_version=2))
                 transcript[-1]['content'] += '\nAssessment correction: Return the JSON assessment only; tool calls are unavailable during review.'
                 continue
             provider_message_id = uuid4().hex
@@ -825,12 +825,12 @@ class AgentRuntime:
                         transcript.append(completion_review_message(_goal[0],
                             edit_progress.pending_recovery() or edit_progress.completion_blocker(),
                             browser_inspection_available='project.inspect' in advertised_names,
-                            settled_calls=_settled_calls or (), delivered_visuals=_visuals or ()))
+                            settled_calls=_settled_calls or (), delivered_visuals=_visuals or (), ledger_version=2))
                     else:
                         try:
                             review = parse_completion_review(response.assistant_text, _goal[0].goal_id)
-                            review = review.model_copy(update={'evidence': compile_review_evidence(_goal[0], _settled_calls or ()),
-                                'evidence_origin': 'runtime'})
+                            review = review.model_copy(update={'evidence': compile_review_evidence(_goal[0], _settled_calls or (), ledger_version=2),
+                                'evidence_origin': 'runtime', 'ledger_version': 2})
                             validate_review_evidence(review, _goal[0], _settled_calls or (), _visuals or ())
                         except ValueError as exc:
                             recovery.consecutive_format_failures += 1
@@ -852,7 +852,7 @@ class AgentRuntime:
                             transcript.append(completion_review_message(_goal[0],
                                 edit_progress.pending_recovery() or edit_progress.completion_blocker(),
                                 browser_inspection_available='project.inspect' in advertised_names,
-                                settled_calls=_settled_calls or (), delivered_visuals=_visuals or ()))
+                                settled_calls=_settled_calls or (), delivered_visuals=_visuals or (), ledger_version=2))
                             feedback = exc.feedback if isinstance(exc, ReviewValidationError) else 'The runtime could not reconcile its receipt ledger; do not invent evidence or repeat tools.'
                             transcript[-1]['content'] += '\nAssessment correction: ' + feedback
                             continue
@@ -993,7 +993,9 @@ class AgentRuntime:
             recovery.consecutive_format_failures = 0
 
             fingerprints = call_fingerprints
-            repeat_fingerprints = tuple(repetition_fingerprint(call) for call in calls)
+            office_progress.sync(getattr(self.registry, 'connection', None))
+            repeat_fingerprints = tuple(office_progress.fingerprint(call) if call.capability.startswith('office.')
+                else repetition_fingerprint(call) for call in calls)
             if len(set(repeat_fingerprints)) != len(repeat_fingerprints):
                 index = next(i for i, fingerprint in enumerate(repeat_fingerprints)
                     if fingerprint in repeat_fingerprints[:i])
@@ -1004,10 +1006,15 @@ class AgentRuntime:
                     capability_calls=capability_calls + len(calls),
                     protocol_failures=protocol_failures,
                 ).model_copy(update={'blocked_attempt': self._blocked_attempt(calls[index],
-                    repeat_fingerprints[index], 2)})
+                    repeat_fingerprints[index], 2,
+                    office_diagnostic=office_progress.diagnostic(calls[index]) if calls[index].capability.startswith('office.') else None)})
             staged_repeated = dict(repeated)
             repeat_rejection = None
             for call, fingerprint in zip(calls, repeat_fingerprints, strict=True):
+                # Office progress may settle earlier in this same batch. Decide
+                # its allowance immediately before dispatch, using that result.
+                if call.capability.startswith('office.'):
+                    continue
                 if prerequisite_retries.renew(call, step=steps,
                         repair_rejection=repair_loop.before(call, step=steps)):
                     staged_repeated.pop(fingerprint, None)
@@ -1024,10 +1031,6 @@ class AgentRuntime:
                             details=[{"prior_receipt_ids": project_receipts.get(fingerprint, [])[-2:]}])
                         continue
                     message = "The agent stopped after repeating an identical capability call."
-                    if call.capability == "office.read":
-                        from app.mcp.office_read_diagnostics import record_read_failure
-                        shape = record_read_failure(call.arguments, {"stage": "repeat_guard", "reason": "identical_call"})
-                        message += f" office.read target={shape['target_kind']}; this call was not dispatched."
                     return self._stopped(
                         AgentRunStatus.REPEATED_CALL,
                         message,
@@ -1057,6 +1060,25 @@ class AgentRuntime:
             recovery_feedback: list[str] = []
             semantic_stop = False
             for call, internal_call_id in zip(calls, internal_call_ids, strict=True):
+                if call.capability.startswith('office.') and not linked.is_cancelled:
+                    office_progress.sync(getattr(self.registry, 'connection', None))
+                    fingerprint = office_progress.fingerprint(call)
+                    if office_progress.renew(call, step=steps):
+                        # This prerequisite earns one additional dispatch, not
+                        # another full identical-call allowance.
+                        repeated[fingerprint] = self.limits.max_identical_calls - 1
+                        recovery_progress.review_failures = 0
+                    repeated[fingerprint] = repeated.get(fingerprint, 0) + 1
+                    if repeated[fingerprint] > self.limits.max_identical_calls:
+                        message = 'The agent stopped after repeating an identical capability call.'
+                        if call.capability == 'office.read':
+                            from app.mcp.office_read_diagnostics import record_read_failure
+                            shape = record_read_failure(call.arguments, {'stage': 'repeat_guard', 'reason': 'identical_call'})
+                            message += f" office.read target={shape['target_kind']}; this call was not dispatched."
+                        return self._stopped(AgentRunStatus.REPEATED_CALL, message,
+                            steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures
+                            ).model_copy(update={'blocked_attempt': self._blocked_attempt(call, fingerprint,
+                                repeated[fingerprint], office_diagnostic=office_progress.diagnostic(call))})
                 rejection = edit_progress.before(call, step=steps, assistant_text=response.assistant_text) if not linked.is_cancelled else None
                 if rejection is None and not linked.is_cancelled:
                     rejection = repair_loop.before(call, step=steps)
@@ -1139,9 +1161,10 @@ class AgentRuntime:
                 word_feedback = word_progress.observe(call, outcome.result)
                 if word_feedback:
                     recovery_feedback.append(word_feedback)
-                office_read_repetition.observe(call, outcome.result, repeated)
+                office_changed = office_progress.observe(call, outcome.result, repeated, step=steps)
                 diagnosis_feedback = project_progress.observe(call, outcome.result, repeated, step=steps)
-                recovery_progress.observe(call, outcome.result, repeated)
+                office_scope = office_progress.scope(call) if call.capability.startswith('office.') else None
+                recovery_progress.observe(call, outcome.result, repeated, scope=office_scope, office_changed=office_changed)
                 prerequisite_retries.observe(call, outcome.result, step=steps)
                 if diagnosis_feedback:
                     recovery_feedback.append(diagnosis_feedback)
@@ -1156,7 +1179,7 @@ class AgentRuntime:
                     CapabilityErrorCode.INVALID_ARGUMENTS, CapabilityErrorCode.UNKNOWN_CAPABILITY,
                 }:
                     recovery.semantic_corrections += 1
-                    recovery_progress.correct(recovery_scope(call))
+                    recovery_progress.correct(office_scope or recovery_scope(call))
                     if recovery_progress.exhausted(self.limits.max_semantic_corrections):
                         semantic_stop = True
                         break
@@ -1844,7 +1867,7 @@ class AgentRuntime:
         )
 
     @staticmethod
-    def _blocked_attempt(call, fingerprint, count, rejection_reason=None, repair_requirement=None):
+    def _blocked_attempt(call, fingerprint, count, rejection_reason=None, repair_requirement=None, *, office_diagnostic=None):
         target = ('source_file' if call.capability.startswith('filesystem.') else
             'project' if call.capability.startswith('project.') else
             'office_document' if call.capability.startswith('office.') else 'other')
@@ -1854,6 +1877,9 @@ class AgentRuntime:
         receipt = None
         if repair_requirement is not None:
             reason, receipt = repair_requirement
+        if office_diagnostic is not None:
+            return BlockedCallAttempt(capability=call.capability, fingerprint=fingerprint,
+                repetition_count=count, target_kind=target, **office_diagnostic)
         return BlockedCallAttempt(capability=call.capability, fingerprint=fingerprint,
             repetition_count=count, target_kind=target, prerequisite_reason=reason, evidence_receipt=receipt)
 

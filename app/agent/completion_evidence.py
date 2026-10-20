@@ -4,21 +4,25 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.agent.office_completion_evidence import OFFICE_CLAIMS, office_evidence
+
 
 class ReviewEvidence(BaseModel):
     model_config = ConfigDict(extra='forbid', strict=True, frozen=True)
     call_id: str = Field(min_length=1, max_length=128)
-    claim: Literal['passed', 'failed', 'running', 'completed', 'succeeded', 'ready', 'unverified']
+    claim: Literal['passed', 'failed', 'running', 'completed', 'succeeded', 'ready', 'unverified',
+                   'observed', 'applied', 'saved', 'unchanged']
     visual_sha256: tuple[str, ...] = Field(default=(), max_length=5)
     readiness_call_id: str | None = Field(default=None, min_length=1, max_length=128)
 
 
-def review_receipts(calls):
+def review_receipts(calls, *, ledger_version=1):
     """Keep each project check and the latest observation of each shell session."""
     records = {}
     for item in calls:
         name, output = item.call.capability, item.result.output or {}
-        if name not in {'project.verify', 'project.inspect', 'shell.run'}:
+        if name not in {'project.verify', 'project.inspect', 'shell.run'} and not (
+                ledger_version == 2 and name.startswith('office.')):
             continue
         session = output.get('session_id') or call_session(item)
         key = ('session', session) if name == 'shell.run' and isinstance(session, str) else ('call', item.result.call_id)
@@ -50,19 +54,22 @@ def receipt_claim(item):
     return 'unverified'
 
 
-def evidence_catalog(calls, goal=None):
+def evidence_catalog(calls, goal=None, *, ledger_version=1):
+    office = office_evidence(calls) if ledger_version == 2 else {}
     return [{'call_id': item.result.call_id, 'capability': item.call.capability,
              'observed': 'unverified' if goal is not None and any(check.call_id == item.result.call_id and check.stale
                  for check in goal.verification) else receipt_claim(item),
-             'superseded_by': goal.superseded_verification.get(item.result.call_id) if goal is not None else None}
-            for item in review_receipts(calls)]
+             'superseded_by': goal.superseded_verification.get(item.result.call_id) if goal is not None else None,
+             **office.get(item.result.call_id, {})}
+            for item in review_receipts(calls, ledger_version=ledger_version)]
 
 
-def compile_review_evidence(goal, calls):
+def compile_review_evidence(goal, calls, *, ledger_version=1):
     """The runtime owns receipt bookkeeping; the model assesses task coverage."""
     entries = []
-    for item in review_receipts(calls):
-        claim = receipt_claim(item)
+    office = office_evidence(calls) if ledger_version == 2 else {}
+    for item in review_receipts(calls, ledger_version=ledger_version):
+        claim = office.get(item.result.call_id, {}).get('observed', receipt_claim(item))
         if any(check.call_id == item.result.call_id and check.stale for check in goal.verification):
             claim = 'unverified'
         elif claim == 'completed' and (item.result.output or {}).get('command_succeeded') is True:
@@ -72,10 +79,12 @@ def compile_review_evidence(goal, calls):
 
 
 def validate_review_evidence(review, goal, calls, delivered_visuals=()):
-    if review.evidence_origin == 'runtime' and review.evidence != compile_review_evidence(goal, calls):
+    version = review.ledger_version
+    office = office_evidence(calls) if version == 2 else {}
+    if review.evidence_origin == 'runtime' and review.evidence != compile_review_evidence(goal, calls, ledger_version=version):
         raise ValueError('Completion evidence must match the runtime ledger.')
     records = {item.result.call_id: item for item in calls}
-    latest_ids = {item.result.call_id for item in review_receipts(calls)}
+    latest_ids = {item.result.call_id for item in review_receipts(calls, ledger_version=version)}
     screenshots = set().union(*(screenshot_digests(item.result.output or {}) for item in calls
         if item.call.capability == 'project.inspect' and item.result.success))
     if not set(delivered_visuals) <= screenshots:
@@ -93,6 +102,9 @@ def validate_review_evidence(review, goal, calls, delivered_visuals=()):
         if item.call.capability == 'shell.run' and claim.claim != 'unverified' and claim.call_id not in latest_ids:
             raise ValueError('Completion evidence must use the latest shell session outcome.')
         observed = receipt_claim(item)
+        if claim.claim in OFFICE_CLAIMS:
+            if version != 2 or office.get(claim.call_id, {}).get('observed') != claim.claim:
+                raise ValueError('Office evidence requires its current matching scoped receipt.')
         verification = next((check for check in goal.verification if check.call_id == claim.call_id), None)
         if claim.claim == 'passed':
             if observed != 'passed' or verification is None or verification.stale:

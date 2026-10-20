@@ -25,13 +25,19 @@ class RecoveryProgress:
     def exhausted(self, limit):
         return self.review_failures >= limit or any(n >= limit for n in self.failures.values())
 
-    def observe(self, call, result, repeated):
+    def observe(self, call, result, repeated, *, scope=None, office_changed=False):
         if not result.success:
             return
         output = result.output or {}
-        scope = recovery_scope(call)
+        scope = scope or recovery_scope(call)
         changed = False
-        if call.capability == 'filesystem.read_text':
+        if call.capability.startswith('office.'):
+            # Office uses trusted document aliases, not one shared empty target.
+            # Successful operations resolve only their own argument failure;
+            # bounded review renewal requires confirmed new document progress.
+            self.failures.pop(scope, None)
+            changed = office_changed
+        elif call.capability == 'filesystem.read_text':
             # A corrected read resolves only its own argument recovery.
             self.failures.pop(scope, None)
             if isinstance(output.get('path'), str) and isinstance(output.get('sha256'), str):

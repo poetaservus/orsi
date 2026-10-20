@@ -1,5 +1,24 @@
 # Git layout and baseline hygiene
 
+## Office recovery consistency, 20 October 2026
+
+`codex/office-recovery-consistency` starts from local main `29f8df1`. Confirmed
+Office revisions renew relevant read/save/discovery accounting, including edit
+and save in one batch. A rejected mutation gets one retry after complete current
+evidence; unchanged loops remain bounded. Versioned Office completion receipts
+and factual stop reasons preserve historical review semantics. See
+[reproduction, focused qualification and limits](office-recovery-consistency.md).
+
+The final focused selection passes 115 checks, the existing owned Word regression
+passes two, and the isolated native Excel workflow passes one (118 distinct
+checks). No full suite or live model/API runs. The disposable workbook completes
+three edits/readbacks/saves and four identical metadata refreshes, persists a
+ready completion review and releases both owned processes. Preserve prior main
+at `archive/2026-10-20/main-before-office-recovery-consistency`, commit, fast-forward
+local main and remove only its merged branch. Preserve the running app and user
+documents; restart Orsi to load the change. Other worktrees, settings, historical
+or unmerged refs and remote refs remain intact.
+
 ## Null-output context compaction, 20 October 2026
 
 `codex/context-compaction-null-output` starts from local main `5dcbb21`. A forced

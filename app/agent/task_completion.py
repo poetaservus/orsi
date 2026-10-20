@@ -8,7 +8,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 from app.agent.goals import TaskGoal
-from app.agent.verification_scope import VERIFICATION_SCOPE_GUIDANCE
+from app.agent.verification_scope import VERIFICATION_SCOPE_GUIDANCE, OFFICE_VERIFICATION_SCOPE_GUIDANCE
 from app.agent.completion_evidence import ReviewEvidence, evidence_catalog
 from app.settings.agent_limits import MAX_AGENT_CAPABILITY_CALLS
 
@@ -37,6 +37,8 @@ class CompletionReview(CompletionAssessment):
     """Durable semantic assessment plus independently reconstructed evidence."""
     evidence: tuple[ReviewEvidence, ...] = Field(default=(), max_length=MAX_AGENT_CAPABILITY_CALLS)
     evidence_origin: Literal['model', 'runtime'] = 'model'
+    # Missing in old histories: preserve their original project/shell ledger.
+    ledger_version: Literal[1, 2] = 1
 
 
 class ReviewValidationError(ValueError):
@@ -58,11 +60,13 @@ def task_context_message(goal: TaskGoal) -> dict:
 
 
 def completion_review_message(goal: TaskGoal, pending_recovery: str | None, *, browser_inspection_available=True,
-                              settled_calls=(), delivered_visuals=()) -> dict:
+                              settled_calls=(), delivered_visuals=(), ledger_version=1) -> dict:
     scope = VERIFICATION_SCOPE_GUIDANCE if browser_inspection_available else (
         'Request more work only for a specific unmet user requirement. Honor explicit instructions to skip browser verification '
         'or other checks; report unrun behavior as unverified. For inspection/summary requests, report defects; require repairs '
         'only when requested. Unavailable tools grant no execution authority. ')
+    if ledger_version == 2 and any(item.call.capability.startswith('office.') for item in settled_calls):
+        scope = OFFICE_VERIFICATION_SCOPE_GUIDANCE + scope
     return {"role": "system", "content": (
         REVIEW_PREFIX + " Check current requirements against settled work; unrelated answers, plans, reads and earlier tasks "
         "do not prove completion. Source cannot prove runtime/GUI checks. "
@@ -88,7 +92,7 @@ def completion_review_message(goal: TaskGoal, pending_recovery: str | None, *, b
         "the normal loop will perform it with existing permissions. In text fallback, encode JSON in the response "
         "string of a tool=null decision."
         + (" Pending edit recovery: " + pending_recovery if pending_recovery else "")
-        + '\nCurrent completion receipts: ' + json.dumps(evidence_catalog(settled_calls, goal), separators=(',', ':'))
+        + '\nCurrent completion receipts: ' + json.dumps(evidence_catalog(settled_calls, goal, ledger_version=ledger_version), separators=(',', ':'))
         + '\nInspection screenshots delivered in this turn: ' + str(len(delivered_visuals))
     )}
 

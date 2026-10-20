@@ -77,6 +77,11 @@ class BlockedCallAttempt(BaseModel):
         "current_evidence_required", "unchanged_recovery_state"] | None = None
     evidence_receipt: str | None = Field(default=None,
         pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+    # Runtime-observed, per-turn progress only; this is not a native Office
+    # revision or a statement that the full document was independently checked.
+    office_progress_revision: int | None = Field(default=None, ge=0, le=MAX_AGENT_CAPABILITY_CALLS)
+    office_state_reason: Literal["no_progress_observed", "current_revision_already_saved",
+        "snapshot_required", "session_blocked", "connection_changed", "retry_allowance_exhausted"] | None = None
 
 
 class AgentRunResult(BaseModel):

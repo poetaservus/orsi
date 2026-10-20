@@ -86,3 +86,60 @@ def test_long_candidate_report_is_bounded_without_losing_recorded_proposal():
     assert len(report) < 25_000
     assert "full proposal remains in the recorded outcome" in report
     assert outcome.proposed_answer == candidate
+
+
+@pytest.mark.parametrize(("reason", "expected"), [
+    ("no_progress_observed", "no further qualifying Office progress was observed for this retry"),
+    ("current_revision_already_saved", "current observed Office document revision already has a confirmed save"),
+    ("snapshot_required", "complete current Office document snapshot is still required"),
+    ("session_blocked", "Office session remains blocked"),
+    ("connection_changed", "Office connection changed; current document discovery is required"),
+    ("retry_allowance_exhausted", "one bounded retry after fresh Office evidence was already consumed"),
+])
+def test_office_stop_uses_runtime_reason_and_observed_revision_without_replay(reason, expected):
+    attempt = BlockedCallAttempt(capability="office.save", fingerprint="d" * 64,
+        repetition_count=3, target_kind="office_document",
+        office_progress_revision=2, office_state_reason=reason, evidence_receipt="office-save-7")
+    outcome = stopped(blocked_attempt=attempt, proposed_answer="The dashboard is prepared.")
+    restored = AgentRunResult.model_validate_json(outcome.model_dump_json())
+    report = recovery_stop_progress(restored)
+
+    assert restored == outcome
+    assert "Blocked attempt: office.save; repetition count 3. This call was not dispatched." in report
+    assert expected in report
+    assert "Observed Office progress revision: 2." in report
+    assert "Related Office evidence receipt: office-save-7." in report
+    assert "No relevant recovery prerequisite changed" not in report
+    assert restored.settled_calls == () and restored.assistant_text is None
+    assert "Proposed answer retained from before the stop (completion is unverified)" in report
+
+
+def test_historical_office_attempt_without_progress_fields_is_loadable_and_honest():
+    attempt = BlockedCallAttempt(capability="office.list_documents", fingerprint="e" * 64,
+        repetition_count=3, prerequisite_reason="unchanged_recovery_state")
+    data = json.loads(stopped(blocked_attempt=attempt).model_dump_json())
+    data["blocked_attempt"].pop("office_state_reason")
+    data["blocked_attempt"].pop("office_progress_revision")
+    restored = AgentRunResult.model_validate_json(json.dumps(data))
+    report = recovery_stop_progress(restored)
+
+    assert restored.blocked_attempt.office_progress_revision is None
+    assert restored.blocked_attempt.office_state_reason is None
+    assert "no Office progress comparison was recorded for this stop" in report
+    assert "no further qualifying Office progress" not in report
+    assert "No relevant recovery prerequisite changed" not in report
+    assert "Observed Office progress revision" not in report
+
+
+@pytest.mark.parametrize("private_or_unbounded_field", [
+    {"office_state_reason": "PRIVATE OFFICE TITLE"},
+    {"office_progress_revision": -1},
+    {"office_progress_revision": 257},
+    {"office_progress_revision": "2"},
+    {"office_document": "C:/private/dashboard.xlsx"},
+    {"office_connection": "PRIVATE CONNECTION"},
+])
+def test_office_stop_metadata_rejects_private_content_and_unbounded_state(private_or_unbounded_field):
+    with pytest.raises(ValidationError):
+        BlockedCallAttempt(capability="office.save", fingerprint="f" * 64,
+            repetition_count=3, **private_or_unbounded_field)
