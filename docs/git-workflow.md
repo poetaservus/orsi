@@ -1,5 +1,22 @@
 # Git layout and baseline hygiene
 
+## Null-output context compaction, 20 October 2026
+
+`codex/context-compaction-null-output` starts from local main `5dcbb21`. A forced
+pressure regression reproduces the null-output `AttributeError`; the bounded fix
+preserves failed receipts through compaction. Fixed content-free stage/category
+diagnostics and visible unverified proposals cover this internal failure path.
+See [reproduction, focused qualification and limits](context-compaction-null-output.md).
+
+Two disjoint focused selections pass 31 and 7 checks (38 total). The combined
+runtime check performs a rejected edit, exactly one successful edit, actual deeper
+compaction, a current ready review and durable conversation reload. No full suite,
+live API/model or browser gate runs. Context/image limits, prompts, settings and
+model profiles remain unchanged. Preserve prior main at
+`archive/2026-10-20/main-before-context-null-output`, commit, fast-forward local main
+and remove only the merged feature branch. Preserve the running app; restart it to
+load the repair. Other worktrees, historical/unmerged refs and remote refs stay intact.
+
 ## Coordinated inspection recovery, 20 October 2026
 
 `codex/orchestrator-recovery-consistency` starts from local main `c5b0d82`.

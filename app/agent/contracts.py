@@ -12,6 +12,7 @@ from app.capabilities.contracts import CapabilityResult
 from app.agent.goals import TaskGoal
 from app.agent.task_completion import CompletionReview
 from app.agent.review_diagnostics import ReviewFailure
+from app.agent.context_diagnostics import ContextRecoveryFailure
 from app.settings.agent_limits import (
     MAX_AGENT_STEPS, MAX_AGENT_MODEL_REQUESTS, MAX_AGENT_CAPABILITY_CALLS, MAX_AGENT_COMPLETIONS,
 )
@@ -97,6 +98,7 @@ class AgentRunResult(BaseModel):
     estimated_input_tokens: int = Field(default=0, ge=0)
     context_projections: int = Field(default=0, ge=0)
     context_compactions: int = Field(default=0, ge=0)
+    context_recovery_failure: ContextRecoveryFailure | None = None
     completion: CompletionMetadata = Field(default_factory=CompletionMetadata)
     completion_history: tuple[CompletionMetadata, ...] = Field(default=(), max_length=MAX_AGENT_COMPLETIONS)
     partial_text: str | None = Field(default=None, min_length=1, max_length=1_000_000)

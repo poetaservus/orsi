@@ -202,26 +202,35 @@ def retire_stale_sources(messages: list[dict]) -> int:
 
 
 def recover_context_request(inference, messages: list[dict], *, reserved_tokens: int = 0,
-                            safety_buffer: int = 256, projection_enabled: bool = True) -> RecoveredContext:
+                            safety_buffer: int = 256, projection_enabled: bool = True,
+                            stage_observer=None) -> RecoveredContext:
     """Project results first, compact old assistant material only on admission pressure.
 
     If protected content still cannot fit, return a non-fitting budget rather than
     silently discard a requirement, split a tool exchange or send an empty request.
+    The optional runtime observer receives fixed stages, never request contents.
     """
+    def stage(value):
+        if stage_observer is not None:
+            stage_observer(value)
+    stage('projection')
     projected = deepcopy(messages)
     openai_context = getattr(inference, "supports_openai_context", False) is True
     if openai_context or any("openai_response" in message for message in messages):
         # Stateless provider evidence and the results paired with it must stay
         # untouched. OpenAI projections preserve the fitting prefix and only
         # excerpt explicit capability results under actual admission pressure.
+        stage('budget')
         admission = calculate_context_budget(inference, projected,
             reserved_tokens=reserved_tokens, safety_buffer=safety_buffer)
         if not openai_context or admission.fits or not projection_enabled:
             return RecoveredContext(projected, admission)
+    stage('projection')
     anchors = _anchors(messages)
     count = retire_stale_sources(projected)
     count += sum(_project_result(m, text_limit=4096, item_limit=16, anchors=anchors) for m in projected)
     def budget(values):
+        stage('budget')
         return calculate_context_budget(inference, values, reserved_tokens=reserved_tokens, safety_buffer=safety_buffer)
     admission = budget(projected)
     if admission.fits:
@@ -229,12 +238,15 @@ def recover_context_request(inference, messages: list[dict], *, reserved_tokens:
 
     latest_user = max((i for i, m in enumerate(messages) if m.get("role") == "user"), default=0)
     latest_result = max((i for i, m in enumerate(messages) if m.get("role") == "capability"), default=-1)
+    stage('compaction')
     compacted = deepcopy(projected)
     changed = False
     for index, message in enumerate(compacted):
         if message.get("role") == "capability" and index != latest_result:
             # Re-project original evidence, not an already excerpted string.
-            message = deepcopy(projected[index] if projected[index].get("result", {}).get("output", {}).get("source_retired") else messages[index])
+            output = projected[index].get('result', {}).get('output')
+            retired = isinstance(output, dict) and output.get('source_retired')
+            message = deepcopy(projected[index] if retired else messages[index])
             if _project_result(message, text_limit=256, item_limit=4, anchors=anchors):
                 compacted[index] = message
                 changed = True
@@ -246,6 +258,7 @@ def recover_context_request(inference, messages: list[dict], *, reserved_tokens:
             changed = True
     admission = budget(compacted)
     if not admission.fits and latest_result >= 0:
+        stage('compaction')
         latest = deepcopy(messages[latest_result])
         if _project_result(latest, text_limit=256, item_limit=4, anchors=anchors):
             compacted[latest_result] = latest

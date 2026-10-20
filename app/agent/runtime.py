@@ -48,6 +48,8 @@ from app.agent.prerequisite_retries import PrerequisiteRetries, repetition_finge
 from app.agent.recovery_progress import RecoveryProgress, recovery_scope
 from app.agent.completion_evidence import compile_review_evidence, validate_review_evidence
 from app.agent.review_diagnostics import ReviewFailure, record_review_event
+from app.agent.context_diagnostics import (ContextRecoveryFailure, context_recovery_failure,
+    record_context_failure)
 from app.agent.goals import TaskGoal, observe_goal, finish_goal, goal_feedback, evidence_report
 from app.agent.task_completion import (CompletionReview, task_context_message,
     completion_review_message, parse_completion_review, looks_like_completion_review, resume_answer_message,
@@ -111,6 +113,7 @@ class _RecoveryUsage:
     review_failures: list[ReviewFailure] = field(default_factory=list)
     context_projections: int = 0
     context_compactions: int = 0
+    context_recovery_failure: ContextRecoveryFailure | None = None
     inference_requests: int = 0
     estimated_input_tokens: int = 0
     proposed_answer: str | None = None
@@ -376,6 +379,7 @@ class AgentRuntime:
             "semantic_corrections": recovery.semantic_corrections,
             "context_projections": recovery.context_projections,
             "context_compactions": recovery.context_compactions,
+            "context_recovery_failure": recovery.context_recovery_failure,
             "inference_requests": recovery.inference_requests,
             "estimated_input_tokens": recovery.estimated_input_tokens,
             "completion": result.completion if result.completion.incomplete or not history else history[-1]})
@@ -388,6 +392,10 @@ class AgentRuntime:
             result = result.model_copy(update={"partial_text": recovery_stop_progress(result),
                 "completion": result.completion.model_copy(update={
                     "finish_reason": "agent_recovery_stop", "interrupted": True})})
+        if result.status == AgentRunStatus.INTERNAL_FAILURE and result.context_recovery_failure is not None:
+            result = result.model_copy(update={"partial_text": recovery_stop_progress(result),
+                "completion": result.completion.model_copy(update={
+                    "finish_reason": "agent_context_recovery_failed", "interrupted": True})})
         if result.status == AgentRunStatus.INCOMPLETE and reviews and reviews[-1].status == "blocked":
             result = result.model_copy(update={"completion": result.completion.model_copy(update={
                 "finish_reason": "agent_task_unfinished", "interrupted": True})})
@@ -1237,11 +1245,19 @@ class AgentRuntime:
             return True
         from app.conversation.context import capability_schema_reserve
         from app.conversation.recovery import recover_context_request
+        stage = 'schema_reserve'
+        def observe_stage(value):
+            nonlocal stage
+            if isinstance(value, str) and value in {'budget', 'projection', 'compaction'}:
+                stage = value
         try:
+            reserved_tokens = capability_schema_reserve(definitions, inference=self.model)
+            stage = 'projection'
             recovered = recover_context_request(self.model, transcript,
-                reserved_tokens=capability_schema_reserve(definitions, inference=self.model))
-        except Exception:
-            log.exception("Context request projection failed safely.")
+                reserved_tokens=reserved_tokens, stage_observer=observe_stage)
+        except Exception as exc:
+            usage.context_recovery_failure = context_recovery_failure(stage, exc)
+            record_context_failure(usage.context_recovery_failure)
             return False
         transcript[:] = recovered.messages
         usage.context_projections += recovered.projected_results

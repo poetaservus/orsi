@@ -702,6 +702,10 @@ class ConversationService:
                              AgentRunStatus.CAPABILITY_CALL_LIMIT} and result.partial_text is not None:
             return CompletionText(result.partial_text, result.completion, result.completion_history,
                                   status_message=result.message)
+        if (result.status == AgentRunStatus.INTERNAL_FAILURE and result.context_recovery_failure is not None
+                and result.completion.incomplete and result.partial_text is not None):
+            return CompletionText(result.partial_text, result.completion, result.completion_history,
+                                  status_message=result.message)
         if result.status != AgentRunStatus.COMPLETED:
             if result.status in RECOVERY_STOP_STATUSES:
                 raise AgentStoppedError(result)
