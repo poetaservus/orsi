@@ -4,7 +4,8 @@ from __future__ import annotations
 import os
 import re
 
-from app.agent.feedback import call_fingerprint, canonical_json
+from app.agent.feedback import call_fingerprint
+from app.agent.repair_loop import RepairLoopTracker
 
 
 def _path(value):
@@ -16,19 +17,8 @@ class ProjectProgressTracker:
         self._checks = {}
         self._reads = {}
         self._digests = {}
-        self._inspected = set()
-        self._revisions = {}
-        self._diagnoses = {}
-
-    @staticmethod
-    def _failure_scope(output):
-        # Ignore pixels, measured values and changing error strings. A new
-        # unresolved assertion is useful evidence; flicker is not progress.
-        failures = [{key:check.get(key) for key in ('action','target','label','expectation','failure_kind')}
-            for check in output.get('checks', []) if isinstance(check,dict) and check.get('passed') is False]
-        problems = sorted({p.get('kind') for p in output.get('problems', [])
-            if isinstance(p,dict) and isinstance(p.get('kind'),str)})
-        return canonical_json({'checks':failures,'problems':problems}) if failures or problems else None
+        # Repair obligations and read renewal use the same admission decision.
+        self.repair_loop = RepairLoopTracker()
 
     def renew_source(self, path, repeated):
         path = _path(path)
@@ -37,37 +27,23 @@ class ProjectProgressTracker:
                 if target == path:
                     repeated.pop(fingerprint, None)
 
-    def observe(self, call, result, repeated):
+    def observe(self, call, result, repeated, *, step=0):
+        feedback = self.repair_loop.observe(call, result, step=step)
         if not result.success or not isinstance(result.output, dict):
-            return
+            return feedback
         output = result.output
         if call.capability in {"project.verify", "project.inspect"}:
             project = _path(output.get("project_path"))
             if project:
                 self._checks[call_fingerprint(call)] = project
-                snapshot = output.get("screenshot_sha256")
-                if (call.capability == "project.inspect" and output.get("inspection_complete") is True
-                        and isinstance(snapshot, str) and re.fullmatch(r"[0-9a-f]{64}", snapshot)
-                        ):
-                    revision = self._revisions.get(project, 0)
-                    scenario = canonical_json({key:call.arguments.get(key) for key in ('kind','url','width','height','steps')})
-                    failure = self._failure_scope(output)
-                    key = (project, revision)
-                    diagnoses = self._diagnoses.setdefault(key, [])
-                    self._inspected.add((project, revision, scenario, failure))
-                    # One initial reassessment and one newly exposed failure per
-                    # settled project revision. Scenario changes alone cannot
-                    # renew reads, and different pixels never enter this key.
-                    if diagnoses and (len(diagnoses) >= 2 or failure is None or failure in diagnoses):
-                        return
-                    diagnoses.append(failure)
+                if self.repair_loop.refresh_project == os.path.normcase(os.path.abspath(project)):
                     for fingerprint, path in self._reads.items():
                         try:
                             if os.path.commonpath((path, project)) == project:
                                 repeated.pop(fingerprint, None)
                         except ValueError:
                             pass
-            return
+            return feedback
         if call.capability not in {"filesystem.read_text", "filesystem.edit_text", "filesystem.write_text"}:
             return
         path, digest = _path(output.get("path")), output.get("sha256")
@@ -92,6 +68,6 @@ class ProjectProgressTracker:
         for project in set(self._checks.values()):
             try:
                 if os.path.commonpath((path, project)) == project:
-                    self._revisions[project] = self._revisions.get(project,0)+1
+                    self.repair_loop.source_changed(os.path.normcase(os.path.abspath(project)))
             except ValueError:
                 pass

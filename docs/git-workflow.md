@@ -1,5 +1,23 @@
 # Git layout and baseline hygiene
 
+## Coordinated inspection recovery, 20 October 2026
+
+`codex/orchestrator-recovery-consistency` starts from local main `c5b0d82`.
+Inspection obligations and source-read renewal share one bounded decision;
+preflight-rejected edits get one retry after complete current evidence. Native
+option selection, unresolved scopes, retained proposals, blocked-call diagnostics
+and prefix-anchored historical reviews are covered by the same bounded repair.
+See [scope, focused evidence and limits](orchestrator-recovery-consistency.md).
+
+Focused selections pass 161, 81 and 70 checks with overlap. A separate native
+selection passes 21 checks; the final 70 also include a complete scripted-model
+recovery workflow through real Chromium, verified screenshot delivery and owned
+process cleanup. No full suite or live-model qualification runs. Preserve prior
+main at `archive/2026-10-20/main-before-recovery-consistency`, commit, fast-forward
+local main and remove only the merged feature branch. Other worktrees, user
+settings, historical/unmerged refs and remote refs remain untouched. Preserve the
+running app; restart it to load the repair.
+
 ## Completion review recovery, 20 October 2026
 
 `codex/completion-review-recovery` starts from local main `0881ba5`. Real model

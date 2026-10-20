@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -57,6 +58,26 @@ class SettledCall(BaseModel):
                                                 provider_message_id=self.provider_message_id)]
 
 
+class BlockedCallAttempt(BaseModel):
+    """Content-free diagnosis of a proposed call stopped before dispatch.
+
+    This is deliberately not a ModelCapabilityCall: retaining raw arguments here
+    would both expose private content and make an unsettled proposal look replayable.
+    """
+
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+
+    capability: str = Field(min_length=3, max_length=128,
+        pattern=r"^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$")
+    fingerprint: str = Field(pattern=r"^[a-f0-9]{64}$")
+    repetition_count: int = Field(ge=1, le=MAX_AGENT_CAPABILITY_CALLS + 1)
+    target_kind: Literal["source_file", "project", "office_document", "application", "other"] = "other"
+    prerequisite_reason: Literal["source_read_required", "repair_diagnosis_required",
+        "current_evidence_required", "unchanged_recovery_state"] | None = None
+    evidence_receipt: str | None = Field(default=None,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+
+
 class AgentRunResult(BaseModel):
     """One bounded terminal outcome from an AgentRuntime invocation."""
 
@@ -79,9 +100,16 @@ class AgentRunResult(BaseModel):
     completion: CompletionMetadata = Field(default_factory=CompletionMetadata)
     completion_history: tuple[CompletionMetadata, ...] = Field(default=(), max_length=MAX_AGENT_COMPLETIONS)
     partial_text: str | None = Field(default=None, min_length=1, max_length=1_000_000)
+    # A generated answer can survive continued verification without becoming a
+    # successful terminal answer or a replayable capability request.
+    proposed_answer: str | None = Field(default=None, min_length=1, max_length=1_000_000)
+    blocked_attempt: BlockedCallAttempt | None = None
     settled_calls: tuple[SettledCall, ...] = Field(default=(), max_length=MAX_AGENT_CAPABILITY_CALLS)
     goal: TaskGoal | None = None
     completion_review: CompletionReview | None = None
+    # None preserves the meaning of outcomes saved before evidence anchoring.
+    completion_review_current: bool | None = None
+    completion_review_receipt_count: int | None = Field(default=None, ge=0, le=MAX_AGENT_CAPABILITY_CALLS)
     delivered_visuals: tuple[str, ...] = Field(default=(), max_length=MAX_AGENT_CAPABILITY_CALLS * 5)
     review_failures: tuple[ReviewFailure, ...] = Field(default=(), max_length=MAX_AGENT_STEPS)
 

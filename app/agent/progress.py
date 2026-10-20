@@ -9,6 +9,12 @@ WORK_BUDGET_STATUSES = frozenset({AgentRunStatus.STEP_LIMIT,
     AgentRunStatus.MODEL_REQUEST_LIMIT, AgentRunStatus.CAPABILITY_CALL_LIMIT})
 WORK_BUDGET_MESSAGE = "Task paused at its cloud work budget; completed operations are retained."
 RECOVERY_STOP_STATUSES = frozenset({AgentRunStatus.REPEATED_CALL, AgentRunStatus.SEMANTIC_CORRECTION_LIMIT})
+_PREREQUISITES = {
+    "source_read_required": "A complete current source read is still required before this retry.",
+    "repair_diagnosis_required": "A valid repair diagnosis tied to the inspection receipt is still required.",
+    "current_evidence_required": "The retry still requires current supporting evidence.",
+    "unchanged_recovery_state": "No relevant recovery prerequisite changed since the earlier attempts.",
+}
 _OPERATIONS = {
     "filesystem.stat": ("metadata check", "metadata checks"),
     "filesystem.list": ("folder listing", "folder listings"),
@@ -60,6 +66,14 @@ def _target_name(path) -> str | None:
 def recovery_stop_progress(result: AgentRunResult) -> str:
     """Report settled evidence locally, without another request or inferred success."""
     lines = ["Task stopped before completion.", "", result.message or "Repeated recovery did not converge."]
+    blocked = result.blocked_attempt
+    if blocked is not None:
+        lines.extend(["", f"Blocked attempt: {blocked.capability}; repetition count {blocked.repetition_count}. "
+            "This call was not dispatched."])
+        if blocked.prerequisite_reason is not None:
+            lines.append(_PREREQUISITES[blocked.prerequisite_reason])
+        if blocked.evidence_receipt is not None:
+            lines.append(f"Related inspection receipt: {blocked.evidence_receipt}.")
     changes = Counter()
     for item in result.settled_calls:
         if item.result.success and item.call.capability in {
@@ -90,8 +104,14 @@ def recovery_stop_progress(result: AgentRunResult) -> str:
         latest = failures[-1]
         name = _target_name(latest.call.arguments.get("destination") or latest.call.arguments.get("path"))
         target = f" on {name}" if name else ""
-        lines.extend(["", f"Last tool failure: {latest.call.capability}{target} ({latest.result.error.code.value}).",
+        lines.extend(["", f"Latest settled tool failure (recorded before the stop): {latest.call.capability}{target} "
+            f"({latest.result.error.code.value}).",
             latest.result.error.message])
+    if result.proposed_answer is not None:
+        candidate = result.proposed_answer[:24_000]
+        if len(result.proposed_answer) > len(candidate):
+            candidate += "\n[Proposal display shortened; the full proposal remains in the recorded outcome.]"
+        lines.extend(["", "Proposed answer retained from before the stop (completion is unverified):", candidate])
     lines.extend(["", "Remaining work: the requested task has not been verified complete. Review the stop reason "
         "and recorded results before continuing. Settled changes are retained and will not be replayed automatically."])
     return "\n".join(lines)

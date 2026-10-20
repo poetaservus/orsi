@@ -34,8 +34,17 @@ def _checkpoint_assertion(current, reference, expectation):
         and all(abs(current["bounds"][key]-reference["bounds"][key]) <= 1 for key in ("x", "y", "width", "height")))
 
 
-def _failure_kind(message, target, checkpoint_attached=False):
+class InspectionActionError(ValueError):
+    """The check requests an action unsupported by its selected element."""
+
+
+def _failure_kind(message, target, checkpoint_attached=False, *, action=None):
     message = message.lower()
+    if action == 'fill' and ('element is not an <input>, <textarea> or [contenteditable] element' in message
+            or re.search(r'input of type "[a-z-]+" cannot be filled', message)):
+        return 'action_incompatible'
+    if action == 'select_option' and 'element is not a <select> element' in message:
+        return 'action_incompatible'
     if message.startswith('earlier checkpoint reference unavailable'):
         return 'checkpoint_reference_unavailable'
     if 'strict mode violation' in message or ('selector' in message and any(word in message for word in ('syntax','parsing'))):
@@ -170,6 +179,8 @@ def browser_inspection(spec):
             for step in spec["steps"]:
                 action, target = step["action"], step["target"]
                 check = {"action": action, "target": target, "passed": False}
+                if action == "select_option":
+                    check["expected_value"] = step["value"]
                 checkpoint_attached = False
                 try:
                     locator = page.locator(target) if target else None
@@ -281,7 +292,18 @@ def browser_inspection(spec):
                     elif action == "click":
                         locator.click()
                     elif action == "fill":
-                        locator.fill(step["value"])
+                        editable = locator.evaluate("e => e.isContentEditable || ['INPUT','TEXTAREA'].includes(e.tagName)", timeout=timeout)
+                        if not editable:
+                            raise InspectionActionError("fill requires an input, textarea or contenteditable target. Use select_option for a native HTML select.")
+                        locator.fill(step["value"], timeout=timeout)
+                    elif action == "select_option":
+                        if locator.evaluate("e => e.tagName", timeout=timeout) != "SELECT":
+                            raise InspectionActionError("select_option requires a native HTML select target; correct the inspection action or selector.")
+                        selected = locator.select_option(value=step["value"], timeout=timeout)
+                        current = locator.input_value(timeout=timeout)
+                        check["selected_value"] = current[:1000]
+                        if selected != [step["value"]] or current != step["value"]:
+                            raise ValueError("Selected option did not remain at the requested value.")
                     elif action == "visible":
                         locator.wait_for(state="visible", timeout=timeout)
                     elif action == "text":
@@ -305,7 +327,8 @@ def browser_inspection(spec):
                     check["passed"] = True
                 except Exception as error:
                     check["error"] = str(error)[:300]
-                    check["failure_kind"] = _failure_kind(str(error),target,checkpoint_attached)
+                    check["failure_kind"] = ('action_incompatible' if isinstance(error, InspectionActionError)
+                        else _failure_kind(str(error),target,checkpoint_attached,action=action))
                 checks.append(check)
             layout = page.evaluate("""() => {
                 const e=document.scrollingElement, all=[...document.querySelectorAll('*')], scan=all.slice(0,2000);
@@ -355,9 +378,11 @@ def browser_inspection(spec):
                 "screenshot_path": spec["screenshot"], "preview_pid": server.pid if server is not None else None,
                 "retry_guidance": None if passed else (
                     "Inspection ran; these are failed checks, not an unavailable browser. "
-                    "Correct invalid selectors or preview setup before retrying. Repeating checks does not repair project code. "
+                    "Correct invalid selectors, unsupported actions or preview setup before retrying; these are inspection corrections. "
+                    "Repeating checks does not repair project code. "
                     "For a read-only test/report request, report the observed failures and any unverified interaction or visual checks. "
-                    "If source edits are authorized, fix the relevant code before retesting. Do not claim failed checks passed."),
+                    "If source edits are authorized and an application defect was observed, fix the relevant code before retesting. "
+                    "Do not claim failed checks passed."),
                 "scope": "Loaded local preview, specified interactions and viewport; screenshot requires visual review."}
         finally:
             context.close()

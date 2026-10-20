@@ -13,6 +13,29 @@ def shell_may_mutate(call):
     return call.capability == 'shell.run' and call.arguments.get('action', 'run') not in {'status', 'list'}
 
 
+def invalidate_read_cache(reads, call, result):
+    """Invalidate turn-local eligibility after a possibly mutating dispatch.
+
+    A runtime preflight rejection never reached the file. Its observed source
+    stays usable; an unknown/failed dispatched operation is conservative.
+    """
+    if call.capability == 'filesystem.read_text':
+        # A failed or partial new observation cannot keep an older complete
+        # read eligible. The caller restores eligibility only on a full proof.
+        reads.pop(path_key(call.arguments.get('path')), None)
+        reads.pop(path_key((result.output or {}).get('path')), None)
+        return
+    if result.metadata.get('edit_recovery'):
+        return
+    if shell_may_mutate(call):
+        reads.clear()
+    elif call.capability in {'filesystem.edit_text', 'filesystem.write_text',
+            'filesystem.copy', 'filesystem.move', 'filesystem.trash'}:
+        for key in ('path', 'source_path', 'destination_path'):
+            reads.pop(path_key(call.arguments.get(key)), None)
+        reads.pop(path_key((result.output or {}).get('path')), None)
+
+
 @dataclass(frozen=True)
 class SourceProof:
     sha256: str

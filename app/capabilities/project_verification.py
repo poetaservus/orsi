@@ -44,11 +44,12 @@ class ProjectVerificationArguments(BaseModel):
 
 class InspectionStep(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    action: Literal["click", "fill", "scroll", "visible", "text", "wait", "in_view", "model_loaded",
+    action: Literal["click", "fill", "select_option", "scroll", "visible", "text", "wait", "in_view", "model_loaded",
         "checkpoint", "key", "touch", "scroll_to", "frame_timing"] = Field(
-        description="checkpoint captures current pixels, scroll position, target bounds and selected styles without moving the target. Use named initial/partial/completed/return checkpoints in one session. key and touch use native input; scroll_to sets an absolute scroll position. frame_timing samples bounded animation-frame intervals, not proof of smooth rendering. in_view only moves offscreen targets. Review pixels for visual correctness.")
+        description="select_option selects one native HTML select option by exact value and verifies its current selected value; use a separate text/checkpoint assertion for the resulting app behavior. fill supports text inputs, not native selects. checkpoint captures current pixels, scroll position, target bounds and selected styles without moving the target. Use named initial/partial/completed/return checkpoints in one session. key and touch use native input; scroll_to sets an absolute scroll position. frame_timing samples bounded animation-frame intervals, not proof of smooth rendering. in_view only moves offscreen targets. Review pixels for visual correctness.")
     target: str = Field(default="", max_length=256, description="Browser CSS selector or unique desktop automation ID/exact accessible name. Empty scroll target means the page.")
-    value: str = Field(default="", max_length=1000)
+    value: str = Field(default="", max_length=1000,
+        description="fill/text/key content, or the exact native option value for select_option (explicitly supply even an empty value).")
     amount: int = Field(default=500, ge=-10000, le=10000)
     state: Literal["visible", "hidden", "attached", "detached"] = "visible"
     timeout_ms: int = Field(default=2000, ge=1, le=15000,
@@ -68,6 +69,8 @@ class InspectionStep(BaseModel):
             raise ValueError("Only selected computed properties and bounded CSS custom properties are supported.")
         if self.action == "checkpoint" and (not self.target or not self.label):
             raise ValueError("A checkpoint requires a selector and unique label.")
+        if self.action == "select_option" and (not self.target.strip() or "value" not in self.model_fields_set):
+            raise ValueError("select_option requires an exact selector and explicit option value.")
         if self.action != "checkpoint" and (self.label or self.reference or self.expectation != "observe"):
             raise ValueError("Checkpoint assertions require a checkpoint action.")
         if self.expectation in {"same_state", "scroll_up", "scroll_down"} and not self.reference:
@@ -107,6 +110,8 @@ class ProjectInspectionArguments(BaseModel):
             raise ValueError("Readiness and viewport actions are browser-only.")
         if self.kind == "desktop" and any(step.action in {"checkpoint", "key", "touch", "scroll_to", "frame_timing"} for step in self.steps):
             raise ValueError("Checkpoint and navigation actions are browser-only.")
+        if self.kind == "desktop" and any(step.action == "select_option" for step in self.steps):
+            raise ValueError("Native option selection is browser-only.")
         labels = set()
         for step in self.steps:
             if step.action == "checkpoint":
@@ -148,11 +153,13 @@ def inspection_argument_error(details) -> str:
     cross_field = {
         "Only selected computed properties and bounded CSS custom properties are supported.",
         "A checkpoint requires a selector and unique label.",
+        "select_option requires an exact selector and explicit option value.",
         "Checkpoint assertions require a checkpoint action.",
         "Comparison assertions require an earlier checkpoint reference.",
         "Use a supported navigation key.",
         "Frame timing is bounded to 2000 milliseconds.",
         "Checkpoint and navigation actions are browser-only.",
+        "Native option selection is browser-only.",
         "Checkpoint labels must be unique and references must name an earlier checkpoint.",
         "Inspection supports at most four checkpoints plus the final screenshot.",
         "Inspection supports one bounded frame timing capture.",

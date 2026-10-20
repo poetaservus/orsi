@@ -193,7 +193,7 @@ def _versioned_verification_details(output: dict, *, kind: str, success: bool) -
     assertions = []
     for check in checks:
         action = check.get("action")
-        if (action in {"visible", "text", "in_view", "model_loaded", "scroll"}
+        if (action in {"visible", "text", "in_view", "model_loaded", "scroll", "select_option"}
                 or action == "checkpoint" and check.get("expectation") != "observe"):
             assertions.append(InteractionAssertionEvidence(action=action, target=check.get("target", ""),
                 label=check.get("label", ""), passed=check.get("passed") is True))

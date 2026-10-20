@@ -18,7 +18,7 @@ from app.inference.completion import CompletionMetadata, CompletionText
 from app.conversation.questions import QuestionBatch, present_questions, question_forms_allowed
 from app.agent.contracts import AgentRunResult, AgentRunStatus, SettledCall
 from app.agent.goals import TaskGoal, observe_goal, finish_goal, replay_goal
-from app.agent.completion_evidence import validate_review_evidence
+from app.agent.completion_evidence import validate_review_evidence, screenshot_digests
 from app.settings.agent_limits import MAX_AGENT_CAPABILITY_CALLS, MAX_AGENT_MODEL_REQUESTS
 from app.inference.openai_replay import OpenAIReplay, StoredOpenAIResponse, REPLAY_KEY
 from app.inference.protocol import model_capability_calls_message, model_capability_result_message
@@ -138,8 +138,28 @@ class Conversation(BaseModel):
                 if turn.goal != expected or turn.outcome is not None and turn.outcome.goal != expected:
                     raise ValueError("Task goals must match the request and durable settled evidence.")
                 if turn.goal.evidence_version == 2 and turn.outcome is not None and turn.outcome.completion_review is not None:
-                    validate_review_evidence(turn.outcome.completion_review, expected, turn.settled_calls,
-                        turn.outcome.delivered_visuals)
+                    outcome = turn.outcome
+                    count = outcome.completion_review_receipt_count
+                    calls, review_goal, visuals = turn.settled_calls, expected, outcome.delivered_visuals
+                    if count is None:
+                        if outcome.completion_review_current is not None:
+                            raise ValueError('Review freshness requires its settled evidence anchor.')
+                    else:
+                        current = count == len(calls)
+                        if (count > len(calls) or outcome.completion_review_current is not current
+                                or outcome.status == AgentRunStatus.COMPLETED and not current):
+                            raise ValueError('Completion review anchors must match their original evidence prefix.')
+                        known_visuals = set().union(*(screenshot_digests(item.result.output or {}) for item in calls
+                            if item.call.capability == 'project.inspect' and item.result.success))
+                        if not set(visuals) <= known_visuals:
+                            raise ValueError('Visual delivery must match original inspection receipts.')
+                        calls = calls[:count]
+                        review_goal = replay_goal(TaskGoal(goal_id=turn.turn_id,
+                            objective=self.messages[turn.user_index].content, evidence_version=2), calls)
+                        prefix_visuals = set().union(*(screenshot_digests(item.result.output or {}) for item in calls
+                            if item.call.capability == 'project.inspect' and item.result.success))
+                        visuals = tuple(set(visuals) & prefix_visuals)
+                    validate_review_evidence(outcome.completion_review, review_goal, calls, visuals)
             if (turn.outcome is None) != (turn.ended_at is None):
                 raise ValueError("Terminal turns require a durable outcome and end time.")
             if turn.assistant_index is not None and (turn.assistant_index >= len(self.messages)
@@ -388,11 +408,15 @@ class ConversationStore:
                 if turn is not None:
                     if preserve_unfinished and turn.outcome is not None and turn.outcome.status != AgentRunStatus.COMPLETED:
                         review = turn.outcome.completion_review
+                        stale = turn.outcome.completion_review_current is False
                         history.append({"role": "assistant", "content": "Unresolved historical work: " + json.dumps({
                             "turn_id": turn.turn_id, "status": turn.outcome.status.value,
-                            "remaining": list(review.remaining) if review is not None else [],
+                            "remaining": list(review.remaining) if review is not None and not stale else [],
+                            "earlier_assessment": list(review.remaining) if review is not None and stale else [],
+                            "completion_review_current": turn.outcome.completion_review_current,
                             "stop_reason": turn.outcome.message,
-                            "notice": "Retained unfinished work, not a replacement for the latest request. Original request and receipts remain available."},
+                            "notice": ("The earlier assessment predates later tool results and requires reassessment. " if stale else "")
+                                + "Retained unfinished work, not a replacement for the latest request. Original request and receipts remain available."},
                             ensure_ascii=False, separators=(",", ":"))})
                     if summarize_completed and turn.outcome is not None and turn.outcome.status == AgentRunStatus.COMPLETED:
                         from app.conversation.history_context import completed_turn_summary
@@ -470,7 +494,11 @@ class ConversationStore:
             return {"turn_id": turn.turn_id, "request": self._conversation.messages[turn.user_index].input_message(),
                 "assistant": self._conversation.messages[turn.assistant_index].input_message() if turn.assistant_index is not None else None,
                 "status": turn.outcome.status.value if turn.outcome else "active",
-                "remaining": list(turn.outcome.completion_review.remaining) if turn.outcome and turn.outcome.completion_review else [],
+                "remaining": list(turn.outcome.completion_review.remaining) if turn.outcome and turn.outcome.completion_review
+                    and turn.outcome.completion_review_current is not False else [],
+                "earlier_assessment": list(turn.outcome.completion_review.remaining) if turn.outcome and turn.outcome.completion_review
+                    and turn.outcome.completion_review_current is False else [],
+                "completion_review_current": turn.outcome.completion_review_current if turn.outcome else None,
                 "settled_calls": [{
                     "call_id": item.result.call_id, "capability": item.call.capability,
                     "success": item.result.success,
