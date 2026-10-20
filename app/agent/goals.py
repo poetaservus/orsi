@@ -6,12 +6,15 @@ neither source text nor a model's completion claim can prove runtime behaviour.
 from __future__ import annotations
 
 import os
+import hashlib
+import json
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.capabilities.contracts import CapabilityErrorCode
 from app.settings.agent_limits import MAX_AGENT_CAPABILITY_CALLS
+from app.agent.source_evidence import source_read_proof, shell_may_mutate
 
 
 def path_key(path: str) -> str:
@@ -24,6 +27,7 @@ class ArtifactEvidence(BaseModel):
     saved_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     mutation_call_id: str = Field(min_length=1, max_length=128)
     source_check_call_id: str | None = Field(default=None, min_length=1, max_length=128)
+    source_check_call_ids: tuple[str, ...] = Field(default=(), max_length=MAX_AGENT_CAPABILITY_CALLS)
     integrity_uncertain: bool = False
 
 
@@ -65,6 +69,10 @@ class TaskGoal(BaseModel):
     goal_id: str = Field(pattern=r"^turn-[1-9][0-9]*$")
     # Attachment-only requests have empty text; their inputs remain on the turn's user message.
     objective: str = Field(max_length=1_000_000, repr=False)
+    # Old histories keep their exact original projection; new turns opt in.
+    evidence_version: Literal[1, 2] = 1
+    verification_scenarios: dict[str, str] = Field(default_factory=dict, max_length=MAX_AGENT_CAPABILITY_CALLS)
+    superseded_verification: dict[str, str] = Field(default_factory=dict, max_length=MAX_AGENT_CAPABILITY_CALLS)
     state: Literal["active", "reported_unverified", "stopped"] = "active"
     # A tool receipt verifies a save; a later complete matching read checks source.
     artifacts: tuple[ArtifactEvidence, ...] = Field(default=(), max_length=MAX_AGENT_CAPABILITY_CALLS)
@@ -76,28 +84,41 @@ class TaskGoal(BaseModel):
         "runtime_execution", "gui_validation")
 
 
-def observe_goal(goal: TaskGoal, settled) -> TaskGoal:
+def observe_goal(goal: TaskGoal, settled, *, prior_calls=()) -> TaskGoal:
     """Project only bounded tool evidence, identically in runtime and durable storage."""
     call, result = settled.call, settled.result
     output = result.output or {}
-    if call.capability == "shell.run" and (result.success or result.error is not None and
+    if call.capability == "shell.run" and (goal.evidence_version == 1 or shell_may_mutate(call)) and (result.success or result.error is not None and
             result.error.code in {CapabilityErrorCode.OUTCOME_UNKNOWN, CapabilityErrorCode.CANCELLED, CapabilityErrorCode.TIMED_OUT,
                 CapabilityErrorCode.INTERNAL_ERROR}):
         # General shell commands can change any account-accessible file, including
         # outside cwd. They cannot establish scoped build/test or source evidence.
         return goal.model_copy(update={
             "verification": tuple(item.model_copy(update={"stale": True}) for item in goal.verification),
-            "artifacts": tuple(item.model_copy(update={"source_check_call_id": None, "integrity_uncertain": True}) for item in goal.artifacts)})
+            "artifacts": tuple(item.model_copy(update={"source_check_call_id": None, "source_check_call_ids": (), "integrity_uncertain": True}) for item in goal.artifacts)})
     if call.capability in {"project.verify", "project.inspect"}:
         project = output.get("project_path") or call.arguments.get("project_path")
         kind = call.arguments.get("kind")
         if isinstance(project, str) and kind in {"build", "test", "browser", "desktop"}:
+            scenario = None
+            if goal.evidence_version == 2:
+                keys = ('kind', 'url', 'pid', 'steps', 'width', 'height', 'executable', 'arguments')
+                scenario = hashlib.sha256(json.dumps({key: call.arguments.get(key) for key in keys},
+                    sort_keys=True, ensure_ascii=False).encode()).hexdigest()
             item = VerificationEvidence(call_id=result.call_id, project_path=project, kind=kind,
                 passed=result.success and output.get("passed") is True,
                 screenshot_path=output.get("screenshot_path") if isinstance(output.get("screenshot_path"), str) else None,
                 **_versioned_verification_details(output, kind=kind, success=result.success))
             check = "runtime_execution" if call.capability == "project.verify" else "gui_validation"
+            scenarios, superseded = dict(goal.verification_scenarios), dict(goal.superseded_verification)
+            if scenario:
+                for old in goal.verification:
+                    if (item.passed and not old.passed and old.call_id not in superseded
+                            and scenarios.get(old.call_id) == scenario and path_key(old.project_path) == path_key(project)):
+                        superseded[old.call_id] = item.call_id
+                scenarios[item.call_id] = scenario
             return goal.model_copy(update={"verification": (*goal.verification, item),
+                "verification_scenarios": scenarios, "superseded_verification": superseded,
                 "unavailable_checks": tuple(value for value in goal.unavailable_checks if value != check) if result.success else goal.unavailable_checks})
     if call.capability in {"filesystem.edit_text", "filesystem.write_text", "filesystem.copy", "filesystem.move", "filesystem.trash"} and (
             result.success or result.error is not None and result.error.code == CapabilityErrorCode.OUTCOME_UNKNOWN):
@@ -111,7 +132,7 @@ def observe_goal(goal: TaskGoal, settled) -> TaskGoal:
             if isinstance(value, str) and value}
         if result.success or result.error is not None and result.error.code == CapabilityErrorCode.OUTCOME_UNKNOWN:
             return goal.model_copy(update={"artifacts": tuple(item.model_copy(update={
-                "source_check_call_id": None, "integrity_uncertain": True}) if path_key(item.path) in affected else item
+                "source_check_call_id": None, "source_check_call_ids": (), "integrity_uncertain": True}) if path_key(item.path) in affected else item
                 for item in goal.artifacts)})
     path = output.get("path") if result.success else call.arguments.get("path")
     if not isinstance(path, str) or not path:
@@ -129,16 +150,30 @@ def observe_goal(goal: TaskGoal, settled) -> TaskGoal:
     elif index is not None:
         item = artifacts[index]
         if result.success and call.capability == "filesystem.read_text":
+            proof = source_read_proof(settled, prior_calls) if goal.evidence_version == 2 else None
             complete = (output.get("source_complete") is True and
                 not output.get("truncated_by_bytes", False) and not output.get("truncated_by_lines", False))
-            if valid_digest and digest != item.saved_sha256:
-                artifacts[index] = item.model_copy(update={"source_check_call_id": None, "integrity_uncertain": True})
+            if proof is not None:
+                artifacts[index] = item.model_copy(update={
+                    "source_check_call_id": result.call_id if proof.sha256 == item.saved_sha256 else None,
+                    "source_check_call_ids": proof.call_ids if proof.sha256 == item.saved_sha256 else (),
+                    "integrity_uncertain": proof.sha256 != item.saved_sha256})
+            elif valid_digest and digest != item.saved_sha256:
+                artifacts[index] = item.model_copy(update={"source_check_call_id": None, "source_check_call_ids": (), "integrity_uncertain": True})
             elif complete and digest == item.saved_sha256:
                 artifacts[index] = item.model_copy(update={"source_check_call_id": result.call_id, "integrity_uncertain": False})
         elif result.error is not None and (result.error.code == CapabilityErrorCode.OUTCOME_UNKNOWN
                 or call.capability == "filesystem.read_text" and result.error.code == CapabilityErrorCode.NOT_FOUND):
-            artifacts[index] = item.model_copy(update={"source_check_call_id": None, "integrity_uncertain": True})
+            artifacts[index] = item.model_copy(update={"source_check_call_id": None, "source_check_call_ids": (), "integrity_uncertain": True})
     return goal.model_copy(update={"artifacts": tuple(artifacts)})
+
+
+def replay_goal(goal: TaskGoal, calls) -> TaskGoal:
+    previous = []
+    for item in calls:
+        goal = observe_goal(goal, item, prior_calls=previous)
+        previous.append(item)
+    return goal
 
 
 def _versioned_verification_details(output: dict, *, kind: str, success: bool) -> dict:
@@ -216,7 +251,7 @@ def verification_report(goal: TaskGoal) -> str:
     if not goal.verification:
         return "No project verification or inspection receipts for this request."
     return "Verification receipts (only the recorded scopes): " + "; ".join(
-        f"{item.kind} {'stale' if item.stale else 'passed' if item.passed else 'failed or interrupted'} [{item.call_id}]"
+        f"{item.kind} {'historical failure, superseded by ' + goal.superseded_verification[item.call_id] if item.call_id in goal.superseded_verification else 'stale' if item.stale else 'passed' if item.passed else 'failed or interrupted'} [{item.call_id}]"
         + (f"; interaction assertions {sum(c.passed for c in item.interaction_assertions)}/{len(item.interaction_assertions)} passed"
             if item.interaction_assertions else '')
         + (f"; {len(item.visual_observations)} visual observations require review" if item.visual_observations else '')

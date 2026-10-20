@@ -30,7 +30,7 @@ class ShellRunArguments(BaseModel):
     background: bool = Field(default=False, description="For an explicitly requested persistent server/job, return a managed session instead of waiting for exit. Foreground remains the default.")
     session_id: str | None = Field(default=None, pattern=r"^shell-[0-9a-f]{32}$",
         description="Exact owned session ID from run/list. Required for status/stop; never use a PID.")
-    yield_time_ms: int = Field(default=1000, ge=0, le=10000, description="Bounded initial observation for a new background session, not a readiness guarantee.")
+    yield_time_ms: int = Field(default=1000, ge=0, le=10000, description="Bounded wait for a new background session or status poll; returns earlier on completion. Not a readiness guarantee.")
     session_timeout_seconds: int = Field(default=3600, ge=1, le=28800, description="Background session lifetime; default one hour, maximum eight hours. Also stops on runtime/app shutdown.")
     output_offset: int = Field(default=0, ge=0, le=2**63 - 1, description="For status, use output_next_offset from the preceding receipt to read the next log page. Rolling log: 64 KiB; pages: 8 KiB.")
 
@@ -165,6 +165,8 @@ class ShellRunCapability(Capability):
             session = self.sessions.get(arguments.session_id)
             if arguments.action == "stop":
                 session.stop()
+            else:
+                session.wait_initial(arguments.yield_time_ms, context.cancellation)
             return session.snapshot(arguments.output_offset)
         executable = shell_executable(arguments.shell)
         command, raw = shell_command(arguments, executable)

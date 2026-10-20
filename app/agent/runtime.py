@@ -44,6 +44,8 @@ from app.agent.edit_progress import EditProgressTracker
 from app.agent.office_read_progress import OfficeReadProgress
 from app.agent.office_read_repetition import OfficeReadRepetition
 from app.agent.repair_loop import RepairLoopTracker
+from app.agent.recovery_progress import RecoveryProgress, recovery_scope
+from app.agent.completion_evidence import validate_review_evidence
 from app.agent.goals import TaskGoal, observe_goal, finish_goal, goal_feedback, evidence_report
 from app.agent.task_completion import (CompletionReview, task_context_message,
     completion_review_message, parse_completion_review, looks_like_completion_review, resume_answer_message)
@@ -353,12 +355,14 @@ class AgentRuntime:
         settled = []
         recovery = _RecoveryUsage()
         objective = kwargs.pop("goal_request", None)
-        goal = [TaskGoal(goal_id=kwargs["turn_id"], objective=objective)] if objective is not None else []
+        goal = [TaskGoal(goal_id=kwargs["turn_id"], objective=objective, evidence_version=2)] if objective is not None else []
         reviews = []
+        visuals = set()
         result = self._run(messages, _completion_history=history, _settled_calls=settled,
-                           _recovery=recovery, _goal=goal, _reviews=reviews, **kwargs)
+                           _recovery=recovery, _goal=goal, _reviews=reviews, _visuals=visuals, **kwargs)
         result = result.model_copy(update={"completion_history": tuple(history),
             "settled_calls": tuple(settled),
+            "delivered_visuals": tuple(sorted(visuals)),
             "model_requests": recovery.model_requests,
             "consecutive_format_failures": recovery.consecutive_format_failures,
             "semantic_corrections": recovery.semantic_corrections,
@@ -384,6 +388,10 @@ class AgentRuntime:
             result = result.model_copy(update={"goal": final_goal,
                 "completion_review": reviews[-1] if reviews else None})
             report = evidence_report(final_goal)
+            if result.status in RECOVERY_STOP_STATUSES and reviews and reviews[-1].remaining:
+                result = result.model_copy(update={"partial_text": (result.partial_text or '')
+                    + '\n\nRemaining completion requirements (model assessment):\n'
+                    + '\n'.join('- ' + item for item in reviews[-1].remaining)})
             if report and result.partial_text is not None and result.status in RECOVERY_STOP_STATUSES | WORK_BUDGET_STATUSES:
                 result = result.model_copy(update={"partial_text": (result.partial_text + "\n\n" + report)[:1_000_000]})
         from app.agent.word_evidence import word_stop_report
@@ -420,6 +428,7 @@ class AgentRuntime:
         _recovery: _RecoveryUsage | None = None,
         _goal: list[TaskGoal] | None = None,
         _reviews: list[CompletionReview] | None = None,
+        _visuals: set[str] | None = None,
     ) -> AgentRunResult:
         if not safe_identifier(session_id) or not safe_identifier(turn_id):
             raise ValueError("Agent session and turn IDs must use bounded stable syntax.")
@@ -514,6 +523,8 @@ class AgentRuntime:
         word_progress = WordTurnProgress()
         office_read_repetition = OfficeReadRepetition()
         repair_loop = RepairLoopTracker()
+        recovery_progress = RecoveryProgress()
+        pending_visuals = set()
         used_call_ids: set[str] = set()
         advertised_names = {item.name for item in definitions}
         required_fingerprints = tuple(call_fingerprint(call) for call in required_calls)
@@ -540,7 +551,7 @@ class AgentRuntime:
             self.effective_max_model_requests, self.effective_max_capability_calls)
 
         while True:
-            if recovery.semantic_corrections >= self.limits.max_semantic_corrections:
+            if recovery_progress.exhausted(self.limits.max_semantic_corrections):
                 return self._stopped(AgentRunStatus.SEMANTIC_CORRECTION_LIMIT,
                     "The agent stopped after reaching its semantic-correction limit.",
                     steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
@@ -593,6 +604,7 @@ class AgentRuntime:
                         return self._stopped(AgentRunStatus.INTERNAL_FAILURE,
                             "The completion-review phase could not be reported safely.",
                             steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
+            native_request = planned_response is None and not structured_fallback
             if planned_response is not None:
                 response = planned_response
                 planned_response = None
@@ -627,6 +639,7 @@ class AgentRuntime:
                     == ModelProtocolFailureCode.UNSUPPORTED_CAPABILITY_CALLS
                 ):
                     structured_fallback = True
+                    native_request = False
                     if _completion_history is not None:
                         _completion_history.append(response.completion)
                     if recovery.model_requests >= self.effective_max_model_requests:
@@ -663,6 +676,9 @@ class AgentRuntime:
                 )
             if _completion_history is not None:
                 _completion_history.append(response.completion)
+            if native_request and _visuals is not None:
+                _visuals.update(pending_visuals)
+                pending_visuals.clear()
             if response.completion.incomplete:
                 message = response.completion.failure_message or (
                     "The response was cut off." if response.kind != ModelResponseKind.ASSISTANT_TEXT
@@ -689,7 +705,8 @@ class AgentRuntime:
                         protocol_failures=protocol_failures)
                 transcript.append(completion_review_message(_goal[0],
                     edit_progress.pending_recovery() or edit_progress.completion_blocker(),
-                    browser_inspection_available='project.inspect' in advertised_names))
+                    browser_inspection_available='project.inspect' in advertised_names,
+                    settled_calls=_settled_calls or (), delivered_visuals=_visuals or ()))
                 continue
             provider_message_id = uuid4().hex
             assessment_text = (bool(_goal) and review_started and response.kind == ModelResponseKind.ASSISTANT_TEXT
@@ -740,6 +757,7 @@ class AgentRuntime:
                     self._retain_response_text(transcript, response)
                     recovery.consecutive_format_failures = 0
                     recovery.semantic_corrections += 1
+                    recovery_progress.correct('filename')
                     transcript.append(filename_feedback)
                     if not self._transcript_within_limit(transcript):
                         return self._transcript_limited(
@@ -752,6 +770,7 @@ class AgentRuntime:
                     self._retain_response_text(transcript, response)
                     recovery.consecutive_format_failures = 0
                     recovery.semantic_corrections += 1
+                    recovery_progress.correct('required')
                     transcript.append(required_calls_feedback())
                     if not self._transcript_within_limit(transcript):
                         return self._transcript_limited(
@@ -776,11 +795,13 @@ class AgentRuntime:
                         self._retain_response_text(transcript, response)
                         transcript.append(completion_review_message(_goal[0],
                             edit_progress.pending_recovery() or edit_progress.completion_blocker(),
-                            browser_inspection_available='project.inspect' in advertised_names))
+                            browser_inspection_available='project.inspect' in advertised_names,
+                            settled_calls=_settled_calls or (), delivered_visuals=_visuals or ()))
                     else:
                         try:
                             review = parse_completion_review(response.assistant_text, _goal[0].goal_id)
-                        except ValueError:
+                            validate_review_evidence(review, _goal[0], _settled_calls or (), _visuals or ())
+                        except ValueError as exc:
                             recovery.consecutive_format_failures += 1
                             protocol_failures += 1
                             if recovery.consecutive_format_failures >= self.limits.max_protocol_failures:
@@ -791,7 +812,12 @@ class AgentRuntime:
                                     steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
                             transcript.append(completion_review_message(_goal[0],
                                 edit_progress.pending_recovery() or edit_progress.completion_blocker(),
-                                browser_inspection_available='project.inspect' in advertised_names))
+                                browser_inspection_available='project.inspect' in advertised_names,
+                                settled_calls=_settled_calls or (), delivered_visuals=_visuals or ()))
+                            # Validation messages contain fixed rules, never submitted values.
+                            if str(exc).startswith(('Completion evidence', 'Account for', 'A passed claim',
+                                    'Server readiness', 'Readiness evidence', 'Visual assessment')):
+                                transcript[-1]['content'] += '\nEvidence correction: ' + str(exc)
                             continue
                         recovery.consecutive_format_failures = 0
                         pending = edit_progress.pending_recovery()
@@ -814,6 +840,7 @@ class AgentRuntime:
                                     "Task unfinished.\n\nRemaining work:\n" + "\n".join("- " + item for item in review.remaining)),
                                 steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
                         recovery.semantic_corrections += 1
+                        recovery_progress.review_failures += 1
                         transcript.append({"role": "system", "content":
                             "The current request remains unfinished. Continue the unmet work in this turn: "
                             + json.dumps(review.remaining, ensure_ascii=False)
@@ -853,6 +880,7 @@ class AgentRuntime:
                 if semantic_failure:
                     recovery.consecutive_format_failures = 0
                     recovery.semantic_corrections += 1
+                    recovery_progress.correct('catalog')
                 else:
                     recovery.consecutive_format_failures += 1
                 if recovery.consecutive_format_failures >= self.limits.max_protocol_failures:
@@ -877,6 +905,7 @@ class AgentRuntime:
             ):
                 recovery.consecutive_format_failures = 0
                 recovery.semantic_corrections += 1
+                recovery_progress.correct('required')
                 transcript.append(required_calls_feedback())
                 if not self._transcript_within_limit(transcript):
                     return self._transcript_limited(
@@ -977,6 +1006,7 @@ class AgentRuntime:
             repeated = staged_repeated
             results: list[CapabilityResult] = []
             recovery_feedback: list[str] = []
+            semantic_stop = False
             for call, internal_call_id in zip(calls, internal_call_ids, strict=True):
                 rejection = edit_progress.before(call, step=steps, assistant_text=response.assistant_text) if not linked.is_cancelled else None
                 if rejection is None and not linked.is_cancelled:
@@ -1022,7 +1052,7 @@ class AgentRuntime:
                         _settled_calls.append(settled)
                     if _goal:
                         prior_goal = _goal[0]
-                        _goal[0] = observe_goal(prior_goal, settled)
+                        _goal[0] = observe_goal(prior_goal, settled, prior_calls=(_settled_calls or [])[:-1])
                         if _goal[0] != prior_goal:
                             transcript[task_context_index] = task_context_message(_goal[0])
                             recovery_feedback.append(goal_feedback(_goal[0]))
@@ -1062,6 +1092,7 @@ class AgentRuntime:
                     recovery_feedback.append(word_feedback)
                 office_read_repetition.observe(call, outcome.result, repeated)
                 project_progress.observe(call, outcome.result, repeated)
+                recovery_progress.observe(call, outcome.result, repeated)
                 diagnosis_feedback = repair_loop.observe(call, outcome.result, step=steps)
                 if diagnosis_feedback:
                     recovery_feedback.append(diagnosis_feedback)
@@ -1076,23 +1107,21 @@ class AgentRuntime:
                     CapabilityErrorCode.INVALID_ARGUMENTS, CapabilityErrorCode.UNKNOWN_CAPABILITY,
                 }:
                     recovery.semantic_corrections += 1
-                    if recovery.semantic_corrections >= self.limits.max_semantic_corrections:
-                        message = "The agent stopped after reaching its semantic-correction limit."
-                        if call.capability.startswith("office."):
-                            message = (message + " " + call.capability + ": " + outcome.result.error.message)[:500]
-                        return self._stopped(AgentRunStatus.SEMANTIC_CORRECTION_LIMIT,
-                            message,
-                            steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
+                    recovery_progress.correct(recovery_scope(call))
+                    if recovery_progress.exhausted(self.limits.max_semantic_corrections):
+                        semantic_stop = True
+                        break
                 if edit_observation.stop_message is not None:
                     return self._stopped(AgentRunStatus.REPEATED_CALL, edit_observation.stop_message,
                         steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
             completed_required.update(
                 fingerprint
-                for fingerprint in fingerprints
+                for fingerprint in fingerprints[:len(results)]
                 if fingerprint in required_set
             )
 
-            if required_set and completed_required == required_set:
+            if required_set and completed_required == required_set and not semantic_stop:
+                recovery_progress.failures.pop('required', None)
                 if not continue_after_required_calls and not _goal:
                     return AgentRunResult(
                         status=AgentRunStatus.COMPLETED,
@@ -1105,14 +1134,15 @@ class AgentRuntime:
                 completed_required = set()
 
             try:
+                settled_batch = calls[:len(results)]
                 # Keep the native call/result pairing adjacent and the final message
                 # a capability result, including for older structured adapters.
                 for feedback in dict.fromkeys(recovery_feedback):
                     transcript.append({"role": "system", "content": feedback})
-                transcript.append(model_capability_calls_message(calls, provider_message_id=provider_message_id, assistant_text=response.assistant_text))
-                if response.openai_response is not None:
+                transcript.append(model_capability_calls_message(settled_batch, provider_message_id=provider_message_id, assistant_text=response.assistant_text))
+                if response.openai_response is not None and not semantic_stop:
                     transcript[-1]["openai_response"] = response.openai_response.model_dump(mode="python")
-                for call, result in zip(calls, results, strict=True):
+                for call, result in zip(settled_batch, results, strict=True):
                     transcript.append(
                         model_capability_result_message(
                             call,
@@ -1120,12 +1150,17 @@ class AgentRuntime:
                             provider_message_id=provider_message_id,
                         )
                     )
-                for call, result in zip(calls, results, strict=True):
+                for call, result in zip(settled_batch, results, strict=True):
                     if call.capability == "project.inspect" and result.success:
                         from app.agent.inspection_images import inspection_image_message
                         message = inspection_image_message(self.registry.resolve(call.capability), result, self.model)
                         if message is not None:
                             transcript.append(message)
+                            if message.get('role') == 'user':
+                                output = result.output or {}
+                                pending_visuals.update(observation['screenshot_sha256']
+                                    for observation in [*output.get('checkpoints', []), output]
+                                    if isinstance(observation.get('screenshot_sha256'), str))
                     elif call.capability == "office.read" and result.success:
                         from app.agent.office_images import word_image_message
                         message = word_image_message(self.registry.resolve(call.capability), call, result, self.model)
@@ -1138,6 +1173,11 @@ class AgentRuntime:
                     capability_calls,
                     protocol_failures,
                 )
+            if semantic_stop:
+                return self._stopped(AgentRunStatus.SEMANTIC_CORRECTION_LIMIT,
+                    ("The agent stopped after reaching its semantic-correction limit. "
+                     + calls[len(results) - 1].capability + ": " + results[-1].error.message)[:500],
+                    steps=steps, capability_calls=capability_calls, protocol_failures=protocol_failures)
             if not self._recover_transcript(transcript, definitions, recovery):
                 return self._stopped(AgentRunStatus.INTERNAL_FAILURE,
                     "Context recovery failed safely; settled operations were retained.",

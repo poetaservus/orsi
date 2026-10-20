@@ -1,5 +1,21 @@
 # Git layout and baseline hygiene
 
+## Orchestrator completion reliability, 20 October 2026
+
+`codex/orchestrator-completion-reliability` starts from clean local main `7107e21`.
+It scopes recovery limits, permits bounded owned-job polling, preserves evidence
+through read-only status checks, reconstructs complete paged-source checks, and
+binds completion claims to current receipts and delivered screenshots. Existing
+saved histories retain their original projection. See
+[scope, qualification and limits](orchestrator-completion-reliability.md).
+
+Only focused checks run: 379 passed with one Windows symlink-permission skip;
+the affected final evidence/review recheck passes all 136 checks. The selections
+overlap. No full suite or live-model acceptance is claimed. Prior main is preserved
+at `archive/2026-10-20/main-before-orchestrator-completion-reliability`. Commit,
+fast-forward local main and remove only this merged feature branch. Other
+worktrees, historical/unmerged refs, user settings and remote refs remain intact.
+
 ## Reproduced workflow fixes, 19 October 2026
 
 `codex/workflow-reproduction-fixes` starts from clean local main `2f94758`.

@@ -17,7 +17,8 @@ from app.inference.attachments import AttachmentReference, attachment_references
 from app.inference.completion import CompletionMetadata, CompletionText
 from app.conversation.questions import QuestionBatch, present_questions, question_forms_allowed
 from app.agent.contracts import AgentRunResult, AgentRunStatus, SettledCall
-from app.agent.goals import TaskGoal, observe_goal, finish_goal
+from app.agent.goals import TaskGoal, observe_goal, finish_goal, replay_goal
+from app.agent.completion_evidence import validate_review_evidence
 from app.settings.agent_limits import MAX_AGENT_CAPABILITY_CALLS, MAX_AGENT_MODEL_REQUESTS
 from app.inference.openai_replay import OpenAIReplay, StoredOpenAIResponse, REPLAY_KEY
 from app.inference.protocol import model_capability_calls_message, model_capability_result_message
@@ -130,13 +131,15 @@ class Conversation(BaseModel):
             if turn.goal is None and turn.outcome is not None and turn.outcome.goal is not None:
                 raise ValueError("An outcome goal requires its durable turn goal.")
             if turn.goal is not None:
-                expected = TaskGoal(goal_id=turn.turn_id, objective=self.messages[turn.user_index].content)
-                for item in turn.settled_calls:
-                    expected = observe_goal(expected, item)
+                expected = replay_goal(TaskGoal(goal_id=turn.turn_id, objective=self.messages[turn.user_index].content,
+                    evidence_version=turn.goal.evidence_version), turn.settled_calls)
                 if turn.outcome is not None:
                     expected = finish_goal(expected, completed=turn.outcome.status == AgentRunStatus.COMPLETED)
                 if turn.goal != expected or turn.outcome is not None and turn.outcome.goal != expected:
                     raise ValueError("Task goals must match the request and durable settled evidence.")
+                if turn.goal.evidence_version == 2 and turn.outcome is not None and turn.outcome.completion_review is not None:
+                    validate_review_evidence(turn.outcome.completion_review, expected, turn.settled_calls,
+                        turn.outcome.delivered_visuals)
             if (turn.outcome is None) != (turn.ended_at is None):
                 raise ValueError("Terminal turns require a durable outcome and end time.")
             if turn.assistant_index is not None and (turn.assistant_index >= len(self.messages)
@@ -288,7 +291,7 @@ class ConversationStore:
             turn = self._turn(proposed, turn_id)
             if turn.outcome is not None or turn.goal is not None or turn.settled_calls:
                 raise TurnHistoryError("A task goal must start before settled work.")
-            turn.goal = TaskGoal(goal_id=turn_id, objective=proposed.messages[turn.user_index].content)
+            turn.goal = TaskGoal(goal_id=turn_id, objective=proposed.messages[turn.user_index].content, evidence_version=2)
             self._commit(proposed)
 
     def record_settled(self, turn_id: str, settled: SettledCall) -> None:
@@ -299,7 +302,7 @@ class ConversationStore:
                 raise TurnHistoryError("A stopped turn cannot execute or retain another call.")
             turn.settled_calls.append(settled)
             if turn.goal is not None:
-                turn.goal = observe_goal(turn.goal, settled)
+                turn.goal = observe_goal(turn.goal, settled, prior_calls=turn.settled_calls[:-1])
             self._commit(proposed)
 
     def record_response(self, turn_id: str, provider_message_id: str, replay: OpenAIReplay) -> None:
@@ -325,9 +328,9 @@ class ConversationStore:
             retained = {item.result.call_id for item in turn.settled_calls}
             turn.settled_calls.extend(item for item in outcome.settled_calls if item.result.call_id not in retained)
             if turn.goal is not None or outcome.goal is not None:
-                goal = TaskGoal(goal_id=turn_id, objective=proposed.messages[turn.user_index].content)
-                for item in turn.settled_calls:
-                    goal = observe_goal(goal, item)
+                version = turn.goal.evidence_version if turn.goal is not None else outcome.goal.evidence_version
+                goal = replay_goal(TaskGoal(goal_id=turn_id, objective=proposed.messages[turn.user_index].content,
+                    evidence_version=version), turn.settled_calls)
                 goal = finish_goal(goal, completed=outcome.status == AgentRunStatus.COMPLETED)
                 turn.goal = goal
                 outcome = outcome.model_copy(update={"goal": goal})

@@ -412,7 +412,8 @@ def test_review_format_tracks_latest_goal_and_does_not_leak_into_resumed_work(mo
         assert parse_completion_review(assessment.assistant_text, "turn-2").status == "continue"
         schema = bodies[0]["text"]["format"]["schema"]
         assert schema["properties"]["goal_id"]["enum"] == ["turn-2"]
-        assert schema["additionalProperties"] is False and set(schema["required"]) == {"goal_id", "status", "remaining"}
+        assert schema["additionalProperties"] is False and set(schema["required"]) == {"goal_id", "status", "remaining", "evidence"}
+        assert schema['$defs']['ReviewEvidence']['additionalProperties'] is False
         assert bodies[0]["tool_choice"] == "none"
         engine.respond_with_capabilities([{"role": "user", "content": "Resume search"}], (capability_definition(),))
         assert "text" not in bodies[1] and bodies[1]["tool_choice"] == "auto"

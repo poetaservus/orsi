@@ -67,7 +67,8 @@ def test_intro_viewport_model_readiness_and_current_preview_error(tmp_path, wait
     assert any(p["kind"] == "preview_error" for p in output["problems"]) is overlay
 
 
-def test_real_inspector_delivers_pixels_to_runtime_continuation(tmp_path):
+@pytest.mark.parametrize('max_steps', [1, 24])
+def test_real_inspector_delivers_pixels_to_runtime_continuation(tmp_path, max_steps):
     from app.inference.local_images import image_accounting_messages
     from app.inference.protocol import native_chat_messages
     state, args = fixture(tmp_path, wait=True)
@@ -82,9 +83,15 @@ def test_real_inspector_delivers_pixels_to_runtime_continuation(tmp_path):
         project_inspect_enabled=True, context_recovery_enabled=True, conversation_context_enabled=True),
         portable_root=tmp_path, state_directory=tmp_path / "state")
     runtime.registry.resolve("project.inspect").state_directory = state
+    runtime.limits = runtime.limits.model_copy(update={'max_steps': max_steps})
     runtime.set_tool_approval_required(False)
     result = run(runtime, tmp_path)
+    if max_steps == 1:
+        assert result.status == AgentRunStatus.STEP_LIMIT and not result.delivered_visuals
+        assert len(model.requests) == 1
+        return
     assert result.status == AgentRunStatus.COMPLETED
+    assert result.delivered_visuals == (result.settled_calls[0].result.output['screenshot_sha256'],)
     continuation = model.requests[1]
     native_chat_messages(continuation, model.definitions[1])
     assert continuation[-1]["role"] == "user"

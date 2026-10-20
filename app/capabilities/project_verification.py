@@ -146,6 +146,16 @@ def inspection_argument_error(details) -> str:
         "model_type": "must be an object",
     }
     cross_field = {
+        "Only selected computed properties and bounded CSS custom properties are supported.",
+        "A checkpoint requires a selector and unique label.",
+        "Checkpoint assertions require a checkpoint action.",
+        "Comparison assertions require an earlier checkpoint reference.",
+        "Use a supported navigation key.",
+        "Frame timing is bounded to 2000 milliseconds.",
+        "Checkpoint and navigation actions are browser-only.",
+        "Checkpoint labels must be unique and references must name an earlier checkpoint.",
+        "Inspection supports at most four checkpoints plus the final screenshot.",
+        "Inspection supports one bounded frame timing capture.",
         "Browser inspection requires a loopback HTTP URL and no PID.",
         "Only unauthenticated local loopback HTTP previews are supported.",
         "Desktop inspection requires an existing project process PID and no URL/server.",

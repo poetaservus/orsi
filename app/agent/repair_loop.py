@@ -8,6 +8,8 @@ import os
 from app.agent.edit_progress import EditRejection
 from app.agent.feedback import canonical_json
 from app.capabilities.repair_diagnosis import RepairDiagnosis
+from app.agent.contracts import SettledCall
+from app.agent.source_evidence import source_read_proof
 
 
 def _under(path, project):
@@ -25,6 +27,8 @@ class RepairLoopTracker:
     def __init__(self):
         self._failures = {}
         self._reads = {}
+        self._source_calls = []
+        self._source_steps = {}
 
     def before(self, call, *, step):
         if call.capability not in {'filesystem.edit_text','filesystem.write_text'}:
@@ -36,8 +40,8 @@ class RepairLoopTracker:
                 diagnosis = RepairDiagnosis.model_validate(call.arguments.get('repair_diagnosis'))
             except ValueError:
                 diagnosis = None
-            fresh = any(failure['step'] < read_step < step and _under(path, project)
-                for path, read_step in self._reads.items())
+            fresh = any(failure['step'] < start_step <= read_step < step and _under(path, project)
+                for path, (start_step, read_step) in self._reads.items())
             if diagnosis is None or diagnosis.evidence_receipt != failure['receipt'] or not fresh:
                 return EditRejection('inspection_diagnosis',
                     f"No edit executed after failed inspection {failure['receipt']}. Receive a complete current source read "
@@ -56,11 +60,18 @@ class RepairLoopTracker:
 
     def observe(self, call, result, *, step):
         output = result.output if isinstance(result.output, dict) else {}
+        settled = SettledCall(provider_message_id=f'step-{step}', call=call, result=result)
+        proof = source_read_proof(settled, self._source_calls)
+        self._source_calls.append(settled)
+        self._source_steps[result.call_id] = step
         if call.capability == 'filesystem.read_text' and result.success:
             path = output.get('path')
-            if (isinstance(path,str) and output.get('source_complete') is True
-                    and not output.get('truncated_by_bytes') and not output.get('truncated_by_lines')):
-                self._reads[path] = step
+            if isinstance(path, str):
+                if proof is not None:
+                    self._reads[path] = (self._source_steps[proof.call_ids[0]], step)
+                elif (output.get('source_complete') is True and not output.get('truncated_by_bytes')
+                        and not output.get('truncated_by_lines')):
+                    self._reads[path] = (step, step)
             return None
         if call.capability != 'project.inspect':
             return None

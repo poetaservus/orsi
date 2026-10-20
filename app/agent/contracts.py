@@ -68,7 +68,7 @@ class AgentRunResult(BaseModel):
     capability_calls: int = Field(ge=0, le=MAX_AGENT_CAPABILITY_CALLS)
     protocol_failures: int = Field(ge=0, le=MAX_AGENT_STEPS)
     consecutive_format_failures: int = Field(default=0, ge=0, le=MAX_AGENT_STEPS)
-    semantic_corrections: int = Field(default=0, ge=0, le=MAX_AGENT_STEPS)
+    semantic_corrections: int = Field(default=0, ge=0, le=MAX_AGENT_STEPS + MAX_AGENT_CAPABILITY_CALLS)
     model_requests: int = Field(default=0, ge=0, le=MAX_AGENT_MODEL_REQUESTS)
     # Includes compaction requests; it is accounting, not the execution budget.
     inference_requests: int = Field(default=0, ge=0)
@@ -81,6 +81,7 @@ class AgentRunResult(BaseModel):
     settled_calls: tuple[SettledCall, ...] = Field(default=(), max_length=MAX_AGENT_CAPABILITY_CALLS)
     goal: TaskGoal | None = None
     completion_review: CompletionReview | None = None
+    delivered_visuals: tuple[str, ...] = Field(default=(), max_length=MAX_AGENT_CAPABILITY_CALLS * 5)
 
     @model_validator(mode="after")
     def validate_terminal_outcome(self):

@@ -12,4 +12,7 @@ def ready_review_for(messages):
     if not content.startswith(REVIEW_PREFIX):
         return None
     goal_id = json.loads(content.split("goal_id=", 1)[1].split(", status=", 1)[0])
-    return ModelResponse.text(json.dumps({"goal_id": goal_id, "status": "ready", "remaining": []}))
+    catalog = json.loads(content.split('\nCurrent completion receipts: ', 1)[1].split('\n', 1)[0]) if '\nCurrent completion receipts: ' in content else []
+    evidence = [{'call_id': item['call_id'], 'claim': item['observed'], 'visual_sha256': [],
+                 'readiness_call_id': None} for item in catalog]
+    return ModelResponse.text(json.dumps({"goal_id": goal_id, "status": "ready", "remaining": [], 'evidence': evidence}))

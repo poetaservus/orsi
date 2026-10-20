@@ -9,6 +9,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.agent.goals import TaskGoal
 from app.agent.verification_scope import VERIFICATION_SCOPE_GUIDANCE
+from app.agent.completion_evidence import ReviewEvidence, evidence_catalog
+from app.settings.agent_limits import MAX_AGENT_CAPABILITY_CALLS
 
 
 REVIEW_PREFIX = "Review the proposed final answer against the current request."
@@ -21,6 +23,7 @@ class CompletionReview(BaseModel):
     goal_id: str = Field(pattern=r"^turn-[1-9][0-9]*$")
     status: Literal["ready", "continue", "blocked"]
     remaining: tuple[str, ...] = Field(max_length=32, repr=False)
+    evidence: tuple[ReviewEvidence, ...] = Field(default=(), max_length=MAX_AGENT_CAPABILITY_CALLS)
 
     @model_validator(mode="after")
     def validate_remaining(self):
@@ -43,7 +46,8 @@ def task_context_message(goal: TaskGoal) -> dict:
     )}
 
 
-def completion_review_message(goal: TaskGoal, pending_recovery: str | None, *, browser_inspection_available=True) -> dict:
+def completion_review_message(goal: TaskGoal, pending_recovery: str | None, *, browser_inspection_available=True,
+                              settled_calls=(), delivered_visuals=()) -> dict:
     scope = VERIFICATION_SCOPE_GUIDANCE if browser_inspection_available else (
         'Request more work only for a specific unmet user requirement. Honor explicit instructions to skip browser verification '
         'or other checks; report unrun behavior as unverified. For inspection/summary requests, report defects; require repairs '
@@ -54,7 +58,16 @@ def completion_review_message(goal: TaskGoal, pending_recovery: str | None, *, b
         + scope + " Account for "
         "failed, stale, denied, unavailable and unrun checks; never call them passed. Return one JSON object with goal_id="
         + json.dumps(goal.goal_id)
-        + ', status="ready", "continue" or "blocked", and remaining=[strings]. '
+        + ', status="ready", "continue" or "blocked", remaining=[strings], and evidence=[objects]. '
+        'For each project check and latest shell outcome, evidence must name call_id and claim '
+        '(passed, failed, running, completed, succeeded, ready or unverified), visual_sha256=[exact assessed screenshot digests], '
+        'and readiness_call_id=null unless claiming server readiness. Cite only current-turn receipts. '
+        'Passed means a current passing project check. Completed means terminal command execution; succeeded requires command_succeeded=true. '
+        'Running establishes liveness only. A ready server needs a current passing project.inspect receipt for the same project. '
+        'A requested finite job still running requires continue or a concrete blocker; a requested persistent server need not exit. '
+        'Unverified or failed checks can be reported when the request is an inspection/report or explicitly skips them; '
+        'a historical failed attempt superseded by a current matching pass does not require another check. '
+        'Do not claim unperformed work complete. Visual assessment is a model observation, not independent behavior proof. '
         "Ready requires this assistant turn's work accounted for and remaining=[]. If the user request or active "
         "workflow requires clarification, concrete questions awaiting necessary user choices or information are "
         "ready to return so the user can answer, even though later workflow stages remain. Unanswered clarification "
@@ -65,6 +78,8 @@ def completion_review_message(goal: TaskGoal, pending_recovery: str | None, *, b
         "the normal loop will perform it with existing permissions. In text fallback, encode JSON in the response "
         "string of a tool=null decision."
         + (" Pending edit recovery: " + pending_recovery if pending_recovery else "")
+        + '\nCurrent completion receipts: ' + json.dumps(evidence_catalog(settled_calls, goal), separators=(',', ':'))
+        + '\nDelivered screenshot digests: ' + json.dumps(sorted(delivered_visuals))
     )}
 
 
@@ -93,6 +108,17 @@ def completion_review_schema(messages) -> dict:
     schema = CompletionReview.model_json_schema()
     schema["properties"]["goal_id"] = {"type": "string", "enum": [match.group(1)]}
     schema["properties"]["remaining"]["items"] = {"type": "string", "minLength": 1, "maxLength": 1000}
+    def require_properties(value):
+        if isinstance(value, dict):
+            value.pop('default', None)
+            if value.get('type') == 'object':
+                value['required'] = list(value.get('properties', {}))
+            for child in value.values():
+                require_properties(child)
+        elif isinstance(value, list):
+            for child in value:
+                require_properties(child)
+    require_properties(schema)
     return schema
 
 

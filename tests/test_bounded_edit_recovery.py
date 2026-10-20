@@ -148,17 +148,20 @@ def test_changed_arguments_and_intervening_reads_do_not_escape_target_failure_bo
     assert path.read_bytes() == b"old\r\nkeep\r\n"
 
 
-def test_reads_do_not_reset_existing_global_four_correction_limit(tmp_path, make_service):
+def test_reads_do_not_reset_per_target_recovery_limits(tmp_path, make_service):
     paths = [tmp_path / f"main-{index}.py" for index in range(2)]
     for path in paths:
         path.write_bytes(b"old")
     responses = []
-    for index, path in enumerate(paths * 2):
+    for index, path in enumerate([*paths, *paths, paths[0]]):
         responses += [read(index * 2 + 1, path), edit(index * 2 + 2, path, f"missing-{index}", "new")]
     service, _, approvals = make_service(responses)
     answer = stopped_report(service, "Fix both files.")
     outcome = service._turn_result
-    assert outcome.status == AgentRunStatus.SEMANTIC_CORRECTION_LIMIT and outcome.semantic_corrections == 4
+    assert outcome.status == AgentRunStatus.REPEATED_CALL and outcome.semantic_corrections == 5
+    assert len(outcome.settled_calls) == 10
+    assert all(path.read_bytes() == b'old' for path in paths)
+    assert 'three rejected edits' in outcome.message
     assert "invalid_arguments" in answer and approvals == []
     assert service.agent_runtime.limits.max_semantic_corrections == 4
     assert service.agent_runtime.limits.cloud_max_steps == AgentRuntimeLimits().cloud_max_steps == 128
