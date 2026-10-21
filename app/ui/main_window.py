@@ -358,7 +358,7 @@ class MainWindow(QMainWindow):
         _load_ui_font()
         del hostname
         self.service = service
-        self._semantic_progress_enabled = (os.environ.get("ORSI_ENABLE_SEMANTIC_PROGRESS", "").lower()
+        self._semantic_progress_enabled = (os.environ.get("ORSI_ENABLE_SEMANTIC_PROGRESS", "1").lower()
             in {"1", "true", "yes", "on"}) if semantic_progress_enabled is None else semantic_progress_enabled
         self._progress = None
         self._progress_timer = QTimer(self)

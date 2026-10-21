@@ -61,7 +61,8 @@ def test_status_order_alignment_updates_and_cleanup(app):
         view.close()
 
 
-def test_worker_activity_reaches_the_label_above_animation(app):
+def test_legacy_worker_activity_reaches_the_label_when_explicitly_disabled(app, monkeypatch):
+    monkeypatch.setenv("ORSI_ENABLE_SEMANTIC_PROGRESS", "0")
     entered, release = Event(), Event()
     class Service:
         def run(self, message, activity):

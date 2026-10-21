@@ -10,11 +10,11 @@ The architectural guide is [ARCHITECTURE.md](ARCHITECTURE.md). Current milestone
 
 ## Run the current development build
 
-Launch [ORSI_TEST.cmd](ORSI_TEST.cmd) from the checkout to exercise the feature-enabled
-development build. The portable runtime must already exist under `runtime/python`.
+Launch [ORSI.cmd](ORSI.cmd) from the checkout. The chronological task progress view
+is enabled by default. The portable runtime must already exist under `runtime/python`.
 Local inference requires a compatible GGUF model matching `config/model.json`;
 cloud inference requires a configured OpenAI connection.
-[ORSI.cmd](ORSI.cmd) is the base portable launcher.
+[ORSI_TEST.cmd](ORSI_TEST.cmd) retains the existing development capability overrides.
 
 For development:
 

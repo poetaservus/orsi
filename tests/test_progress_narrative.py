@@ -114,13 +114,14 @@ def test_timeline_groups_only_settled_operations_and_keeps_notes_readable_and_bo
 
 
 def test_real_worker_timeline_survives_final_and_excludes_late_events_and_model_history(app, tmp_path, monkeypatch):
+    monkeypatch.delenv("ORSI_ENABLE_SEMANTIC_PROGRESS", raising=False)
     service, model, runtime, notes = task_service(tmp_path)
     entered, release = Event(), Event()
     def hold(messages, capabilities):
         entered.set()
         release.wait(10)
     model.before_request[2] = hold
-    window = MainWindow(service, "fixture", semantic_progress_enabled=True)
+    window = MainWindow(service, "fixture")
     append = window.chat.append_narrative
     threads = []
     def append_on_gui(item):

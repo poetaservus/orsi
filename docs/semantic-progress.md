@@ -7,10 +7,20 @@ the desired view with a screenshot: a running account of the work, with muted
 operation summaries between task-specific paragraphs. This supersedes the
 single rotating sentence as the primary progress surface described below.
 
-`ORSI_TEST.cmd` now enables the view when `ORSI_ENABLE_SEMANTIC_PROGRESS` is unset.
-Restart the development app normally to use it. An explicit environment value
-of `0` retains the earlier display; the base `ORSI.cmd` launcher still requires
-an explicit value of `1`. No saved user preferences are migrated or rewritten.
+The view is now enabled by the application's normal startup default, including
+`ORSI.cmd`, `ORSI_TEST.cmd` and direct Python startup. Restart the app normally
+to use it; no special launcher or environment setup is required. An explicit
+`ORSI_ENABLE_SEMANTIC_PROGRESS=0` retains the earlier display. No saved user
+preferences are migrated or rewritten. The launcher-specific enablement from
+`67530bc` was corrected on `codex/progress-normal-startup`.
+
+Normal-startup verification passes **60 focused checks in 19.58 seconds**, with
+no failures or skips. The real worker timeline runs without a feature override;
+an explicit opt-out still delivers the legacy status. Approval-free writes keep
+their raw detail inspectable. Notifications, streaming and inline approvals are
+included. Evidence is under ignored `state/progress-normal-startup-focused.xml`
+with repository-local temporary/cache directories. No full-suite or live-model
+qualification is claimed for this default-selection correction.
 
 The view contains normal public assistant text accompanying accepted native
 tool-call responses, followed by summaries of operations after their receipts

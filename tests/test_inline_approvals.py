@@ -230,7 +230,8 @@ def test_saved_off_runs_native_write_with_status_and_no_composer_review(tmp_path
         assert not reviews and "approval" not in notifications
         assert window._approval_panel is None
         assert window._composer_stack.currentWidget() is window._message_composer
-        assert window.chat.activity_label.text() == "Writing xyz.py…"
+        assert "Writing xyz.py…" in window.chat.technical_details.toPlainText()
+        assert window.chat.activity_label.text() != "Writing xyz.py…"
     finally:
         release.set()
         deadline = monotonic() + 10

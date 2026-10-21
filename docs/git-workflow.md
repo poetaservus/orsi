@@ -1,5 +1,20 @@
 # Git layout and baseline hygiene
 
+## Progress in normal startup, 21 October 2026
+
+`codex/progress-normal-startup` starts from local main `67530bc`. Chronological
+progress is the application default for every entry point, including ordinary
+`ORSI.cmd` startup. The development launcher no longer owns the enablement.
+The explicit environment opt-out is preserved. The real worker regression now
+uses normal startup with no override; the legacy display check explicitly tests
+the opt-out. Raw operation detail remains inspectable during approval-free work.
+Prompts, execution and saved settings are unchanged by this startup correction.
+The focused selection passes 60 checks in 19.58 seconds, with no failures or
+skips; no full-suite or live-model run is claimed.
+Preserve prior main at `archive/2026-10-21/main-before-progress-normal-startup`,
+commit after focused verification, fast-forward main and remove only the merged
+local branch. Other worktrees and remote refs remain intact.
+
 ## Chronological progress, 21 October 2026
 
 `codex/progress-narrative` starts from local main `da2329b`. Following the user's
