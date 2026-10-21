@@ -1,5 +1,15 @@
 # Git layout and baseline hygiene
 
+## Technical details order, 21 October 2026
+
+`codex/technical-details-order` starts from local main `5a63460`. Technical
+details now appear above the working counter; messages and progress paragraphs
+remain above both. Collapsed and expanded renders verify the order. The existing
+focused progress/status selection passes 34 checks in 9.41 seconds; no new tests,
+full-suite or live-model run is added for this small layout change. Preserve
+prior main at `archive/2026-10-21/main-before-technical-details-order`, commit,
+fast-forward main and remove only the merged local feature branch.
+
 ## Progress in normal startup, 21 October 2026
 
 `codex/progress-normal-startup` starts from local main `67530bc`. Chronological

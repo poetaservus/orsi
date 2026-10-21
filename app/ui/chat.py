@@ -541,7 +541,7 @@ class ChatView(QScrollArea):
         self._technical_layout.addWidget(self.technical_toggle, alignment=Qt.AlignmentFlag.AlignLeft)
         self._technical_layout.addWidget(self.technical_details)
         self._technical_row.hide()
-        self._layout.addWidget(self._technical_row)
+        self._layout.insertWidget(self._layout.indexOf(self._thinking_row), self._technical_row)
         self._layout.addStretch(1)
         self.setWidget(self._content)
         scroll_bar = self.verticalScrollBar()
@@ -601,7 +601,7 @@ class ChatView(QScrollArea):
         row_layout.addStretch(1)
 
         # Keep the thinking indicator at the end of the conversation.
-        self._layout.insertWidget(self._layout.indexOf(self._thinking_row), row)
+        self._layout.insertWidget(self._layout.indexOf(self._technical_row), row)
         apply_theme_tree(row)
         message.ensurePolished()
         for label in message._text_labels:
@@ -768,7 +768,7 @@ class ChatView(QScrollArea):
             layout.addStretch()
             layout.addWidget(timeline)
             layout.addStretch()
-            self._layout.insertWidget(self._layout.indexOf(self._thinking_row), row)
+            self._layout.insertWidget(self._layout.indexOf(self._technical_row), row)
             self._narrative_rows.append((row, timeline))
             self._active_timeline = timeline
             if len(self._narrative_rows) > 20:
