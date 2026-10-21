@@ -49,7 +49,7 @@ from app.inference.attachments import AttachmentError, AttachmentContextError, a
 from app.inference.diagnostics import record_context_budget
 from app.runtime.cancellation import CancellationSource, TaskCancelled
 from app.runtime.activity import report_activity
-from app.runtime.semantic_progress import ProgressPhase
+from app.runtime.semantic_progress import ProgressPhase, operation_summary
 from app.runtime.skills import (
     SkillDefinition, SkillRegistry, SkillActivationError, SkillActivationErrorCode, with_active_skill,
     SkillCandidate, SkillSelection, select_skill,
@@ -285,6 +285,7 @@ class ConversationService:
     supports_skill_reporting = True
     supports_admission_reporting = True
     supports_progress_reporting = True
+    supports_narrative_reporting = True
 
     @property
     def turn_status(self):
@@ -301,19 +302,21 @@ class ConversationService:
             skill_name=skill_name if skill_name is not None else self._active_skill_name)
 
     def run(self, user_message: str, activity=None, *, skill_name: str | None = None, text_observer=None,
-            skill_observer=None, attachments=(), admission_observer=None, progress_observer=None) -> str:
+            skill_observer=None, attachments=(), admission_observer=None, progress_observer=None,
+            narrative_observer=None) -> str:
         """Run one turn; an optional explicit skill applies only to this message."""
         from app.runtime.diagnostic_context import begin_turn, end_turn
         diagnostic_token = begin_turn()
         try:
             return self._run_turn(user_message, activity, skill_name=skill_name, text_observer=text_observer,
                 skill_observer=skill_observer, attachments=attachments, admission_observer=admission_observer,
-                progress_observer=progress_observer)
+                progress_observer=progress_observer, narrative_observer=narrative_observer)
         finally:
             end_turn(diagnostic_token)
 
     def _run_turn(self, user_message: str, activity=None, *, skill_name: str | None = None, text_observer=None,
-                  skill_observer=None, attachments=(), admission_observer=None, progress_observer=None) -> str:
+                  skill_observer=None, attachments=(), admission_observer=None, progress_observer=None,
+                  narrative_observer=None) -> str:
         text = str(user_message).strip()
         submitted_references = attachment_references(attachments)
         if not text and not submitted_references:
@@ -505,7 +508,7 @@ class ConversationService:
                     completion=value.completion, completion_history=value.completion_history)
             else:
                 report_activity(progress_observer, ProgressPhase.WORK)
-                answer = self._run_agent_turn(text, source, activity, observe_review)
+                answer = self._run_agent_turn(text, source, activity, observe_review, narrative_observer)
             answer = present_questions(answer, allow_forms=self._turn_result.status == AgentRunStatus.COMPLETED,
                                        request=text)
             if (self._turn_result.status == AgentRunStatus.COMPLETED and not image_turn
@@ -650,6 +653,7 @@ class ConversationService:
         source: CancellationSource,
         activity=None,
         completion_review_observer=None,
+        narrative_observer=None,
     ) -> str:
         if self.agent_runtime is None or self.portable_root is None:
             raise RuntimeError("The structured agent runtime is unavailable.")
@@ -666,11 +670,14 @@ class ConversationService:
             except Exception:
                 self._history_persistence_failed = True
                 raise
+            if narrative_observer is not None:
+                report_activity(narrative_observer, operation_summary(settled))
 
         capabilities = self._turn_capabilities(text)
         request = self._model_request(
             capability_turn=True,
             capability_names=capabilities,
+            progress_narrative=narrative_observer is not None,
         )
         if not request.budget.fits:
             self._turn_result = AgentRunResult(status=AgentRunStatus.CONTEXT_LIMIT,
@@ -704,6 +711,7 @@ class ConversationService:
             capability_names=capabilities,
             activity_observer=activity,
             completion_review_observer=completion_review_observer,
+            commentary_observer=narrative_observer,
             goal_request=text,
         )
         if result.status == AgentRunStatus.COMPLETED:
@@ -1068,6 +1076,7 @@ class ConversationService:
         *,
         capability_turn: bool | None = None,
         capability_names: tuple[str, ...] | None = None,
+        progress_narrative: bool = False,
     ) -> ContextSelection:
         self._admit_attachments()
         use_agent = self.agent_enabled and capability_turn is not False
@@ -1081,6 +1090,7 @@ class ConversationService:
                 self.host_read_scope or HostReadScope.PORTABLE_ROOT,
                 capabilities,
                 allow_read_batches=getattr(self.inference, "mode", None) == "cloud",
+                progress_narrative=progress_narrative,
                 user_home=(
                     str(self.host_access_policy.user_home)
                     if self.host_access_policy is not None

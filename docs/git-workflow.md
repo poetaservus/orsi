@@ -1,5 +1,21 @@
 # Git layout and baseline hygiene
 
+## Chronological progress, 21 October 2026
+
+`codex/progress-narrative` starts from local main `da2329b`. Following the user's
+visual clarification, task-specific public paragraphs and grouped settled tool
+summaries form a chronological work log. The development launcher enables it by
+default; the existing environment override remains available. Only the in-band
+public-progress instruction changes when enabled; model requests, tools, routing,
+permissions, retries and completion decisions retain their existing boundaries.
+See [current behavior, focused evidence and known baseline failure](semantic-progress.md).
+The focused selection's unchanged recovery-budget failure reproduces with the
+committed baseline runtime and remains recorded separately. No full-suite or
+live-model qualification is claimed. Preserve prior main at
+`archive/2026-10-21/main-before-progress-narrative`, commit, fast-forward main and
+remove only the merged local feature branch. Other worktrees, settings, model
+profiles and historical/unmerged/remote refs remain intact.
+
 ## Semantic progress, 21 October 2026
 
 `codex/semantic-progress` starts from local main `d049878`. The bounded

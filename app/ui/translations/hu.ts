@@ -4701,6 +4701,38 @@ A tartalékok levonása után fennmarad: {value_9}</translation>
   <context>
     <name>OrsiUIExtras</name>
     <message>
+      <source>Inspected files</source>
+      <translation>Fájlok megvizsgálva</translation>
+    </message>
+    <message>
+      <source>Ran checks</source>
+      <translation>Ellenőrzések futtatva</translation>
+    </message>
+    <message>
+      <source>Ran commands</source>
+      <translation>Parancsok futtatva</translation>
+    </message>
+    <message>
+      <source>Read files</source>
+      <translation>Fájlok beolvasva</translation>
+    </message>
+    <message>
+      <source>Tool attempt stopped</source>
+      <translation>Az eszközművelet nem fejeződött be</translation>
+    </message>
+    <message>
+      <source>Updated files</source>
+      <translation>Fájlok módosítva</translation>
+    </message>
+    <message>
+      <source>Used tools</source>
+      <translation>Eszközök használva</translation>
+    </message>
+    <message>
+      <source>Worked in Office</source>
+      <translation>Office-műveletek végrehajtva</translation>
+    </message>
+    <message>
       <source>A task is waiting for your answer.</source>
       <translation>Egy feladat a válaszodra vár.</translation>
     </message>

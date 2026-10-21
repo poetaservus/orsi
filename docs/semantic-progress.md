@@ -1,12 +1,100 @@
 # Semantic progress and attention notifications, 21 October 2026
 
+## Chronological progress correction (current)
+
+`codex/progress-narrative` starts from local main `da2329b`. The user clarified
+the desired view with a screenshot: a running account of the work, with muted
+operation summaries between task-specific paragraphs. This supersedes the
+single rotating sentence as the primary progress surface described below.
+
+`ORSI_TEST.cmd` now enables the view when `ORSI_ENABLE_SEMANTIC_PROGRESS` is unset.
+Restart the development app normally to use it. An explicit environment value
+of `0` retains the earlier display; the base `ORSI.cmd` launcher still requires
+an explicit value of `1`. No saved user preferences are migrated or rewritten.
+
+The view contains normal public assistant text accompanying accepted native
+tool-call responses, followed by summaries of operations after their receipts
+settle and are retained. Consecutive operations coalesce into labels such as
+`Read files`, `Updated files`, and `Ran commands`. Failed operations use
+`Tool attempt stopped` and do not masquerade as successful edits or checks.
+These summaries never interpolate arguments, document contents or tool output.
+
+One scoped presentation instruction permits occasional short public paragraphs
+alongside native calls. It replaces the existing prohibition on such prose only
+when the view is enabled. The instruction asks for concrete findings, changes
+and next steps, distinguishing plans from verified results. It preserves the
+exact JSON fallback contract. Routing, tools, authorization, retry and completion
+decisions, model profiles, sampling, context limits and acceptance prompts are
+unchanged. There are no additional model/API requests for narration; ordinary
+responses may contain more public output text within their existing budget.
+
+`AgentRuntime` emits commentary after native-response validation and before
+tool execution. The callback uses the existing safe observer helper, so a broken
+display cannot stop work. `ConversationService` emits operation summaries only
+after durable settlement. `ConversationWorker` correlates the events; the
+existing GUI thread receives them through queued slots. Completion assessments,
+private reasoning, raw provider internals and speculative tool results are not
+sources of paragraphs. Commentary itself does not complete a task or notify.
+
+`app/ui/progress_timeline.py` renders paragraphs with the existing safe Markdown
+widget and plain operation captions. Earlier entries remain visible when the
+task finishes or stops, preceding the normal final response. Each task retains
+up to 40 entries of at most 4,000 characters per paragraph; the view retains at
+most 20 task timelines. Event deduplication is bounded. New sessions clear these
+transient views. They add no extra conversational/model-history messages; native
+assistant text already retained by the normal tool transcript remains intact.
+The old phase sentence is a fallback when no public commentary is available.
+Approval and stop notices still appear immediately. Raw technical details and
+the strict attention policy from the first integration remain available.
+
+Eight operation captions extend the Hungarian pilot through its existing
+optional translation context. Other catalogs use the established English
+fallback. Existing translations and pending native-review status are preserved.
+
+Verification for this correction:
+
+- Six focused cases pass, including real tool execution/settlement
+  order, display failure isolation, public commentary, GUI-thread delivery,
+  bounded grouping, final retention and absence of extra model requests. The
+  prompt case covers both local and cloud batching guidance.
+- The affected existing progress/streaming selection passes 22 checks.
+- The broader focused selection records **195 passed and one failed** in 46.98
+  seconds, with no skips. The failure is the unchanged
+  `test_schema_errors_have_a_separate_cumulative_semantic_budget`. An isolated
+  process loading the committed `da2329b` runtime reproduces the same expected
+  `semantic_correction_limit` versus actual `completed` assertion. That test
+  exercises the runtime directly without the new commentary observer or prompt
+  option. Its recovery policy and assertion are preserved; the selection is not
+  reported as fully passing.
+- Final affected narrative/UI/notification/theme selection: **86 passed in
+  31.95 seconds**, no failures or skips. Selections overlap and must not be
+  added together.
+- Full-size and narrow synthetic renders were inspected against the supplied
+  reference. Evidence is under ignored `state/progress-narrative-*.xml`,
+  repository-local temporary directories and `state/progress-narrative-*.png`.
+  An initial GUI test override omitted Qt slot registration; it was corrected
+  to observe the actual registered receiver, which confirms GUI-thread delivery.
+
+No full-suite run, live model/API qualification or real Word/Excel workflow is
+claimed. Natural paragraph frequency depends on the model emitting public
+commentary; JSON-only fallback and commentary-free providers still show factual
+operation summaries. Rich progress is transient across app restarts. Manual
+acceptance remains useful for the actual long Word/Excel tasks and chosen model.
+
+Preserve prior main at `archive/2026-10-21/main-before-progress-narrative`, commit
+the bounded correction, fast-forward local main and remove only its merged
+branch under `AGENTS.md`. Preserve the running user app, other worktrees, user
+settings and all unrelated historical/unmerged/remote refs.
+
+## Original phase-only implementation (historical)
+
 `codex/semantic-progress` starts from clean local main `d049878`. This is the
 first bounded integration of the Desktop semantic-progress handoff. The actual
 application uses **PySide6**; its existing Qt stack and execution engine remain
 in place. No prompts, routing, model requests, tool behavior, retries, completion
 policy, model profiles or user preferences are changed.
 
-## Behavior and rollout
+### Original behavior and rollout
 
 Sentence-based progress is opt-in while the real Word/Excel acceptance flows
 remain pending. Start the development launcher from PowerShell with:
@@ -33,7 +121,7 @@ latest task finishes and clears on a new request or history reset. This is
 transient UI history, not a new persistence system. Existing execution records
 remain authoritative.
 
-## Integration map
+### Original integration map
 
 - `app/conversation/orchestrator.py`: optional observer at actual preparation,
   execution, completion-review and history-saving boundaries. Observer exceptions
@@ -56,7 +144,7 @@ remain authoritative.
   preserving existing notification enablement, foreground suppression, sound,
   native delivery and click-to-focus behavior.
 
-## Exact attention policy
+### Exact attention policy (retained)
 
 | Observed state | Desktop/sound attention, subject to existing preferences |
 | --- | --- |
@@ -75,7 +163,7 @@ is recognized from the retained outcome even when legacy cancellation text lacks
 completion metadata. Banners contain fixed copy, never question text, paths,
 arguments or provider errors.
 
-## Verification
+### Original verification
 
 - Focused affected regression selection: **184 passed in 96.63 seconds**, no
   failures or skips. Includes the new progress tests plus working status,
@@ -99,7 +187,7 @@ arguments or provider errors.
   native Office editing or full-suite run is claimed; the user requested focused,
   essential checks.
 
-## Deliberate limits and next acceptance
+### Original limits and acceptance
 
 The first integration uses coarse phases. It does not infer document/spreadsheet
 milestones or claim that layout, formulas or checks passed from tool names.

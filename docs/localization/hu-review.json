@@ -14,13 +14,13 @@
   },
   "baseline_commit": "b87c29b",
   "style_guide": "docs/hungarian-ui.md",
-  "entry_count": 785,
-  "source_sha256": "d3df5db058b732e75506f1d56756c10fa99aea37b7a192e2daa21b85d6b9a6cb",
-  "translation_sha256": "74b6d75ce05363e4df7ece0ea4a8c0b26b9de45f8b782417fc3f606658589aa4",
+  "entry_count": 793,
+  "source_sha256": "cf808fbdaffa17b8f8bcec72662a869179f62493fefa889096b48587847947ac",
+  "translation_sha256": "a4dca800a7c7abc308aff2a31a1cdd3ccd529aa62790a79d44591a204b34074c",
   "maintenance": {
     "date": "2026-10-21",
-    "baseline_commit": "d049878",
-    "method": "Added nine semantic-progress and input-notification labels after contextual Hungarian copy review. Existing copy and native-review status are preserved."
+    "baseline_commit": "da2329b",
+    "method": "Added eight chronological progress activity labels after contextual Hungarian copy review. Existing translations and native-review status are preserved."
   },
   "maintenance_history": [
     {
@@ -37,6 +37,11 @@
       "date": "2026-10-19",
       "baseline_commit": "2f94758",
       "method": "Added the missing local-stop explanation after contextual Hungarian copy review. Existing translations and native-review status are preserved."
+    },
+    {
+      "date": "2026-10-21",
+      "baseline_commit": "d049878",
+      "method": "Added nine semantic-progress and input-notification labels after contextual Hungarian copy review. Existing copy and native-review status are preserved."
     }
   ]
 }

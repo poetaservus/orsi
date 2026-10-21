@@ -23,6 +23,52 @@ class ProgressEvent:
     phase: ProgressPhase
 
 
+class OperationKind(StrEnum):
+    READ = "read"
+    INSPECT = "inspect"
+    EDIT = "edit"
+    COMMAND = "command"
+    CHECK = "check"
+    OFFICE = "office"
+    TOOL = "tool"
+
+
+@dataclass(frozen=True)
+class NarrativeItem:
+    event_id: str
+    text: str = ""  # Public assistant text accompanying an accepted native tool batch.
+    operation: OperationKind | None = None
+    success: bool = True
+
+
+@dataclass(frozen=True)
+class NarrativeEvent:
+    task_id: str
+    run_id: str
+    item: NarrativeItem
+
+
+def operation_summary(settled):
+    """A settled operation label, containing no arguments or tool output."""
+    name = settled.call.capability
+    if name in {"filesystem.read_text", "skill.read_reference", "conversation.read_turn"}:
+        kind = OperationKind.READ
+    elif name in {"filesystem.stat", "filesystem.list", "filesystem.find", "filesystem.search"}:
+        kind = OperationKind.INSPECT
+    elif name in {"filesystem.write_text", "filesystem.edit_text", "filesystem.copy", "filesystem.move",
+                  "filesystem.mkdir", "filesystem.trash"}:
+        kind = OperationKind.EDIT
+    elif name == "shell.run":
+        kind = OperationKind.COMMAND
+    elif name in {"project.verify", "project.inspect"}:
+        kind = OperationKind.CHECK
+    elif name.startswith("office."):
+        kind = OperationKind.OFFICE
+    else:
+        kind = OperationKind.TOOL
+    return NarrativeItem(settled.result.call_id, operation=kind, success=settled.result.success)
+
+
 class SemanticProgress:
     def __init__(self, task_id, run_id, *, min_interval=12.0):
         self.task_id, self.run_id = task_id, run_id

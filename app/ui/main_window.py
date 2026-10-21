@@ -1398,7 +1398,8 @@ class MainWindow(QMainWindow):
         self._set_busy(True)
         self.thread = QThread()
         self.worker = ConversationWorker(self.service, message, skill_name=skill_name, attachments=attachments,
-                                         report_admission=self._question_panel is not None)
+                                         report_admission=self._question_panel is not None,
+                                         narrative_enabled=self._semantic_progress_enabled)
         self._progress = SemanticProgress(self.worker.task_id, self.worker.run_id)
         self.worker.moveToThread(self.thread)
         self.thread.started.connect(self.worker.run)
@@ -1406,6 +1407,7 @@ class MainWindow(QMainWindow):
         self.worker.failed.connect(self._worker_failed)
         self.worker.activity.connect(self._set_working_activity)
         self.worker.progress.connect(self._receive_progress, Qt.ConnectionType.QueuedConnection)
+        self.worker.narrative.connect(self._receive_narrative, Qt.ConnectionType.QueuedConnection)
         self.worker.text_updated.connect(self._stream_preview)
         self.worker.skill_used.connect(self._set_user_message_skill)
         self.worker.admitted.connect(self._attachment_admitted)
@@ -1802,6 +1804,14 @@ class MainWindow(QMainWindow):
         return isinstance(sender, ConversationWorker) and sender is not self.worker
 
     @Slot(object)
+    def _receive_narrative(self, event):
+        if (not self._semantic_progress_enabled or self._progress is None or self._progress.closed
+                or self.thread is None or self._image_stopping or getattr(self, "_closing", False)
+                or (event.task_id, event.run_id) != (self._progress.task_id, self._progress.run_id)):
+            return
+        self.chat.append_narrative(event.item)
+
+    @Slot(object)
     def _receive_progress(self, event):
         if (not self._semantic_progress_enabled or self._progress is None
                 or self.thread is None or self._image_stopping or getattr(self, "_closing", False)):
@@ -1830,6 +1840,8 @@ class MainWindow(QMainWindow):
         copy = progress_sentence(sentence) if isinstance(sentence, ProgressPhase) else sentence
         self.activity.set_activity(copy)
         self.chat.set_activity(copy)
+        if self.chat.generation_frame is None and self.chat._active_timeline is not None:
+            self.chat.activity_label.setVisible(not isinstance(sentence, ProgressPhase))
 
     def create_new_session(self) -> None:
         if self.thread is not None or self._settings_busy:

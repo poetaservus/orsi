@@ -82,6 +82,7 @@ from app.inference.diagnostics import record_context_budget
 from app.inference.completion import CompletionMetadata, CompletionText, IncompleteResponseError
 from app.inference.engine import InferenceEngine, InferenceUnavailable
 from app.runtime.activity import capability_activity, report_activity
+from app.runtime.semantic_progress import NarrativeItem
 from app.inference.protocol import (
     ModelCapabilityCall,
     ModelCapabilityDefinition,
@@ -446,6 +447,7 @@ class AgentRuntime:
         continuation_guard: Callable[[], str | None] | None = None,
         activity_observer: Callable[[str], None] | None = None,
         completion_review_observer: Callable[[bool], None] | None = None,
+        commentary_observer: Callable[[NarrativeItem], None] | None = None,
         _recovery: _RecoveryUsage | None = None,
         _goal: list[TaskGoal] | None = None,
         _reviews: list[CompletionReview] | None = None,
@@ -477,6 +479,8 @@ class AgentRuntime:
             raise TypeError("Activity observers must be callable when supplied.")
         if completion_review_observer is not None and not callable(completion_review_observer):
             raise TypeError("Completion-review observers must be callable when supplied.")
+        if commentary_observer is not None and not callable(commentary_observer):
+            raise TypeError("Commentary observers must be callable when supplied.")
         if (
             not isinstance(required_calls, tuple)
             or not all(isinstance(call, ModelCapabilityCall) for call in required_calls)
@@ -1065,6 +1069,9 @@ class AgentRuntime:
 
             capability_calls += len(calls)
             repeated = staged_repeated
+            if response.assistant_text and commentary_observer is not None:
+                report_activity(commentary_observer, NarrativeItem(provider_message_id,
+                    text=response.assistant_text.strip()[:4000]))
             results: list[CapabilityResult] = []
             recovery_feedback: list[str] = []
             semantic_stop = False

@@ -649,6 +649,7 @@ def compact_agent_system_prompt(
     user_home: str | None = None,
     *,
     allow_read_batches: bool = False,
+    progress_narrative: bool = False,
 ) -> str:
     """Shared agent policy; native schemas carry per-tool descriptions and arguments."""
     if not isinstance(read_scope, HostReadScope):
@@ -663,6 +664,8 @@ def compact_agent_system_prompt(
         raise TypeError("Compact agent user-home context must be text when supplied.")
     if type(allow_read_batches) is not bool:
         raise TypeError("Read batching requires an explicit boolean.")
+    if type(progress_narrative) is not bool:
+        raise TypeError("Progress narration requires an explicit boolean.")
 
     scope = (
         "enabled local filesystem drives accessible to the current Windows account"
@@ -693,6 +696,17 @@ def compact_agent_system_prompt(
         if allow_read_batches else
         "Normally make one tool call at a time and never mix calls with assistant prose. "
     )
+    if progress_narrative:
+        call_guidance = call_guidance.replace("Never mix calls with assistant prose. ", "").replace(
+            " and never mix calls with assistant prose", "")
+        call_guidance += (
+            "During multi-step work, occasionally accompany native tool calls with a short public progress paragraph. "
+            "Tell the user what you found in settled results, what you changed, and what you will do next. "
+            "Make it specific to their task; distinguish planned work from verified outcomes. "
+            "Do not narrate every tool call, repeat generic working messages, expose internal reasoning, "
+            "or claim task completion before the completion check. Keep progress out of tool arguments. "
+            "A JSON fallback must still follow its exact schema without surrounding prose. "
+        )
     edit_guidance = (
         " Prefer filesystem.edit_text for existing files and filesystem.write_text for new files "
         "or authorized deliberate full replacement. Before each edit, read the current file again; do not reuse "

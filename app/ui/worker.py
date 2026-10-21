@@ -7,7 +7,7 @@ from PySide6.QtCore import QObject, Signal, Slot
 from app.inference.completion import CompletionText, IncompleteResponseError, AgentStoppedError
 from app.inference.attachments import attachment_references
 from app.conversation.questions import present_questions
-from app.runtime.semantic_progress import ProgressEvent, attention_event
+from app.runtime.semantic_progress import ProgressEvent, NarrativeEvent, attention_event
 
 
 log = logging.getLogger(__name__)
@@ -24,8 +24,10 @@ class ConversationWorker(QObject):
     admitted = Signal()
     draft_rejected = Signal()
     progress = Signal(object)
+    narrative = Signal(object)
 
-    def __init__(self, service, message: str, *, skill_name: str | None = None, attachments=(), report_admission=False):
+    def __init__(self, service, message: str, *, skill_name: str | None = None, attachments=(), report_admission=False,
+                 narrative_enabled=False):
         super().__init__()
         self.service = service
         self.message = message
@@ -36,9 +38,13 @@ class ConversationWorker(QObject):
         self.task_id = uuid4().hex
         self.run_id = uuid4().hex
         self.attention = None
+        self._narrative_enabled = narrative_enabled
 
     def _report_progress(self, phase):
         self.progress.emit(ProgressEvent(self.task_id, self.run_id, phase))
+
+    def _report_narrative(self, item):
+        self.narrative.emit(NarrativeEvent(self.task_id, self.run_id, item))
 
     def _mark_admitted(self):
         self._admitted = True
@@ -64,6 +70,8 @@ class ConversationWorker(QObject):
                 kwargs["skill_observer"] = self.skill_used.emit
             if getattr(self.service, "supports_progress_reporting", False) is True:
                 kwargs["progress_observer"] = self._report_progress
+            if self._narrative_enabled and getattr(self.service, "supports_narrative_reporting", False) is True:
+                kwargs["narrative_observer"] = self._report_narrative
             response = self.service.run(self.message, self.activity.emit, **kwargs)
             if isinstance(response, str) and getattr(response, "completion", None) is not None:
                 if response.completion.incomplete and not response.strip():

@@ -10,6 +10,7 @@ from PySide6.QtGui import QColor, QFontDatabase, QLinearGradient, QPainter, QPen
 from PySide6.QtWidgets import (QHBoxLayout, QSizePolicy, QVBoxLayout)
 
 from app.ui.status import ThinkingDots, progress_sentence
+from app.ui.progress_timeline import ProgressTimeline
 from app.runtime.semantic_progress import ProgressPhase
 from app.ui.code_highlighting import CodeHighlighter
 from app.ui.copy_button import CopyButton
@@ -474,6 +475,8 @@ class ChatView(QScrollArea):
         self._messages: list[_Message] = []
         self._message_rows: list[QWidget] = []
         self._message_bands: list[_MessageBand] = []
+        self._narrative_rows = []
+        self._active_timeline = None
 
         self._thinking_row = QWidget()
         self._thinking_layout = QVBoxLayout(self._thinking_row)
@@ -615,10 +618,12 @@ class ChatView(QScrollArea):
 
     def refresh_theme(self):
         """Reflow existing text after a family change without moving the reader."""
-        if not self._message_bands:
-            return
         scroll = self.verticalScrollBar()
         value, follow = scroll.value(), self._follow_tail
+        for _, timeline in self._narrative_rows:
+            timeline.set_available_width(self._message_area_width())
+        if not self._message_bands:
+            return
         for band in self._message_bands:
             band.set_available_width(self._message_area_width())
         self._layout.activate()
@@ -653,6 +658,11 @@ class ChatView(QScrollArea):
         self.smooth_scroll.stop()
         self.set_thinking(False)
         self._clear_technical_details()
+        for row, _ in self._narrative_rows:
+            self._layout.removeWidget(row)
+            row.deleteLater()
+        self._narrative_rows.clear()
+        self._active_timeline = None
         if self.generation_frame is not None:
             self.generation_frame.stop()
             self.generation_frame.deleteLater()
@@ -707,6 +717,7 @@ class ChatView(QScrollArea):
         self.stream_preview.hide()
         self._thinking_row.setVisible(thinking)
         if thinking:
+            self._active_timeline = None
             self.activity_label.show()
             self.thinking_dots.show()
             self.activity_label.setText(progress_sentence(ProgressPhase.PREPARE)
@@ -741,6 +752,37 @@ class ChatView(QScrollArea):
         if self.semantic_progress_enabled and self._response_elapsed.isValid():
             self.technical_details.appendPlainText(text[:512])
             self._technical_row.show()
+
+    def append_narrative(self, item):
+        if not self.semantic_progress_enabled or not self._response_elapsed.isValid():
+            return
+        if item.operation is None and not item.text.strip():
+            return
+        if self._active_timeline is None:
+            row = QWidget()
+            layout = QHBoxLayout(row)
+            left, right = self._column_margins()
+            layout.setContentsMargins(left, 0, right, 0)
+            layout.setSpacing(0)
+            timeline = ProgressTimeline()
+            layout.addStretch()
+            layout.addWidget(timeline)
+            layout.addStretch()
+            self._layout.insertWidget(self._layout.indexOf(self._thinking_row), row)
+            self._narrative_rows.append((row, timeline))
+            self._active_timeline = timeline
+            if len(self._narrative_rows) > 20:
+                oldest, _ = self._narrative_rows.pop(0)
+                self._layout.removeWidget(oldest)
+                oldest.deleteLater()
+        if self._active_timeline.append(item):
+            self._active_timeline.set_available_width(self._message_area_width())
+            self.activity_label.hide()
+            if item.operation is None:
+                self.stream_preview.clear()
+                self.stream_preview.hide()
+            if self._follow_tail:
+                QTimer.singleShot(0, self._scroll_to_bottom)
 
     def _clear_technical_details(self):
         self.technical_toggle.setChecked(False)
@@ -787,6 +829,9 @@ class ChatView(QScrollArea):
         right = max(0, self.viewport().width() - left - width)
         self._thinking_layout.setContentsMargins(left + 4, 0, right, 0)
         self._technical_layout.setContentsMargins(left + 4, 0, right, 0)
+        for row, timeline in self._narrative_rows:
+            row.layout().setContentsMargins(left_margin, 0, right_margin, 0)
+            timeline.set_available_width(width)
 
     def _message_area_width(self) -> int:
         left_margin, right_margin = self._column_margins()
