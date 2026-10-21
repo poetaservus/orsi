@@ -1,5 +1,6 @@
 from __future__ import annotations
-from app.ui.localization import ui_text, QLabel, QWidget
+from app.ui.localization import ui_extra, ui_text, QLabel, QWidget
+from app.runtime.semantic_progress import ProgressPhase
 
 
 import math
@@ -8,6 +9,15 @@ from PySide6.QtCore import QElapsedTimer, QRectF, QTimer, Qt, Slot
 from PySide6.QtGui import QColor, QPainter
 from app.ui.theme_runtime import theme_color
 
+
+
+def progress_sentence(phase):
+    return {
+        ProgressPhase.PREPARE: ui_extra("I'm preparing the task and its inputs."),
+        ProgressPhase.WORK: ui_extra("I'm working through the requested task."),
+        ProgressPhase.REVIEW: ui_extra("I'm checking the result before finishing."),
+        ProgressPhase.FINALIZE: ui_extra("I'm saving the response and task history."),
+    }[phase]
 
 
 class ThinkingDots(QWidget):

@@ -1,5 +1,5 @@
 from __future__ import annotations
-from app.ui.localization import ui_extra, ui_text, QFrame, QLabel, QPlainTextEdit, QScrollArea, QWidget
+from app.ui.localization import ui_extra, ui_text, QFrame, QLabel, QPlainTextEdit, QScrollArea, QWidget, QPushButton
 
 
 import re
@@ -9,7 +9,8 @@ from PySide6.QtCore import QElapsedTimer, QPoint, QRect, QRectF, QTimer, Qt, Sig
 from PySide6.QtGui import QColor, QFontDatabase, QLinearGradient, QPainter, QPen
 from PySide6.QtWidgets import (QHBoxLayout, QSizePolicy, QVBoxLayout)
 
-from app.ui.status import ThinkingDots
+from app.ui.status import ThinkingDots, progress_sentence
+from app.runtime.semantic_progress import ProgressPhase
 from app.ui.code_highlighting import CodeHighlighter
 from app.ui.copy_button import CopyButton
 from app.ui.markdown import MarkdownLabel
@@ -510,6 +511,34 @@ class ChatView(QScrollArea):
         self._response_timer.setInterval(100)
         self._response_timer.timeout.connect(self._update_working_label)
         self._layout.addWidget(self._thinking_row)
+        self.semantic_progress_enabled = False
+        self._technical_row = QWidget()
+        self._technical_layout = QVBoxLayout(self._technical_row)
+        self._technical_layout.setContentsMargins(4, 0, 0, 0)
+        self.technical_toggle = QPushButton(ui_extra("Technical details"))
+        self.technical_toggle.setCheckable(True)
+        self.technical_toggle.setFlat(True)
+        apply_theme_style(self.technical_toggle, """
+            QPushButton { background: transparent; color: #b1b8c8; border: 1px solid transparent;
+                border-radius: 4px; padding: 4px 0; font-size: 11px; text-align: left; }
+            QPushButton:hover, QPushButton:checked { color: #eeeeef; }
+            QPushButton:focus { border-color: #8c90a0; }
+        """)
+        self.technical_details = QPlainTextEdit()
+        self.technical_details.setReadOnly(True)
+        self.technical_details.setMaximumBlockCount(100)
+        self.technical_details.setMaximumHeight(120)
+        self.technical_details.setAccessibleName(ui_extra("Technical details"))
+        apply_theme_style(self.technical_details, """
+            QPlainTextEdit { background: #151722; color: #c7cad2; border: 1px solid #494d60;
+                border-radius: 6px; padding: 6px; font-size: 11px; }
+        """)
+        self.technical_details.hide()
+        self.technical_toggle.toggled.connect(self.technical_details.setVisible)
+        self._technical_layout.addWidget(self.technical_toggle, alignment=Qt.AlignmentFlag.AlignLeft)
+        self._technical_layout.addWidget(self.technical_details)
+        self._technical_row.hide()
+        self._layout.addWidget(self._technical_row)
         self._layout.addStretch(1)
         self.setWidget(self._content)
         scroll_bar = self.verticalScrollBar()
@@ -623,6 +652,7 @@ class ChatView(QScrollArea):
     def clear_messages(self) -> None:
         self.smooth_scroll.stop()
         self.set_thinking(False)
+        self._clear_technical_details()
         if self.generation_frame is not None:
             self.generation_frame.stop()
             self.generation_frame.deleteLater()
@@ -679,7 +709,9 @@ class ChatView(QScrollArea):
         if thinking:
             self.activity_label.show()
             self.thinking_dots.show()
-            self.activity_label.setText(ui_text('Preparing your request…'))
+            self.activity_label.setText(progress_sentence(ProgressPhase.PREPARE)
+                if self.semantic_progress_enabled else ui_text('Preparing your request…'))
+            self._clear_technical_details()
             self._response_elapsed.start()
             self._update_working_label()
             self._response_timer.start()
@@ -705,13 +737,23 @@ class ChatView(QScrollArea):
         if self._follow_tail:
             QTimer.singleShot(0, self._scroll_to_bottom)
 
+    def record_activity(self, text):
+        if self.semantic_progress_enabled and self._response_elapsed.isValid():
+            self.technical_details.appendPlainText(text[:512])
+            self._technical_row.show()
+
+    def _clear_technical_details(self):
+        self.technical_toggle.setChecked(False)
+        self.technical_details.clear()
+        self._technical_row.hide()
+
     def set_stream_preview(self, text: str) -> None:
         # Empty provider events start a new stream, not a new user turn. Keep
         # the proposed answer through review/continued work until replacement.
         if not self._response_elapsed.isValid() or not text:
             return
         self.stream_preview.setText(text)
-        if text:
+        if text and not self.semantic_progress_enabled:
             self.set_activity(ui_text('Writing reply…'))
         self.stream_preview.setVisible(bool(text))
         if self._follow_tail:
@@ -744,6 +786,7 @@ class ChatView(QScrollArea):
         left = max(4, left_margin + (column_width - width) // 2)
         right = max(0, self.viewport().width() - left - width)
         self._thinking_layout.setContentsMargins(left + 4, 0, right, 0)
+        self._technical_layout.setContentsMargins(left + 4, 0, right, 0)
 
     def _message_area_width(self) -> int:
         left_margin, right_margin = self._column_margins()

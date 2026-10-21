@@ -1,5 +1,18 @@
 # Git layout and baseline hygiene
 
+## Semantic progress, 21 October 2026
+
+`codex/semantic-progress` starts from local main `d049878`. The bounded
+presentation adapter uses real lifecycle phases, optional sentence-based status,
+bounded technical details and retained outcomes for attention decisions. See
+[integration, opt-in launch and verification](semantic-progress.md). Semantic
+progress remains opt-in pending real Word/Excel acceptance. Notification fixes
+apply independently of the display flag. Focused checks are recorded separately
+from unrun live gates; no full-suite qualification is claimed. Preserve prior
+main at `archive/2026-10-21/main-before-semantic-progress`, commit, fast-forward
+local main and remove only the merged feature branch. Other worktrees, user
+settings, model profiles, historical/unmerged and remote refs remain intact.
+
 ## Office routing and stream compatibility, 21 October 2026
 
 `codex/office-routing-stream-compatibility` starts from local main `efafc96`.

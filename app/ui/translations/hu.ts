@@ -4701,6 +4701,42 @@ A tartalékok levonása után fennmarad: {value_9}</translation>
   <context>
     <name>OrsiUIExtras</name>
     <message>
+      <source>A task is waiting for your answer.</source>
+      <translation>Egy feladat a válaszodra vár.</translation>
+    </message>
+    <message>
+      <source>I need your approval to continue.</source>
+      <translation>A folytatáshoz a jóváhagyásodra van szükségem.</translation>
+    </message>
+    <message>
+      <source>I'm checking the result before finishing.</source>
+      <translation>Befejezés előtt ellenőrzöm az eredményt.</translation>
+    </message>
+    <message>
+      <source>I'm preparing the task and its inputs.</source>
+      <translation>Előkészítem a feladatot és a bemeneti adatokat.</translation>
+    </message>
+    <message>
+      <source>I'm saving the response and task history.</source>
+      <translation>Mentem a választ és a feladat előzményeit.</translation>
+    </message>
+    <message>
+      <source>I'm stopping the task.</source>
+      <translation>Leállítom a feladatot.</translation>
+    </message>
+    <message>
+      <source>I'm working through the requested task.</source>
+      <translation>Dolgozom a kért feladaton.</translation>
+    </message>
+    <message>
+      <source>O.R.S.I needs your input</source>
+      <translation>Az O.R.S.I a válaszodra vár</translation>
+    </message>
+    <message>
+      <source>Technical details</source>
+      <translation>Technikai részletek</translation>
+    </message>
+    <message>
       <location filename="../operation_review.py" line="19" />
       <source>App inspection</source>
       <translation>Alkalmazás vizsgálata</translation>

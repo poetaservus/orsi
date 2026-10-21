@@ -1,5 +1,5 @@
 """Attention events, local sound playback and UI preference persistence."""
-from app.ui.localization import ui_text
+from app.ui.localization import ui_extra, ui_text
 
 import logging
 import sys
@@ -106,11 +106,17 @@ class NotificationManager(QObject):
             self.backend.show()
 
     def notify(self, event):
+        if event not in EVENTS and event != "question":
+            return  # Central allowlist: ordinary progress/retries cannot alert.
         if self.closed or not self.enabled or getattr(self.window, "_closing", False):
             return
         if not self._needs_attention():
             return
-        title, message = (str(ui_text(text)) for text in EVENTS[event])
+        if event == "question":
+            title = str(ui_extra("O.R.S.I needs your input"))
+            message = str(ui_extra("A task is waiting for your answer."))
+        else:
+            title, message = (str(ui_text(text)) for text in EVENTS[event])
         self.play_sound(preview=False)
         QApplication.alert(self.window)
         try:
@@ -142,6 +148,8 @@ class NotificationManager(QObject):
         self.window.raise_()
         self.window.activateWindow()
         panel = getattr(self.window, "_approval_panel", None)
+        if panel is None:
+            panel = getattr(self.window, "_question_panel", None)
         (panel if panel is not None else self.window.input).setFocus()
 
     def shutdown(self):

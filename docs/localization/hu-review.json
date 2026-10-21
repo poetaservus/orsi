@@ -14,13 +14,13 @@
   },
   "baseline_commit": "b87c29b",
   "style_guide": "docs/hungarian-ui.md",
-  "entry_count": 776,
-  "source_sha256": "bfe0c8fe949f74a4f0a9935e16dc6e2a3da197b895c36bbc2690e789f96b350c",
-  "translation_sha256": "de91f858a64a80c27cba9dd69b9e19ebfa27c2a7964af01b6dc6719f9a7ff53d",
+  "entry_count": 785,
+  "source_sha256": "d3df5db058b732e75506f1d56756c10fa99aea37b7a192e2daa21b85d6b9a6cb",
+  "translation_sha256": "74b6d75ce05363e4df7ece0ea4a8c0b26b9de45f8b782417fc3f606658589aa4",
   "maintenance": {
-    "date": "2026-10-19",
-    "baseline_commit": "2f94758",
-    "method": "Added the missing local-stop explanation after contextual Hungarian copy review. Existing translations and native-review status are preserved."
+    "date": "2026-10-21",
+    "baseline_commit": "d049878",
+    "method": "Added nine semantic-progress and input-notification labels after contextual Hungarian copy review. Existing copy and native-review status are preserved."
   },
   "maintenance_history": [
     {
@@ -32,6 +32,11 @@
       "date": "2026-10-18",
       "baseline_commit": "220263c",
       "method": "Removed only the retired SettingsDragStrip source Move settings after qualified reachability review. All remaining translations and annotations are unchanged; native-review status remains pending."
+    },
+    {
+      "date": "2026-10-19",
+      "baseline_commit": "2f94758",
+      "method": "Added the missing local-stop explanation after contextual Hungarian copy review. Existing translations and native-review status are preserved."
     }
   ]
 }

@@ -49,6 +49,7 @@ from app.inference.attachments import AttachmentError, AttachmentContextError, a
 from app.inference.diagnostics import record_context_budget
 from app.runtime.cancellation import CancellationSource, TaskCancelled
 from app.runtime.activity import report_activity
+from app.runtime.semantic_progress import ProgressPhase
 from app.runtime.skills import (
     SkillDefinition, SkillRegistry, SkillActivationError, SkillActivationErrorCode, with_active_skill,
     SkillCandidate, SkillSelection, select_skill,
@@ -283,6 +284,12 @@ class ConversationService:
 
     supports_skill_reporting = True
     supports_admission_reporting = True
+    supports_progress_reporting = True
+
+    @property
+    def turn_status(self):
+        """Existing authoritative outcome, available after run() has settled."""
+        return self._turn_result.status if self._turn_result is not None else None
 
     def will_generate_images(self, text, *, attachments=(), skill_name=None):
         return self.image_route_decision(text, attachments=attachments, skill_name=skill_name).route == "image_generation"
@@ -294,18 +301,19 @@ class ConversationService:
             skill_name=skill_name if skill_name is not None else self._active_skill_name)
 
     def run(self, user_message: str, activity=None, *, skill_name: str | None = None, text_observer=None,
-            skill_observer=None, attachments=(), admission_observer=None) -> str:
+            skill_observer=None, attachments=(), admission_observer=None, progress_observer=None) -> str:
         """Run one turn; an optional explicit skill applies only to this message."""
         from app.runtime.diagnostic_context import begin_turn, end_turn
         diagnostic_token = begin_turn()
         try:
             return self._run_turn(user_message, activity, skill_name=skill_name, text_observer=text_observer,
-                skill_observer=skill_observer, attachments=attachments, admission_observer=admission_observer)
+                skill_observer=skill_observer, attachments=attachments, admission_observer=admission_observer,
+                progress_observer=progress_observer)
         finally:
             end_turn(diagnostic_token)
 
     def _run_turn(self, user_message: str, activity=None, *, skill_name: str | None = None, text_observer=None,
-                  skill_observer=None, attachments=(), admission_observer=None) -> str:
+                  skill_observer=None, attachments=(), admission_observer=None, progress_observer=None) -> str:
         text = str(user_message).strip()
         submitted_references = attachment_references(attachments)
         if not text and not submitted_references:
@@ -314,6 +322,7 @@ class ConversationService:
             raise RuntimeError("O.R.S.I is already replying.")
 
         source = CancellationSource()
+        self._turn_result = None
         turn_id = None
         answer = None
         self._question_projection_allowed = True
@@ -329,6 +338,7 @@ class ConversationService:
         def observe_review(active):
             nonlocal reviewing_completion
             reviewing_completion = active
+            report_activity(progress_observer, ProgressPhase.REVIEW if active else ProgressPhase.WORK)
 
         def publish_preview(value):
             if not reviewing_completion:
@@ -343,6 +353,7 @@ class ConversationService:
         activity_attached = False
         locale = "en"
         try:
+            report_activity(progress_observer, ProgressPhase.PREPARE)
             with self._cancellation_lock:
                 if self._closed:
                     raise RuntimeError("The conversation is closed.")
@@ -465,6 +476,7 @@ class ConversationService:
                 preview_setter(publish_preview)
                 preview_attached = True
             if image_turn or self.agent_runtime is None:
+                report_activity(progress_observer, ProgressPhase.WORK)
                 if image_turn:
                     current = {"role": "user", "content": text.removeprefix("/image ")}
                     if references:
@@ -492,6 +504,7 @@ class ConversationService:
                     model_requests=1,
                     completion=value.completion, completion_history=value.completion_history)
             else:
+                report_activity(progress_observer, ProgressPhase.WORK)
                 answer = self._run_agent_turn(text, source, activity, observe_review)
             answer = present_questions(answer, allow_forms=self._turn_result.status == AgentRunStatus.COMPLETED,
                                        request=text)
@@ -505,6 +518,7 @@ class ConversationService:
                 batch = project_questions(self.inference, request=text, answer=str(answer), cancellation=source.token)
                 answer = present_questions(CompletionText(answer, question_batch=batch))
             report_activity(activity, "Saving the conversation…")
+            report_activity(progress_observer, ProgressPhase.FINALIZE)
             self.store.finish_turn(turn_id, self._turn_result, answer)
             self._agent_history = self._stored_agent_history()
             return answer

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import logging
+from uuid import uuid4
 
 from PySide6.QtCore import QObject, Signal, Slot
 from app.inference.completion import CompletionText, IncompleteResponseError, AgentStoppedError
 from app.inference.attachments import attachment_references
 from app.conversation.questions import present_questions
+from app.runtime.semantic_progress import ProgressEvent, attention_event
 
 
 log = logging.getLogger(__name__)
@@ -21,6 +23,7 @@ class ConversationWorker(QObject):
     skill_used = Signal(str)
     admitted = Signal()
     draft_rejected = Signal()
+    progress = Signal(object)
 
     def __init__(self, service, message: str, *, skill_name: str | None = None, attachments=(), report_admission=False):
         super().__init__()
@@ -30,6 +33,12 @@ class ConversationWorker(QObject):
         self.attachments = attachment_references(attachments)
         self._admitted = False
         self._report_admission = report_admission
+        self.task_id = uuid4().hex
+        self.run_id = uuid4().hex
+        self.attention = None
+
+    def _report_progress(self, phase):
+        self.progress.emit(ProgressEvent(self.task_id, self.run_id, phase))
 
     def _mark_admitted(self):
         self._admitted = True
@@ -53,6 +62,8 @@ class ConversationWorker(QObject):
                 kwargs["text_observer"] = self.text_updated.emit
             if getattr(self.service, "supports_skill_reporting", False) is True:
                 kwargs["skill_observer"] = self.skill_used.emit
+            if getattr(self.service, "supports_progress_reporting", False) is True:
+                kwargs["progress_observer"] = self._report_progress
             response = self.service.run(self.message, self.activity.emit, **kwargs)
             if isinstance(response, str) and getattr(response, "completion", None) is not None:
                 if response.completion.incomplete and not response.strip():
@@ -61,13 +72,16 @@ class ConversationWorker(QObject):
             if response is None or not str(response).strip():
                 raise RuntimeError("O.R.S.I finished processing, but returned an empty response.")
             self._restore_unadmitted()
+            self.attention = attention_event(response, status=getattr(self.service, "turn_status", None))
             self.finished.emit(response)
         except (IncompleteResponseError, AgentStoppedError) as exc:
             self._restore_unadmitted()
+            self.attention = attention_event(exc, error=True, status=getattr(exc, "status", None))
             self.failed.emit(present_questions(CompletionText(exc.partial_text or str(exc), exc.completion,
                 exc.completion_history, status_message=str(exc) if exc.partial_text else None), allow_forms=False))
         except Exception as exc:
             self._restore_unadmitted()
+            self.attention = "error"
             log.exception("A conversation turn failed in the UI worker.")
             from app.vault.types import VaultError
             from app.vault.profiles import public_error

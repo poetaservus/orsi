@@ -3,6 +3,7 @@ from app.ui.localization import ui_extra, ui_text, QComboBox, QDialog, QFrame, Q
 
 
 import logging
+import os
 from pathlib import Path
 
 from PySide6.QtCore import (
@@ -43,12 +44,13 @@ from app.conversation.questions import question_chat_text
 from app.ui.operation_review import OperationReviewDialog
 from app.ui.chat import ChatView
 from app.ui.context_window import ContextWindowBar
-from app.ui.status import ConversationStatus
+from app.ui.status import ConversationStatus, progress_sentence
 from app.ui.worker import ConversationWorker, ModelSwitchWorker
 from app.ui.skill_picker import SkillPicker
 from app.ui.settings_panel import SettingsPanel
 from app.ui.inputs import ScrollSafeComboBox
 from app.ui.notifications import NotificationManager
+from app.runtime.semantic_progress import ProgressPhase, SemanticProgress, attention_event
 from app.ui.settings_motion import SettingsIconButton
 from app.ui.window_frame import CAPTION_HEIGHT, DEFAULT_WINDOW_SIZE, DragStrip, WindowControls, WindowsFrame
 from app.ui.attachments import AttachmentTray
@@ -350,11 +352,18 @@ class MainWindow(QMainWindow):
         startup_error: str | None = None,
         inference=None,
         preferences_store=None,
+        semantic_progress_enabled=None,
     ):
         super().__init__()
         _load_ui_font()
         del hostname
         self.service = service
+        self._semantic_progress_enabled = (os.environ.get("ORSI_ENABLE_SEMANTIC_PROGRESS", "").lower()
+            in {"1", "true", "yes", "on"}) if semantic_progress_enabled is None else semantic_progress_enabled
+        self._progress = None
+        self._progress_timer = QTimer(self)
+        self._progress_timer.setSingleShot(True)
+        self._progress_timer.timeout.connect(self._flush_progress)
         self._operation_review_dialog = None
         self.setAcceptDrops(True)
         self.inference = inference
@@ -487,6 +496,7 @@ class MainWindow(QMainWindow):
         self.operation_review_banner.hide()
         content_layout.addWidget(self.operation_review_banner)
         self.chat = ChatView(attachment_store=attachment_store)
+        self.chat.semantic_progress_enabled = self._semantic_progress_enabled
         self.chat.image_activated.connect(self._open_image_viewer)
         content_layout.addWidget(self.chat, 1)
 
@@ -1389,11 +1399,13 @@ class MainWindow(QMainWindow):
         self.thread = QThread()
         self.worker = ConversationWorker(self.service, message, skill_name=skill_name, attachments=attachments,
                                          report_admission=self._question_panel is not None)
+        self._progress = SemanticProgress(self.worker.task_id, self.worker.run_id)
         self.worker.moveToThread(self.thread)
         self.thread.started.connect(self.worker.run)
         self.worker.finished.connect(self._worker_succeeded)
         self.worker.failed.connect(self._worker_failed)
         self.worker.activity.connect(self._set_working_activity)
+        self.worker.progress.connect(self._receive_progress, Qt.ConnectionType.QueuedConnection)
         self.worker.text_updated.connect(self._stream_preview)
         self.worker.skill_used.connect(self._set_user_message_skill)
         self.worker.admitted.connect(self._attachment_admitted)
@@ -1550,11 +1562,19 @@ class MainWindow(QMainWindow):
         self._animate_composer_height(height)
         panel.setFocus()
         self._set_working_activity("Waiting for your approval…")
+        if self._semantic_progress_enabled:
+            if self._progress is not None:
+                self._progress.waiting = True
+                self._progress_timer.stop()
+            self._display_progress(ui_extra("I need your approval to continue."))
         self.notifications.notify("approval")
 
     def _approval_finished(self) -> None:
         panel = self._approval_panel
         self._approval_panel = None
+        if self._semantic_progress_enabled and self._progress is not None and not self._progress.closed:
+            self._progress.waiting = False
+            self._display_progress(self._progress.phase)
         if panel is not None:
             self._composer_stack.removeWidget(panel)
             panel.hide()
@@ -1627,6 +1647,8 @@ class MainWindow(QMainWindow):
 
     @Slot(str)
     def _stream_preview(self, text: str) -> None:
+        if self._stale_worker_callback():
+            return
         if not getattr(self, "_closing", False) and getattr(self, "_preview_active", False):
             self.chat.set_stream_preview(text)
 
@@ -1637,8 +1659,17 @@ class MainWindow(QMainWindow):
     def _done(self, text: str, error: bool) -> None:
         if getattr(self, "_closing", False):
             return
+        if self._stale_worker_callback():
+            return
+        if self._progress is not None and not self._progress.finish():
+            return
+        self._progress_timer.stop()
         images = getattr(text, "generated_images", ())
         cancelled = self._image_stopping or getattr(getattr(text, "completion", None), "finish_reason", None) == "cancelled"
+        event = (self.worker.attention if isinstance(self.worker, ConversationWorker)
+            else attention_event(text, error=error, cancelled=cancelled))
+        if cancelled:
+            event = None
         generation_frame = self.chat.take_generation_frame(images,
             status="Image generation stopped" if cancelled else "Image generation failed" if error else "Image generation stopped")
         if (error or cancelled) and self._image_in_flight and self._image_request_draft is not None:
@@ -1673,8 +1704,8 @@ class MainWindow(QMainWindow):
             )
         if notice:
             self.chat.add_message("Agent", notice)
-        if not cancelled:
-            self.notifications.notify("error" if error else "image" if images else "response")
+        if event is not None:
+            self.notifications.notify(event)
 
     @Slot()
     def _thread_finished(self) -> None:
@@ -1744,12 +1775,18 @@ class MainWindow(QMainWindow):
 
     @Slot(str)
     def _set_working_activity(self, text: str) -> None:
-        if self.thread is None:
+        if self.thread is None or self._stale_worker_callback() or self._progress is not None and self._progress.closed:
             return
         if text == "Generating image…" and self._image_stopping:
             return
-        self.activity.set_activity(text)
-        self.chat.set_activity(text)
+        if self._semantic_progress_enabled:
+            self.chat.record_activity(text)
+            if text == "Stopping…":
+                self._progress_timer.stop()
+                self._display_progress(ui_extra("I'm stopping the task."))
+        else:
+            self.activity.set_activity(text)
+            self.chat.set_activity(text)
         if text == "Generating image…":
             self._image_in_flight = True
             cloud = getattr(self.inference, "cloud", self.inference)
@@ -1759,6 +1796,40 @@ class MainWindow(QMainWindow):
             self.chat.start_image_generation(width / height)
         elif text == "Stopping…" and self.chat.generation_frame is not None:
             self.chat.generation_frame.stop("Stopping image generation…")
+
+    def _stale_worker_callback(self):
+        sender = self.sender()
+        return isinstance(sender, ConversationWorker) and sender is not self.worker
+
+    @Slot(object)
+    def _receive_progress(self, event):
+        if (not self._semantic_progress_enabled or self._progress is None
+                or self.thread is None or self._image_stopping or getattr(self, "_closing", False)):
+            return
+        sentence = self._progress.advance(event)
+        if sentence is not None:
+            self._display_progress(sentence)
+        self._schedule_progress()
+
+    def _schedule_progress(self):
+        if self._progress.pending:
+            self._progress_timer.start(self._progress.delay_ms())
+        else:
+            self._progress_timer.stop()
+
+    @Slot()
+    def _flush_progress(self):
+        if self._progress is None or self.thread is None or self._image_stopping or getattr(self, "_closing", False):
+            return
+        sentence = self._progress.flush()
+        if sentence is not None:
+            self._display_progress(sentence)
+        self._schedule_progress()
+
+    def _display_progress(self, sentence):
+        copy = progress_sentence(sentence) if isinstance(sentence, ProgressPhase) else sentence
+        self.activity.set_activity(copy)
+        self.chat.set_activity(copy)
 
     def create_new_session(self) -> None:
         if self.thread is not None or self._settings_busy:
@@ -2153,6 +2224,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:  # noqa: N802 - Qt API name
         self._closing = True
+        self._progress_timer.stop()
         self.settings_panel.hide()
         self.settings_button.reset()
         if self.settings_panel.office_controls.worker is not None:
