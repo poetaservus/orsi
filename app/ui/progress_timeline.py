@@ -63,7 +63,7 @@ class ProgressTimeline(QWidget):
         self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Minimum)
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(0, 0, 0, 0)
-        self._layout.setSpacing(18)
+        self._layout.setSpacing(6)
         self.entries = []
         self._last_note = None
         self._seen = set()
@@ -88,7 +88,7 @@ class ProgressTimeline(QWidget):
             widget = _OperationRow(item)
         else:
             self._last_note = item.text.strip()[:4000]
-            widget = MarkdownLabel(self._last_note)
+            widget = MarkdownLabel(self._last_note, compact=True)
             apply_theme_style(widget, "color: #dedee0; font-size: 14px; background: transparent; border: none;")
         self.entries.append(widget)
         self._layout.addWidget(widget)

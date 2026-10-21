@@ -23,9 +23,10 @@ class _TextDocument(QTextDocument):
 
 
 class MarkdownLabel(QTextEdit):
-    def __init__(self, source: str):
+    def __init__(self, source: str, *, compact: bool = False):
         super().__init__()
         self._source = str(source)
+        self._compact = compact
         self._rendered_font = None
         self._inline_spans = []
         self.document = _TextDocument(self)
@@ -98,8 +99,8 @@ class MarkdownLabel(QTextEdit):
                         QTextListFormat.Style.ListStyleUndefined.value)
                     block_format.setProperty(_CUSTOM_BULLET, style.value)
             else:
-                block_format.setTopMargin(8)
-                block_format.setBottomMargin(8)
+                block_format.setTopMargin(2 if self._compact else 8)
+                block_format.setBottomMargin(2 if self._compact else 8)
             QTextCursor(block).setBlockFormat(block_format)
             iterator = block.begin()
             while not iterator.atEnd():

@@ -1,5 +1,18 @@
 # Git layout and baseline hygiene
 
+## Tighter progress spacing, 21 October 2026
+
+`codex/tighter-progress-spacing` starts from local main `a084f01`. Progress
+entries use 6-pixel gaps instead of 18, and progress paragraphs use 2-pixel
+vertical margins instead of 8. Normal messages and inline-reference horizontal
+padding retain their existing formatting. The focused progress/theme selection
+passes 46 checks; chat/inline-reference checks pass 38 and five subtests. A final
+progress recheck passes six checks. These selections overlap. A native synthetic
+render was inspected; no new tests, full-suite or live-model run is added for
+this styling change. Preserve prior main at
+`archive/2026-10-21/main-before-tighter-progress-spacing`, commit, fast-forward
+main and remove only the merged local feature branch.
+
 ## Technical details order, 21 October 2026
 
 `codex/technical-details-order` starts from local main `5a63460`. Technical
