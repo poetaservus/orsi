@@ -49,6 +49,20 @@ _NEGATED_VISUAL = re.compile(
     r"(?:generate|create|make|draw|paint|sketch|illustrate|render)|"
     r"(?:did\s+not|didn't|never)\s+ask\s+(?:you\s+)?(?:to\s+)?(?:generate|draw|create|paint|sketch|illustrate)|"
     r"(?:no|without)\s+image\s+generation)\b", re.I)
+_OFFICE_FILENAME = re.compile(r"[\w .()\-]+\.(?:docx?|dotx?|rtf|odt|xlsx?|xlsm|ods|pptx?|odp)", re.I)
+_EDITABLE_OUTPUT = re.compile(
+    r"\b(?:documents?|workbooks?|spreadsheets?|presentations?|slide[ -]+decks?|articles?)\b|"
+    r"\b[\w.-]+\.(?:docx?|dotx?|rtf|odt|xlsx?|xlsm|ods|pptx?|odp)\b", re.I)
+_DOCUMENT_ACTION = re.compile(
+    rf"^{_REQUEST_PREFIX}(?P<verb>open|edit|format|reformat|typeset|transform|update|revise|"
+    r"save|insert|incorporate|integrate|place|add|create|make|design|write|draft|compose)\b", re.I)
+_DOCUMENT_CONTAINER = re.compile(
+    r"\b(?:in|into|throughout|within|to)\s+(?:(?:an?|the|this|that|my|existing|open|selected|"
+    r"editable|native|fully|microsoft|word|excel|powerpoint)\s+)*(?:document|workbook|spreadsheet|presentation|"
+    r"article)\b|\b(?:in|into|to)\s+[\w.-]+\.(?:docx?|xlsx?|pptx?)\b", re.I)
+_DOCUMENT_RELATION = re.compile(
+    r"\b(?:with|using|including|containing|featuring|showing|incorporating|titled|named|"
+    r"and|that|which|of|about|for|into|as|to)\b|[:,]", re.I)
 
 
 @dataclass(frozen=True)
@@ -61,14 +75,61 @@ class ImageIntent:
 def request_text(text):
     """Exclude quoted source/diagnostics from intent, without altering model input."""
     text = re.sub(r"```[\s\S]*?(?:```|$)|~~~[\s\S]*?(?:~~~|$)", "", text)
-    text = re.sub(r"`[^`\n]*`", "", text)
-    text = re.sub(r'"[^"\n]*"|(?<!\w)\'[^\'\n]*\'(?!\w)', "", text)
+    # A literal filename identifies a requested artifact; quoted instructions
+    # remain source material and must never become routing actions.
+    def filename(match):
+        value = match[0][1:-1]
+        if not _OFFICE_FILENAME.fullmatch(value):
+            return ""
+        return "office_artifact." + value.rsplit(".", 1)[-1]
+    text = re.sub(r"`[^`\n]*`", filename, text)
+    text = re.sub(r'"[^"\n]*"|(?<!\w)\'[^\'\n]*\'(?!\w)', filename, text)
     return "\n".join(line for line in text.splitlines()
         if not re.match(r"\s*>|\s{4,}\S|\s*(?:Traceback|File\s+\"|\w*(?:Error|Exception):)", line))
 
 
 def _clauses(text):
-    return [clause.strip() for clause in re.split(r"[!?;\n]|\.\s+", text) if clause.strip()]
+    def normalize(clause):
+        clause = re.sub(r"^\s*(?:#{1,6}\s+|[-*+]\s+|\d+[.)]\s+)", "", clause)
+        clause = clause.replace("**", "").replace("__", "").strip()
+        return re.sub(r"^(?:task|request|goal|objective)\s*:\s*", "", clause, flags=re.I)
+    return [value for clause in re.split(r"[!?;\n]|\.\s+", text) if (value := normalize(clause))]
+
+
+def _document_modifies_visual(verb, output, document, visual):
+    return (document is not None and visual is not None
+        and document.start() < visual.start() and _EDITABLE_OUTPUT.fullmatch(document[0]) is not None
+        and verb in {"create", "make", "design", "edit"}
+        and not _DOCUMENT_RELATION.search(output[document.end():visual.start()]))
+
+
+def editable_document_request(text):
+    """Affirmative artifact actions take precedence over their visual substeps.
+
+    A document mention alone is not a veto: a photograph *of* or *for* a Word
+    document can still be the requested output. Container operations explicitly
+    require the agent, including mixed image-creation and insertion requests.
+    """
+    text = request_text(text)
+    for clause in _clauses(text):
+        if re.match(rf"^{_REQUEST_PREFIX}(?:do\s+not|don't|dont|never)\b", clause, re.I):
+            continue
+        for part in re.split(r",?\s+(?:and|then)\s+(?=(?:edit|format|save|insert|incorporate|integrate|place|add)\b)", clause, flags=re.I):
+            action = _DOCUMENT_ACTION.match(part)
+            if action is None:
+                continue
+            output = part[action.end():]
+            document, visual = _EDITABLE_OUTPUT.search(output), _VISUAL_OUTPUT.search(output)
+            if document is not None and (visual is None or document.start() < visual.start()):
+                # In "create a Word document cover image", image is the
+                # requested noun head and document only modifies it. A native
+                # artifact relation ("document with images") is different.
+                if _document_modifies_visual(action["verb"].lower(), output, document, visual):
+                    continue
+                return True
+            if action["verb"].lower() in {"insert", "incorporate", "integrate", "place", "add", "edit", "transform"} and _DOCUMENT_CONTAINER.search(output):
+                return True
+    return False
 
 
 def _negated_visual(text):
@@ -105,6 +166,8 @@ def creation_followup(text):
 def image_intent(text, *, has_image=False, skill_name=None):
     if text.lstrip().startswith("/image "):
         return ImageIntent("image_generation", "explicit_image")
+    if editable_document_request(text):
+        return ImageIntent("agent", "editable_document")
     text = request_text(text)
     if _negated_visual(text):
         return ImageIntent("agent", "negated_visual")
@@ -124,6 +187,8 @@ def image_intent(text, *, has_image=False, skill_name=None):
             if visual is None or reference.start() < visual.start():
                 visual = reference
         written = _TEXT_OUTPUT.search(output)
+        if _document_modifies_visual(verb, output, written, visual):
+            written = None
         if verb in {"write", "draft", "compose", "fix", "debug"} or _VISUAL_CODE.search(output) or (
                 written is not None and (visual is None or written.start() < visual.start())):
             return ImageIntent("agent", "coding_request" if verb in {"fix", "debug"} or _CODE_TARGET.search(clause) else "written_request")

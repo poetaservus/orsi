@@ -18,7 +18,10 @@ def image_route(text, *, attachments=(), messages=(), supported=True, skill_name
     if not supported:
         return ImageRouteDecision("agent", "unsupported_backend", references, "submitted", skill_name)
     # Resolve history only after the request itself establishes a visual follow-up.
-    intent = intent if intent is not None else image_intent(text, has_image=True, skill_name=skill_name)
+    current = image_intent(text, has_image=True, skill_name=skill_name)
+    # Semantic presentation can clarify an ambiguous request, but cannot
+    # replace an established editable-document deliverable with a raster image.
+    intent = current if intent is None or current.reason == "editable_document" else intent
     source = "submitted" if references else "none"
     if not references and intent.followup:
         references = latest_generated_sources(messages) if implicit_sources is None else implicit_sources

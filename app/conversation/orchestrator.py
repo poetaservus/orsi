@@ -354,6 +354,7 @@ class ConversationService:
             input_language = detect_language(text)
             if (input_language is not None and input_language != "en"
                     and getattr(self.inference, "supports_image_generation", False) is True
+                    and decision.reason != "editable_document"
                     and not text.lstrip().startswith(("/image ", "/skill"))):
                 from app.conversation.image_followup import image_route
                 from app.conversation.turn_presentation import latest_visual_sources, select_visual_intent

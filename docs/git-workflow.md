@@ -1,5 +1,25 @@
 # Git layout and baseline hygiene
 
+## Office routing and stream compatibility, 21 October 2026
+
+`codex/office-routing-stream-compatibility` starts from local main `efafc96`.
+Primary editable-document intent survives subordinate photo requirements;
+validated queued lifecycle events are accepted; interrupted replies, tool calls
+and completion reviews receive accurate reports. Structured content-free route,
+turn and stream diagnostics persist with local correlation across owned model
+threads. See [scope, qualification and limits](office-routing-stream-compatibility.md).
+
+The final focused selection passes **355 checks in 47.80 seconds**, with no skips
+or failures. No full suite, live API/model or native Office editing runs. The
+unchanged reported Word prompt reaches an owned synthetic Office capability
+through the real SDK with mocked HTTP; this qualifies routing, not native page
+layout. Keep diagnostics, stream/reporting and routing in separate commits.
+Preserve prior main at `archive/2026-10-21/main-before-office-routing-stream`,
+fast-forward local main after verification and remove only the merged feature
+branch. Preserve the running app and user documents; restart Orsi to load the fix.
+Other worktrees, settings, model profiles, historical/unmerged and remote refs
+remain intact. The exact historical Excel event remains unconfirmed.
+
 ## Office recovery consistency, 20 October 2026
 
 `codex/office-recovery-consistency` starts from local main `29f8df1`. Confirmed
