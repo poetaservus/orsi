@@ -545,9 +545,8 @@ class ChatView(QScrollArea):
         self.technical_toggle.setFlat(True)
         apply_theme_style(self.technical_toggle, """
             QPushButton { background: transparent; color: #b1b8c8; border: 1px solid transparent;
-                border-radius: 4px; padding: 4px 0; font-size: 11px; text-align: left; }
+                border-radius: 4px; padding: 4px 0; font-size: 11px; text-align: left; outline: none; }
             QPushButton:hover, QPushButton:checked { color: #eeeeef; }
-            QPushButton:focus { border-color: #8c90a0; }
         """)
         self.technical_details = QPlainTextEdit()
         self.technical_details.setReadOnly(True)

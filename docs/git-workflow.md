@@ -1,5 +1,16 @@
 # Git layout and baseline hygiene
 
+## Technical details without click outline, 21 October 2026
+
+`codex/technical-details-no-outline` starts from local main `839fcfd`. Remove
+the disclosure button's focus border and suppress its native outline. The five
+existing native progress-layout checks pass in 9.77 seconds. A focused native
+render and mouse/Space-key toggle check also pass. Only essential checks run,
+as requested; no new tests, full suite or live gates are added. Preserve prior
+main at `archive/2026-10-21/main-before-technical-details-no-outline`, commit,
+fast-forward main and remove only the merged local feature branch. Restart the
+app normally to load the styling change.
+
 ## Compact progress through completion, 21 October 2026
 
 `codex/progress-layout-lifecycle` starts from local main `a2b9086`. The earlier
