@@ -2,6 +2,23 @@
 
 ## Chronological progress correction (current)
 
+The progress timeline, Technical details and working counter now share one
+compact task group. On completion or failure, that group stays above the
+finished counter and answer. A later request receives its own disclosure, so
+opening earlier details cannot show the new task's log. Question-only turns
+also retain their progress before the next message. Resetting the conversation
+clears the transient groups.
+
+Progress rows use 4-pixel layout gaps. Compact progress text uses 110-percent
+line spacing and sizes to its document without an extra 4-pixel allowance.
+Normal answer typography is unchanged. This corrects the earlier spacing change,
+which left separate progress rows subject to the conversation's 40-pixel gaps,
+and the ordering change, which placed the final answer before its disclosure.
+Regression checks measure visible geometry through real worker delivery,
+including completion, failure, expanded details, narrow windows and the next
+request. Scripted model replies drive actual file metadata tools; they do not
+qualify live-model narration or native Office editing.
+
 `codex/progress-narrative` starts from local main `da2329b`. The user clarified
 the desired view with a screenshot: a running account of the work, with muted
 operation summaries between task-specific paragraphs. This supersedes the

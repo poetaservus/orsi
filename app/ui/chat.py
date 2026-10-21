@@ -477,7 +477,35 @@ class ChatView(QScrollArea):
         self._message_bands: list[_MessageBand] = []
         self._narrative_rows = []
         self._active_timeline = None
+        self._standalone_activity_rows = []
 
+        self._response_elapsed = QElapsedTimer()
+        self._response_timer = QTimer(self)
+        self._response_timer.setInterval(100)
+        self._response_timer.timeout.connect(self._update_working_label)
+        self.semantic_progress_enabled = False
+        self._create_activity_row()
+        self._layout.addStretch(1)
+        self.setWidget(self._content)
+        scroll_bar = self.verticalScrollBar()
+        scroll_bar.rangeChanged.connect(self._on_scroll_range_changed)
+        scroll_bar.actionTriggered.connect(self._on_user_scroll_action)
+        scroll_bar.sliderMoved.connect(self._on_user_slider_moved)
+        scroll_bar.valueChanged.connect(self._sync_generation_visibility)
+        scrolling = install_smooth_scroll(self)
+        scrolling.started.connect(self._begin_smooth_scroll)
+        scrolling.finished.connect(self._refresh_follow_tail_from_position)
+
+    def _create_activity_row(self):
+        """One compact task header, retained with its answer after completion."""
+        self._activity_attached = False
+        self._active_timeline = None
+        self._activity_row = QWidget()
+        self._activity_row.setObjectName("taskProgressGroup")
+        self._activity_row.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+        self._activity_layout = QVBoxLayout(self._activity_row)
+        self._activity_layout.setContentsMargins(0, 0, 0, 0)
+        self._activity_layout.setSpacing(4)
         self._thinking_row = QWidget()
         self._thinking_layout = QVBoxLayout(self._thinking_row)
         self._thinking_layout.setContentsMargins(4, 0, 0, 0)
@@ -509,12 +537,6 @@ class ChatView(QScrollArea):
         )
         self._thinking_row.hide()
         self._thinking_layout.addWidget(self.stream_preview)
-        self._response_elapsed = QElapsedTimer()
-        self._response_timer = QTimer(self)
-        self._response_timer.setInterval(100)
-        self._response_timer.timeout.connect(self._update_working_label)
-        self._layout.addWidget(self._thinking_row)
-        self.semantic_progress_enabled = False
         self._technical_row = QWidget()
         self._technical_layout = QVBoxLayout(self._technical_row)
         self._technical_layout.setContentsMargins(4, 0, 0, 0)
@@ -541,17 +563,29 @@ class ChatView(QScrollArea):
         self._technical_layout.addWidget(self.technical_toggle, alignment=Qt.AlignmentFlag.AlignLeft)
         self._technical_layout.addWidget(self.technical_details)
         self._technical_row.hide()
-        self._layout.insertWidget(self._layout.indexOf(self._thinking_row), self._technical_row)
-        self._layout.addStretch(1)
-        self.setWidget(self._content)
-        scroll_bar = self.verticalScrollBar()
-        scroll_bar.rangeChanged.connect(self._on_scroll_range_changed)
-        scroll_bar.actionTriggered.connect(self._on_user_scroll_action)
-        scroll_bar.sliderMoved.connect(self._on_user_slider_moved)
-        scroll_bar.valueChanged.connect(self._sync_generation_visibility)
-        scrolling = install_smooth_scroll(self)
-        scrolling.started.connect(self._begin_smooth_scroll)
-        scrolling.finished.connect(self._refresh_follow_tail_from_position)
+        self._activity_layout.addWidget(self._technical_row)
+        self._activity_layout.addWidget(self._thinking_row)
+        self._activity_row.hide()
+        self._layout.insertWidget(max(0, self._layout.count() - 1), self._activity_row)
+        self._update_activity_margins()
+
+    def _update_activity_margins(self):
+        left_margin, right_margin = self._column_margins()
+        width = self._message_area_width()
+        column_width = self.viewport().width() - left_margin - right_margin
+        left = max(4, left_margin + (column_width - width) // 2)
+        right = max(0, self.viewport().width() - left - width)
+        inset_left, inset_right = (4, 0) if self._activity_attached else (left + 4, right)
+        self._thinking_layout.setContentsMargins(inset_left, 0, inset_right, 0)
+        self._technical_layout.setContentsMargins(inset_left, 0, inset_right, 0)
+
+    def _message_insert_index(self):
+        index = self._layout.indexOf(self._activity_row)
+        return index if index >= 0 else self._layout.count() - 1
+
+    def _has_task_activity(self):
+        return bool(self.technical_details.toPlainText() or
+                    self._active_timeline is not None and self._active_timeline.entries)
 
     def set_composer_clearance(self, height: int) -> None:
         margins = self._layout.contentsMargins()
@@ -575,6 +609,12 @@ class ChatView(QScrollArea):
         # scrolled upward while O.R.S.I was working.
         if from_user:
             self._follow_tail = True
+            # A question can finish a turn without adding an answer bubble.
+            # Leave its progress before the next user message as well.
+            if (not self._activity_attached and not self._response_elapsed.isValid()
+                    and self._has_task_activity()):
+                self._standalone_activity_rows.append(self._activity_row)
+                self._create_activity_row()
         message = _Message(content, from_user=from_user, error=error, attachments=attachments, images=images,
                            image_loader=self.image_loader, generation_frame=generation_frame)
         if message.image_strip is not None:
@@ -600,8 +640,13 @@ class ChatView(QScrollArea):
         row_layout.addWidget(band)
         row_layout.addStretch(1)
 
-        # Keep the thinking indicator at the end of the conversation.
-        self._layout.insertWidget(self._layout.indexOf(self._technical_row), row)
+        if (not from_user and duration_seconds is not None and self.semantic_progress_enabled
+                and not self._activity_attached and self._has_task_activity()):
+            self._layout.removeWidget(self._activity_row)
+            band.layout().insertWidget(0, self._activity_row)
+            self._activity_attached = True
+            self._update_activity_margins()
+        self._layout.insertWidget(self._message_insert_index(), row)
         apply_theme_tree(row)
         message.ensurePolished()
         for label in message._text_labels:
@@ -659,10 +704,14 @@ class ChatView(QScrollArea):
         self.set_thinking(False)
         self._clear_technical_details()
         for row, _ in self._narrative_rows:
-            self._layout.removeWidget(row)
+            row.parentWidget().layout().removeWidget(row)
             row.deleteLater()
         self._narrative_rows.clear()
         self._active_timeline = None
+        for row in self._standalone_activity_rows:
+            self._layout.removeWidget(row)
+            row.deleteLater()
+        self._standalone_activity_rows.clear()
         if self.generation_frame is not None:
             self.generation_frame.stop()
             self.generation_frame.deleteLater()
@@ -675,6 +724,9 @@ class ChatView(QScrollArea):
         self._message_rows.clear()
         self._message_bands.clear()
         self._messages.clear()
+        if self._activity_attached:
+            self._create_activity_row()
+        self._activity_row.hide()
         self._follow_tail = True
         QTimer.singleShot(0, self._scroll_to_bottom)
 
@@ -713,10 +765,13 @@ class ChatView(QScrollArea):
         return frame
 
     def set_thinking(self, thinking: bool) -> float | None:
+        if thinking and self._activity_attached:
+            self._create_activity_row()
         self.stream_preview.clear()
         self.stream_preview.hide()
         self._thinking_row.setVisible(thinking)
         if thinking:
+            self._activity_row.show()
             self._active_timeline = None
             self.activity_label.show()
             self.thinking_dots.show()
@@ -739,6 +794,7 @@ class ChatView(QScrollArea):
         self._response_elapsed.invalidate()
         self.thinking_dots.stop()
         self.activity_label.clear()
+        self._activity_row.setVisible(self._has_task_activity())
         return elapsed
 
     def set_activity(self, text: str) -> None:
@@ -768,12 +824,12 @@ class ChatView(QScrollArea):
             layout.addStretch()
             layout.addWidget(timeline)
             layout.addStretch()
-            self._layout.insertWidget(self._layout.indexOf(self._technical_row), row)
+            self._activity_layout.insertWidget(self._activity_layout.indexOf(self._technical_row), row)
             self._narrative_rows.append((row, timeline))
             self._active_timeline = timeline
             if len(self._narrative_rows) > 20:
                 oldest, _ = self._narrative_rows.pop(0)
-                self._layout.removeWidget(oldest)
+                oldest.parentWidget().layout().removeWidget(oldest)
                 oldest.deleteLater()
         if self._active_timeline.append(item):
             self._active_timeline.set_available_width(self._message_area_width())
@@ -824,11 +880,7 @@ class ChatView(QScrollArea):
         ):
             row.layout().setContentsMargins(left_margin, 0, right_margin, 0)
             band.set_available_width(width)
-        column_width = self.viewport().width() - left_margin - right_margin
-        left = max(4, left_margin + (column_width - width) // 2)
-        right = max(0, self.viewport().width() - left - width)
-        self._thinking_layout.setContentsMargins(left + 4, 0, right, 0)
-        self._technical_layout.setContentsMargins(left + 4, 0, right, 0)
+        self._update_activity_margins()
         for row, timeline in self._narrative_rows:
             row.layout().setContentsMargins(left_margin, 0, right_margin, 0)
             timeline.set_available_width(width)

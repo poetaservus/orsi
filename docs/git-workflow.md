@@ -1,5 +1,42 @@
 # Git layout and baseline hygiene
 
+## Compact progress through completion, 21 October 2026
+
+`codex/progress-layout-lifecycle` starts from local main `a2b9086`. The earlier
+spacing fix left progress subject to the root conversation's 40-pixel gaps;
+the earlier ordering fix placed the final answer before Technical details.
+The initial real-worker geometry regression reproduces both failures, measuring
+40 pixels while working and 192 pixels after completion. Progress, disclosure
+and the counter now share a compact group retained above the finished answer.
+Progress typography and row gaps are tighter, earlier disclosures retain their
+own logs, and new conversations also clear retained question-only groups.
+
+The focused selection passes **158 checks and five subtests in 49.74 seconds**.
+After the final question-group cleanup and new-turn alignment correction, all
+five actual worker layout cases pass natively on Windows, including completion,
+failure, expanded disclosure, narrow windows, subsequent requests and reset.
+The native cases overlap the focused selection. Collapsed/expanded renders were inspected.
+Evidence uses ignored `state/progress-layout-*.xml` and local temporary/cache
+directories. A restricted native focused run stalled outside the layout cases
+and was stopped; the unrestricted focused selection passes. Live model/API and
+real Word/Excel editing gates were not run.
+
+The existing native full suite, run during implementation, records **4,876
+passed, ten failed, 81 skipped, one teardown error and 15 subtests passed** in
+1,178.07 seconds. Eight failures in context admission, personality selection,
+translation metadata and recovery budgets reproduce on an exported `a2b9086`
+source tree. The native reference-folder rename failure also reproduces there.
+The installer cleanup failure and teardown error pass on isolated recheck.
+These failures remain separate from the passing layout checks; the full suite
+is not reported as clean, and skipped live gates are not counted as passes.
+Baseline rechecks are recorded under ignored `state/progress-layout-baseline-*.xml`.
+
+Preserve prior main at
+`archive/2026-10-21/main-before-progress-layout-lifecycle`, commit this bounded
+correction, fast-forward main and remove only the merged local feature branch.
+Preserve the running user app; restart normally to load the fix. Other worktrees,
+user settings, model profiles and remote refs remain intact.
+
 ## Tighter progress spacing, 21 October 2026
 
 `codex/tighter-progress-spacing` starts from local main `a084f01`. Progress

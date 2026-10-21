@@ -84,7 +84,8 @@ class MarkdownLabel(QTextEdit):
         block = self.document.begin()
         while block.isValid():
             block_format = block.blockFormat()
-            block_format.setLineHeight(128, QTextBlockFormat.LineHeightTypes.ProportionalHeight.value)
+            block_format.setLineHeight(110 if self._compact else 128,
+                QTextBlockFormat.LineHeightTypes.ProportionalHeight.value)
             if block_format.headingLevel():
                 block_format.setTopMargin(12)
                 block_format.setBottomMargin(8)

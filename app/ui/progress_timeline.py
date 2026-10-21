@@ -28,6 +28,7 @@ class _OperationRow(QWidget):
     def __init__(self, item):
         super().__init__()
         self.operations = []
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
         layout = QHBoxLayout(self)
         layout.setContentsMargins(4, 0, 0, 0)
         layout.setSpacing(8)
@@ -60,10 +61,10 @@ class ProgressTimeline(QWidget):
     def __init__(self):
         super().__init__()
         self.setObjectName("progressTimeline")
-        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Minimum)
+        self.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Maximum)
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(0, 0, 0, 0)
-        self._layout.setSpacing(6)
+        self._layout.setSpacing(4)
         self.entries = []
         self._last_note = None
         self._seen = set()
@@ -106,5 +107,5 @@ class ProgressTimeline(QWidget):
             if isinstance(widget, MarkdownLabel):
                 widget.refresh_formatting()
                 widget.setFixedWidth(self._available_width)
-                widget.setFixedHeight(widget.heightForWidth(self._available_width) + 4)
+                widget.setFixedHeight(widget.heightForWidth(self._available_width))
         self.updateGeometry()
