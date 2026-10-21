@@ -575,7 +575,7 @@ def test_truncated_structured_output_stops_without_a_pointless_retry(tmp_path: P
     assert result.steps == 1
     assert result.protocol_failures == 1
     assert "cut off" in result.message
-    assert "incomplete tool generation was not executed" in result.message
+    assert "No tool call was dispatched from this response" in result.message
     assert len(model.requests) == 1
     assert capability.values == []
     assert journal.records == ()

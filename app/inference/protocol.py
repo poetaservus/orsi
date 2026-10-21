@@ -67,6 +67,7 @@ class ModelProtocolFailureCode(StrEnum):
     DUPLICATE_CALL_ID = "duplicate_call_id"
     UNKNOWN_CAPABILITY = "unknown_capability"
     OUTPUT_TRUNCATED = "output_truncated"
+    STREAM_INTERRUPTED = "stream_interrupted"
 
 
 class ModelProtocolFailure(BaseModel):

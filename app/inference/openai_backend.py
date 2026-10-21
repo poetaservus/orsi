@@ -65,10 +65,12 @@ def _stream_error_diagnostic(code, *, default: ResponseFailureReason = "provider
 
 class _ResponsePayload(dict):
     """Bind replay to the requested profile even when an alias resolves to a snapshot."""
-    def __init__(self, payload, requested_model, request_metrics=None):
+    def __init__(self, payload, requested_model, request_metrics=None, *, request_phase=None, observed_function_call=None):
         super().__init__(payload)
         self.requested_model = requested_model
         self.request_metrics = request_metrics
+        self.request_phase = request_phase
+        self.observed_function_call = observed_function_call
 
 
 def _count(value: Any) -> int | None:
@@ -142,7 +144,9 @@ def _completion_metadata(payload: dict[str, Any]) -> CompletionMetadata:
     if failure_reason is not None:
         log.warning("OpenAI incomplete response: reason=%s", failure_reason)
     return CompletionMetadata(finish_reason=finish_reason, usage=_token_usage(payload),
-                              request_metrics=getattr(payload, "request_metrics", None), failure_reason=failure_reason)
+                              request_metrics=getattr(payload, "request_metrics", None), failure_reason=failure_reason,
+                              request_phase=getattr(payload, 'request_phase', None),
+                              observed_function_call=getattr(payload, 'observed_function_call', None))
 
 
 def normalize_text_response(payload: dict[str, Any]) -> CompletionText:
@@ -196,6 +200,10 @@ def normalize_tool_response(payload: dict[str, Any], definitions, *, previous_id
     if not isinstance(output, list) or any(not isinstance(item, dict) for item in output):
         raise _malformed()
     calls = [item for item in output if item.get("type") == "function_call"]
+    if calls:
+        # A terminal payload may contain calls without incremental item events.
+        # Observing them explains a stop; it never validates or dispatches them.
+        completion = completion.model_copy(update={'observed_function_call': True})
     messages = [item for item in output if item.get("type") == "message"]
     text = None
     if messages:
@@ -472,7 +480,7 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
     def _request(self, inputs: list[dict], *, tools: list[dict] | None = None,
                  attachment_estimate: int | None = None, count_only: bool = False,
                  image_generation: bool = False, tool_choice: str = "auto",
-                 text_format: dict | None = None) -> dict:
+                 text_format: dict | None = None, request_phase: str | None = None) -> dict:
         with self._lock:
             self._ensure_open()
             profile = self.catalog.current_profile
@@ -516,7 +524,13 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
             estimated_input += estimate_schema_tokens([text_format])
         if attachment_estimate is None and estimated_input + 256 > profile.max_input_tokens:
             raise _provider_error(None, "context_length_exceeded")
-        state = ResponsesStreamState(observer, allow_images=image_generation, activity=activity)
+        from app.runtime.diagnostic_context import current_turn_id, current_request_phase, new_request_id
+        phase = 'image_generation' if image_generation else request_phase or current_request_phase()
+        phase = phase if phase in {'reply', 'completion_review', 'image_generation'} else None
+        state = ResponsesStreamState(observer, allow_images=image_generation, activity=activity,
+            request_phase=phase)
+        # Capture on the caller thread; the SDK transport owns another thread.
+        state.turn_id, state.request_id = current_turn_id(), new_request_id()
         measurement = RequestMeasurement()
         stream_opened = False
         reservation = None
@@ -719,7 +733,8 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
             if interrupted is not None:
                 interrupted.completion = interrupted.completion.model_copy(update={"request_metrics": metrics})
                 interrupted.completion_history = (interrupted.completion,)
-        return _ResponsePayload(payload, profile.id, metrics)
+        return _ResponsePayload(payload, profile.id, metrics,
+            request_phase=state.request_phase, observed_function_call=state.observed_function_call)
 
     def respond_with_capabilities(self, messages: list[dict[str, str]],
                                   capabilities: Iterable[ModelCapabilityDefinition]) -> ModelResponse:
@@ -740,7 +755,7 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
         previous_ids = {item["call_id"] for item in inputs if item.get("type") == "function_call"}
         # Keep definitions for validating/replaying settled calls, while preventing
         # assessment from initiating another filesystem/verification tool chain.
-        options = {"tool_choice": "none"} if reviewing else {}
+        options = {"tool_choice": "none", "request_phase": "completion_review"} if reviewing else {}
         if reviewing:
             options["text_format"] = {"type": "json_schema", "name": "completion_review", "strict": True,
                                       "schema": completion_review_schema(messages)}
@@ -748,8 +763,8 @@ class OpenAIResponsesInferenceEngine(InferenceEngine):
             payload = (self._request(inputs, tools=tools, **options) if estimate is None else
                        self._request(inputs, tools=tools, attachment_estimate=estimate, **options))
         except IncompleteResponseError as exc:
-            return ModelResponse.failure(ModelProtocolFailureCode.OUTPUT_TRUNCATED,
-                "The OpenAI stream ended before completing its response; no tool calls can execute.").model_copy(
+            return ModelResponse.failure(ModelProtocolFailureCode.STREAM_INTERRUPTED,
+                "The OpenAI stream ended before a validated terminal response.").model_copy(
                     update={"completion": exc.completion, "partial_text": exc.partial_text})
         result = normalize_tool_response(payload, definitions, previous_ids=previous_ids)
         if result.protocol_failure is None and not result.completion.incomplete:

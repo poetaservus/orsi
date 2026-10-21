@@ -10,7 +10,7 @@ import logging
 from time import monotonic
 
 from app.inference.completion import CompletionMetadata, IncompleteResponseError, ResponseFailureReason
-from app.inference.openai_diagnostics import event_labels, record_stream_failure
+from app.inference.openai_diagnostics import event_fingerprint, event_labels, record_stream_failure
 
 log = logging.getLogger(__name__)
 # Allow a 128,000-token response with multiple deltas per token and control
@@ -19,12 +19,12 @@ _MAX_EVENTS = 262_144
 _MAX_EVENT_BYTES = 64 * 1024 * 1024
 _MAX_TEXT_CHARS = 1_000_000
 _TERMINALS = {"response.completed": "completed", "response.incomplete": "incomplete", "response.failed": "failed"}
-_PASSIVE = {"response.in_progress", "response.content_part.done", "response.output_text.done",
+_PASSIVE = {"response.content_part.done", "response.output_text.done",
     "response.output_text.annotation.added", "response.refusal.done", "response.function_call_arguments.done",
     "response.reasoning_summary_part.added", "response.reasoning_summary_part.done",
     "response.reasoning_summary_text.delta", "response.reasoning_summary_text.done",
     "response.reasoning_text.delta", "response.reasoning_text.done"}
-_KNOWN_EVENTS = _PASSIVE | set(_TERMINALS) | {"response.created", "error",
+_KNOWN_EVENTS = _PASSIVE | set(_TERMINALS) | {"response.created", "response.queued", "response.in_progress", "error",
     "response.output_item.added", "response.content_part.added", "response.output_text.delta",
     "response.refusal.delta", "response.function_call_arguments.delta", "response.output_item.done"}
 _IMAGE_EVENTS = {"response.image_generation_call." + suffix for suffix in
@@ -40,11 +40,15 @@ class StreamProtocolError(ValueError):
 
 
 class ResponsesStreamState:
-    def __init__(self, observer=None, *, allow_images=False, activity=None):
+    def __init__(self, observer=None, *, allow_images=False, activity=None, request_phase="reply"):
         self.observer = observer
         self.allow_images, self.activity = allow_images, activity
         self.started = False
+        self.queued = False
+        self.active = False
         self.identity = None
+        self.request_phase = request_phase
+        self.observed_function_call = False
         self.sequence = -1
         self.events = 0
         self.bytes = 0
@@ -54,6 +58,7 @@ class ResponsesStreamState:
         self._last_publish = 0.0
         self.last_event = "none"
         self.last_event_supported = False
+        self.last_event_fingerprint = None
 
     @property
     def partial_text(self):
@@ -72,7 +77,8 @@ class ResponsesStreamState:
     def interrupted(self, reason="error", *, failure_reason: ResponseFailureReason = "stream_ended"):
         self.publish(force=True)
         completion = CompletionMetadata(finish_reason=reason, interrupted=True,
-            failure_reason="cancelled" if reason == "cancelled" else failure_reason)
+            failure_reason="cancelled" if reason == "cancelled" else failure_reason,
+            request_phase=self.request_phase, observed_function_call=self.observed_function_call)
         log.warning("OpenAI stream interruption: reason=%s event=%s events=%s sequence=%s bytes=%s text_chars=%s",
             completion.failure_reason, self.last_event, self.events, self.sequence, self.bytes, self.chars)
         record_stream_failure(log, self, reason=completion.failure_reason)
@@ -81,6 +87,7 @@ class ResponsesStreamState:
     def accept(self, event):
         value = event.model_dump(mode="json", exclude_none=True)
         kind = value.get("type")
+        self.last_event_fingerprint = event_fingerprint(kind)
         self.last_event, _ = event_labels(kind)
         self.last_event_supported = isinstance(kind, str) and kind in (_KNOWN_EVENTS | (_IMAGE_EVENTS if self.allow_images else set()))
         self.events += 1
@@ -93,13 +100,31 @@ class ResponsesStreamState:
         self.sequence = sequence
         if kind == "response.created":
             payload = value.get("response")
-            if self.started or not isinstance(payload, dict) or not isinstance(payload.get("id"), str):
+            if (self.started or not isinstance(payload, dict) or not isinstance(payload.get("id"), str)
+                    or not payload["id"]):
                 raise StreamProtocolError("invalid_identity")
             self.started, self.identity = True, payload["id"]
             self.publish(force=True)
             return None
         if not self.started:
             raise StreamProtocolError("missing_creation")
+        if kind in {"response.queued", "response.in_progress"}:
+            payload = value.get("response")
+            if not isinstance(payload, dict) or payload.get("id") != self.identity:
+                raise StreamProtocolError("invalid_identity")
+            expected = "queued" if kind == "response.queued" else "in_progress"
+            if payload.get("status") != expected:
+                raise StreamProtocolError("invalid_lifecycle")
+            if kind == "response.queued":
+                # A queue notification is metadata, never executable output.
+                # It may follow created even when created reported in_progress,
+                # but cannot move an active response back into its queue.
+                if self.queued or self.active or payload.get("output") != []:
+                    raise StreamProtocolError("invalid_lifecycle")
+                self.queued = True
+            else:
+                self.active = True
+            return None
         if kind in _TERMINALS:
             payload = value.get("response")
             if (not isinstance(payload, dict) or payload.get("id") != self.identity
@@ -116,6 +141,7 @@ class ResponsesStreamState:
         if kind == "error":
             # Caller maps only known error codes; messages/params are private.
             return {"id": self.identity, "status": "failed", "error": {"code": value.get("code")}, "output": []}
+        self.active = True
         if kind == "response.output_item.added":
             index, item = value.get("output_index"), value.get("item")
             if (type(index) is not int or index != len(self.items) or index >= 64 or not isinstance(item, dict)
@@ -124,6 +150,8 @@ class ResponsesStreamState:
                     or not isinstance(item.get("id"), str)):
                 raise StreamProtocolError("invalid_output_item")
             self.items[index] = item
+            if item["type"] == "function_call":
+                self.observed_function_call = True
         elif kind == "response.content_part.added":
             index, part_index, part = value.get("output_index"), value.get("content_index"), value.get("part")
             item = self.items.get(index)

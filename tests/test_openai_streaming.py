@@ -354,7 +354,9 @@ def test_stream_failure_reason_survives_runtime_store_and_chat_worker(make_engin
         assert outcome.capability_calls == 0 and reopened._conversation.turns[-1].settled_calls == []
         assert outcome.completion.failure_reason == "stream_connection"
         assert "connection was interrupted" in outcome.message
-        assert "incomplete tool generation was not executed" in outcome.message
+        assert ("incomplete tool generation was not executed" in outcome.message) is (not partial)
+        assert outcome.completion.observed_function_call is (not partial)
+        assert outcome.completion.request_phase == 'reply'
         saved = reopened._conversation.messages[-1]
         chat.add_message("Agent", CompletionText(saved.content, saved.completion))
         assert "connection was interrupted" in chat._messages[-1].completion_label.text() + saved.content

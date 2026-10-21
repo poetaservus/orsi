@@ -12,7 +12,7 @@ ResponseFailureReason = Literal[
     "protocol_limit", "invalid_sequence", "invalid_identity", "missing_creation",
     "invalid_terminal", "contradictory_output", "invalid_output_item", "invalid_message_part",
     "invalid_text", "text_limit", "orphan_tool_arguments", "unknown_completed_item",
-    "unsupported_event", "provider_failed", "provider_incomplete", "unfinished_tool_call",
+    "unsupported_event", "invalid_lifecycle", "provider_failed", "provider_incomplete", "unfinished_tool_call",
     "output_limit", "content_filter", "cancelled",
     "provider_stream_error", "provider_rate_limit", "provider_quota", "provider_context_overflow",
     "provider_authentication", "provider_permission", "provider_unavailable", "provider_bad_request",
@@ -38,6 +38,7 @@ _FAILURE_MESSAGES = {
     "orphan_tool_arguments": "The cloud stream contained tool arguments without a matching call.",
     "unknown_completed_item": "The cloud stream completed an unknown output item.",
     "unsupported_event": "The cloud stream contained an event Orsi does not support.",
+    "invalid_lifecycle": "The cloud stream contained an invalid lifecycle event.",
     "provider_failed": "The cloud provider reported a failed response.",
     "provider_incomplete": "The cloud provider reported an incomplete response.",
     "unfinished_tool_call": "The cloud provider returned an unfinished tool call.",
@@ -73,6 +74,9 @@ class CompletionMetadata(BaseModel):
     interrupted: bool = False
     request_metrics: OpenAIRequestMetrics | None = None
     failure_reason: ResponseFailureReason | None = None
+    # Missing in older histories: absence is not proof a function call existed.
+    request_phase: Literal['reply', 'completion_review', 'image_generation'] | None = None
+    observed_function_call: bool | None = None
 
     @property
     def failure_message(self) -> str | None:

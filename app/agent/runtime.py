@@ -44,6 +44,7 @@ from app.agent.project_progress import ProjectProgressTracker
 from app.agent.edit_progress import EditProgressTracker
 from app.agent.office_read_progress import OfficeReadProgress
 from app.agent.office_progress import OfficeProgress
+from app.runtime.diagnostic_context import current_turn_id, run_in_turn
 from app.agent.prerequisite_retries import PrerequisiteRetries, repetition_fingerprint
 from app.agent.recovery_progress import RecoveryProgress, recovery_scope
 from app.agent.completion_evidence import compile_review_evidence, validate_review_evidence
@@ -639,6 +640,7 @@ class AgentRuntime:
                     user_cancellation,
                     deadline_cancellation,
                     _request_usage=recovery,
+                    _completion_review=proposed_answer is not None,
                 )
             else:
                 report_activity(activity_observer, "Checking completion…" if proposed_answer is not None else "Thinking…")
@@ -675,6 +677,7 @@ class AgentRuntime:
                         user_cancellation,
                         deadline_cancellation,
                         _request_usage=recovery,
+                        _completion_review=proposed_answer is not None,
                     )
             if model_stop is not None:
                 status, message = model_stop
@@ -704,8 +707,14 @@ class AgentRuntime:
                 message = response.completion.failure_message or (
                     "The response was cut off." if response.kind != ModelResponseKind.ASSISTANT_TEXT
                     else "The response is incomplete.")
-                if response.kind != ModelResponseKind.ASSISTANT_TEXT:
+                review_interrupted = response.completion.request_phase == 'completion_review' or (
+                    response.completion.request_phase is None and proposed_answer is not None)
+                if review_interrupted:
+                    message += ' The completion review was interrupted; the proposed answer is retained and task completion remains unverified.'
+                elif response.completion.observed_function_call is True:
                     message += " The incomplete tool generation was not executed."
+                else:
+                    message += ' The reply was interrupted before completion.'
                 return self._stopped(self._incomplete_status(response.completion),
                     message,
                     steps=steps, capability_calls=capability_calls,
@@ -904,13 +913,13 @@ class AgentRuntime:
             if response.kind == ModelResponseKind.PROTOCOL_FAILURE:
                 protocol_failures += 1
                 if (
-                    response.protocol_failure.code
-                    == ModelProtocolFailureCode.OUTPUT_TRUNCATED
+                    response.protocol_failure.code in {ModelProtocolFailureCode.OUTPUT_TRUNCATED,
+                                                       ModelProtocolFailureCode.STREAM_INTERRUPTED}
                 ):
                     return self._stopped(
                         AgentRunStatus.INCOMPLETE,
                         "The model response was cut off before it could complete the requested "
-                        "action. The incomplete tool generation was not executed.",
+                        "action. No tool call was dispatched from this response.",
                         steps=steps,
                         capability_calls=capability_calls,
                         protocol_failures=protocol_failures,
@@ -1615,7 +1624,9 @@ class AgentRuntime:
             except BaseException as exc:
                 future.set_exception(exc)
 
-        Thread(target=invoke, name="orsi-agent-model-step", daemon=True).start()
+        Thread(target=run_in_turn, args=(current_turn_id(), invoke,
+               'completion_review' if _completion_review else 'reply'),
+               name="orsi-agent-model-step", daemon=True).start()
         while True:
             stop = self._stop_status(started, user_cancellation, deadline_cancellation)
             if stop is not None:
@@ -1673,7 +1684,7 @@ class AgentRuntime:
         started: float,
         user_cancellation: CancellationToken,
         deadline_cancellation: _DeadlineCancellationToken,
-        *, _request_usage: _RecoveryUsage | None = None, cloud_only: bool = False,
+        *, _request_usage: _RecoveryUsage | None = None, cloud_only: bool = False, _completion_review: bool = False,
     ) -> tuple[str | None, tuple[AgentRunStatus, str] | None]:
         from app.conversation.context import calculate_context_budget
 
@@ -1699,7 +1710,9 @@ class AgentRuntime:
             except BaseException as exc:
                 future.set_exception(exc)
 
-        Thread(target=invoke, name="orsi-conversation-model-step", daemon=True).start()
+        Thread(target=run_in_turn, args=(current_turn_id(), invoke,
+               'completion_review' if _completion_review else 'reply'),
+               name="orsi-conversation-model-step", daemon=True).start()
         while True:
             stop = self._stop_status(started, user_cancellation, deadline_cancellation)
             if stop is not None:
@@ -1749,7 +1762,7 @@ class AgentRuntime:
         started: float,
         user_cancellation: CancellationToken,
         deadline_cancellation: _DeadlineCancellationToken,
-        *, _request_usage: _RecoveryUsage | None = None,
+        *, _request_usage: _RecoveryUsage | None = None, _completion_review: bool = False,
     ) -> tuple[ModelResponse | None, tuple[AgentRunStatus, str] | None]:
         from app.inference.openai_replay import neutral_messages
         fallback_messages = constrained_fallback_messages(neutral_messages(transcript), definitions)
@@ -1760,6 +1773,7 @@ class AgentRuntime:
             deadline_cancellation,
             _request_usage=_request_usage,
             cloud_only=any(definition.name.startswith("office.") for definition in definitions),
+            _completion_review=_completion_review,
         )
         if stop is not None:
             return None, stop

@@ -178,7 +178,6 @@ def test_implicit_image_source_category_does_not_retain_identity(native_sdk, tmp
 @pytest.mark.parametrize("kind,category", [
     ("response.web_search_call.in_progress", "provider_tool"),
     ("response.audio.delta", "audio"),
-    ("response.queued", "lifecycle"),
     ("PRIVATE-EVENT-sk-proj-secret", "unknown"),
 ])
 def test_unsupported_event_records_public_type_and_sdk_version_without_accepting_it(make_engine, caplog, kind, category):
