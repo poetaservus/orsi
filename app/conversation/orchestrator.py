@@ -296,6 +296,16 @@ class ConversationService:
     def run(self, user_message: str, activity=None, *, skill_name: str | None = None, text_observer=None,
             skill_observer=None, attachments=(), admission_observer=None) -> str:
         """Run one turn; an optional explicit skill applies only to this message."""
+        from app.runtime.diagnostic_context import begin_turn, end_turn
+        diagnostic_token = begin_turn()
+        try:
+            return self._run_turn(user_message, activity, skill_name=skill_name, text_observer=text_observer,
+                skill_observer=skill_observer, attachments=attachments, admission_observer=admission_observer)
+        finally:
+            end_turn(diagnostic_token)
+
+    def _run_turn(self, user_message: str, activity=None, *, skill_name: str | None = None, text_observer=None,
+                  skill_observer=None, attachments=(), admission_observer=None) -> str:
         text = str(user_message).strip()
         submitted_references = attachment_references(attachments)
         if not text and not submitted_references:

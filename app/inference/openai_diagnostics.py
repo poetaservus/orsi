@@ -1,11 +1,13 @@
 """Reviewed public event/code identifiers; no raw SDK fields or exception text."""
 from functools import lru_cache
+from hashlib import sha256
 from importlib.metadata import version
 import json
 import re
 from typing import get_args
 
 from app.inference.completion import ResponseFailureReason
+from app.runtime.diagnostic_context import safe_local_id, safe_phase
 
 
 # Public Responses event names, reviewed against the reference and SDK 2.54.0.
@@ -39,12 +41,25 @@ _CODES = frozenset({"context_length_exceeded", "context_window_exceeded", "input
     "invalid_api_key", "permission_denied", "model_not_found", "server_error", "internal_error",
     "internal_server_error", "invalid_parameter", "invalid_argument", "invalid_request_error"})
 _VERSION = re.compile(r"[0-9]{1,4}(?:\.[0-9]{1,4}){1,3}(?:(?:a|b|rc)[0-9]{1,4})?\Z")
+_FINGERPRINT = re.compile(r"[0-9a-f]{64}\Z")
 
 
 def event_labels(kind):
     if isinstance(kind, str) and kind in _EVENT_CATEGORIES:
         return kind, _EVENT_CATEGORIES[kind]
     return "unrecognized", "unknown"
+
+
+def event_fingerprint(kind):
+    """Identify repeated unknown event types without storing their raw names.
+
+    Bound the identifier before encoding; payloads and other provider fields are
+    never supplied to this function. Known public names remain explicit labels.
+    """
+    if (not isinstance(kind, str) or not kind or len(kind) > 512
+            or kind in _EVENT_CATEGORIES):
+        return None
+    return sha256(kind.encode("utf-8", errors="replace")).hexdigest()
 
 
 @lru_cache(maxsize=1)
@@ -70,6 +85,13 @@ def safe_stream_event(value):
         "event_type": event, "event_category": category,
         "event_supported": value.get("event_supported") is True,
         "sdk_version": version_value if isinstance(version_value, str) and _VERSION.fullmatch(version_value) else "unknown"}
+    fingerprint = value.get("event_fingerprint")
+    result["event_fingerprint"] = (fingerprint if event == "unrecognized" and
+        isinstance(fingerprint, str) and _FINGERPRINT.fullmatch(fingerprint) else None)
+    result["request_phase"] = safe_phase(value.get("request_phase"))
+    for field in ("turn_id", "request_id"):
+        result[field] = safe_local_id(value.get(field))
+    result["observed_function_call"] = value.get("observed_function_call") is True
     for field in ("events", "sequence", "bytes", "text_chars"):
         number = value.get(field)
         result[field] = number if type(number) is int and -1 <= number <= 2**63 - 1 else None
@@ -83,10 +105,17 @@ def record_stream_failure(logger, state, *, origin="stream", reason, code=None):
     safe_code = code if isinstance(code, str) and code in _CODES else "unrecognized" if code is not None else "none"
     values = {"origin": origin if isinstance(origin, str) and origin in {"stream", "sdk_envelope", "provider_terminal"} else "unknown",
         "reason": safe_reason, "code": safe_code, "event_type": event, "event_category": category,
-        "event_supported": state.last_event_supported is True, "sdk_version": sdk_version()}
+        "event_supported": state.last_event_supported is True, "sdk_version": sdk_version(),
+        "event_fingerprint": getattr(state, "last_event_fingerprint", None),
+        "request_phase": getattr(state, "request_phase", None),
+        "turn_id": getattr(state, "turn_id", None),
+        "request_id": getattr(state, "request_id", None),
+        "observed_function_call": getattr(state, "observed_function_call", False) is True}
     for field, value in (("events", state.events), ("sequence", state.sequence),
             ("bytes", state.bytes), ("text_chars", state.chars)):
         values[field] = value if type(value) is int and -1 <= value <= 2**63 - 1 else None
+    values = safe_stream_event(values)
+    values.pop("event")
     try:
         logger.warning("[stream] %s", json.dumps(values, sort_keys=True),
                        extra={"orsi_openai_stream_diagnostic": values})
